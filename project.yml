@@ -27,6 +27,21 @@ targets:
         DEVELOPMENT_TEAM: 67KC823C9A
         ENABLE_HARDENED_RUNTIME: YES
         MACOSX_DEPLOYMENT_TARGET: "14.0"
+  PocketPadCLI:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/Shared
+      - path: Sources/Mac/KeyMap.swift
+      - path: Sources/CLI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadCLI
+        PRODUCT_NAME: pocketpad
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 67KC823C9A
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
   PocketPadiOS:
     type: application
     platform: iOS

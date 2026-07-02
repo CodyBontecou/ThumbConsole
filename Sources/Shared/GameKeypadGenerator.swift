@@ -1,0 +1,621 @@
+import Foundation
+import CoreGraphics
+
+public enum GeneratedKeypadConfidence: String, Codable, Sendable {
+    case high
+    case medium
+    case low
+}
+
+public struct GeneratedKeyBindingSpec: Codable, Equatable, Sendable {
+    public var key: String
+    public var modifiers: [String]
+
+    public init(key: String, modifiers: [String] = []) {
+        self.key = key
+        self.modifiers = modifiers
+    }
+}
+
+public struct GeneratedGameKeypadProfile: Codable, Equatable, Sendable {
+    public var requestedGameName: String
+    public var resolvedGameName: String
+    public var profile: GamepadConfigurationProfile
+    public var keyBindings: [GameButton: GeneratedKeyBindingSpec]
+    public var source: String
+    public var confidence: GeneratedKeypadConfidence
+    public var notes: [String]
+
+    public init(
+        requestedGameName: String,
+        resolvedGameName: String,
+        profile: GamepadConfigurationProfile,
+        keyBindings: [GameButton: GeneratedKeyBindingSpec],
+        source: String,
+        confidence: GeneratedKeypadConfidence,
+        notes: [String] = []
+    ) {
+        self.requestedGameName = requestedGameName
+        self.resolvedGameName = resolvedGameName
+        self.profile = profile
+        self.keyBindings = keyBindings
+        self.source = source
+        self.confidence = confidence
+        self.notes = notes
+    }
+}
+
+public enum AgentKeypadControlRole: String, Codable, CaseIterable, Sendable {
+    case movement
+    case primary
+    case secondary
+    case utility
+    case system
+}
+
+public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
+    public var id: String?
+    public var button: GameButton?
+    public var label: String
+    public var key: String
+    public var modifiers: [String]
+    public var role: AgentKeypadControlRole?
+    public var centerX: CGFloat?
+    public var centerY: CGFloat?
+    public var widthScale: CGFloat?
+    public var heightScale: CGFloat?
+    public var shape: GamepadButtonShapeStyle?
+
+    public init(
+        id: String? = nil,
+        button: GameButton? = nil,
+        label: String,
+        key: String,
+        modifiers: [String] = [],
+        role: AgentKeypadControlRole? = nil,
+        centerX: CGFloat? = nil,
+        centerY: CGFloat? = nil,
+        widthScale: CGFloat? = nil,
+        heightScale: CGFloat? = nil,
+        shape: GamepadButtonShapeStyle? = nil
+    ) {
+        self.id = id
+        self.button = button
+        self.label = label
+        self.key = key
+        self.modifiers = modifiers
+        self.role = role
+        self.centerX = centerX
+        self.centerY = centerY
+        self.widthScale = widthScale
+        self.heightScale = heightScale
+        self.shape = shape
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+        button = try container.decodeIfPresent(GameButton.self, forKey: .button)
+        if button == nil, let id, let idButton = GameButton(rawValue: id) {
+            button = idButton
+        }
+        label = try container.decodeIfPresent(String.self, forKey: .label)
+            ?? button?.displayName
+            ?? id
+            ?? "Button"
+        key = try container.decode(String.self, forKey: .key)
+        modifiers = try container.decodeIfPresent([String].self, forKey: .modifiers) ?? []
+        role = try container.decodeIfPresent(AgentKeypadControlRole.self, forKey: .role)
+        centerX = try container.decodeIfPresent(CGFloat.self, forKey: .centerX)
+            ?? container.decodeIfPresent(CGFloat.self, forKey: .x)
+        centerY = try container.decodeIfPresent(CGFloat.self, forKey: .centerY)
+            ?? container.decodeIfPresent(CGFloat.self, forKey: .y)
+        widthScale = try container.decodeIfPresent(CGFloat.self, forKey: .widthScale)
+            ?? container.decodeIfPresent(CGFloat.self, forKey: .width)
+        heightScale = try container.decodeIfPresent(CGFloat.self, forKey: .heightScale)
+            ?? container.decodeIfPresent(CGFloat.self, forKey: .height)
+        shape = try container.decodeIfPresent(GamepadButtonShapeStyle.self, forKey: .shape)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(id, forKey: .id)
+        try container.encodeIfPresent(button, forKey: .button)
+        try container.encode(label, forKey: .label)
+        try container.encode(key, forKey: .key)
+        try container.encode(modifiers, forKey: .modifiers)
+        try container.encodeIfPresent(role, forKey: .role)
+        try container.encodeIfPresent(centerX, forKey: .centerX)
+        try container.encodeIfPresent(centerY, forKey: .centerY)
+        try container.encodeIfPresent(widthScale, forKey: .widthScale)
+        try container.encodeIfPresent(heightScale, forKey: .heightScale)
+        try container.encodeIfPresent(shape, forKey: .shape)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case button
+        case label
+        case key
+        case modifiers
+        case role
+        case centerX
+        case centerY
+        case x
+        case y
+        case widthScale
+        case heightScale
+        case width
+        case height
+        case shape
+    }
+}
+
+public struct AgentKeypadSpec: Codable, Equatable, Sendable {
+    public var gameName: String
+    public var source: String?
+    public var confidence: GeneratedKeypadConfidence?
+    public var notes: [String]
+    public var controls: [AgentKeypadControlSpec]
+
+    public init(
+        gameName: String,
+        source: String? = nil,
+        confidence: GeneratedKeypadConfidence? = nil,
+        notes: [String] = [],
+        controls: [AgentKeypadControlSpec]
+    ) {
+        self.gameName = gameName
+        self.source = source
+        self.confidence = confidence
+        self.notes = notes
+        self.controls = controls
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        gameName = try container.decodeIfPresent(String.self, forKey: .gameName)
+            ?? container.decodeIfPresent(String.self, forKey: .name)
+            ?? container.decodeIfPresent(String.self, forKey: .game)
+            ?? "Agent Generated Game"
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        confidence = try container.decodeIfPresent(GeneratedKeypadConfidence.self, forKey: .confidence)
+        notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
+        controls = try container.decode([AgentKeypadControlSpec].self, forKey: .controls)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(gameName, forKey: .gameName)
+        try container.encodeIfPresent(source, forKey: .source)
+        try container.encodeIfPresent(confidence, forKey: .confidence)
+        try container.encode(notes, forKey: .notes)
+        try container.encode(controls, forKey: .controls)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case gameName
+        case name
+        case game
+        case source
+        case confidence
+        case notes
+        case controls
+    }
+}
+
+public enum GameKeypadGenerator {
+    public static func generate(for requestedGameName: String) -> GeneratedGameKeypadProfile? {
+        let cleanedName = requestedGameName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = cleanedName.isEmpty ? "Generated Game" : cleanedName
+
+        if HollowKnightTemplate.matches(displayName) {
+            return HollowKnightTemplate.make(requestedGameName: displayName)
+        }
+
+        return nil
+    }
+
+    public static func generate(from spec: AgentKeypadSpec, requestedGameName: String? = nil) -> GeneratedGameKeypadProfile {
+        AgentSpecTemplate.make(spec: spec, requestedGameName: requestedGameName)
+    }
+}
+
+private enum KeypadRole {
+    case movement
+    case primary
+    case secondary
+    case utility
+    case system
+
+    init(_ agentRole: AgentKeypadControlRole) {
+        switch agentRole {
+        case .movement: self = .movement
+        case .primary: self = .primary
+        case .secondary: self = .secondary
+        case .utility: self = .utility
+        case .system: self = .system
+        }
+    }
+
+    var fillColor: GamepadRGBAColor {
+        switch self {
+        case .movement:
+            GamepadRGBAColor(hexString: "#1F2937") ?? .defaultValue
+        case .primary:
+            GamepadRGBAColor(hexString: "#7C3AED") ?? .defaultValue
+        case .secondary:
+            GamepadRGBAColor(hexString: "#0EA5E9") ?? .defaultValue
+        case .utility:
+            GamepadRGBAColor(hexString: "#F59E0B") ?? .defaultValue
+        case .system:
+            GamepadRGBAColor(hexString: "#374151") ?? .defaultValue
+        }
+    }
+
+    var accentStyle: GamepadAccentStyle {
+        switch self {
+        case .movement, .system: .monochrome
+        case .primary: .purple
+        case .secondary: .blue
+        case .utility: .amber
+        }
+    }
+}
+
+private struct GeneratedControlDefinition {
+    var button: GameButton
+    var label: String
+    var binding: GeneratedKeyBindingSpec
+    var role: KeypadRole
+    var centerX: CGFloat
+    var centerY: CGFloat
+    var widthScale: CGFloat
+    var heightScale: CGFloat
+    var shape: GamepadButtonShapeStyle
+
+    init(
+        _ button: GameButton,
+        label: String,
+        key: String,
+        modifiers: [String] = [],
+        role: KeypadRole,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat = 1.0,
+        height: CGFloat = 1.0,
+        shape: GamepadButtonShapeStyle = .roundedRectangle
+    ) {
+        self.button = button
+        self.label = label
+        self.binding = GeneratedKeyBindingSpec(key: key, modifiers: modifiers)
+        self.role = role
+        self.centerX = x
+        self.centerY = y
+        self.widthScale = width
+        self.heightScale = height
+        self.shape = shape
+    }
+}
+
+private enum GeneratedProfileBuilder {
+    static func build(
+        requestedGameName: String,
+        resolvedGameName: String,
+        controls: [GeneratedControlDefinition],
+        source: String,
+        confidence: GeneratedKeypadConfidence,
+        notes: [String]
+    ) -> GeneratedGameKeypadProfile {
+        var customization = GamepadCustomization.blankCanvas
+        customization.layoutMode = .standard
+        customization.controlScale = .standard
+        customization.accentStyle = .purple
+        customization.showsButtonLabels = true
+
+        var keyBindings: [GameButton: GeneratedKeyBindingSpec] = [:]
+        var customButtons: [GamepadCustomButton] = []
+
+        for control in controls {
+            let layout = GamepadButtonCustomization(
+                centerX: control.centerX,
+                centerY: control.centerY,
+                widthScale: control.widthScale,
+                heightScale: control.heightScale,
+                shape: control.shape,
+                accentStyle: control.role.accentStyle,
+                fillColor: control.role.fillColor,
+                cornerRadius: resolvedCornerRadius(for: control.shape),
+                shadowStrength: control.role == .primary ? 1.25 : 1.0,
+                isLocationLocked: false,
+                isHidden: false
+            )
+
+            if GameButton.builtInControls.contains(control.button) {
+                customization.setButtonCustomization(layout, for: control.button)
+                customization.setLabel(control.label, for: control.button)
+            } else {
+                customButtons.append(
+                    GamepadCustomButton(
+                        mappedButton: control.button,
+                        label: control.label,
+                        layout: layout
+                    )
+                )
+            }
+
+            keyBindings[control.button] = control.binding
+        }
+
+        customization.customButtons = customButtons
+        customization.updatedAt = Date.currentMilliseconds
+
+        let profile = GamepadConfigurationProfile(
+            name: resolvedGameName,
+            customization: customization.normalized
+        )
+
+        return GeneratedGameKeypadProfile(
+            requestedGameName: requestedGameName,
+            resolvedGameName: resolvedGameName,
+            profile: profile,
+            keyBindings: keyBindings,
+            source: source,
+            confidence: confidence,
+            notes: notes
+        )
+    }
+
+    private static func resolvedCornerRadius(for shape: GamepadButtonShapeStyle) -> CGFloat? {
+        switch shape {
+        case .capsule, .circle, .ellipse:
+            nil
+        default:
+            12
+        }
+    }
+}
+
+private enum AgentSpecTemplate {
+    private struct LayoutDefaults {
+        var x: CGFloat
+        var y: CGFloat
+        var width: CGFloat
+        var height: CGFloat
+        var shape: GamepadButtonShapeStyle
+    }
+
+    static func make(spec: AgentKeypadSpec, requestedGameName: String?) -> GeneratedGameKeypadProfile {
+        var usedButtons = Set<GameButton>()
+        var roleCounts: [KeypadRole: Int] = [:]
+        var controls: [GeneratedControlDefinition] = []
+
+        for controlSpec in spec.controls {
+            guard let button = assignButton(for: controlSpec, usedButtons: usedButtons) else { continue }
+            usedButtons.insert(button)
+
+            let role = inferRole(for: controlSpec, button: button)
+            let roleIndex = roleCounts[role, default: 0]
+            roleCounts[role] = roleIndex + 1
+            let defaults = layoutDefaults(for: button, role: role, index: roleIndex)
+            let label = controlSpec.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? button.displayName
+                : controlSpec.label
+
+            controls.append(
+                GeneratedControlDefinition(
+                    button,
+                    label: label,
+                    key: controlSpec.key,
+                    modifiers: controlSpec.modifiers,
+                    role: role,
+                    x: controlSpec.centerX ?? defaults.x,
+                    y: controlSpec.centerY ?? defaults.y,
+                    width: controlSpec.widthScale ?? defaults.width,
+                    height: controlSpec.heightScale ?? defaults.height,
+                    shape: controlSpec.shape ?? defaults.shape
+                )
+            )
+        }
+
+        let resolvedName = normalizedDisplayName(spec.gameName, fallback: requestedGameName ?? "Agent Generated Game")
+        var notes = spec.notes
+        if notes.isEmpty {
+            notes = ["Installed from an agent-provided keypad spec."]
+        }
+
+        return GeneratedProfileBuilder.build(
+            requestedGameName: requestedGameName ?? resolvedName,
+            resolvedGameName: resolvedName,
+            controls: controls,
+            source: spec.source ?? "Agent-provided keypad spec",
+            confidence: spec.confidence ?? .low,
+            notes: notes
+        )
+    }
+
+    private static func assignButton(for control: AgentKeypadControlSpec, usedButtons: Set<GameButton>) -> GameButton? {
+        if let button = control.button, !usedButtons.contains(button) {
+            return button
+        }
+
+        let normalized = normalizedControlText(control)
+        let preferredButton: GameButton? = {
+            if normalized.contains("left") || normalized.contains("arrowleft") { return .left }
+            if normalized.contains("right") || normalized.contains("arrowright") { return .right }
+            if normalized.contains("up") || normalized.contains("arrowup") { return .up }
+            if normalized.contains("down") || normalized.contains("arrowdown") { return .down }
+            if normalized.contains("jump") { return .jump }
+            if normalized.contains("attack") || normalized.contains("nail") || normalized.contains("fire") || normalized.contains("shoot") { return .attack }
+            if normalized.contains("dash") || normalized.contains("dodge") || normalized.contains("sprint") { return .dash }
+            if normalized.contains("focus") || normalized.contains("cast") || normalized.contains("special") || normalized.contains("magic") { return .focus }
+            if normalized.contains("map") { return .map }
+            if normalized.contains("pause") || normalized.contains("escape") || normalized.contains("menu") { return .pause }
+            return nil
+        }()
+
+        if let preferredButton, !usedButtons.contains(preferredButton) {
+            return preferredButton
+        }
+
+        return GameButton.customSlots.first { !usedButtons.contains($0) }
+    }
+
+    private static func inferRole(for control: AgentKeypadControlSpec, button: GameButton) -> KeypadRole {
+        if let role = control.role {
+            return KeypadRole(role)
+        }
+
+        switch button {
+        case .up, .down, .left, .right:
+            return .movement
+        case .jump, .attack, .dash:
+            return .primary
+        case .focus:
+            return .secondary
+        case .map:
+            return .utility
+        case .pause:
+            return .system
+        case .custom1, .custom2, .custom3, .custom4, .custom5, .custom6, .custom7, .custom8:
+            break
+        }
+
+        let normalized = normalizedControlText(control)
+        if normalized.contains("inventory") || normalized.contains("map") || normalized.contains("item") {
+            return .utility
+        }
+        if normalized.contains("pause") || normalized.contains("escape") || normalized.contains("menu") {
+            return .system
+        }
+        if normalized.contains("focus") || normalized.contains("cast") || normalized.contains("special") || normalized.contains("magic") {
+            return .secondary
+        }
+        return .primary
+    }
+
+    private static func layoutDefaults(for button: GameButton, role: KeypadRole, index: Int) -> LayoutDefaults {
+        switch button {
+        case .up:
+            return LayoutDefaults(x: 0.18, y: 0.30, width: 1.02, height: 0.92, shape: .roundedRectangle)
+        case .down:
+            return LayoutDefaults(x: 0.18, y: 0.72, width: 1.02, height: 0.92, shape: .roundedRectangle)
+        case .left:
+            return LayoutDefaults(x: 0.07, y: 0.51, width: 1.02, height: 0.92, shape: .roundedRectangle)
+        case .right:
+            return LayoutDefaults(x: 0.29, y: 0.51, width: 1.02, height: 0.92, shape: .roundedRectangle)
+        case .map:
+            return LayoutDefaults(x: 0.47, y: 0.18, width: 0.88, height: 0.96, shape: .capsule)
+        case .pause:
+            return LayoutDefaults(x: 0.61, y: 0.18, width: 0.82, height: 0.96, shape: .capsule)
+        default:
+            break
+        }
+
+        switch role {
+        case .movement:
+            return repeating([
+                LayoutDefaults(x: 0.18, y: 0.30, width: 1.02, height: 0.92, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.18, y: 0.72, width: 1.02, height: 0.92, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.07, y: 0.51, width: 1.02, height: 0.92, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.29, y: 0.51, width: 1.02, height: 0.92, shape: .roundedRectangle)
+            ], index: index)
+        case .primary:
+            return repeating([
+                LayoutDefaults(x: 0.82, y: 0.70, width: 1.26, height: 1.12, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.70, y: 0.54, width: 1.18, height: 1.06, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.91, y: 0.47, width: 1.05, height: 0.98, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.79, y: 0.29, width: 1.02, height: 0.96, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.60, y: 0.77, width: 0.96, height: 0.84, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.93, y: 0.75, width: 0.96, height: 0.84, shape: .roundedRectangle)
+            ], index: index)
+        case .secondary:
+            return repeating([
+                LayoutDefaults(x: 0.66, y: 0.32, width: 0.92, height: 0.84, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.93, y: 0.25, width: 0.94, height: 0.84, shape: .roundedRectangle),
+                LayoutDefaults(x: 0.48, y: 0.84, width: 0.88, height: 0.78, shape: .capsule),
+                LayoutDefaults(x: 0.54, y: 0.35, width: 0.88, height: 0.78, shape: .roundedRectangle)
+            ], index: index)
+        case .utility:
+            return repeating([
+                LayoutDefaults(x: 0.47, y: 0.18, width: 0.88, height: 0.96, shape: .capsule),
+                LayoutDefaults(x: 0.59, y: 0.18, width: 0.88, height: 0.96, shape: .capsule),
+                LayoutDefaults(x: 0.48, y: 0.84, width: 0.88, height: 0.78, shape: .capsule),
+                LayoutDefaults(x: 0.60, y: 0.84, width: 0.88, height: 0.78, shape: .capsule)
+            ], index: index)
+        case .system:
+            return repeating([
+                LayoutDefaults(x: 0.61, y: 0.18, width: 0.82, height: 0.96, shape: .capsule),
+                LayoutDefaults(x: 0.73, y: 0.18, width: 0.82, height: 0.96, shape: .capsule)
+            ], index: index)
+        }
+    }
+
+    private static func repeating(_ layouts: [LayoutDefaults], index: Int) -> LayoutDefaults {
+        guard !layouts.isEmpty else {
+            return LayoutDefaults(x: 0.5, y: 0.5, width: 1.0, height: 1.0, shape: .roundedRectangle)
+        }
+        return layouts[min(index, layouts.count - 1)]
+    }
+
+    private static func normalizedControlText(_ control: AgentKeypadControlSpec) -> String {
+        normalizedGameName([control.id, control.button?.rawValue, control.label, control.key].compactMap { $0 }.joined(separator: " "))
+    }
+
+    private static func normalizedDisplayName(_ name: String, fallback: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        let fallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? "Agent Generated Game" : fallback
+    }
+}
+
+private enum HollowKnightTemplate {
+    static func matches(_ name: String) -> Bool {
+        let normalized = normalizedGameName(name)
+        return [
+            "hollowknight",
+            "hollownight",
+            "holyknight",
+            "holynight"
+        ].contains(normalized)
+    }
+
+    static func make(requestedGameName: String) -> GeneratedGameKeypadProfile {
+        let controls: [GeneratedControlDefinition] = [
+            .init(.up, label: "Up", key: "UpArrow", role: .movement, x: 0.18, y: 0.30, width: 1.02, height: 0.92),
+            .init(.down, label: "Down", key: "DownArrow", role: .movement, x: 0.18, y: 0.72, width: 1.02, height: 0.92),
+            .init(.left, label: "Left", key: "LeftArrow", role: .movement, x: 0.07, y: 0.51, width: 1.02, height: 0.92),
+            .init(.right, label: "Right", key: "RightArrow", role: .movement, x: 0.29, y: 0.51, width: 1.02, height: 0.92),
+
+            .init(.jump, label: "Jump", key: "Z", role: .primary, x: 0.82, y: 0.70, width: 1.26, height: 1.12),
+            .init(.attack, label: "Nail", key: "X", role: .primary, x: 0.70, y: 0.54, width: 1.18, height: 1.06),
+            .init(.dash, label: "Dash", key: "C", role: .primary, x: 0.91, y: 0.47, width: 1.05, height: 0.98),
+            .init(.focus, label: "Focus", key: "A", role: .secondary, x: 0.79, y: 0.29, width: 1.02, height: 0.96),
+
+            .init(.map, label: "Map", key: "Tab", role: .utility, x: 0.47, y: 0.18, width: 0.88, height: 0.96, shape: .capsule),
+            .init(.pause, label: "Pause", key: "Escape", role: .system, x: 0.61, y: 0.18, width: 0.82, height: 0.96, shape: .capsule),
+
+            .init(.custom1, label: "Quick Cast", key: "F", role: .secondary, x: 0.66, y: 0.32, width: 0.92, height: 0.84),
+            .init(.custom2, label: "Dream Nail", key: "D", role: .secondary, x: 0.93, y: 0.25, width: 0.94, height: 0.84),
+            .init(.custom3, label: "Super Dash", key: "S", role: .utility, x: 0.60, y: 0.77, width: 0.96, height: 0.84),
+            .init(.custom4, label: "Inventory", key: "I", role: .utility, x: 0.48, y: 0.84, width: 0.88, height: 0.78, shape: .capsule)
+        ]
+
+        return GeneratedProfileBuilder.build(
+            requestedGameName: requestedGameName,
+            resolvedGameName: "Hollow Knight",
+            controls: controls,
+            source: "Built-in Hollow Knight default keyboard template",
+            confidence: .high,
+            notes: [
+                "Uses Hollow Knight's default keyboard bindings: Arrow keys for movement, Z jump, X attack, C dash, A focus/cast.",
+                "Includes extra custom buttons for Quick Cast, Dream Nail, Super Dash, and Inventory."
+            ]
+        )
+    }
+}
+
+private func normalizedGameName(_ name: String) -> String {
+    name.lowercased().filter { $0.isLetter || $0.isNumber }
+}

@@ -50,6 +50,31 @@ struct MacKeyModifiers: OptionSet, Codable, Hashable, Sendable {
         if contains(.command) { symbols += "⌘" }
         return symbols
     }
+
+    init?(generatedModifierNames names: [String]) {
+        var modifiers: MacKeyModifiers = []
+        for name in names {
+            switch Self.normalizedModifierName(name) {
+            case "cmd", "command", "meta":
+                modifiers.insert(.command)
+            case "shift":
+                modifiers.insert(.shift)
+            case "opt", "option", "alt":
+                modifiers.insert(.option)
+            case "ctrl", "control":
+                modifiers.insert(.control)
+            case "":
+                continue
+            default:
+                return nil
+            }
+        }
+        self = modifiers
+    }
+
+    private static func normalizedModifierName(_ name: String) -> String {
+        name.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
 }
 
 struct MacKeyStroke: Codable, Equatable, Hashable, Sendable {
@@ -119,6 +144,15 @@ struct MacKeyBinding: Codable, Equatable, Hashable, Sendable {
 
     init(event: NSEvent) {
         self.init(stroke: MacKeyStroke(event: event))
+    }
+
+    init?(generatedSpec spec: GeneratedKeyBindingSpec) {
+        guard let keyCode = MacVirtualKey.keyCode(named: spec.key),
+              let modifiers = MacKeyModifiers(generatedModifierNames: spec.modifiers)
+        else {
+            return nil
+        }
+        self.init(keyCode: keyCode, modifiers: modifiers)
     }
 
     var strokes: [MacKeyStroke] {
@@ -210,6 +244,49 @@ enum MacVirtualKey {
         keyNames[keyCode] ?? "Key \(keyCode)"
     }
 
+    static func keyCode(named name: String) -> CGKeyCode? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let exactMatch = keyNames.first(where: { $0.value.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return exactMatch.key
+        }
+
+        let normalized = normalizedKeyName(trimmed)
+        switch normalized {
+        case "left", "leftarrow", "arrowleft":
+            return leftArrow
+        case "right", "rightarrow", "arrowright":
+            return rightArrow
+        case "up", "uparrow", "arrowup":
+            return upArrow
+        case "down", "downarrow", "arrowdown":
+            return downArrow
+        case "esc", "escape":
+            return escape
+        case "return", "enter":
+            return returnKey
+        case "space", "spacebar":
+            return 49
+        case "delete", "backspace":
+            return 51
+        case "forwarddelete":
+            return 117
+        default:
+            break
+        }
+
+        if let namedMatch = keyNames.first(where: { normalizedKeyName($0.value) == normalized }) {
+            return namedMatch.key
+        }
+
+        if let numericCode = UInt16(trimmed) {
+            return CGKeyCode(numericCode)
+        }
+
+        return nil
+    }
+
     static func modifierFlag(for keyCode: CGKeyCode) -> CGEventFlags? {
         switch keyCode {
         case 54, 55:
@@ -240,6 +317,10 @@ enum MacVirtualKey {
         default:
             return nil
         }
+    }
+
+    private static func normalizedKeyName(_ name: String) -> String {
+        name.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     private static let keyNames: [CGKeyCode: String] = [

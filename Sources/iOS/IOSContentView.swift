@@ -912,15 +912,26 @@ private struct GamepadFreeformControllerCanvas: View {
 
             ZStack {
                 ForEach(controls) { control in
-                    GamepadButton(
-                        button: control.mappedButton,
-                        size: control.size,
-                        shape: control.shape,
-                        labelOverride: control.label,
-                        elementCustomization: control.layoutCustomization,
-                        customization: customization
-                    )
-                    .position(control.center)
+                    if control.isJoystick, let joystickMapping = control.joystickMapping {
+                        GamepadJoystick(
+                            mapping: joystickMapping,
+                            label: control.label,
+                            size: control.size,
+                            elementCustomization: control.layoutCustomization,
+                            customization: customization
+                        )
+                        .position(control.center)
+                    } else {
+                        GamepadButton(
+                            button: control.mappedButton,
+                            size: control.size,
+                            shape: control.shape,
+                            labelOverride: control.label,
+                            elementCustomization: control.layoutCustomization,
+                            customization: customization
+                        )
+                        .position(control.center)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -978,6 +989,123 @@ private struct ActionButtonsView: View {
                 GamepadButton(button: .jump, size: buttonSize, customization: customization)
             }
         }
+    }
+}
+
+private struct GamepadJoystick: View {
+    @EnvironmentObject private var client: ControllerClient
+    @Environment(\.colorScheme) private var colorScheme
+    let mapping: GamepadJoystickMapping
+    let label: String
+    let size: CGSize
+    let elementCustomization: GamepadButtonCustomization
+    let customization: GamepadCustomization
+
+    @State private var activeDirections: Set<GamepadJoystickDirection> = []
+    @State private var normalizedOffset = CGSize.zero
+
+    private var visualSide: CGFloat {
+        min(size.width, size.height)
+    }
+
+    private var knobSide: CGFloat {
+        max(34, visualSide * 0.36)
+    }
+
+    private var knobTravelRadius: CGFloat {
+        max(0, (visualSide - knobSide) / 2 - 4)
+    }
+
+    var body: some View {
+        let hitSide = max(visualSide + ControllerLayoutMetrics.buttonHitOutset * 2, visualSide)
+
+        ZStack {
+            joystickBase
+                .frame(width: size.width, height: size.height)
+                .allowsHitTesting(false)
+
+            JoystickCaptureView { direction, pressed, pressIdentifier in
+                handleDirectionEdge(direction, pressed: pressed, pressIdentifier: pressIdentifier)
+            } onVectorChanged: { vector, directions in
+                normalizedOffset = CGSize(width: vector.dx, height: vector.dy)
+                activeDirections = directions
+            }
+            .frame(width: hitSide, height: hitSide)
+        }
+        .frame(width: hitSide, height: hitSide)
+        .accessibilityLabel(label)
+        .onDisappear {
+            activeDirections.removeAll()
+            normalizedOffset = .zero
+        }
+    }
+
+    private var joystickBase: some View {
+        let accentStyle = elementCustomization.accentStyle ?? customization.accentStyle
+        let fillColor = elementCustomization.buttonFill(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
+        let strokeColor = elementCustomization.buttonStroke(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
+        let foregroundColor = elementCustomization.buttonForeground(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
+        let knobOffset = CGSize(width: normalizedOffset.width * knobTravelRadius, height: normalizedOffset.height * knobTravelRadius)
+
+        return ZStack {
+            Circle()
+                .fill(fillColor)
+                .overlay(Circle().stroke(strokeColor, lineWidth: activeDirections.isEmpty ? 1 : 2))
+                .shadow(
+                    color: Color.black.opacity((activeDirections.isEmpty ? 0.05 : 0.16) * elementCustomization.shadowStrength),
+                    radius: (activeDirections.isEmpty ? 2 : 4) * max(0.25, elementCustomization.shadowStrength),
+                    y: (activeDirections.isEmpty ? 2 : 3) * elementCustomization.shadowStrength
+                )
+
+            Circle()
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                .frame(width: visualSide * 0.70, height: visualSide * 0.70)
+
+            directionLabels(foregroundColor: foregroundColor)
+
+            Circle()
+                .fill(foregroundColor.opacity(colorScheme == .dark ? 0.30 : 0.18))
+                .overlay(Circle().stroke(foregroundColor.opacity(0.34), lineWidth: 1))
+                .frame(width: knobSide, height: knobSide)
+                .offset(knobOffset)
+                .animation(.interactiveSpring(response: 0.16, dampingFraction: 0.82), value: normalizedOffset)
+
+            if customization.showsButtonLabels {
+                Text(label)
+                    .geistTypography(visualSide <= 88 ? .button12 : .button14)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .foregroundStyle(foregroundColor)
+                    .padding(.horizontal, 6)
+                    .offset(y: visualSide * 0.34)
+            }
+        }
+    }
+
+    private func directionLabels(foregroundColor: Color) -> some View {
+        ZStack {
+            ForEach(GamepadJoystickDirection.allCases) { direction in
+                Text(direction.shortLabel)
+                    .geistTypography(.label12)
+                    .foregroundStyle(foregroundColor.opacity(activeDirections.contains(direction) ? 1 : 0.42))
+                    .offset(labelOffset(for: direction))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func labelOffset(for direction: GamepadJoystickDirection) -> CGSize {
+        let radius = visualSide * 0.34
+        switch direction {
+        case .up: return CGSize(width: 0, height: -radius)
+        case .down: return CGSize(width: 0, height: radius)
+        case .left: return CGSize(width: -radius, height: 0)
+        case .right: return CGSize(width: radius, height: 0)
+        }
+    }
+
+    private func handleDirectionEdge(_ direction: GamepadJoystickDirection, pressed: Bool, pressIdentifier: UInt64) {
+        client.setButton(mapping[direction], pressed: pressed, pressIdentifier: pressIdentifier)
     }
 }
 

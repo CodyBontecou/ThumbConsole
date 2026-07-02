@@ -18,6 +18,23 @@ struct TouchCaptureView: UIViewRepresentable {
     }
 }
 
+struct JoystickCaptureView: UIViewRepresentable {
+    var onDirectionEdge: (_ direction: GamepadJoystickDirection, _ pressed: Bool, _ pressIdentifier: UInt64) -> Void
+    var onVectorChanged: (_ vector: CGVector, _ activeDirections: Set<GamepadJoystickDirection>) -> Void
+
+    func makeUIView(context: Context) -> JoystickCaptureUIView {
+        let view = JoystickCaptureUIView()
+        view.onDirectionEdge = onDirectionEdge
+        view.onVectorChanged = onVectorChanged
+        return view
+    }
+
+    func updateUIView(_ uiView: JoystickCaptureUIView, context: Context) {
+        uiView.onDirectionEdge = onDirectionEdge
+        uiView.onVectorChanged = onVectorChanged
+    }
+}
+
 struct TouchRoutingView: UIViewRepresentable {
     func makeUIView(context: Context) -> TouchRoutingUIView {
         TouchRoutingUIView()
@@ -46,24 +63,26 @@ final class TouchRoutingUIView: UIView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
-            TouchCaptureUIView.route(touch, in: window)
+            route(touch)
         }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
-            TouchCaptureUIView.route(touch, in: window)
+            route(touch)
         }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
+            JoystickCaptureUIView.deactivateGlobally(touch)
             TouchCaptureUIView.deactivateGlobally(touch)
         }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
+            JoystickCaptureUIView.deactivateGlobally(touch)
             TouchCaptureUIView.deactivateGlobally(touch)
         }
     }
@@ -72,8 +91,59 @@ final class TouchRoutingUIView: UIView {
         super.didMoveToWindow()
         if window == nil {
             TouchCaptureUIView.deactivateTouches(in: currentWindow)
+            JoystickCaptureUIView.deactivateTouches(in: currentWindow)
         }
         currentWindow = window
+    }
+
+    private func route(_ touch: UITouch) {
+        if JoystickCaptureUIView.isTracking(touch) {
+            JoystickCaptureUIView.route(touch, in: window)
+            return
+        }
+
+        if TouchCaptureUIView.isTracking(touch) {
+            if !TouchCaptureUIView.route(touch, in: window) {
+                JoystickCaptureUIView.route(touch, in: window)
+            }
+            return
+        }
+
+        if !JoystickCaptureUIView.route(touch, in: window) {
+            TouchCaptureUIView.route(touch, in: window)
+        }
+    }
+}
+
+fileprivate enum ControllerPressIdentifierAllocator {
+    private static var activePressIdentifiers: Set<UInt64> = []
+    private static var nextTouchIdentifier: UInt64 = 1
+
+    static func allocate() -> UInt64 {
+        var identifier = nextTouchIdentifier
+        while activePressIdentifiers.contains(identifier) {
+            identifier = nextIdentifier(after: identifier)
+        }
+        nextTouchIdentifier = nextIdentifier(after: identifier)
+        activePressIdentifiers.insert(identifier)
+        return identifier
+    }
+
+    static func release(_ identifier: UInt64) {
+        activePressIdentifiers.remove(identifier)
+    }
+
+    static func reset() {
+        activePressIdentifiers.removeAll()
+        nextTouchIdentifier = 1
+    }
+
+    private static func nextIdentifier(after identifier: UInt64) -> UInt64 {
+        if identifier >= ControllerWireCodec.maximumButtonPressIdentifier {
+            return 1
+        } else {
+            return identifier + 1
+        }
     }
 }
 
@@ -87,8 +157,6 @@ final class TouchCaptureUIView: UIView {
 
     private static let registeredViews = NSHashTable<TouchCaptureUIView>.weakObjects()
     private static var touchOwners: [ObjectIdentifier: WeakTouchOwner] = [:]
-    private static var activePressIdentifiers: Set<UInt64> = []
-    private static var nextTouchIdentifier: UInt64 = 1
     private static let activeTouchRetentionOutset: CGFloat = 18
 
     private var activeTouches: Set<UITouch> = []
@@ -150,10 +218,11 @@ final class TouchCaptureUIView: UIView {
 
     // Route through the shared registry so a touch that starts in empty controller
     // space or slides between adjacent buttons can still produce the intended edges.
-    fileprivate static func route(_ touch: UITouch, in sourceWindow: UIWindow?) {
+    @discardableResult
+    fileprivate static func route(_ touch: UITouch, in sourceWindow: UIWindow?) -> Bool {
         guard touch.phase != .ended, touch.phase != .cancelled else {
             deactivateGlobally(touch)
-            return
+            return false
         }
 
         let previousOwner = owner(for: touch)
@@ -162,14 +231,14 @@ final class TouchCaptureUIView: UIView {
                 previousOwner.deactivateTouch(touch, clearsOwner: false)
             }
             clearOwner(for: touch)
-            return
+            return false
         }
 
         let windowLocation = touch.location(in: sourceWindow)
         if let previousOwner,
            previousOwner.retainsActiveTouch(at: windowLocation, in: sourceWindow)
         {
-            return
+            return true
         }
 
         let targetOwner = targetView(at: windowLocation, in: sourceWindow)
@@ -180,16 +249,17 @@ final class TouchCaptureUIView: UIView {
 
         guard let targetOwner else {
             clearOwner(for: touch)
-            return
+            return false
         }
 
         targetOwner.activateTouch(touch)
         setOwner(targetOwner, for: touch)
+        return true
     }
 
     private func activateTouch(_ touch: UITouch) {
         guard activeTouches.insert(touch).inserted else { return }
-        let pressIdentifier = Self.allocatePressIdentifier()
+        let pressIdentifier = ControllerPressIdentifierAllocator.allocate()
         activeTouchIdentifiers[touch] = pressIdentifier
         onPressEdge?(true, true, pressIdentifier)
     }
@@ -201,7 +271,7 @@ final class TouchCaptureUIView: UIView {
             Self.clearOwner(for: touch)
         }
         if let pressIdentifier {
-            Self.releasePressIdentifier(pressIdentifier)
+            ControllerPressIdentifierAllocator.release(pressIdentifier)
             onPressEdge?(false, !activeTouches.isEmpty, pressIdentifier)
         }
     }
@@ -210,6 +280,10 @@ final class TouchCaptureUIView: UIView {
         if let owner = owner(for: touch) {
             owner.deactivateTouch(touch)
         }
+    }
+
+    fileprivate static func isTracking(_ touch: UITouch) -> Bool {
+        owner(for: touch) != nil
     }
 
     fileprivate static func deactivateTouches(in window: UIWindow?) {
@@ -233,7 +307,8 @@ final class TouchCaptureUIView: UIView {
             owner.deactivateAllTouches()
         }
         touchOwners.removeAll()
-        activePressIdentifiers.removeAll()
+        JoystickCaptureUIView.deactivateAllRegisteredJoysticks()
+        ControllerPressIdentifierAllocator.reset()
     }
 
     private func deactivateAllTouches() {
@@ -246,7 +321,7 @@ final class TouchCaptureUIView: UIView {
 
         for touch in touches {
             if let pressIdentifier = touchIdentifiers[touch] {
-                Self.releasePressIdentifier(pressIdentifier)
+                ControllerPressIdentifierAllocator.release(pressIdentifier)
                 onPressEdge?(false, false, pressIdentifier)
             }
         }
@@ -267,28 +342,6 @@ final class TouchCaptureUIView: UIView {
 
     private static func clearOwner(for touch: UITouch) {
         touchOwners[ObjectIdentifier(touch)] = nil
-    }
-
-    private static func allocatePressIdentifier() -> UInt64 {
-        var identifier = nextTouchIdentifier
-        while activePressIdentifiers.contains(identifier) {
-            identifier = nextIdentifier(after: identifier)
-        }
-        nextTouchIdentifier = nextIdentifier(after: identifier)
-        activePressIdentifiers.insert(identifier)
-        return identifier
-    }
-
-    private static func releasePressIdentifier(_ identifier: UInt64) {
-        activePressIdentifiers.remove(identifier)
-    }
-
-    private static func nextIdentifier(after identifier: UInt64) -> UInt64 {
-        if identifier >= ControllerWireCodec.maximumButtonPressIdentifier {
-            return 1
-        } else {
-            return identifier + 1
-        }
     }
 
     private func containsTouch(at windowLocation: CGPoint, in sourceWindow: UIWindow) -> Bool {
@@ -409,4 +462,284 @@ final class TouchCaptureUIView: UIView {
         return bestView
     }
 
+}
+
+final class JoystickCaptureUIView: UIView {
+    var onDirectionEdge: ((_ direction: GamepadJoystickDirection, _ pressed: Bool, _ pressIdentifier: UInt64) -> Void)?
+    var onVectorChanged: ((_ vector: CGVector, _ activeDirections: Set<GamepadJoystickDirection>) -> Void)?
+
+    private struct WeakJoystickOwner {
+        weak var view: JoystickCaptureUIView?
+    }
+
+    private static let registeredViews = NSHashTable<JoystickCaptureUIView>.weakObjects()
+    private static var touchOwners: [ObjectIdentifier: WeakJoystickOwner] = [:]
+    private static let directionThreshold: CGFloat = 0.34
+
+    private weak var activeTouch: UITouch?
+    private var activeDirections: Set<GamepadJoystickDirection> = []
+    private var activeDirectionIdentifiers: [GamepadJoystickDirection: UInt64] = [:]
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isMultipleTouchEnabled = true
+        isExclusiveTouch = false
+        backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        Self.registeredViews.remove(self)
+        deactivateAllDirections()
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        containsLocalPoint(point)
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for touch in touches {
+            Self.route(touch, in: window)
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for touch in touches {
+            Self.route(touch, in: window)
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for touch in touches {
+            Self.deactivateGlobally(touch)
+        }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for touch in touches {
+            Self.deactivateGlobally(touch)
+        }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            Self.registeredViews.remove(self)
+            deactivateTouch()
+        } else {
+            Self.registeredViews.add(self)
+        }
+    }
+
+    @discardableResult
+    fileprivate static func route(_ touch: UITouch, in sourceWindow: UIWindow?) -> Bool {
+        guard touch.phase != .ended, touch.phase != .cancelled else {
+            deactivateGlobally(touch)
+            return false
+        }
+
+        let previousOwner = owner(for: touch)
+        guard let sourceWindow else {
+            previousOwner?.deactivateTouch(clearsOwner: false)
+            clearOwner(for: touch)
+            return previousOwner != nil
+        }
+
+        if let previousOwner {
+            previousOwner.updateTouch(touch, in: sourceWindow)
+            return true
+        }
+
+        let windowLocation = touch.location(in: sourceWindow)
+        guard let targetOwner = targetView(at: windowLocation, in: sourceWindow) else {
+            return false
+        }
+
+        guard targetOwner.activeTouch == nil else {
+            return true
+        }
+
+        targetOwner.activateTouch(touch, in: sourceWindow)
+        setOwner(targetOwner, for: touch)
+        return true
+    }
+
+    fileprivate static func deactivateGlobally(_ touch: UITouch) {
+        if let owner = owner(for: touch) {
+            owner.deactivateTouch()
+            clearOwner(for: touch)
+        }
+    }
+
+    fileprivate static func isTracking(_ touch: UITouch) -> Bool {
+        owner(for: touch) != nil
+    }
+
+    fileprivate static func deactivateTouches(in window: UIWindow?) {
+        guard let window else { return }
+        var owners: [JoystickCaptureUIView] = []
+        for weakOwner in touchOwners.values {
+            guard let owner = weakOwner.view,
+                  owner.window === window
+            else { continue }
+            owners.append(owner)
+        }
+
+        for owner in owners {
+            owner.deactivateTouch()
+        }
+    }
+
+    fileprivate static func deactivateAllRegisteredJoysticks() {
+        for owner in registeredViews.allObjects {
+            owner.deactivateTouch()
+        }
+        touchOwners.removeAll()
+    }
+
+    private func activateTouch(_ touch: UITouch, in sourceWindow: UIWindow) {
+        activeTouch = touch
+        updateTouch(touch, in: sourceWindow)
+    }
+
+    private func updateTouch(_ touch: UITouch, in sourceWindow: UIWindow) {
+        guard activeTouch === touch else { return }
+        let windowLocation = touch.location(in: sourceWindow)
+        let localLocation = sourceWindow.convert(windowLocation, to: self)
+        let vector = normalizedVector(for: localLocation)
+        let nextDirections = directions(for: vector)
+        applyActiveDirections(nextDirections)
+        onVectorChanged?(CGVector(dx: vector.dx, dy: vector.dy), nextDirections)
+    }
+
+    private func deactivateTouch(clearsOwner: Bool = true) {
+        guard let touch = activeTouch else {
+            deactivateAllDirections()
+            return
+        }
+        activeTouch = nil
+        if clearsOwner {
+            Self.clearOwner(for: touch)
+        }
+        deactivateAllDirections()
+    }
+
+    private func deactivateAllDirections() {
+        guard !activeDirections.isEmpty || activeTouch != nil else {
+            onVectorChanged?(CGVector(dx: 0, dy: 0), [])
+            return
+        }
+
+        let directions = activeDirections
+        activeDirections.removeAll()
+        for direction in directions {
+            if let pressIdentifier = activeDirectionIdentifiers.removeValue(forKey: direction) {
+                ControllerPressIdentifierAllocator.release(pressIdentifier)
+                onDirectionEdge?(direction, false, pressIdentifier)
+            }
+        }
+        onVectorChanged?(CGVector(dx: 0, dy: 0), [])
+    }
+
+    private func applyActiveDirections(_ nextDirections: Set<GamepadJoystickDirection>) {
+        let endedDirections = activeDirections.subtracting(nextDirections)
+        let beganDirections = nextDirections.subtracting(activeDirections)
+
+        for direction in endedDirections {
+            if let pressIdentifier = activeDirectionIdentifiers.removeValue(forKey: direction) {
+                ControllerPressIdentifierAllocator.release(pressIdentifier)
+                onDirectionEdge?(direction, false, pressIdentifier)
+            }
+        }
+
+        for direction in beganDirections {
+            let pressIdentifier = ControllerPressIdentifierAllocator.allocate()
+            activeDirectionIdentifiers[direction] = pressIdentifier
+            onDirectionEdge?(direction, true, pressIdentifier)
+        }
+
+        activeDirections = nextDirections
+    }
+
+    private func normalizedVector(for point: CGPoint) -> CGVector {
+        let radiusX = max(bounds.width / 2, 1)
+        let radiusY = max(bounds.height / 2, 1)
+        let rawDX = (point.x - bounds.midX) / radiusX
+        let rawDY = (point.y - bounds.midY) / radiusY
+        let distance = hypot(rawDX, rawDY)
+        guard distance > 0.001 else {
+            return CGVector(dx: 0, dy: 0)
+        }
+
+        let clampedDistance = min(distance, 1)
+        return CGVector(
+            dx: (rawDX / distance) * clampedDistance,
+            dy: (rawDY / distance) * clampedDistance
+        )
+    }
+
+    private func directions(for vector: CGVector) -> Set<GamepadJoystickDirection> {
+        var directions = Set<GamepadJoystickDirection>()
+        if vector.dy <= -Self.directionThreshold { directions.insert(.up) }
+        if vector.dy >= Self.directionThreshold { directions.insert(.down) }
+        if vector.dx <= -Self.directionThreshold { directions.insert(.left) }
+        if vector.dx >= Self.directionThreshold { directions.insert(.right) }
+        return directions
+    }
+
+    private func containsTouch(at windowLocation: CGPoint, in sourceWindow: UIWindow) -> Bool {
+        guard canReceiveRoutedTouch(in: sourceWindow) else { return false }
+        let localLocation = sourceWindow.convert(windowLocation, to: self)
+        return containsLocalPoint(localLocation)
+    }
+
+    private func containsLocalPoint(_ point: CGPoint) -> Bool {
+        bounds.contains(point)
+    }
+
+    private func canReceiveRoutedTouch(in sourceWindow: UIWindow) -> Bool {
+        window === sourceWindow
+            && !isHidden
+            && alpha > 0.01
+            && isUserInteractionEnabled
+            && bounds.width > 0
+            && bounds.height > 0
+    }
+
+    private static func owner(for touch: UITouch) -> JoystickCaptureUIView? {
+        let key = ObjectIdentifier(touch)
+        guard let owner = touchOwners[key]?.view else {
+            touchOwners[key] = nil
+            return nil
+        }
+        return owner
+    }
+
+    private static func setOwner(_ owner: JoystickCaptureUIView, for touch: UITouch) {
+        touchOwners[ObjectIdentifier(touch)] = WeakJoystickOwner(view: owner)
+    }
+
+    private static func clearOwner(for touch: UITouch) {
+        touchOwners[ObjectIdentifier(touch)] = nil
+    }
+
+    private static func targetView(at windowLocation: CGPoint, in sourceWindow: UIWindow) -> JoystickCaptureUIView? {
+        var bestView: JoystickCaptureUIView?
+        var bestArea = CGFloat.greatestFiniteMagnitude
+        let enumerator = registeredViews.objectEnumerator()
+
+        while let view = enumerator.nextObject() as? JoystickCaptureUIView {
+            guard view.containsTouch(at: windowLocation, in: sourceWindow) else { continue }
+            let area = view.bounds.width * view.bounds.height
+            if area < bestArea {
+                bestArea = area
+                bestView = view
+            }
+        }
+
+        return bestView
+    }
 }

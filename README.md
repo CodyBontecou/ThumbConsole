@@ -8,6 +8,7 @@ It is no longer game-specific: use it for terminal workflows, tmux prefixes, Cur
 
 - `PocketPadMac` — macOS 14+ SwiftUI helper, WebSocket pairing/control server plus UDP realtime listener preferring port `8765` with automatic fallback if unavailable, CGEvent keyboard shortcut injection.
 - `PocketPadiOS` — iOS 17+ SwiftUI programmable keypad with multitouch controls.
+- `PocketPadCLI` — macOS command-line generator that installs/selects game-specific keypad profiles for the Mac helper.
 
 ## Build
 
@@ -15,6 +16,7 @@ It is no longer game-specific: use it for terminal workflows, tmux prefixes, Cur
 xcodegen generate
 xcodebuild -project PocketPad.xcodeproj -scheme PocketPadMac -destination 'platform=macOS' build
 xcodebuild -project PocketPad.xcodeproj -scheme PocketPadiOS -destination 'generic/platform=iOS Simulator' build
+xcodebuild -project PocketPad.xcodeproj -scheme PocketPadCLI -destination 'platform=macOS' build
 ```
 
 ## Use
@@ -25,9 +27,50 @@ xcodebuild -project PocketPad.xcodeproj -scheme PocketPadiOS -destination 'gener
 4. For manual pairing, enter the six-digit code shown in the Mac helper's secure pairing card.
 5. Focus the Mac app you want to control, such as Terminal, Cursor, or a browser.
 
+## Programmatic keypad generation
+
+Build the CLI target and generate a game-specific profile from just a game name:
+
+```bash
+xcodebuild -project PocketPad.xcodeproj -scheme PocketPadCLI -destination 'platform=macOS' build
+~/Library/Developer/Xcode/DerivedData/PocketPad-*/Build/Products/Debug/pocketpad generate "Hollow Knight"
+```
+
+`pocketpad generate` installs, selects, and marks the generated profile as default. If `PocketPadMac` is running, it reloads the profile store and pushes the selected keypad to the paired iPhone. Use `--dry-run` to preview without installing, `--json` to inspect the generated profile, and `pocketpad profile list` to view installed profiles.
+
+The first built-in template is Hollow Knight, including aliases like “Hollow Night” from speech recognition. Unknown games intentionally do **not** use a deterministic fallback. Instead, the calling agent should make its own best guess and pass a JSON spec:
+
+```bash
+pocketpad generate --spec /tmp/celeste-keypad.json
+# or
+pocketpad generate --stdin < /tmp/celeste-keypad.json
+```
+
+Example agent spec:
+
+```json
+{
+  "gameName": "Celeste",
+  "source": "Agent best guess from default keyboard controls",
+  "confidence": "low",
+  "controls": [
+    { "label": "Left", "key": "LeftArrow", "role": "movement" },
+    { "label": "Right", "key": "RightArrow", "role": "movement" },
+    { "label": "Up", "key": "UpArrow", "role": "movement" },
+    { "label": "Down", "key": "DownArrow", "role": "movement" },
+    { "label": "Jump", "key": "C", "role": "primary" },
+    { "label": "Dash", "key": "X", "role": "primary" },
+    { "label": "Climb", "key": "Z", "role": "secondary" },
+    { "label": "Pause", "key": "Escape", "role": "system" }
+  ]
+}
+```
+
 ## Keypad customization
 
 Customize keypad setups from the macOS helper's **Keypad** section. The iOS app receives the Mac's saved setups during pairing, can switch between them from the in-controller **Keypad setup** menu, and can mark the current setup as the default. The macOS helper can also mark any setup as default from the Keypad editor.
+
+Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder.
 
 ## Shortcut bindings
 
@@ -50,7 +93,7 @@ Use **Default** for a single button or **Reset All** to restore the starter keyp
 - Only sends key events on state transitions.
 - Button frames use a compact 14-byte binary payload. After pairing, iOS sends those frames over authenticated UDP for lower latency and mirrors them over WebSocket so packet loss still recovers through the reliable path.
 - iOS and macOS WebSocket connections set TCP `noDelay` to avoid Nagle delays on small input packets.
-- iOS uses a keypad-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, and skips per-input send callbacks, live status publishes, and haptics during use.
+- iOS uses a keypad-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons and joysticks, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, and skips per-input send callbacks, live status publishes, and haptics during use.
 - macOS handles received button events on a user-interactive realtime queue, accepts the first authenticated UDP stream for the paired iPhone, silently drops stale mirrored frames, recovers transport-proven missing-up and missing-down edges, and posts key events before UI/debug updates.
 - macOS throttles input debug/status publishing so UI work does not compete with key injection.
 - During physical tap testing, the Mac debug panel shows missing transport frames, recovered duplicate-down edges, and ignored duplicate/orphan input edges separately.
