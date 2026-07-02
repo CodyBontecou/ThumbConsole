@@ -1029,6 +1029,35 @@ struct GamepadResolvedControl: Identifiable, Equatable {
     var isJoystick: Bool {
         controlKind == .joystick
     }
+
+    var frame: CGRect {
+        CGRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    func updatingCenter(_ center: CGPoint, in canvasSize: CGSize) -> GamepadResolvedControl {
+        GamepadResolvedControl(
+            id: id,
+            mappedButton: mappedButton,
+            label: label,
+            normalizedCenter: CGPoint(
+                x: center.x / max(canvasSize.width, 1),
+                y: center.y / max(canvasSize.height, 1)
+            ),
+            center: center,
+            size: size,
+            shape: shape,
+            layoutCustomization: layoutCustomization,
+            isCustom: isCustom,
+            isLocationLocked: isLocationLocked,
+            controlKind: controlKind,
+            joystickMapping: joystickMapping
+        )
+    }
 }
 
 extension GamepadCustomization {
@@ -1045,6 +1074,8 @@ extension GamepadCustomization {
 }
 
 private enum GamepadLayoutResolver {
+    private static let minimumControlSpacing: CGFloat = 4
+
     static func resolvedControls(
         for customization: GamepadCustomization,
         in canvasSize: CGSize,
@@ -1132,7 +1163,7 @@ private enum GamepadLayoutResolver {
             )
         }
 
-        return builtinControls + customControls
+        return controlsByAvoidingOverlaps(builtinControls + customControls, in: canvasSize)
     }
 
     static func defaultShape(for button: GameButton) -> GamepadButtonShapeStyle {
@@ -1149,6 +1180,160 @@ private enum GamepadLayoutResolver {
             in: canvasSize
         )
         return CGPoint(x: center.x / canvasSize.width, y: center.y / canvasSize.height)
+    }
+
+    static func nonOverlappingFrame(
+        for preferredFrame: CGRect,
+        avoiding existingFrames: [CGRect],
+        in canvasSize: CGSize,
+        minimumSpacing: CGFloat = minimumControlSpacing
+    ) -> CGRect? {
+        let clampedPreferred = clampedFrame(preferredFrame, in: canvasSize)
+        guard frameOverlapsAny(clampedPreferred, avoiding: existingFrames, minimumSpacing: minimumSpacing) else {
+            return clampedPreferred
+        }
+
+        let xCandidates = candidateOrigins(
+            preferred: clampedPreferred.minX,
+            length: clampedPreferred.width,
+            canvasLength: canvasSize.width,
+            existingFrames: existingFrames,
+            axis: .horizontal,
+            minimumSpacing: minimumSpacing
+        )
+        let yCandidates = candidateOrigins(
+            preferred: clampedPreferred.minY,
+            length: clampedPreferred.height,
+            canvasLength: canvasSize.height,
+            existingFrames: existingFrames,
+            axis: .vertical,
+            minimumSpacing: minimumSpacing
+        )
+
+        var bestFrame: CGRect?
+        var bestScore = CGFloat.greatestFiniteMagnitude
+        let preferredCenter = CGPoint(x: clampedPreferred.midX, y: clampedPreferred.midY)
+
+        for x in xCandidates {
+            for y in yCandidates {
+                let candidate = CGRect(
+                    x: x,
+                    y: y,
+                    width: clampedPreferred.width,
+                    height: clampedPreferred.height
+                )
+                guard !frameOverlapsAny(candidate, avoiding: existingFrames, minimumSpacing: minimumSpacing) else { continue }
+
+                let dx = candidate.midX - preferredCenter.x
+                let dy = candidate.midY - preferredCenter.y
+                let score = dx * dx + dy * dy
+                if score < bestScore {
+                    bestScore = score
+                    bestFrame = candidate
+                }
+            }
+        }
+
+        return bestFrame
+    }
+
+    static func frameOverlapsAny(
+        _ frame: CGRect,
+        avoiding existingFrames: [CGRect],
+        minimumSpacing: CGFloat = minimumControlSpacing
+    ) -> Bool {
+        existingFrames.contains { existingFrame in
+            framesOverlap(frame, existingFrame, minimumSpacing: minimumSpacing)
+        }
+    }
+
+    private static func controlsByAvoidingOverlaps(_ controls: [GamepadResolvedControl], in canvasSize: CGSize) -> [GamepadResolvedControl] {
+        var adjustedControls: [GamepadResolvedControl] = []
+        var occupiedFrames: [CGRect] = []
+
+        for control in controls {
+            let adjustedFrame = nonOverlappingFrame(
+                for: control.frame,
+                avoiding: occupiedFrames,
+                in: canvasSize
+            ) ?? clampedFrame(control.frame, in: canvasSize)
+            let adjustedCenter = CGPoint(x: adjustedFrame.midX, y: adjustedFrame.midY)
+            adjustedControls.append(control.updatingCenter(adjustedCenter, in: canvasSize))
+            occupiedFrames.append(adjustedFrame)
+        }
+
+        return adjustedControls
+    }
+
+    private enum CandidateAxis {
+        case horizontal
+        case vertical
+    }
+
+    private static func candidateOrigins(
+        preferred: CGFloat,
+        length: CGFloat,
+        canvasLength: CGFloat,
+        existingFrames: [CGRect],
+        axis: CandidateAxis,
+        minimumSpacing: CGFloat
+    ) -> [CGFloat] {
+        var rawValues = [preferred]
+
+        if length >= canvasLength {
+            rawValues.append((canvasLength - length) / 2)
+        } else {
+            rawValues.append(0)
+            rawValues.append(canvasLength - length)
+        }
+
+        for frame in existingFrames {
+            let minValue: CGFloat
+            let maxValue: CGFloat
+            switch axis {
+            case .horizontal:
+                minValue = frame.minX
+                maxValue = frame.maxX
+            case .vertical:
+                minValue = frame.minY
+                maxValue = frame.maxY
+            }
+
+            rawValues.append(minValue - minimumSpacing - length)
+            rawValues.append(maxValue + minimumSpacing)
+            rawValues.append(minValue)
+            rawValues.append(maxValue - length)
+        }
+
+        var uniqueValues: [CGFloat] = []
+        for rawValue in rawValues {
+            let value = clampedOrigin(rawValue, length: length, canvasLength: canvasLength)
+            guard !uniqueValues.contains(where: { abs($0 - value) < 0.5 }) else { continue }
+            uniqueValues.append(value)
+        }
+
+        return uniqueValues
+    }
+
+    private static func framesOverlap(_ lhs: CGRect, _ rhs: CGRect, minimumSpacing: CGFloat) -> Bool {
+        lhs.minX < rhs.maxX + minimumSpacing
+            && lhs.maxX + minimumSpacing > rhs.minX
+            && lhs.minY < rhs.maxY + minimumSpacing
+            && lhs.maxY + minimumSpacing > rhs.minY
+    }
+
+    private static func clampedFrame(_ frame: CGRect, in canvasSize: CGSize) -> CGRect {
+        CGRect(
+            x: clampedOrigin(frame.minX, length: frame.width, canvasLength: canvasSize.width),
+            y: clampedOrigin(frame.minY, length: frame.height, canvasLength: canvasSize.height),
+            width: frame.width,
+            height: frame.height
+        )
+    }
+
+    private static func clampedOrigin(_ origin: CGFloat, length: CGFloat, canvasLength: CGFloat) -> CGFloat {
+        guard length < canvasLength else { return (canvasLength - length) / 2 }
+        return GamepadButtonCustomization.clamp(origin, lower: 0, upper: max(0, canvasLength - length))
     }
 
     private static func baseSize(for button: GameButton, controlScale: GamepadControlScale, in canvasSize: CGSize) -> CGSize {
@@ -3751,11 +3936,17 @@ struct GamepadCustomizationEditor: View {
         let clampedHeight = Self.clamp(frame.height, lower: minHeight, upper: maxHeight)
         let clampedX = Self.clamp(frame.minX, lower: 0, upper: max(0, currentCanvasLayoutSize.width - clampedWidth))
         let clampedY = Self.clamp(frame.minY, lower: 0, upper: max(0, currentCanvasLayoutSize.height - clampedHeight))
-        let center = CGPoint(x: clampedX + clampedWidth / 2, y: clampedY + clampedHeight / 2)
+        let preferredFrame = CGRect(x: clampedX, y: clampedY, width: clampedWidth, height: clampedHeight)
+        guard let adjustedFrame = GamepadLayoutResolver.nonOverlappingFrame(
+            for: preferredFrame,
+            avoiding: customization.resolvedControls(in: currentCanvasLayoutSize).compactMap { $0.id == control.id ? nil : $0.frame },
+            in: currentCanvasLayoutSize
+        ) else { return }
+        let center = CGPoint(x: adjustedFrame.midX, y: adjustedFrame.midY)
 
         updateLayoutCustomization(for: control.id) { buttonCustomization in
-            buttonCustomization.widthScale = clampedWidth / baseWidth
-            buttonCustomization.heightScale = clampedHeight / baseHeight
+            buttonCustomization.widthScale = adjustedFrame.width / baseWidth
+            buttonCustomization.heightScale = adjustedFrame.height / baseHeight
             buttonCustomization.centerX = center.x / max(currentCanvasLayoutSize.width, 1)
             buttonCustomization.centerY = center.y / max(currentCanvasLayoutSize.height, 1)
         }
@@ -3783,18 +3974,40 @@ struct GamepadCustomizationEditor: View {
                 }
             },
             set: { newValue in
-                switch identity {
-                case .builtin(let button):
-                    update {
-                        var buttonCustomization = $0.buttonCustomization(for: button)
-                        buttonCustomization[keyPath: keyPath] = CGFloat(newValue)
-                        $0.setButtonCustomization(buttonCustomization, for: button)
-                    }
-                case .custom(let id):
-                    updateCustomButton(id: id) { $0.layout[keyPath: keyPath] = CGFloat(newValue) }
-                }
+                setScaleValue(CGFloat(newValue), for: identity, keyPath: keyPath)
             }
         )
+    }
+
+    private func setScaleValue(
+        _ value: CGFloat,
+        for identity: GamepadControlIdentity,
+        keyPath: WritableKeyPath<GamepadButtonCustomization, CGFloat>
+    ) {
+        guard var frame = selectedControlFrame(for: identity),
+              let control = resolvedControl(for: identity)
+        else { return }
+
+        let layout = selectedLayoutCustomization(for: identity)
+        let baseWidth = max(1, control.size.width / max(layout.widthScale, 0.001))
+        let baseHeight = max(1, control.size.height / max(layout.heightScale, 0.001))
+        let clampedScale = GamepadButtonCustomization.clamp(
+            value,
+            lower: GamepadButtonCustomization.minimumScale,
+            upper: GamepadButtonCustomization.maximumScale
+        )
+
+        if keyPath == \GamepadButtonCustomization.widthScale {
+            let width = baseWidth * clampedScale
+            frame.origin.x = control.center.x - width / 2
+            frame.size.width = width
+        } else {
+            let height = baseHeight * clampedScale
+            frame.origin.y = control.center.y - height / 2
+            frame.size.height = height
+        }
+
+        setControlFrame(frame, for: control)
     }
 
     private func shapeValue(for identity: GamepadControlIdentity) -> GamepadButtonShapeStyle {
@@ -3948,7 +4161,24 @@ struct GamepadCustomizationEditor: View {
         let id = UUID()
         var next = customization
         next.addJoystick(id: id)
+        placeCustomControl(id: id, in: &next)
         applyCustomization(next, selecting: .custom(id), undoActionName: "Add Joystick")
+    }
+
+    private func placeCustomControl(id: UUID, in next: inout GamepadCustomization) {
+        let identity = GamepadControlIdentity.custom(id)
+        let controls = next.resolvedControls(in: currentCanvasLayoutSize)
+        guard let control = controls.first(where: { $0.id == identity }),
+              let adjustedFrame = GamepadLayoutResolver.nonOverlappingFrame(
+                for: control.frame,
+                avoiding: controls.compactMap { $0.id == identity ? nil : $0.frame },
+                in: currentCanvasLayoutSize
+              ),
+              let index = next.customButtons.firstIndex(where: { $0.id == id })
+        else { return }
+
+        next.customButtons[index].layout.centerX = adjustedFrame.midX / max(currentCanvasLayoutSize.width, 1)
+        next.customButtons[index].layout.centerY = adjustedFrame.midY / max(currentCanvasLayoutSize.height, 1)
     }
 
     @discardableResult
@@ -4540,7 +4770,12 @@ private struct GamepadLayoutDesigner: View {
 
     private func createCustomButton(from rect: CGRect, tool: GamepadCanvasTool, canvasSize: CGSize) {
         guard let shape = tool.shapeStyle,
-              customization.customButtons.count < GamepadCustomization.maximumCustomButtons
+              customization.customButtons.count < GamepadCustomization.maximumCustomButtons,
+              let placementRect = GamepadLayoutResolver.nonOverlappingFrame(
+                for: rect,
+                avoiding: customization.resolvedControls(in: canvasSize).map(\.frame),
+                in: canvasSize
+              )
         else {
             activeTool = .select
             return
@@ -4555,10 +4790,10 @@ private struct GamepadLayoutDesigner: View {
         let baseSize = baseControl?.size ?? Self.defaultDrawnButtonSize
         next.customButtons[index].label = tool.displayName
         next.customButtons[index].layout = GamepadButtonCustomization(
-            centerX: rect.midX / max(canvasSize.width, 1),
-            centerY: rect.midY / max(canvasSize.height, 1),
-            widthScale: rect.width / max(baseSize.width, 1),
-            heightScale: rect.height / max(baseSize.height, 1),
+            centerX: placementRect.midX / max(canvasSize.width, 1),
+            centerY: placementRect.midY / max(canvasSize.height, 1),
+            widthScale: placementRect.width / max(baseSize.width, 1),
+            heightScale: placementRect.height / max(baseSize.height, 1),
             shape: shape
         )
 
@@ -4654,9 +4889,35 @@ private struct GamepadLayoutDesigner: View {
 
     private func updatePosition(_ point: CGPoint, control: GamepadResolvedControl, canvasSize: CGSize) {
         let normalizedPosition = GamepadLayoutResolver.normalizedPosition(for: point, visualSize: control.size, in: canvasSize)
+        let clampedCenter = CGPoint(
+            x: normalizedPosition.x * canvasSize.width,
+            y: normalizedPosition.y * canvasSize.height
+        )
+        let preferredFrame = CGRect(
+            x: clampedCenter.x - control.size.width / 2,
+            y: clampedCenter.y - control.size.height / 2,
+            width: control.size.width,
+            height: control.size.height
+        )
+        let adjustedFrame = nonOverlappingFrame(for: preferredFrame, excluding: control.id, canvasSize: canvasSize) ?? control.frame
+        let adjustedPosition = CGPoint(x: adjustedFrame.midX / max(canvasSize.width, 1), y: adjustedFrame.midY / max(canvasSize.height, 1))
         var next = customization
-        next.setPosition(normalizedPosition, for: control.id)
+        next.setPosition(adjustedPosition, for: control.id)
         customization = next.normalized
+    }
+
+    private func existingControlFrames(excluding identity: GamepadControlIdentity, canvasSize: CGSize) -> [CGRect] {
+        customization.resolvedControls(in: canvasSize).compactMap { control in
+            control.id == identity ? nil : control.frame
+        }
+    }
+
+    private func nonOverlappingFrame(for preferredFrame: CGRect, excluding identity: GamepadControlIdentity, canvasSize: CGSize) -> CGRect? {
+        GamepadLayoutResolver.nonOverlappingFrame(
+            for: preferredFrame,
+            avoiding: existingControlFrames(excluding: identity, canvasSize: canvasSize),
+            in: canvasSize
+        )
     }
 
     private func updateResize(
@@ -4696,13 +4957,16 @@ private struct GamepadLayoutDesigner: View {
             width: activeResize.startSize.width,
             height: activeResize.startSize.height
         )
-        let resizedRect = resizedFrame(
+        let minSize = CGSize(width: minWidth, height: minHeight)
+        let maxSize = CGSize(width: maxWidth, height: maxHeight)
+        let resizedRect = resizedFrameAvoidingOverlaps(
             from: startRect,
             corner: corner,
             translation: translation,
-            minSize: CGSize(width: minWidth, height: minHeight),
-            maxSize: CGSize(width: maxWidth, height: maxHeight),
-            canvasSize: canvasSize
+            minSize: minSize,
+            maxSize: maxSize,
+            canvasSize: canvasSize,
+            avoiding: existingControlFrames(excluding: control.id, canvasSize: canvasSize)
         )
         let newSize: CGSize
         if activeResize.shape == .circle {
@@ -4770,6 +5034,57 @@ private struct GamepadLayoutDesigner: View {
         }
 
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    private func resizedFrameAvoidingOverlaps(
+        from rect: CGRect,
+        corner: GamepadResizeHandleCorner,
+        translation: CGSize,
+        minSize: CGSize,
+        maxSize: CGSize,
+        canvasSize: CGSize,
+        avoiding existingFrames: [CGRect]
+    ) -> CGRect {
+        let desiredFrame = resizedFrame(
+            from: rect,
+            corner: corner,
+            translation: translation,
+            minSize: minSize,
+            maxSize: maxSize,
+            canvasSize: canvasSize
+        )
+        guard GamepadLayoutResolver.frameOverlapsAny(desiredFrame, avoiding: existingFrames) else {
+            return desiredFrame
+        }
+
+        var lowerBound: CGFloat = 0
+        var upperBound: CGFloat = 1
+        var bestFrame = rect
+
+        for _ in 0..<12 {
+            let fraction = (lowerBound + upperBound) / 2
+            let candidateTranslation = CGSize(
+                width: translation.width * fraction,
+                height: translation.height * fraction
+            )
+            let candidateFrame = resizedFrame(
+                from: rect,
+                corner: corner,
+                translation: candidateTranslation,
+                minSize: minSize,
+                maxSize: maxSize,
+                canvasSize: canvasSize
+            )
+
+            if GamepadLayoutResolver.frameOverlapsAny(candidateFrame, avoiding: existingFrames) {
+                upperBound = fraction
+            } else {
+                bestFrame = candidateFrame
+                lowerBound = fraction
+            }
+        }
+
+        return bestFrame
     }
 
     private func updateRadius(_ value: DragGesture.Value, control: GamepadResolvedControl, displayScale: CGFloat) {
