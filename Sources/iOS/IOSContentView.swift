@@ -478,33 +478,32 @@ private struct ControllerPadView: View {
     }
 
     private func landscapeControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
-        let availableHeight = max(220, size.height - 58)
-        let dPadButton = min(82, max(64, availableHeight * 0.24), size.width * 0.095)
-        let actionButton = min(86, max(64, availableHeight * 0.25), size.width * 0.10)
-        let utilityHeight = min(64, max(52, availableHeight * 0.18))
-        let dPadHitButton = ControllerLayoutMetrics.hitSize(for: CGSize(width: dPadButton, height: dPadButton))
-        let actionHitButton = ControllerLayoutMetrics.hitSize(for: CGSize(width: actionButton, height: actionButton))
+        let metrics = LandscapeControllerMetrics(size: size, safeAreaInsets: safeAreaInsets)
 
-        return HStack(alignment: .center, spacing: max(Geist.Spacing.s4, size.width * 0.035)) {
-            DPadView(buttonSize: CGSize(width: dPadButton, height: dPadButton))
-                .frame(width: dPadHitButton.width * 3, height: dPadHitButton.height * 3)
+        return HStack(alignment: .center, spacing: metrics.controlSpacing) {
+            DPadView(buttonSize: metrics.dPadButtonSize)
+                .frame(width: metrics.dPadHitSize.width * 3, height: metrics.dPadHitSize.height * 3)
+                .fixedSize()
 
-            Spacer(minLength: Geist.Spacing.s2)
+            Spacer(minLength: metrics.spacerMinLength)
 
-            HStack(spacing: Geist.Spacing.s4) {
-                GamepadButton(button: .map, title: "Map", size: CGSize(width: 92, height: utilityHeight), shape: .capsule)
-                GamepadButton(button: .pause, title: "Pause", size: CGSize(width: 104, height: utilityHeight), shape: .capsule)
+            HStack(spacing: metrics.utilitySpacing) {
+                GamepadButton(button: .map, title: "Map", size: metrics.mapButtonSize, shape: .capsule)
+                GamepadButton(button: .pause, title: "Pause", size: metrics.pauseButtonSize, shape: .capsule)
             }
+            .frame(width: metrics.utilityHitWidth, height: metrics.utilityHitHeight)
+            .fixedSize()
             .layoutPriority(1)
 
-            Spacer(minLength: Geist.Spacing.s2)
+            Spacer(minLength: metrics.spacerMinLength)
 
-            ActionButtonsView(buttonSize: CGSize(width: actionButton, height: actionButton))
-                .frame(width: actionHitButton.width * 2, height: actionHitButton.height * 2)
+            ActionButtonsView(buttonSize: metrics.actionButtonSize)
+                .frame(width: metrics.actionHitSize.width * 2, height: metrics.actionHitSize.height * 2)
+                .fixedSize()
         }
-        .padding(.leading, max(Geist.Spacing.s6, max(size.width * 0.045, safeAreaInsets.leading + Geist.Spacing.s3)))
-        .padding(.trailing, max(Geist.Spacing.s6, max(size.width * 0.045, safeAreaInsets.trailing + Geist.Spacing.s3)))
-        .padding(.bottom, max(Geist.Spacing.s6, safeAreaInsets.bottom + Geist.Spacing.s2))
+        .padding(.leading, metrics.leadingPadding)
+        .padding(.trailing, metrics.trailingPadding)
+        .padding(.bottom, metrics.bottomPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             TouchRoutingView()
@@ -563,6 +562,87 @@ private struct ControllerPadView: View {
         .padding(Geist.Spacing.s2)
         .background(Geist.color(.background100, scheme: colorScheme), in: Capsule())
         .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
+    }
+}
+
+private struct LandscapeControllerMetrics {
+    let dPadButtonSize: CGSize
+    let actionButtonSize: CGSize
+    let mapButtonSize: CGSize
+    let pauseButtonSize: CGSize
+    let utilitySpacing: CGFloat
+    let controlSpacing: CGFloat
+    let spacerMinLength: CGFloat
+    let leadingPadding: CGFloat
+    let trailingPadding: CGFloat
+    let bottomPadding: CGFloat
+
+    var dPadHitSize: CGSize {
+        ControllerLayoutMetrics.hitSize(for: dPadButtonSize)
+    }
+
+    var actionHitSize: CGSize {
+        ControllerLayoutMetrics.hitSize(for: actionButtonSize)
+    }
+
+    var utilityHitWidth: CGFloat {
+        ControllerLayoutMetrics.hitSize(for: mapButtonSize).width
+        + ControllerLayoutMetrics.hitSize(for: pauseButtonSize).width
+        + utilitySpacing
+    }
+
+    var utilityHitHeight: CGFloat {
+        max(
+            ControllerLayoutMetrics.hitSize(for: mapButtonSize).height,
+            ControllerLayoutMetrics.hitSize(for: pauseButtonSize).height
+        )
+    }
+
+    init(size: CGSize, safeAreaInsets: EdgeInsets) {
+        let availableHeight = max(220, size.height - 58)
+        let sideSafePadding = Geist.Spacing.s2
+        leadingPadding = max(Geist.Spacing.s3, safeAreaInsets.leading + sideSafePadding)
+        trailingPadding = max(Geist.Spacing.s3, safeAreaInsets.trailing + sideSafePadding)
+        bottomPadding = max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2)
+
+        let contentWidth = max(320, size.width - leadingPadding - trailingPadding)
+        utilitySpacing = contentWidth < 780 ? Geist.Spacing.s2 : Geist.Spacing.s4
+        controlSpacing = contentWidth < 780 ? Geist.Spacing.s3 : max(Geist.Spacing.s4, min(Geist.Spacing.s6, contentWidth * 0.02))
+        spacerMinLength = Geist.Spacing.s2
+
+        let baseDPadButton = min(82, max(64, availableHeight * 0.24), contentWidth * 0.12)
+        let baseActionButton = min(86, max(64, availableHeight * 0.25), contentWidth * 0.13)
+        let baseMapWidth = min(92, max(74, contentWidth * 0.13))
+        let basePauseWidth = min(104, max(84, contentWidth * 0.145))
+        let baseUtilityHeight = min(64, max(52, availableHeight * 0.18))
+
+        // Landscape iPhones have a lot less horizontal room after the safe-area
+        // notches are removed. Scale the visual controls as one group so the full
+        // two-column action cluster stays inside the playable area instead of being
+        // squeezed off the trailing edge by SwiftUI's HStack compression.
+        let hitOutsetWidth = ControllerLayoutMetrics.buttonHitOutset * 2
+        let hitOutsetBudget = hitOutsetWidth * 7 // D-pad columns + action columns + Map/Pause
+        let layoutOverhead = hitOutsetBudget
+            + utilitySpacing
+            + controlSpacing * 4
+            + spacerMinLength * 2
+        let scalableWidth = baseDPadButton * 3
+            + baseActionButton * 2
+            + baseMapWidth
+            + basePauseWidth
+        let fittingScale = (contentWidth - layoutOverhead) / max(scalableWidth, 1)
+        let scale = min(1, max(0.5, fittingScale))
+
+        let dPadButton = max(50, floor(baseDPadButton * scale))
+        let actionButton = max(52, floor(baseActionButton * scale))
+        let mapWidth = max(58, floor(baseMapWidth * scale))
+        let pauseWidth = max(68, floor(basePauseWidth * scale))
+        let utilityHeight = max(46, floor(baseUtilityHeight * scale))
+
+        dPadButtonSize = CGSize(width: dPadButton, height: dPadButton)
+        actionButtonSize = CGSize(width: actionButton, height: actionButton)
+        mapButtonSize = CGSize(width: mapWidth, height: utilityHeight)
+        pauseButtonSize = CGSize(width: pauseWidth, height: utilityHeight)
     }
 }
 
