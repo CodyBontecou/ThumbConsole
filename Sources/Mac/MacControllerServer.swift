@@ -46,6 +46,7 @@ final class MacControllerServer: ObservableObject {
     private static let inputEventLoggingEnabled = false
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
+    private static let buttonReorderDelayNanoseconds: UInt64 = 8_000_000
     private var listener: NWListener?
     private var datagramListener: NWListener?
     private var datagramListenerPort: UInt16?
@@ -74,9 +75,19 @@ final class MacControllerServer: ObservableObject {
     private var lastAccessibilityRefresh = Date.distantPast
     private var activeBindings: [GameButton: MacKeyBinding] = [:]
     private var heldBindingCounts: [MacKeyBinding: Int] = [:]
+    private struct PendingButtonMessage {
+        let message: ControllerMessage
+        let button: GameButton
+        let state: ButtonPressState
+        let source: String
+    }
+
     private var activePressIdentifiersByButton: [GameButton: Set<UInt64>] = [:]
     private var anonymousPressCountsByButton: [GameButton: Int] = [:]
     private var buttonSequenceTracker = ButtonSequenceTracker()
+    private var pendingButtonMessagesBySequence: [UInt64: PendingButtonMessage] = [:]
+    private var buttonReorderFlushWorkItem: DispatchWorkItem?
+    private var buttonReorderFlushGeneration = 0
     private var ignoredButtonEdgeCount = 0
     private var recoveredButtonEdgeCount = 0
 
@@ -256,6 +267,10 @@ final class MacControllerServer: ObservableObject {
         return binding.displayName
     }
 
+    func recordedShortcutLabel(for button: GameButton) -> String? {
+        keyBindings[button]?.displayName
+    }
+
     func isDefaultBinding(for button: GameButton) -> Bool {
         keyBindings[button] == DefaultKeypadKeyMap.defaultBinding(for: button)
     }
@@ -265,6 +280,7 @@ final class MacControllerServer: ObservableObject {
         syncOnNetworkQueue {
             releaseIfPressedOnNetworkQueue(button)
             realtimeKeyBindings[button] = binding
+            sendGamepadProfileStateOnNetworkQueue()
         }
         saveKeyBindings()
         lastReceivedEvent = "Mapped \(button.displayName) to \(binding.displayName)"
@@ -285,6 +301,7 @@ final class MacControllerServer: ObservableObject {
         syncOnNetworkQueue {
             releaseAllOnNetworkQueue(reason: "Reset all key bindings")
             realtimeKeyBindings = DefaultKeypadKeyMap.defaultBindings
+            sendGamepadProfileStateOnNetworkQueue()
         }
         saveKeyBindings()
         lastReceivedEvent = "Reset all key bindings"
@@ -408,6 +425,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func releaseAllOnNetworkQueue(reason: String) {
+        resetPendingButtonMessagesOnNetworkQueue()
         resetPhysicalInputTrackingOnNetworkQueue()
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
 
@@ -803,13 +821,16 @@ final class MacControllerServer: ObservableObject {
         pendingPairingConnection = nil
         pairedConnection = connection
         realtimeToken = newRealtimeToken
+        let clientGamepadCustomization = gamepadCustomizationForClient(realtimeGamepadCustomization)
+        let clientGamepadProfiles = gamepadProfilesForClient(realtimeGamepadProfiles)
+
         send(
             .init(
                 type: .pairingAccepted,
                 message: "Pairing complete",
                 realtimeToken: newRealtimeToken,
-                gamepadCustomization: realtimeGamepadCustomization,
-                gamepadProfiles: realtimeGamepadProfiles,
+                gamepadCustomization: clientGamepadCustomization,
+                gamepadProfiles: clientGamepadProfiles,
                 gamepadProfileID: realtimeActiveGamepadProfileID,
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID
             ),
@@ -925,6 +946,30 @@ final class MacControllerServer: ObservableObject {
             return
         }
 
+        if let sequenceNumber = ControllerWireCodec.buttonSequenceNumber(from: message),
+           shouldTemporarilyBufferButtonMessage(sequenceNumber: sequenceNumber)
+        {
+            bufferButtonMessage(
+                message,
+                button: button,
+                state: state,
+                source: source,
+                sequenceNumber: sequenceNumber
+            )
+            return
+        }
+
+        processButtonMessageOnNetworkQueue(message, button: button, state: state, source: source)
+        drainPendingButtonMessagesOnNetworkQueue()
+        cancelButtonReorderFlushIfIdle()
+    }
+
+    private func processButtonMessageOnNetworkQueue(
+        _ message: ControllerMessage,
+        button: GameButton,
+        state: ButtonPressState,
+        source: String
+    ) {
         let sequenceInspection = inspectButtonSequence(message, button: button, state: state)
         handleRealtimeInputOnNetworkQueue(
             button,
@@ -933,6 +978,106 @@ final class MacControllerServer: ObservableObject {
             sequenceInspection: sequenceInspection,
             pressIdentifier: ControllerWireCodec.buttonPressIdentifier(from: message)
         )
+    }
+
+    private func shouldTemporarilyBufferButtonMessage(sequenceNumber: UInt64) -> Bool {
+        guard let expectedSequence = buttonSequenceTracker.nextExpectedSequenceNumber else {
+            return sequenceNumber > 1 && !buttonSequenceTracker.isAcceptingNextSequenceAsBaseline
+        }
+
+        return sequenceNumber > expectedSequence
+    }
+
+    private func bufferButtonMessage(
+        _ message: ControllerMessage,
+        button: GameButton,
+        state: ButtonPressState,
+        source: String,
+        sequenceNumber: UInt64
+    ) {
+        if pendingButtonMessagesBySequence[sequenceNumber] == nil {
+            pendingButtonMessagesBySequence[sequenceNumber] = PendingButtonMessage(
+                message: message,
+                button: button,
+                state: state,
+                source: source
+            )
+        }
+        scheduleButtonReorderFlushIfNeeded()
+    }
+
+    private func scheduleButtonReorderFlushIfNeeded() {
+        guard buttonReorderFlushWorkItem == nil else { return }
+
+        buttonReorderFlushGeneration += 1
+        let generation = buttonReorderFlushGeneration
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.flushPendingButtonMessagesOnNetworkQueue(generation: generation)
+        }
+        buttonReorderFlushWorkItem = workItem
+        networkQueue.asyncAfter(
+            deadline: .now() + .nanoseconds(Int(Self.buttonReorderDelayNanoseconds)),
+            execute: workItem
+        )
+    }
+
+    private func flushPendingButtonMessagesOnNetworkQueue(generation: Int) {
+        guard generation == buttonReorderFlushGeneration else { return }
+        buttonReorderFlushWorkItem = nil
+        drainPendingButtonMessagesOnNetworkQueue(flushOldestGap: true)
+        if !pendingButtonMessagesBySequence.isEmpty {
+            scheduleButtonReorderFlushIfNeeded()
+        }
+    }
+
+    private func drainPendingButtonMessagesOnNetworkQueue(flushOldestGap: Bool = false) {
+        var didFlushGap = false
+
+        while true {
+            if let expectedSequence = buttonSequenceTracker.nextExpectedSequenceNumber,
+               let pending = pendingButtonMessagesBySequence.removeValue(forKey: expectedSequence)
+            {
+                processButtonMessageOnNetworkQueue(
+                    pending.message,
+                    button: pending.button,
+                    state: pending.state,
+                    source: pending.source
+                )
+                continue
+            }
+
+            guard flushOldestGap, !didFlushGap,
+                  let nextSequence = pendingButtonMessagesBySequence.keys.min(),
+                  let pending = pendingButtonMessagesBySequence.removeValue(forKey: nextSequence)
+            else {
+                return
+            }
+
+            didFlushGap = true
+            processButtonMessageOnNetworkQueue(
+                pending.message,
+                button: pending.button,
+                state: pending.state,
+                source: pending.source
+            )
+        }
+    }
+
+    private func cancelButtonReorderFlushIfIdle() {
+        guard pendingButtonMessagesBySequence.isEmpty,
+              buttonReorderFlushWorkItem != nil
+        else { return }
+
+        buttonReorderFlushGeneration += 1
+        buttonReorderFlushWorkItem?.cancel()
+        buttonReorderFlushWorkItem = nil
+    }
+
+    private func resetPendingButtonMessagesOnNetworkQueue() {
+        buttonReorderFlushGeneration += 1
+        buttonReorderFlushWorkItem?.cancel()
+        buttonReorderFlushWorkItem = nil
+        pendingButtonMessagesBySequence.removeAll()
     }
 
     private enum PhysicalButtonReleaseResult {
@@ -1020,6 +1165,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func resetButtonSequenceDiagnosticsOnNetworkQueue() {
+        resetPendingButtonMessagesOnNetworkQueue()
         buttonSequenceTracker.reset()
         ignoredButtonEdgeCount = 0
         recoveredButtonEdgeCount = 0
@@ -1179,14 +1325,31 @@ final class MacControllerServer: ObservableObject {
         connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
     }
 
+    private func gamepadCustomizationForClient(_ customization: GamepadCustomization) -> GamepadCustomization {
+        var clientCustomization = customization.normalized
+        for button in GameButton.allCases where clientCustomization.labelOverride(for: button) == nil {
+            guard let binding = realtimeKeyBindings[button] else { continue }
+            clientCustomization.setLabel(binding.displayName, for: button)
+        }
+        return clientCustomization.normalized
+    }
+
+    private func gamepadProfilesForClient(_ profiles: [GamepadConfigurationProfile]) -> [GamepadConfigurationProfile] {
+        profiles.map { profile in
+            var clientProfile = profile
+            clientProfile.customization = gamepadCustomizationForClient(profile.customization)
+            return clientProfile.normalized
+        }
+    }
+
     private func sendGamepadCustomizationOnNetworkQueue(_ customization: GamepadCustomization) {
         guard let pairedConnection else { return }
         send(
             .init(
                 type: .gamepadCustomization,
                 timestamp: 0,
-                gamepadCustomization: customization.normalized,
-                gamepadProfiles: realtimeGamepadProfiles,
+                gamepadCustomization: gamepadCustomizationForClient(customization),
+                gamepadProfiles: gamepadProfilesForClient(realtimeGamepadProfiles),
                 gamepadProfileID: realtimeActiveGamepadProfileID,
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID
             ),
@@ -1200,8 +1363,8 @@ final class MacControllerServer: ObservableObject {
             .init(
                 type: .gamepadProfiles,
                 timestamp: 0,
-                gamepadCustomization: realtimeGamepadCustomization.normalized,
-                gamepadProfiles: realtimeGamepadProfiles,
+                gamepadCustomization: gamepadCustomizationForClient(realtimeGamepadCustomization),
+                gamepadProfiles: gamepadProfilesForClient(realtimeGamepadProfiles),
                 gamepadProfileID: realtimeActiveGamepadProfileID,
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID
             ),

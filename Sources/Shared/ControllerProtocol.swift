@@ -134,6 +134,14 @@ struct ButtonSequenceTracker {
     private var acceptsNextSequenceAsBaseline = false
     private(set) var totalMissedFrameCount = 0
 
+    var nextExpectedSequenceNumber: UInt64? {
+        nextExpectedButtonSequence
+    }
+
+    var isAcceptingNextSequenceAsBaseline: Bool {
+        acceptsNextSequenceAsBaseline
+    }
+
     mutating func inspect(_ message: ControllerMessage) -> ButtonSequenceInspection {
         guard let sequenceNumber = ControllerWireCodec.buttonSequenceNumber(from: message) else {
             return ButtonSequenceInspection()

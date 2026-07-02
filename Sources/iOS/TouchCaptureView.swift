@@ -2,15 +2,18 @@ import SwiftUI
 import UIKit
 
 struct TouchCaptureView: UIViewRepresentable {
+    var hitShape: GamepadButtonShapeStyle = .roundedRectangle
     var onPressEdge: (_ pressed: Bool, _ isActive: Bool, _ pressIdentifier: UInt64) -> Void
 
     func makeUIView(context: Context) -> TouchCaptureUIView {
         let view = TouchCaptureUIView()
+        view.hitShape = hitShape
         view.onPressEdge = onPressEdge
         return view
     }
 
     func updateUIView(_ uiView: TouchCaptureUIView, context: Context) {
+        uiView.hitShape = hitShape
         uiView.onPressEdge = onPressEdge
     }
 }
@@ -75,6 +78,7 @@ final class TouchRoutingUIView: UIView {
 }
 
 final class TouchCaptureUIView: UIView {
+    var hitShape: GamepadButtonShapeStyle = .roundedRectangle
     var onPressEdge: ((_ pressed: Bool, _ isActive: Bool, _ pressIdentifier: UInt64) -> Void)?
 
     private struct WeakTouchOwner {
@@ -85,6 +89,7 @@ final class TouchCaptureUIView: UIView {
     private static var touchOwners: [ObjectIdentifier: WeakTouchOwner] = [:]
     private static var activePressIdentifiers: Set<UInt64> = []
     private static var nextTouchIdentifier: UInt64 = 1
+    private static let activeTouchRetentionOutset: CGFloat = 18
 
     private var activeTouches: Set<UITouch> = []
     private var activeTouchIdentifiers: [UITouch: UInt64] = [:]
@@ -106,7 +111,7 @@ final class TouchCaptureUIView: UIView {
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        bounds.contains(point)
+        containsLocalPoint(point, in: bounds)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -162,7 +167,7 @@ final class TouchCaptureUIView: UIView {
 
         let windowLocation = touch.location(in: sourceWindow)
         if let previousOwner,
-           previousOwner.containsTouch(at: windowLocation, in: sourceWindow)
+           previousOwner.retainsActiveTouch(at: windowLocation, in: sourceWindow)
         {
             return
         }
@@ -287,9 +292,94 @@ final class TouchCaptureUIView: UIView {
     }
 
     private func containsTouch(at windowLocation: CGPoint, in sourceWindow: UIWindow) -> Bool {
+        containsTouch(at: windowLocation, in: sourceWindow, outset: 0)
+    }
+
+    // Keep ownership slightly sticky once a touch has activated a control. A
+    // thumb can drift a few points when a second finger presses another button;
+    // without hysteresis that jitter can emit an accidental key-up and cut a
+    // held jump/attack short.
+    private func retainsActiveTouch(at windowLocation: CGPoint, in sourceWindow: UIWindow) -> Bool {
+        containsTouch(at: windowLocation, in: sourceWindow, outset: Self.activeTouchRetentionOutset)
+    }
+
+    private func containsTouch(at windowLocation: CGPoint, in sourceWindow: UIWindow, outset: CGFloat) -> Bool {
         guard canReceiveRoutedTouch(in: sourceWindow) else { return false }
         let localLocation = sourceWindow.convert(windowLocation, to: self)
-        return bounds.contains(localLocation)
+        let hitBounds = bounds.insetBy(dx: -outset, dy: -outset)
+        return containsLocalPoint(localLocation, in: hitBounds)
+    }
+
+    private func containsLocalPoint(_ point: CGPoint, in hitBounds: CGRect) -> Bool {
+        guard hitBounds.contains(point) else { return false }
+
+        switch hitShape {
+        case .roundedRectangle, .rectangle:
+            return true
+        case .capsule:
+            return UIBezierPath(roundedRect: hitBounds, cornerRadius: min(hitBounds.width, hitBounds.height) / 2).contains(point)
+        case .circle, .ellipse:
+            let radiusX = max(hitBounds.width / 2, 0.001)
+            let radiusY = max(hitBounds.height / 2, 0.001)
+            let normalizedX = (point.x - hitBounds.midX) / radiusX
+            let normalizedY = (point.y - hitBounds.midY) / radiusY
+            return (normalizedX * normalizedX) + (normalizedY * normalizedY) <= 1
+        case .polygon:
+            return regularPolygonPath(sides: 3, in: hitBounds).contains(point)
+        case .star:
+            return starPath(points: 5, innerRadiusRatio: 0.45, in: hitBounds).contains(point)
+        }
+    }
+
+    private func regularPolygonPath(sides: Int, in rect: CGRect) -> UIBezierPath {
+        let sideCount = max(3, sides)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let xRadius = rect.width / 2
+        let yRadius = rect.height / 2
+        let path = UIBezierPath()
+
+        for index in 0..<sideCount {
+            let angle = (-CGFloat.pi / 2) + (CGFloat(index) * 2 * CGFloat.pi / CGFloat(sideCount))
+            let point = CGPoint(
+                x: center.x + cos(angle) * xRadius,
+                y: center.y + sin(angle) * yRadius
+            )
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+
+        path.close()
+        return path
+    }
+
+    private func starPath(points: Int, innerRadiusRatio: CGFloat, in rect: CGRect) -> UIBezierPath {
+        let pointCount = max(3, points)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let outerXRadius = rect.width / 2
+        let outerYRadius = rect.height / 2
+        let innerXRadius = outerXRadius * innerRadiusRatio
+        let innerYRadius = outerYRadius * innerRadiusRatio
+        let path = UIBezierPath()
+
+        for index in 0..<(pointCount * 2) {
+            let isOuterPoint = index.isMultiple(of: 2)
+            let angle = (-CGFloat.pi / 2) + (CGFloat(index) * CGFloat.pi / CGFloat(pointCount))
+            let point = CGPoint(
+                x: center.x + cos(angle) * (isOuterPoint ? outerXRadius : innerXRadius),
+                y: center.y + sin(angle) * (isOuterPoint ? outerYRadius : innerYRadius)
+            )
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+
+        path.close()
+        return path
     }
 
     private func canReceiveRoutedTouch(in sourceWindow: UIWindow) -> Bool {

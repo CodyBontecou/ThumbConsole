@@ -1024,7 +1024,7 @@ private struct GamepadButton: View {
             .allowsHitTesting(false)
             .frame(width: size.width, height: size.height)
 
-            TouchCaptureView { pressed, isActive, pressIdentifier in
+            TouchCaptureView(hitShape: resolvedShape) { pressed, isActive, pressIdentifier in
                 handlePressEdge(pressed, isActive: isActive, pressIdentifier: pressIdentifier)
             }
             .frame(width: hitSize.width, height: hitSize.height)
@@ -1070,6 +1070,10 @@ private struct GamepadButton: View {
             UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
                 .fill(fillColor)
                 .overlay(UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
+        case .rectangle:
+            Rectangle()
+                .fill(fillColor)
+                .overlay(Rectangle().stroke(strokeColor, lineWidth: lineWidth))
         case .capsule:
             Capsule()
                 .fill(fillColor)
@@ -1078,6 +1082,18 @@ private struct GamepadButton: View {
             Circle()
                 .fill(fillColor)
                 .overlay(Circle().stroke(strokeColor, lineWidth: lineWidth))
+        case .ellipse:
+            Ellipse()
+                .fill(fillColor)
+                .overlay(Ellipse().stroke(strokeColor, lineWidth: lineWidth))
+        case .polygon:
+            GamepadRegularPolygonButtonShape(sides: 3)
+                .fill(fillColor)
+                .overlay(GamepadRegularPolygonButtonShape(sides: 3).stroke(strokeColor, lineWidth: lineWidth))
+        case .star:
+            GamepadStarButtonShape(points: 5)
+                .fill(fillColor)
+                .overlay(GamepadStarButtonShape(points: 5).stroke(strokeColor, lineWidth: lineWidth))
         }
     }
 

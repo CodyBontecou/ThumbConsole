@@ -88,6 +88,9 @@ struct MacContentView: View {
                     defaultProfileID: defaultProfileID
                 )
             },
+            defaultLabelProvider: { button in
+                server.recordedShortcutLabel(for: button)
+            },
             selectedKeyBindingContent: { button in
                 AnyView(
                     MacGamepadSelectedKeyBindingInspector(button: button, keyCaptureButton: $keyCaptureButton)
@@ -392,7 +395,10 @@ struct MacContentView: View {
                     get: { server.gamepadCustomization },
                     set: { server.setGamepadCustomization($0) }
                 ),
-                onReset: { server.resetGamepadCustomization() }
+                onReset: { server.resetGamepadCustomization() },
+                defaultLabelProvider: { button in
+                    server.recordedShortcutLabel(for: button)
+                }
             )
             .frame(maxWidth: 720, alignment: .leading)
         }
