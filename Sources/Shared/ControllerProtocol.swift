@@ -70,6 +70,9 @@ public enum ControllerMessageType: String, Codable, Sendable {
     case ping
     case pong
     case gamepadCustomization = "gamepad_customization"
+    case gamepadProfiles = "gamepad_profiles"
+    case gamepadProfileSelection = "gamepad_profile_selection"
+    case gamepadDefaultProfile = "gamepad_default_profile"
     case error
 }
 
@@ -83,6 +86,9 @@ public struct ControllerMessage: Codable, Sendable {
     public var message: String?
     public var realtimeToken: String?
     public var gamepadCustomization: GamepadCustomization?
+    public var gamepadProfiles: [GamepadConfigurationProfile]?
+    public var gamepadProfileID: UUID?
+    public var defaultGamepadProfileID: UUID?
 
     public init(
         type: ControllerMessageType,
@@ -93,7 +99,10 @@ public struct ControllerMessage: Codable, Sendable {
         clientName: String? = nil,
         message: String? = nil,
         realtimeToken: String? = nil,
-        gamepadCustomization: GamepadCustomization? = nil
+        gamepadCustomization: GamepadCustomization? = nil,
+        gamepadProfiles: [GamepadConfigurationProfile]? = nil,
+        gamepadProfileID: UUID? = nil,
+        defaultGamepadProfileID: UUID? = nil
     ) {
         self.type = type
         self.button = button
@@ -104,6 +113,9 @@ public struct ControllerMessage: Codable, Sendable {
         self.message = message
         self.realtimeToken = realtimeToken
         self.gamepadCustomization = gamepadCustomization
+        self.gamepadProfiles = gamepadProfiles
+        self.gamepadProfileID = gamepadProfileID
+        self.defaultGamepadProfileID = defaultGamepadProfileID
     }
 }
 
@@ -278,6 +290,9 @@ public enum ControllerWireCodec {
               message.message == nil,
               message.realtimeToken == nil,
               message.gamepadCustomization == nil,
+              message.gamepadProfiles == nil,
+              message.gamepadProfileID == nil,
+              message.defaultGamepadProfileID == nil,
               let typeCode = message.type.compactWireCode
         else {
             return nil
@@ -374,7 +389,7 @@ private extension ControllerMessageType {
         case .heartbeat: 3
         case .ping: 4
         case .pong: 5
-        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .gamepadCustomization, .error: nil
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .error: nil
         }
     }
 

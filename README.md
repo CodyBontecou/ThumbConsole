@@ -27,7 +27,7 @@ xcodebuild -project PocketPad.xcodeproj -scheme PocketPadiOS -destination 'gener
 
 ## Keypad customization
 
-Both apps can customize the keypad rendered on the iPhone. Use **Keypad** in the Mac helper or **Customize iPhone Keypad** / the slider button in the iOS app to change handedness, control size, accent color, label visibility, per-key labels, and freeform button placement. Changes are saved locally, sync live while paired, and the Mac helper sends its saved layout during pairing.
+Customize keypad setups from the macOS helper's **Keypad** section. The iOS app receives the Mac's saved setups during pairing, can switch between them from the in-controller **Keypad setup** menu, and can mark the current setup as the default. The macOS helper can also mark any setup as default from the Keypad editor.
 
 ## Shortcut bindings
 

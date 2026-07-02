@@ -1,6 +1,12 @@
 import Foundation
 import SwiftUI
 
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
+
 private let gamepadMaximumLabelLength = 12
 
 public enum GamepadLayoutMode: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -70,6 +76,232 @@ public enum GamepadAccentStyle: String, Codable, CaseIterable, Identifiable, Sen
     }
 }
 
+public struct GamepadRGBAColor: Codable, Equatable, Sendable {
+    public var red: CGFloat
+    public var green: CGFloat
+    public var blue: CGFloat
+    public var alpha: CGFloat
+
+    public init(red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    public init?(hexString: String, alpha: CGFloat = 1) {
+        let cleaned = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        guard cleaned.count == 6 || cleaned.count == 8 else { return nil }
+
+        var value: UInt64 = 0
+        guard Scanner(string: cleaned).scanHexInt64(&value) else { return nil }
+
+        if cleaned.count == 8 {
+            self.red = CGFloat((value >> 24) & 0xff) / 255
+            self.green = CGFloat((value >> 16) & 0xff) / 255
+            self.blue = CGFloat((value >> 8) & 0xff) / 255
+            self.alpha = CGFloat(value & 0xff) / 255
+        } else {
+            self.red = CGFloat((value >> 16) & 0xff) / 255
+            self.green = CGFloat((value >> 8) & 0xff) / 255
+            self.blue = CGFloat(value & 0xff) / 255
+            self.alpha = alpha
+        }
+    }
+
+    public init(color: Color, fallback: GamepadRGBAColor = .defaultValue) {
+#if os(iOS)
+        var red: CGFloat = fallback.red
+        var green: CGFloat = fallback.green
+        var blue: CGFloat = fallback.blue
+        var alpha: CGFloat = fallback.alpha
+        if UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            self.init(red: red, green: green, blue: blue, alpha: alpha)
+        } else {
+            self = fallback
+        }
+#elseif os(macOS)
+        let nsColor = NSColor(color)
+        let rgbColor = nsColor.usingColorSpace(.deviceRGB) ?? nsColor.usingColorSpace(.sRGB)
+        var red: CGFloat = fallback.red
+        var green: CGFloat = fallback.green
+        var blue: CGFloat = fallback.blue
+        var alpha: CGFloat = fallback.alpha
+        if let rgbColor {
+            rgbColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            self.init(red: red, green: green, blue: blue, alpha: alpha)
+        } else {
+            self = fallback
+        }
+#else
+        self = fallback
+#endif
+    }
+
+    public static let defaultValue = GamepadRGBAColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1)
+
+    var normalized: GamepadRGBAColor {
+        GamepadRGBAColor(
+            red: Self.clamp(red),
+            green: Self.clamp(green),
+            blue: Self.clamp(blue),
+            alpha: Self.clamp(alpha)
+        )
+    }
+
+    var swiftUIColor: Color {
+        Color(.sRGB, red: Double(normalized.red), green: Double(normalized.green), blue: Double(normalized.blue), opacity: Double(normalized.alpha))
+    }
+
+    var hexString: String {
+        let normalized = normalized
+        return String(
+            format: "#%02X%02X%02X",
+            Int((normalized.red * 255).rounded()),
+            Int((normalized.green * 255).rounded()),
+            Int((normalized.blue * 255).rounded())
+        )
+    }
+
+    var opacityPercentageText: String {
+        "\(Int((normalized.alpha * 100).rounded()))%"
+    }
+
+    func adjustedForPress(_ isPressed: Bool) -> GamepadRGBAColor {
+        guard isPressed else { return normalized }
+        let normalized = normalized
+        return GamepadRGBAColor(
+            red: max(0, normalized.red * 0.74),
+            green: max(0, normalized.green * 0.74),
+            blue: max(0, normalized.blue * 0.74),
+            alpha: normalized.alpha
+        )
+    }
+
+    var strokeColor: Color {
+        let normalized = normalized
+        return Color(
+            .sRGB,
+            red: Double(min(1, normalized.red * 0.76)),
+            green: Double(min(1, normalized.green * 0.76)),
+            blue: Double(min(1, normalized.blue * 0.76)),
+            opacity: Double(min(1, max(0.32, normalized.alpha + 0.14)))
+        )
+    }
+
+    var foregroundColor: Color {
+        let normalized = normalized
+        let luminance = 0.299 * normalized.red + 0.587 * normalized.green + 0.114 * normalized.blue
+        return luminance > 0.56 ? Color.black : Color.white
+    }
+
+    private static func clamp(_ value: CGFloat) -> CGFloat {
+        min(max(value, 0), 1)
+    }
+}
+
+public struct GamepadCornerRadii: Codable, Equatable, Sendable {
+    public var topLeading: CGFloat
+    public var topTrailing: CGFloat
+    public var bottomTrailing: CGFloat
+    public var bottomLeading: CGFloat
+
+    public init(topLeading: CGFloat, topTrailing: CGFloat, bottomTrailing: CGFloat, bottomLeading: CGFloat) {
+        self.topLeading = topLeading
+        self.topTrailing = topTrailing
+        self.bottomTrailing = bottomTrailing
+        self.bottomLeading = bottomLeading
+    }
+
+    public static func uniform(_ radius: CGFloat) -> GamepadCornerRadii {
+        GamepadCornerRadii(topLeading: radius, topTrailing: radius, bottomTrailing: radius, bottomLeading: radius)
+    }
+
+    var normalized: GamepadCornerRadii {
+        GamepadCornerRadii(
+            topLeading: Self.clamp(topLeading),
+            topTrailing: Self.clamp(topTrailing),
+            bottomTrailing: Self.clamp(bottomTrailing),
+            bottomLeading: Self.clamp(bottomLeading)
+        )
+    }
+
+    var averageRadius: CGFloat {
+        (topLeading + topTrailing + bottomTrailing + bottomLeading) / 4
+    }
+
+    var isUniform: Bool {
+        abs(topLeading - topTrailing) < 0.001
+            && abs(topLeading - bottomTrailing) < 0.001
+            && abs(topLeading - bottomLeading) < 0.001
+    }
+
+    func isUniform(equalTo radius: CGFloat) -> Bool {
+        isUniform && abs(topLeading - radius) < 0.001
+    }
+
+    var rectangleCornerRadii: RectangleCornerRadii {
+        let normalized = normalized
+        return RectangleCornerRadii(
+            topLeading: normalized.topLeading,
+            bottomLeading: normalized.bottomLeading,
+            bottomTrailing: normalized.bottomTrailing,
+            topTrailing: normalized.topTrailing
+        )
+    }
+
+    subscript(_ corner: GamepadCorner) -> CGFloat {
+        get {
+            switch corner {
+            case .topLeading: topLeading
+            case .topTrailing: topTrailing
+            case .bottomTrailing: bottomTrailing
+            case .bottomLeading: bottomLeading
+            }
+        }
+        set {
+            let clampedValue = Self.clamp(newValue)
+            switch corner {
+            case .topLeading: topLeading = clampedValue
+            case .topTrailing: topTrailing = clampedValue
+            case .bottomTrailing: bottomTrailing = clampedValue
+            case .bottomLeading: bottomLeading = clampedValue
+            }
+        }
+    }
+
+    private static func clamp(_ value: CGFloat) -> CGFloat {
+        min(max(value, GamepadButtonCustomization.minimumCornerRadius), GamepadButtonCustomization.maximumCornerRadius)
+    }
+}
+
+public enum GamepadCorner: String, CaseIterable, Identifiable, Sendable {
+    case topLeading
+    case topTrailing
+    case bottomTrailing
+    case bottomLeading
+
+    public var id: String { rawValue }
+
+    var shortLabel: String {
+        switch self {
+        case .topLeading: "TL"
+        case .topTrailing: "TR"
+        case .bottomTrailing: "BR"
+        case .bottomLeading: "BL"
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .topLeading: "Top left corner radius"
+        case .topTrailing: "Top right corner radius"
+        case .bottomTrailing: "Bottom right corner radius"
+        case .bottomLeading: "Bottom left corner radius"
+        }
+    }
+}
+
 public enum GamepadButtonShapeStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     case roundedRectangle = "rounded_rectangle"
     case capsule
@@ -89,6 +321,12 @@ public enum GamepadButtonShapeStyle: String, Codable, CaseIterable, Identifiable
 public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public static let minimumScale: CGFloat = 0.55
     public static let maximumScale: CGFloat = 1.8
+    public static let minimumCornerRadius: CGFloat = 0
+    public static let maximumCornerRadius: CGFloat = 40
+    public static let defaultCornerRadius: CGFloat = 6
+    public static let minimumShadowStrength: CGFloat = 0
+    public static let maximumShadowStrength: CGFloat = 2
+    public static let defaultShadowStrength: CGFloat = 1
     public static let defaultValue = GamepadButtonCustomization()
 
     public var centerX: CGFloat?
@@ -96,6 +334,11 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public var widthScale: CGFloat
     public var heightScale: CGFloat
     public var shape: GamepadButtonShapeStyle?
+    public var accentStyle: GamepadAccentStyle?
+    public var fillColor: GamepadRGBAColor?
+    public var cornerRadius: CGFloat?
+    public var cornerRadii: GamepadCornerRadii?
+    public var shadowStrength: CGFloat
     public var isLocationLocked: Bool
     public var isHidden: Bool
 
@@ -105,6 +348,11 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         widthScale: CGFloat = 1.0,
         heightScale: CGFloat = 1.0,
         shape: GamepadButtonShapeStyle? = nil,
+        accentStyle: GamepadAccentStyle? = nil,
+        fillColor: GamepadRGBAColor? = nil,
+        cornerRadius: CGFloat? = nil,
+        cornerRadii: GamepadCornerRadii? = nil,
+        shadowStrength: CGFloat = GamepadButtonCustomization.defaultShadowStrength,
         isLocationLocked: Bool = false,
         isHidden: Bool = false
     ) {
@@ -113,6 +361,11 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         self.widthScale = widthScale
         self.heightScale = heightScale
         self.shape = shape
+        self.accentStyle = accentStyle
+        self.fillColor = fillColor
+        self.cornerRadius = cornerRadius
+        self.cornerRadii = cornerRadii
+        self.shadowStrength = shadowStrength
         self.isLocationLocked = isLocationLocked
         self.isHidden = isHidden
     }
@@ -124,6 +377,11 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         widthScale = try container.decodeIfPresent(CGFloat.self, forKey: .widthScale) ?? 1.0
         heightScale = try container.decodeIfPresent(CGFloat.self, forKey: .heightScale) ?? 1.0
         shape = try container.decodeIfPresent(GamepadButtonShapeStyle.self, forKey: .shape)
+        accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle)
+        fillColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .fillColor)
+        cornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
+        cornerRadii = try container.decodeIfPresent(GamepadCornerRadii.self, forKey: .cornerRadii)
+        shadowStrength = try container.decodeIfPresent(CGFloat.self, forKey: .shadowStrength) ?? Self.defaultShadowStrength
         isLocationLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocationLocked) ?? false
         isHidden = try container.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
     }
@@ -135,6 +393,11 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         try container.encode(widthScale, forKey: .widthScale)
         try container.encode(heightScale, forKey: .heightScale)
         try container.encodeIfPresent(shape, forKey: .shape)
+        try container.encodeIfPresent(accentStyle, forKey: .accentStyle)
+        try container.encodeIfPresent(fillColor, forKey: .fillColor)
+        try container.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
+        try container.encodeIfPresent(cornerRadii, forKey: .cornerRadii)
+        try container.encode(shadowStrength, forKey: .shadowStrength)
         try container.encode(isLocationLocked, forKey: .isLocationLocked)
         try container.encode(isHidden, forKey: .isHidden)
     }
@@ -145,6 +408,16 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         copy.centerY = copy.centerY.map { Self.clamp($0, lower: 0, upper: 1) }
         copy.widthScale = Self.clamp(copy.widthScale, lower: Self.minimumScale, upper: Self.maximumScale)
         copy.heightScale = Self.clamp(copy.heightScale, lower: Self.minimumScale, upper: Self.maximumScale)
+        copy.fillColor = copy.fillColor?.normalized
+        if let cornerRadii = copy.cornerRadii {
+            let normalizedRadii = cornerRadii.normalized
+            copy.cornerRadii = normalizedRadii.isUniform(equalTo: Self.defaultCornerRadius) ? nil : normalizedRadii
+            copy.cornerRadius = nil
+        } else if let cornerRadius = copy.cornerRadius {
+            let clampedRadius = Self.clamp(cornerRadius, lower: Self.minimumCornerRadius, upper: Self.maximumCornerRadius)
+            copy.cornerRadius = abs(clampedRadius - Self.defaultCornerRadius) < 0.001 ? nil : clampedRadius
+        }
+        copy.shadowStrength = Self.clamp(copy.shadowStrength, lower: Self.minimumShadowStrength, upper: Self.maximumShadowStrength)
         return copy
     }
 
@@ -154,6 +427,11 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
             && abs(widthScale - 1.0) < 0.001
             && abs(heightScale - 1.0) < 0.001
             && shape == nil
+            && accentStyle == nil
+            && fillColor == nil
+            && cornerRadius == nil
+            && cornerRadii == nil
+            && abs(shadowStrength - Self.defaultShadowStrength) < 0.001
             && !isLocationLocked
             && !isHidden
     }
@@ -174,6 +452,10 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         shape ?? defaultShape
     }
 
+    func resolvedCornerRadii(defaultRadius: CGFloat = GamepadButtonCustomization.defaultCornerRadius) -> GamepadCornerRadii {
+        cornerRadii ?? .uniform(cornerRadius ?? defaultRadius)
+    }
+
     static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
         min(max(value, lower), upper)
     }
@@ -184,6 +466,11 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         case widthScale
         case heightScale
         case shape
+        case accentStyle
+        case fillColor
+        case cornerRadius
+        case cornerRadii
+        case shadowStrength
         case isLocationLocked
         case isHidden
     }
@@ -233,6 +520,15 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     public static let maximumLabelLength = gamepadMaximumLabelLength
     public static let maximumCustomButtons = 8
     public static let defaultValue = GamepadCustomization()
+    public static var blankCanvas: GamepadCustomization {
+        var customization = GamepadCustomization.defaultValue
+        for button in GameButton.builtInControls {
+            var buttonCustomization = GamepadButtonCustomization.defaultValue
+            buttonCustomization.isHidden = true
+            customization.setButtonCustomization(buttonCustomization, for: button)
+        }
+        return customization.normalized
+    }
 
     public var layoutMode: GamepadLayoutMode
     public var controlScale: GamepadControlScale
@@ -479,6 +775,7 @@ struct GamepadResolvedControl: Identifiable, Equatable {
     let center: CGPoint
     let size: CGSize
     let shape: GamepadButtonShapeStyle
+    let layoutCustomization: GamepadButtonCustomization
     let isCustom: Bool
     let isLocationLocked: Bool
 }
@@ -522,6 +819,7 @@ private enum GamepadLayoutResolver {
                 center: center,
                 size: scaledSize,
                 shape: shape,
+                layoutCustomization: buttonCustomization,
                 isCustom: false,
                 isLocationLocked: buttonCustomization.isLocationLocked
             )
@@ -555,6 +853,7 @@ private enum GamepadLayoutResolver {
                 center: center,
                 size: scaledSize,
                 shape: shape,
+                layoutCustomization: normalizedButton.layout,
                 isCustom: true,
                 isLocationLocked: normalizedButton.layout.isLocationLocked
             )
@@ -688,6 +987,29 @@ enum GamepadCustomizationPersistence {
     }
 }
 
+extension GamepadButtonCustomization {
+    func buttonFill(accentStyle: GamepadAccentStyle, isPressed: Bool, scheme: ColorScheme) -> Color {
+        if let fillColor {
+            return fillColor.adjustedForPress(isPressed).swiftUIColor
+        }
+        return accentStyle.buttonFill(isPressed: isPressed, scheme: scheme)
+    }
+
+    func buttonForeground(accentStyle: GamepadAccentStyle, isPressed: Bool, scheme: ColorScheme) -> Color {
+        if let fillColor {
+            return fillColor.foregroundColor
+        }
+        return accentStyle.buttonForeground(isPressed: isPressed, scheme: scheme)
+    }
+
+    func buttonStroke(accentStyle: GamepadAccentStyle, isPressed: Bool, scheme: ColorScheme) -> Color {
+        if let fillColor {
+            return fillColor.adjustedForPress(isPressed).strokeColor
+        }
+        return accentStyle.buttonStroke(isPressed: isPressed, scheme: scheme)
+    }
+}
+
 extension GamepadAccentStyle {
     func buttonFill(isPressed: Bool, scheme: ColorScheme) -> Color {
         if isPressed {
@@ -753,13 +1075,13 @@ extension GamepadAccentStyle {
     }
 }
 
-private struct GamepadEditorConfigurationProfile: Identifiable, Codable, Equatable {
-    var id: UUID
-    var name: String
-    var customization: GamepadCustomization
-    var updatedAt: Int64
+public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var customization: GamepadCustomization
+    public var updatedAt: Int64
 
-    init(
+    public init(
         id: UUID = UUID(),
         name: String,
         customization: GamepadCustomization,
@@ -771,7 +1093,7 @@ private struct GamepadEditorConfigurationProfile: Identifiable, Codable, Equatab
         self.updatedAt = updatedAt
     }
 
-    var normalized: GamepadEditorConfigurationProfile {
+    public var normalized: GamepadConfigurationProfile {
         var copy = self
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.name = trimmedName.isEmpty ? "Untitled" : trimmedName
@@ -780,15 +1102,25 @@ private struct GamepadEditorConfigurationProfile: Identifiable, Codable, Equatab
     }
 }
 
-private enum GamepadEditorConfigurationProfilePersistence {
-    struct LoadedState {
-        let profiles: [GamepadEditorConfigurationProfile]
+enum GamepadConfigurationProfilePersistence {
+    struct LoadedState: Equatable {
+        let profiles: [GamepadConfigurationProfile]
         let activeProfileID: UUID
+        let defaultProfileID: UUID
+
+        var activeProfile: GamepadConfigurationProfile? {
+            profiles.first { $0.id == activeProfileID }
+        }
+
+        var defaultProfile: GamepadConfigurationProfile? {
+            profiles.first { $0.id == defaultProfileID }
+        }
     }
 
     private struct StoredState: Codable {
-        var profiles: [GamepadEditorConfigurationProfile]
+        var profiles: [GamepadConfigurationProfile]
         var activeProfileID: UUID?
+        var defaultProfileID: UUID?
     }
 
     private static let defaultsKey = "PocketPad.gamepadConfigurationProfiles.v1"
@@ -808,7 +1140,7 @@ private enum GamepadEditorConfigurationProfilePersistence {
                     profiles[activeIndex].updatedAt = Date.currentMilliseconds
                     activeProfileID = preferredActiveID
                 } else {
-                    let currentProfile = GamepadEditorConfigurationProfile(
+                    let currentProfile = GamepadConfigurationProfile(
                         name: "Current Setup",
                         customization: activeCustomization
                     )
@@ -816,26 +1148,53 @@ private enum GamepadEditorConfigurationProfilePersistence {
                     activeProfileID = currentProfile.id
                 }
 
-                return LoadedState(profiles: profiles, activeProfileID: activeProfileID)
+                let defaultProfileID = validProfileID(stored.defaultProfileID, in: profiles) ?? activeProfileID
+                return LoadedState(profiles: profiles, activeProfileID: activeProfileID, defaultProfileID: defaultProfileID)
             }
         }
 
         let profiles = defaultProfiles(activeCustomization: activeCustomization)
-        return LoadedState(profiles: profiles, activeProfileID: profiles[0].id)
+        return LoadedState(profiles: profiles, activeProfileID: profiles[0].id, defaultProfileID: profiles[0].id)
     }
 
-    static func save(_ profiles: [GamepadEditorConfigurationProfile], activeProfileID: UUID) {
-        let normalizedProfiles = normalizedUniqueProfiles(profiles)
-        guard !normalizedProfiles.isEmpty,
-              let data = try? JSONEncoder().encode(
-                StoredState(profiles: normalizedProfiles, activeProfileID: activeProfileID)
-              )
-        else { return }
+    static func save(_ profiles: [GamepadConfigurationProfile], activeProfileID: UUID, defaultProfileID: UUID) {
+        let state = normalizedState(
+            profiles: profiles,
+            activeProfileID: activeProfileID,
+            defaultProfileID: defaultProfileID
+        )
+        guard let data = try? JSONEncoder().encode(
+            StoredState(
+                profiles: state.profiles,
+                activeProfileID: state.activeProfileID,
+                defaultProfileID: state.defaultProfileID
+            )
+        ) else { return }
 
         UserDefaults.standard.set(data, forKey: defaultsKey)
     }
 
-    private static func normalizedUniqueProfiles(_ profiles: [GamepadEditorConfigurationProfile]) -> [GamepadEditorConfigurationProfile] {
+    static func normalizedState(
+        profiles: [GamepadConfigurationProfile],
+        activeProfileID: UUID?,
+        defaultProfileID: UUID?,
+        fallbackCustomization: GamepadCustomization = .defaultValue
+    ) -> LoadedState {
+        var normalizedProfiles = normalizedUniqueProfiles(profiles)
+        if normalizedProfiles.isEmpty {
+            normalizedProfiles = defaultProfiles(activeCustomization: fallbackCustomization.normalized)
+        }
+
+        let activeProfileID = validProfileID(activeProfileID, in: normalizedProfiles) ?? normalizedProfiles[0].id
+        let defaultProfileID = validProfileID(defaultProfileID, in: normalizedProfiles) ?? activeProfileID
+        return LoadedState(
+            profiles: normalizedProfiles,
+            activeProfileID: activeProfileID,
+            defaultProfileID: defaultProfileID
+        )
+    }
+
+    private static func normalizedUniqueProfiles(_ profiles: [GamepadConfigurationProfile]) -> [GamepadConfigurationProfile] {
         var seenIDs = Set<UUID>()
         return profiles.compactMap { profile in
             let normalizedProfile = profile.normalized
@@ -844,7 +1203,14 @@ private enum GamepadEditorConfigurationProfilePersistence {
         }
     }
 
-    private static func defaultProfiles(activeCustomization: GamepadCustomization) -> [GamepadEditorConfigurationProfile] {
+    private static func validProfileID(_ profileID: UUID?, in profiles: [GamepadConfigurationProfile]) -> UUID? {
+        guard let profileID,
+              profiles.contains(where: { $0.id == profileID })
+        else { return nil }
+        return profileID
+    }
+
+    private static func defaultProfiles(activeCustomization: GamepadCustomization) -> [GamepadConfigurationProfile] {
         var standard = GamepadCustomization.defaultValue
         standard.accentStyle = .monochrome
 
@@ -861,33 +1227,16 @@ private enum GamepadEditorConfigurationProfilePersistence {
         compact.showsButtonLabels = false
 
         return [
-            GamepadEditorConfigurationProfile(name: "Current Setup", customization: activeCustomization),
-            GamepadEditorConfigurationProfile(name: "Navigation Left", customization: standard),
-            GamepadEditorConfigurationProfile(name: "Actions Left", customization: southpaw),
-            GamepadEditorConfigurationProfile(name: "Large Blue", customization: largeBlue),
-            GamepadEditorConfigurationProfile(name: "Compact Minimal", customization: compact)
+            GamepadConfigurationProfile(name: "Current Setup", customization: activeCustomization),
+            GamepadConfigurationProfile(name: "Navigation Left", customization: standard),
+            GamepadConfigurationProfile(name: "Actions Left", customization: southpaw),
+            GamepadConfigurationProfile(name: "Large Blue", customization: largeBlue),
+            GamepadConfigurationProfile(name: "Compact Minimal", customization: compact)
         ]
     }
 }
 
-private enum GamepadEditorTab: String, CaseIterable, Identifiable {
-    case color
-    case shape
-    case labels
-    case keybinds
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .color: "Color"
-        case .shape: "Shape"
-        case .labels: "Labels"
-        case .keybinds: "Shortcuts"
-        }
-    }
-}
-
+#if os(macOS)
 private struct GamepadEditorComponentItem: Identifiable, Hashable {
     let identity: GamepadControlIdentity
     let title: String
@@ -897,6 +1246,13 @@ private struct GamepadEditorComponentItem: Identifiable, Hashable {
     let isLocationLocked: Bool
 
     var id: GamepadControlIdentity { identity }
+}
+
+private enum GamepadFrameMetric {
+    case x
+    case y
+    case width
+    case height
 }
 
 private struct GeistSegmentedPicker<Option: Hashable>: View {
@@ -1045,8 +1401,12 @@ struct GamepadCustomizationEditor: View {
     @Binding private var customization: GamepadCustomization
 
     private let showsPreview: Bool
+    private let externalProfiles: [GamepadConfigurationProfile]?
+    private let externalSelectedProfileID: UUID?
+    private let externalDefaultProfileID: UUID?
     private let onReset: (() -> Void)?
-    private let keyBindingsContent: AnyView?
+    private let onProfilesChanged: (([GamepadConfigurationProfile], UUID, UUID) -> Void)?
+    private let selectedKeyBindingContent: ((GameButton) -> AnyView)?
 
     private static let configurationSidebarMinWidth: CGFloat = 180
     private static let configurationSidebarMaxWidth: CGFloat = 360
@@ -1059,12 +1419,13 @@ struct GamepadCustomizationEditor: View {
     private static let canvasZoomStep: CGFloat = 0.1
 
     @State private var selectedControlID: GamepadControlIdentity
-    @State private var selectedTab: GamepadEditorTab
-    @State private var profiles: [GamepadEditorConfigurationProfile]
+    @State private var profiles: [GamepadConfigurationProfile]
     @State private var selectedProfileID: UUID
+    @State private var defaultProfileID: UUID
     @State private var configurationSidebarDragStart: CGFloat?
     @State private var inspectorSidebarDragStart: CGFloat?
     @State private var canvasZoomGestureStart: CGFloat?
+    @State private var currentCanvasLayoutSize = CGSize(width: 640, height: 360)
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
     @AppStorage("PocketPad.GamepadEditor.canvasZoom") private var canvasZoomValue: Double = 1.0
@@ -1072,21 +1433,39 @@ struct GamepadCustomizationEditor: View {
     init(
         customization: Binding<GamepadCustomization>,
         showsPreview: Bool = true,
+        initialProfiles: [GamepadConfigurationProfile]? = nil,
+        initialSelectedProfileID: UUID? = nil,
+        initialDefaultProfileID: UUID? = nil,
         onReset: (() -> Void)? = nil,
-        keyBindingsContent: AnyView? = nil
+        onProfilesChanged: (([GamepadConfigurationProfile], UUID, UUID) -> Void)? = nil,
+        selectedKeyBindingContent: ((GameButton) -> AnyView)? = nil
     ) {
-        let loadedProfiles = GamepadEditorConfigurationProfilePersistence.load(
-            activeCustomization: customization.wrappedValue
-        )
+        let loadedProfiles: GamepadConfigurationProfilePersistence.LoadedState
+        if let initialProfiles {
+            loadedProfiles = GamepadConfigurationProfilePersistence.normalizedState(
+                profiles: initialProfiles,
+                activeProfileID: initialSelectedProfileID,
+                defaultProfileID: initialDefaultProfileID,
+                fallbackCustomization: customization.wrappedValue
+            )
+        } else {
+            loadedProfiles = GamepadConfigurationProfilePersistence.load(
+                activeCustomization: customization.wrappedValue
+            )
+        }
 
         self._customization = customization
         self.showsPreview = showsPreview
+        self.externalProfiles = initialProfiles
+        self.externalSelectedProfileID = initialSelectedProfileID
+        self.externalDefaultProfileID = initialDefaultProfileID
         self.onReset = onReset
-        self.keyBindingsContent = keyBindingsContent
+        self.onProfilesChanged = onProfilesChanged
+        self.selectedKeyBindingContent = selectedKeyBindingContent
         self._selectedControlID = State(initialValue: .builtin(.jump))
-        self._selectedTab = State(initialValue: .color)
         self._profiles = State(initialValue: loadedProfiles.profiles)
         self._selectedProfileID = State(initialValue: loadedProfiles.activeProfileID)
+        self._defaultProfileID = State(initialValue: loadedProfiles.defaultProfileID)
     }
 
     var body: some View {
@@ -1106,8 +1485,14 @@ struct GamepadCustomizationEditor: View {
                 }
             }
         }
-        .onChange(of: customization) { _, newValue in
-            syncSelectedProfile(with: newValue)
+        .onChange(of: observedExternalProfiles) { _, _ in
+            syncExternalProfileState()
+        }
+        .onChange(of: externalSelectedProfileID) { _, _ in
+            syncExternalProfileState()
+        }
+        .onChange(of: externalDefaultProfileID) { _, _ in
+            syncExternalProfileState()
         }
     }
 
@@ -1200,11 +1585,6 @@ struct GamepadCustomizationEditor: View {
                 }
                 .padding(Geist.Spacing.s3)
             }
-
-            Divider()
-
-            configurationFooter
-                .padding(Geist.Spacing.s3)
         }
         .background(Geist.color(.background200, scheme: colorScheme))
     }
@@ -1244,7 +1624,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     @ViewBuilder
-    private func profileRow(_ profile: GamepadEditorConfigurationProfile) -> some View {
+    private func profileRow(_ profile: GamepadConfigurationProfile) -> some View {
         let isSelected = profile.id == selectedProfileID
 
         VStack(alignment: .leading, spacing: isSelected ? Geist.Spacing.s2 : 0) {
@@ -1264,6 +1644,13 @@ struct GamepadCustomizationEditor: View {
                             .lineLimit(1)
 
                         Spacer(minLength: Geist.Spacing.s1)
+
+                        if profile.id == defaultProfileID {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Geist.color(.amber700, scheme: colorScheme))
+                                .help("Default setup")
+                        }
 
                         if isSelected {
                             Image(systemName: "checkmark.circle.fill")
@@ -1405,16 +1792,24 @@ struct GamepadCustomizationEditor: View {
     }
 
     @ViewBuilder
-    private func profileChip(_ profile: GamepadEditorConfigurationProfile) -> some View {
+    private func profileChip(_ profile: GamepadConfigurationProfile) -> some View {
         let isSelected = profile.id == selectedProfileID
 
         Button {
             selectProfile(profile)
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text(profile.name)
-                    .geistTypography(.heading14)
-                    .lineLimit(1)
+                HStack(spacing: Geist.Spacing.s1) {
+                    Text(profile.name)
+                        .geistTypography(.heading14)
+                        .lineLimit(1)
+
+                    if profile.id == defaultProfileID {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Geist.color(.amber700, scheme: colorScheme))
+                    }
+                }
                 Text(profile.customization.layoutMode.displayName)
                     .geistTypography(.label12)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -1436,12 +1831,18 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var configurationFooter: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            setupConfigurationControls
+
+            Divider()
+
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: Geist.Spacing.s2) {
+                    defaultProfileButton
                     profileManagementButtons
                 }
                 VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    defaultProfileButton
                     profileManagementButtons
                 }
             }
@@ -1451,6 +1852,60 @@ struct GamepadCustomizationEditor: View {
             }
             .geistButtonStyle(.tertiary, size: .small)
         }
+    }
+
+    private var setupConfigurationControls: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Setup")
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .textCase(.uppercase)
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Layout")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                GeistSegmentedPicker(title: "Layout", options: GamepadLayoutMode.allCases, selection: binding(\.layoutMode)) { mode in
+                    mode.displayName
+                }
+                Text(customization.layoutMode.description)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Control Size")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                GeistSegmentedPicker(title: "Control Size", options: GamepadControlScale.allCases, selection: binding(\.controlScale)) { scale in
+                    scale.displayName
+                }
+            }
+
+            HStack(spacing: Geist.Spacing.s3) {
+                Text("Default Color")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                Spacer()
+                GeistMenuPicker(title: "Default Color", options: GamepadAccentStyle.allCases, selection: binding(\.accentStyle)) { style in
+                    style.displayName
+                }
+                .frame(minWidth: 120)
+            }
+
+            GeistCheckboxToggle(title: "Show Key Labels", isOn: binding(\.showsButtonLabels))
+        }
+    }
+
+    private var defaultProfileButton: some View {
+        Button {
+            setSelectedProfileAsDefault()
+        } label: {
+            Label(defaultProfileID == selectedProfileID ? "Default Setup" : "Make Default", systemImage: defaultProfileID == selectedProfileID ? "star.fill" : "star")
+        }
+        .geistButtonStyle(defaultProfileID == selectedProfileID ? .tertiary : .secondary, size: .small)
+        .disabled(defaultProfileID == selectedProfileID)
     }
 
     @ViewBuilder
@@ -1496,6 +1951,15 @@ struct GamepadCustomizationEditor: View {
             .padding(Geist.Spacing.s6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Geist.color(.background100, scheme: colorScheme))
+            .onAppear {
+                noteCanvasLayoutSize(width: baseCanvasWidth, height: baseCanvasHeight)
+            }
+            .onChange(of: baseCanvasWidth) { _, _ in
+                noteCanvasLayoutSize(width: baseCanvasWidth, height: baseCanvasHeight)
+            }
+            .onChange(of: baseCanvasHeight) { _, _ in
+                noteCanvasLayoutSize(width: baseCanvasWidth, height: baseCanvasHeight)
+            }
         }
     }
 
@@ -1533,6 +1997,10 @@ struct GamepadCustomizationEditor: View {
             .frame(width: max(viewportWidth, outerWidth), height: max(viewportHeight, outerHeight))
         }
         .frame(height: viewportHeight)
+        .overlay(alignment: .bottom) {
+            canvasFloatingCreationToolbar
+                .padding(.bottom, Geist.Spacing.s4)
+        }
         .background(Geist.color(.background200, scheme: colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
         .overlay(
@@ -1561,7 +2029,7 @@ struct GamepadCustomizationEditor: View {
                     .geistTypography(.heading24)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .lineLimit(1)
-                Text("Drag controls on the canvas. Use the inspector to tune colors, shapes, labels, and shortcuts.")
+                Text("Drag controls on the canvas. Use the inspector to tune the selected element’s color, size, radius, and effects.")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1583,12 +2051,12 @@ struct GamepadCustomizationEditor: View {
     private var canvasActionBar: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: Geist.Spacing.s3) {
-                layoutButtons
+                resetLayoutButton
                 Spacer(minLength: Geist.Spacing.s4)
                 canvasZoomControls
             }
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                layoutButtons
+                resetLayoutButton
                 canvasZoomControls
             }
         }
@@ -1636,25 +2104,116 @@ struct GamepadCustomizationEditor: View {
         }
     }
 
-    @ViewBuilder
-    private var layoutButtons: some View {
-        Button {
-            let id = UUID()
-            update { $0.addCustomButton(id: id) }
-            selectedControlID = .custom(id)
-            selectedTab = .shape
-        } label: {
-            Label("Add Custom Key", systemImage: "plus.circle")
-        }
-        .geistButtonStyle(.primary, size: .small)
-        .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
-
+    private var resetLayoutButton: some View {
         Button("Reset Key Layout") {
-            update { $0.resetButtonLayout() }
-            selectedControlID = .builtin(.jump)
+            resetKeyLayout()
         }
         .geistButtonStyle(.secondary, size: .small)
         .disabled(!customization.usesFreeformLayout)
+    }
+
+    private var canvasFloatingCreationToolbar: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Button {
+                // Selection is the default canvas tool.
+            } label: {
+                Image(systemName: "cursorarrow")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 32, height: 32)
+                    .background(Geist.color(.blue700, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Select controls")
+            .help("Select and drag controls")
+
+            toolbarMenu(systemImage: "square.grid.3x3", accessibilityLabel: "Layout tools") {
+                Button("Show Default Controls") {
+                    setBuiltInControlsHidden(false)
+                }
+                Button("Hide Built-in Controls") {
+                    setBuiltInControlsHidden(true)
+                }
+                Divider()
+                Button("Reset Key Layout") {
+                    resetKeyLayout()
+                }
+                .disabled(!customization.usesFreeformLayout)
+            }
+
+            toolbarMenu(systemImage: "square", accessibilityLabel: "Add button") {
+                Button("Add Custom Key") {
+                    addCustomKeyButton()
+                }
+                .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
+
+                Divider()
+
+                ForEach(GameButton.customSlots) { button in
+                    Button("Add \(button.displayName)") {
+                        addCustomKeyButton(mappedTo: button, label: GamepadCustomization.defaultVisualLabel(for: button))
+                    }
+                    .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
+                }
+            }
+
+            toolbarMenu(systemImage: "pencil.tip", accessibilityLabel: "Style tools") {
+                ForEach(GamepadAccentStyle.allCases) { style in
+                    Button(style.displayName) {
+                        update { $0.accentStyle = style }
+                    }
+                }
+            }
+
+            toolbarMenu(systemImage: "textformat", accessibilityLabel: "Text tools") {
+                Button("Add Labeled Key") {
+                    addCustomKeyButton(label: "Label")
+                }
+                .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
+
+                if case .custom = selectedControlID {
+                    Button("Edit Label in Inspector") {}
+                        .disabled(true)
+                }
+            }
+        }
+        .padding(Geist.Spacing.s2)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Geist.color(.background100, scheme: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.38 : 0.16), radius: 18, x: 0, y: 8)
+    }
+
+    private func toolbarMenu<Content: View>(
+        systemImage: String,
+        accessibilityLabel: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        Menu {
+            content()
+        } label: {
+            HStack(spacing: Geist.Spacing.s2) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 24, weight: .regular))
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .frame(width: 32, height: 32)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .frame(width: 12, height: 32)
+            }
+            .padding(.horizontal, Geist.Spacing.s2)
+            .contentShape(RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var inspectorSidebar: some View {
@@ -1681,103 +2240,55 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var inspectorHeader: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                Text("Inspector")
-                    .geistTypography(.heading20)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                Text(profileSubtitle(for: customization))
-                    .geistTypography(.copy13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .lineLimit(2)
-            }
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text("Inspector")
+                .geistTypography(.heading20)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            Text("Selected element properties")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
 
-            GeistSegmentedPicker(title: "Editor Tab", options: GamepadEditorTab.allCases, selection: $selectedTab) { tab in
-                tab.title
-            }
+            Label(selectedControlTitle, systemImage: "scope")
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .padding(.horizontal, Geist.Spacing.s3)
+                .padding(.vertical, Geist.Spacing.s2)
+                .background(Geist.color(.gray100, scheme: colorScheme), in: Capsule())
+                .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
+                .lineLimit(1)
         }
     }
 
     @ViewBuilder
     private var inspectorContent: some View {
-        switch selectedTab {
-        case .color:
-            VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
-                layoutSection
+        selectedElementInspector
+    }
+
+    private var selectedElementInspector: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            selectedElementIdentitySection
+            Divider()
+            selectedElementColorSection
+            Divider()
+            selectedElementSizeSection
+            Divider()
+            selectedElementRadiusSection
+            Divider()
+            selectedElementEffectsSection
+
+            if let shortcutButton = selectedShortcutButton,
+               let selectedKeyBindingContent {
                 Divider()
-                appearanceSection
-            }
-        case .shape:
-            selectedButtonSection
-        case .labels:
-            labelsSection
-        case .keybinds:
-            if let keyBindingsContent {
-                keyBindingsContent
-            } else {
-                keybindsPlaceholder
+                selectedKeyBindingContent(shortcutButton)
             }
         }
     }
 
-    private var keybindsPlaceholder: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Shortcuts")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-            Text("Connect to PocketPad Mac and open its Keypad editor to record hardware shortcuts for each virtual button.")
-                .geistTypography(.copy13)
-                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var layoutSection: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Layout")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
-            GeistSegmentedPicker(title: "Layout", options: GamepadLayoutMode.allCases, selection: binding(\.layoutMode)) { mode in
-                mode.displayName
-            }
-
-            Text(customization.layoutMode.description)
-                .geistTypography(.copy13)
-                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-        }
-    }
-
-    private var appearanceSection: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Color & Scale")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
-            GeistSegmentedPicker(title: "Control Size", options: GamepadControlScale.allCases, selection: binding(\.controlScale)) { scale in
-                scale.displayName
-            }
-
-            HStack(spacing: Geist.Spacing.s3) {
-                Text("Accent")
-                    .geistTypography(.label13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                Spacer()
-                GeistMenuPicker(title: "Accent", options: GamepadAccentStyle.allCases, selection: binding(\.accentStyle)) { style in
-                    style.displayName
-                }
-                .frame(minWidth: 140)
-            }
-
-            GeistCheckboxToggle(title: "Show Key Labels", isOn: binding(\.showsButtonLabels))
-        }
-    }
-
-    private var selectedButtonSection: some View {
+    private var selectedElementIdentitySection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                    Text("Selected Control")
+                    Text("Element")
                         .geistTypography(.heading14)
                         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     Text(selectedControlTitle)
@@ -1787,33 +2298,265 @@ struct GamepadCustomizationEditor: View {
 
                 Spacer()
 
-                Button("Reset Selected") {
+                Button("Reset") {
                     resetSelectedControl()
                 }
                 .geistButtonStyle(.tertiary, size: .small)
             }
 
             controlSelectionPicker
+            selectedElementLabelControls
             componentStateControls
 
-            if case .custom(let id) = selectedControlID, customButton(id: id) != nil {
-                customButtonControls(id: id)
-            }
-
-            GeistSegmentedPicker(title: "Shape", options: GamepadButtonShapeStyle.allCases, selection: shapeBinding(for: selectedControlID)) { shape in
-                shape.displayName
-            }
-
-            sizeSlider(title: "Width", value: widthScaleBinding(for: selectedControlID), currentValue: widthScaleValue(for: selectedControlID))
-            sizeSlider(title: "Height", value: heightScaleBinding(for: selectedControlID), currentValue: heightScaleValue(for: selectedControlID))
-
-            if case .custom(let id) = selectedControlID, customButton(id: id) != nil {
+            if case .custom(let id) = selectedControlID,
+               customButton(id: id) != nil {
                 Button("Delete Custom Key") {
                     update { $0.removeCustomButton(id: id) }
                     selectedControlID = .builtin(.jump)
                 }
                 .geistButtonStyle(.error, size: .small)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var selectedElementLabelControls: some View {
+        switch selectedControlID {
+        case .builtin(let button):
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Label")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                TextField(
+                    GamepadCustomization.defaultVisualLabel(for: button),
+                    text: labelBinding(for: button)
+                )
+                .geistInput(size: .small)
+                Text("Leave blank to use the default keypad label.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            }
+        case .custom(let id):
+            if customButton(id: id) != nil {
+                customButtonControls(id: id)
+            }
+        }
+    }
+
+    private var selectedElementColorSection: some View {
+        let colorValue = selectedFillColorValue(for: selectedControlID)
+        let usesCustomColor = selectedLayoutCustomization(for: selectedControlID).fillColor != nil
+
+        return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Color")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+            HStack(spacing: Geist.Spacing.s3) {
+                ColorPicker("Fill", selection: fillColorPickerBinding(for: selectedControlID), supportsOpacity: true)
+                    .labelsHidden()
+                    .frame(width: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Fill")
+                        .geistTypography(.label13)
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    Text(usesCustomColor ? "Custom color" : "Using selected preset")
+                        .geistTypography(.copy13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                }
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Circle()
+                    .fill(colorValue.swiftUIColor)
+                    .overlay(Circle().stroke(Geist.color(.grayAlpha500, scheme: colorScheme), lineWidth: 1))
+                    .frame(width: 28, height: 28)
+            }
+
+            HStack(spacing: Geist.Spacing.s2) {
+                colorTextField(title: "Hex", value: fillColorHexBinding(for: selectedControlID), unit: nil)
+                colorTextField(title: "Alpha", value: fillColorAlphaTextBinding(for: selectedControlID), unit: "%")
+            }
+
+            valueSlider(
+                title: "Opacity",
+                value: fillColorOpacityBinding(for: selectedControlID),
+                range: 0...1,
+                valueText: colorValue.opacityPercentageText
+            )
+
+            Button("Use Default Color") {
+                clearCustomFillColor(for: selectedControlID)
+            }
+            .geistButtonStyle(.tertiary, size: .small)
+            .disabled(!usesCustomColor)
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Presets")
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .textCase(.uppercase)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: Geist.Spacing.s2)], alignment: .leading, spacing: Geist.Spacing.s2) {
+                    ForEach(GamepadAccentStyle.allCases) { style in
+                        elementColorSwatch(style)
+                    }
+                }
+            }
+        }
+    }
+
+    private func colorTextField(title: String, value: Binding<String>, unit: String?) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+            Text(title)
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            HStack(spacing: Geist.Spacing.s1) {
+                TextField(title, text: value)
+                    .geistTypography(.label12Mono)
+#if os(iOS)
+                    .textInputAutocapitalization(.characters)
+#endif
+                if let unit {
+                    Text(unit)
+                        .geistTypography(.label12Mono)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                }
+            }
+            .geistInput(size: .small)
+        }
+    }
+
+    private func elementColorSwatch(_ style: GamepadAccentStyle) -> some View {
+        let layoutCustomization = selectedLayoutCustomization(for: selectedControlID)
+        let isSelected = layoutCustomization.fillColor == nil && accentStyleValue(for: selectedControlID) == style
+        let inheritsDefault = layoutCustomization.accentStyle == nil && customization.accentStyle == style && layoutCustomization.fillColor == nil
+
+        return Button {
+            accentStyleBinding(for: selectedControlID).wrappedValue = style
+        } label: {
+            HStack(spacing: Geist.Spacing.s2) {
+                Circle()
+                    .fill(style.buttonFill(isPressed: false, scheme: colorScheme))
+                    .overlay(Circle().stroke(style.buttonStroke(isPressed: false, scheme: colorScheme), lineWidth: 1))
+                    .frame(width: 14, height: 14)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(style.displayName)
+                        .geistTypography(.label13)
+                    if inheritsDefault {
+                        Text("Default")
+                            .geistTypography(.label12)
+                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    }
+                }
+
+                Spacer(minLength: Geist.Spacing.s1)
+            }
+            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            .padding(.horizontal, Geist.Spacing.s2)
+            .frame(height: 40)
+            .background(Geist.color(isSelected ? .gray100 : .background100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(isSelected ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var selectedElementSizeSection: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Position & Size")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
+                metricField(title: "X", value: frameMetricBinding(.x), unit: "pt")
+                metricField(title: "Y", value: frameMetricBinding(.y), unit: "pt")
+                metricField(title: "W", value: frameMetricBinding(.width), unit: "pt")
+                metricField(title: "H", value: frameMetricBinding(.height), unit: "pt")
+            }
+
+            Text("X and Y use the component’s top-left point on the canvas.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+
+            sizeSlider(title: "Width", value: widthScaleBinding(for: selectedControlID), currentValue: widthScaleValue(for: selectedControlID))
+            sizeSlider(title: "Height", value: heightScaleBinding(for: selectedControlID), currentValue: heightScaleValue(for: selectedControlID))
+        }
+    }
+
+    private func metricField(title: String, value: Binding<Double>, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+            Text(title)
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            HStack(spacing: Geist.Spacing.s1) {
+                TextField(title, value: value, format: .number.precision(.fractionLength(0)))
+                    .geistTypography(.label12Mono)
+#if os(iOS)
+                    .keyboardType(.decimalPad)
+#endif
+                Text(unit)
+                    .geistTypography(.label12Mono)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            }
+            .geistInput(size: .small)
+        }
+    }
+
+    private var selectedElementRadiusSection: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Corners")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+            GeistSegmentedPicker(title: "Shape", options: GamepadButtonShapeStyle.allCases, selection: shapeBinding(for: selectedControlID)) { shape in
+                shape.displayName
+            }
+
+            if shapeValue(for: selectedControlID) == .roundedRectangle {
+                valueSlider(
+                    title: "All",
+                    value: uniformCornerRadiusBinding(for: selectedControlID),
+                    range: Double(GamepadButtonCustomization.minimumCornerRadius)...Double(GamepadButtonCustomization.maximumCornerRadius),
+                    valueText: "\(Int(uniformCornerRadiusValue(for: selectedControlID).rounded())) pt"
+                )
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
+                    ForEach(GamepadCorner.allCases) { corner in
+                        metricField(title: corner.shortLabel, value: cornerRadiusBinding(for: selectedControlID, corner: corner), unit: "pt")
+                            .accessibilityLabel(corner.accessibilityLabel)
+                    }
+                }
+
+                Text("Drag the purple dot on the selected component to adjust all corners directly.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Capsule and circle presets calculate their radius automatically.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var selectedElementEffectsSection: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Effects")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            valueSlider(
+                title: "Shadow",
+                value: shadowStrengthBinding(for: selectedControlID),
+                range: Double(GamepadButtonCustomization.minimumShadowStrength)...Double(GamepadButtonCustomization.maximumShadowStrength),
+                valueText: "\(Int((shadowStrengthValue(for: selectedControlID) * 100).rounded()))%"
+            )
         }
     }
 
@@ -1914,54 +2657,25 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func sizeSlider(title: String, value: Binding<Double>, currentValue: CGFloat) -> some View {
+        valueSlider(
+            title: title,
+            value: value,
+            range: Double(GamepadButtonCustomization.minimumScale)...Double(GamepadButtonCustomization.maximumScale),
+            valueText: "\(Int((currentValue * 100).rounded()))%"
+        )
+    }
+
+    private func valueSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>, valueText: String) -> some View {
         HStack(spacing: Geist.Spacing.s3) {
             Text(title)
                 .geistTypography(.label13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                .frame(width: 52, alignment: .leading)
-            Slider(value: value, in: Double(GamepadButtonCustomization.minimumScale)...Double(GamepadButtonCustomization.maximumScale))
-            Text("\(Int((currentValue * 100).rounded()))%")
+                .frame(width: 58, alignment: .leading)
+            Slider(value: value, in: range)
+            Text(valueText)
                 .geistTypography(.label12Mono)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                .frame(width: 48, alignment: .trailing)
-        }
-    }
-
-    private var labelsSection: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                    Text("Key Labels")
-                        .geistTypography(.heading14)
-                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    Text("Leave a field blank to use the default label.")
-                        .geistTypography(.copy13)
-                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                }
-
-                Spacer()
-
-                Button("Reset Labels") {
-                    update { $0.resetLabels() }
-                }
-                .geistButtonStyle(.tertiary, size: .small)
-                .disabled(customization.labelOverrides.isEmpty)
-            }
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: Geist.Spacing.s3)], alignment: .leading, spacing: Geist.Spacing.s3) {
-                ForEach(GameButton.allCases) { button in
-                    VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                        Text(button.displayName)
-                            .geistTypography(.label12)
-                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                        TextField(
-                            GamepadCustomization.defaultVisualLabel(for: button),
-                            text: labelBinding(for: button)
-                        )
-                        .geistInput(size: .small)
-                    }
-                }
-            }
+                .frame(width: 56, alignment: .trailing)
         }
     }
 
@@ -2058,6 +2772,14 @@ struct GamepadCustomizationEditor: View {
         canvasZoomValue = Double(Self.clamp(zoom, lower: Self.canvasZoomMin, upper: Self.canvasZoomMax))
     }
 
+    private func noteCanvasLayoutSize(width: CGFloat, height: CGFloat) {
+        let nextSize = CGSize(width: max(1, width), height: max(1, height))
+        guard abs(currentCanvasLayoutSize.width - nextSize.width) > 0.5
+            || abs(currentCanvasLayoutSize.height - nextSize.height) > 0.5
+        else { return }
+        currentCanvasLayoutSize = nextSize
+    }
+
     private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
         min(max(value, lower), upper)
     }
@@ -2072,8 +2794,21 @@ struct GamepadCustomizationEditor: View {
         }
     }
 
-    private var selectedProfile: GamepadEditorConfigurationProfile? {
+    private var selectedShortcutButton: GameButton? {
+        switch selectedControlID {
+        case .builtin(let button):
+            return button
+        case .custom(let id):
+            return customButton(id: id)?.mappedButton
+        }
+    }
+
+    private var selectedProfile: GamepadConfigurationProfile? {
         profiles.first { $0.id == selectedProfileID }
+    }
+
+    private var observedExternalProfiles: [GamepadConfigurationProfile] {
+        externalProfiles ?? []
     }
 
     private var editorBinding: Binding<GamepadCustomization> {
@@ -2139,7 +2874,6 @@ struct GamepadCustomizationEditor: View {
 
     private func selectComponent(_ identity: GamepadControlIdentity) {
         selectedControlID = identity
-        selectedTab = .shape
     }
 
     private func toggleComponentVisibility(_ identity: GamepadControlIdentity) {
@@ -2194,6 +2928,167 @@ struct GamepadCustomizationEditor: View {
         }
     }
 
+    private func selectedLayoutCustomization(for identity: GamepadControlIdentity) -> GamepadButtonCustomization {
+        switch identity {
+        case .builtin(let button):
+            return customization.buttonCustomization(for: button)
+        case .custom(let id):
+            return customButton(id: id)?.layout.normalized ?? .defaultValue
+        }
+    }
+
+    private func updateLayoutCustomization(for identity: GamepadControlIdentity, mutate: (inout GamepadButtonCustomization) -> Void) {
+        switch identity {
+        case .builtin(let button):
+            update {
+                var buttonCustomization = $0.buttonCustomization(for: button)
+                mutate(&buttonCustomization)
+                $0.setButtonCustomization(buttonCustomization, for: button)
+            }
+        case .custom(let id):
+            updateCustomButton(id: id) { mutate(&$0.layout) }
+        }
+    }
+
+    private func accentStyleBinding(for identity: GamepadControlIdentity) -> Binding<GamepadAccentStyle> {
+        Binding(
+            get: { accentStyleValue(for: identity) },
+            set: { style in
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.fillColor = nil
+                    buttonCustomization.accentStyle = style == customization.accentStyle ? nil : style
+                }
+            }
+        )
+    }
+
+    private func accentStyleValue(for identity: GamepadControlIdentity) -> GamepadAccentStyle {
+        selectedLayoutCustomization(for: identity).accentStyle ?? customization.accentStyle
+    }
+
+    private func selectedFillColorValue(for identity: GamepadControlIdentity) -> GamepadRGBAColor {
+        if let fillColor = selectedLayoutCustomization(for: identity).fillColor {
+            return fillColor.normalized
+        }
+        let fallbackColor = accentStyleValue(for: identity).buttonFill(isPressed: false, scheme: colorScheme)
+        return GamepadRGBAColor(color: fallbackColor, fallback: .defaultValue).normalized
+    }
+
+    private func fillColorPickerBinding(for identity: GamepadControlIdentity) -> Binding<Color> {
+        Binding(
+            get: { selectedFillColorValue(for: identity).swiftUIColor },
+            set: { color in
+                let fallback = selectedFillColorValue(for: identity)
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.fillColor = GamepadRGBAColor(color: color, fallback: fallback).normalized
+                }
+            }
+        )
+    }
+
+    private func fillColorHexBinding(for identity: GamepadControlIdentity) -> Binding<String> {
+        Binding(
+            get: { selectedFillColorValue(for: identity).hexString },
+            set: { hexString in
+                let currentColor = selectedFillColorValue(for: identity)
+                guard let parsedColor = GamepadRGBAColor(hexString: hexString, alpha: currentColor.alpha) else { return }
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.fillColor = parsedColor.normalized
+                }
+            }
+        )
+    }
+
+    private func fillColorAlphaTextBinding(for identity: GamepadControlIdentity) -> Binding<String> {
+        Binding(
+            get: { "\(Int((selectedFillColorValue(for: identity).alpha * 100).rounded()))" },
+            set: { alphaString in
+                guard let alphaValue = Double(alphaString.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+                let normalizedAlpha = Self.clamp(CGFloat(alphaValue / 100), lower: 0, upper: 1)
+                var color = selectedFillColorValue(for: identity)
+                color.alpha = normalizedAlpha
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.fillColor = color.normalized
+                }
+            }
+        )
+    }
+
+    private func fillColorOpacityBinding(for identity: GamepadControlIdentity) -> Binding<Double> {
+        Binding(
+            get: { Double(selectedFillColorValue(for: identity).alpha) },
+            set: { opacity in
+                var color = selectedFillColorValue(for: identity)
+                color.alpha = Self.clamp(CGFloat(opacity), lower: 0, upper: 1)
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.fillColor = color.normalized
+                }
+            }
+        )
+    }
+
+    private func clearCustomFillColor(for identity: GamepadControlIdentity) {
+        updateLayoutCustomization(for: identity) { buttonCustomization in
+            buttonCustomization.fillColor = nil
+        }
+    }
+
+    private func uniformCornerRadiusBinding(for identity: GamepadControlIdentity) -> Binding<Double> {
+        Binding(
+            get: { Double(uniformCornerRadiusValue(for: identity)) },
+            set: { newValue in
+                let clampedValue = GamepadButtonCustomization.clamp(
+                    CGFloat(newValue),
+                    lower: GamepadButtonCustomization.minimumCornerRadius,
+                    upper: GamepadButtonCustomization.maximumCornerRadius
+                )
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.shape = .roundedRectangle
+                    buttonCustomization.cornerRadius = nil
+                    buttonCustomization.cornerRadii = abs(clampedValue - GamepadButtonCustomization.defaultCornerRadius) < 0.001 ? nil : .uniform(clampedValue)
+                }
+            }
+        )
+    }
+
+    private func uniformCornerRadiusValue(for identity: GamepadControlIdentity) -> CGFloat {
+        selectedLayoutCustomization(for: identity).resolvedCornerRadii().averageRadius
+    }
+
+    private func cornerRadiusBinding(for identity: GamepadControlIdentity, corner: GamepadCorner) -> Binding<Double> {
+        Binding(
+            get: { Double(cornerRadiiValue(for: identity)[corner]) },
+            set: { newValue in
+                var radii = cornerRadiiValue(for: identity)
+                radii[corner] = CGFloat(newValue)
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.shape = .roundedRectangle
+                    buttonCustomization.cornerRadius = nil
+                    buttonCustomization.cornerRadii = radii.isUniform(equalTo: GamepadButtonCustomization.defaultCornerRadius) ? nil : radii.normalized
+                }
+            }
+        )
+    }
+
+    private func cornerRadiiValue(for identity: GamepadControlIdentity) -> GamepadCornerRadii {
+        selectedLayoutCustomization(for: identity).resolvedCornerRadii()
+    }
+
+    private func shadowStrengthBinding(for identity: GamepadControlIdentity) -> Binding<Double> {
+        Binding(
+            get: { Double(shadowStrengthValue(for: identity)) },
+            set: { newValue in
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.shadowStrength = CGFloat(newValue)
+                }
+            }
+        )
+    }
+
+    private func shadowStrengthValue(for identity: GamepadControlIdentity) -> CGFloat {
+        selectedLayoutCustomization(for: identity).shadowStrength
+    }
+
     private func shapeBinding(for identity: GamepadControlIdentity) -> Binding<GamepadButtonShapeStyle> {
         Binding(
             get: { shapeValue(for: identity) },
@@ -2211,6 +3106,78 @@ struct GamepadCustomizationEditor: View {
                 }
             }
         )
+    }
+
+    private func frameMetricBinding(_ metric: GamepadFrameMetric) -> Binding<Double> {
+        Binding(
+            get: { Double(frameMetricValue(metric, for: selectedControlID)) },
+            set: { newValue in
+                setFrameMetric(metric, value: CGFloat(newValue), for: selectedControlID)
+            }
+        )
+    }
+
+    private func frameMetricValue(_ metric: GamepadFrameMetric, for identity: GamepadControlIdentity) -> CGFloat {
+        guard let frame = selectedControlFrame(for: identity) else { return 0 }
+        switch metric {
+        case .x: return frame.minX
+        case .y: return frame.minY
+        case .width: return frame.width
+        case .height: return frame.height
+        }
+    }
+
+    private func setFrameMetric(_ metric: GamepadFrameMetric, value: CGFloat, for identity: GamepadControlIdentity) {
+        guard var frame = selectedControlFrame(for: identity), let control = resolvedControl(for: identity) else { return }
+
+        switch metric {
+        case .x:
+            frame.origin.x = value
+        case .y:
+            frame.origin.y = value
+        case .width:
+            frame.size.width = value
+        case .height:
+            frame.size.height = value
+        }
+
+        setControlFrame(frame, for: control)
+    }
+
+    private func selectedControlFrame(for identity: GamepadControlIdentity) -> CGRect? {
+        guard let control = resolvedControl(for: identity) else { return nil }
+        return CGRect(
+            x: control.center.x - control.size.width / 2,
+            y: control.center.y - control.size.height / 2,
+            width: control.size.width,
+            height: control.size.height
+        )
+    }
+
+    private func resolvedControl(for identity: GamepadControlIdentity) -> GamepadResolvedControl? {
+        customization.resolvedControls(in: currentCanvasLayoutSize).first { $0.id == identity }
+    }
+
+    private func setControlFrame(_ frame: CGRect, for control: GamepadResolvedControl) {
+        let layout = selectedLayoutCustomization(for: control.id)
+        let baseWidth = max(1, control.size.width / max(layout.widthScale, 0.001))
+        let baseHeight = max(1, control.size.height / max(layout.heightScale, 0.001))
+        let minWidth = baseWidth * GamepadButtonCustomization.minimumScale
+        let minHeight = baseHeight * GamepadButtonCustomization.minimumScale
+        let maxWidth = min(currentCanvasLayoutSize.width, baseWidth * GamepadButtonCustomization.maximumScale)
+        let maxHeight = min(currentCanvasLayoutSize.height, baseHeight * GamepadButtonCustomization.maximumScale)
+        let clampedWidth = Self.clamp(frame.width, lower: minWidth, upper: maxWidth)
+        let clampedHeight = Self.clamp(frame.height, lower: minHeight, upper: maxHeight)
+        let clampedX = Self.clamp(frame.minX, lower: 0, upper: max(0, currentCanvasLayoutSize.width - clampedWidth))
+        let clampedY = Self.clamp(frame.minY, lower: 0, upper: max(0, currentCanvasLayoutSize.height - clampedHeight))
+        let center = CGPoint(x: clampedX + clampedWidth / 2, y: clampedY + clampedHeight / 2)
+
+        updateLayoutCustomization(for: control.id) { buttonCustomization in
+            buttonCustomization.widthScale = clampedWidth / baseWidth
+            buttonCustomization.heightScale = clampedHeight / baseHeight
+            buttonCustomization.centerX = center.x / max(currentCanvasLayoutSize.width, 1)
+            buttonCustomization.centerY = center.y / max(currentCanvasLayoutSize.height, 1)
+        }
     }
 
     private func widthScaleBinding(for identity: GamepadControlIdentity) -> Binding<Double> {
@@ -2277,9 +3244,13 @@ struct GamepadCustomizationEditor: View {
     private func resetSelectedControl() {
         switch selectedControlID {
         case .builtin(let button):
-            update { $0.setButtonCustomization(.defaultValue, for: button) }
+            update {
+                $0.setButtonCustomization(.defaultValue, for: button)
+                $0.setLabel("", for: button)
+            }
         case .custom(let id):
             updateCustomButton(id: id) {
+                $0.label = "Extra"
                 $0.layout = GamepadButtonCustomization(
                     centerX: 0.5,
                     centerY: 0.5,
@@ -2302,6 +3273,37 @@ struct GamepadCustomizationEditor: View {
         }
     }
 
+    private func addCustomKeyButton(mappedTo mappedButton: GameButton? = nil, label: String? = nil) {
+        guard customization.customButtons.count < GamepadCustomization.maximumCustomButtons else { return }
+        let id = UUID()
+        update { next in
+            next.addCustomButton(id: id, mappedTo: mappedButton)
+            guard let index = next.customButtons.firstIndex(where: { $0.id == id }) else { return }
+            if let label {
+                next.customButtons[index].label = label
+            }
+        }
+        selectedControlID = .custom(id)
+    }
+
+    private func resetKeyLayout() {
+        update { $0.resetButtonLayout() }
+        selectedControlID = .builtin(.jump)
+    }
+
+    private func setBuiltInControlsHidden(_ hidden: Bool) {
+        update { next in
+            for button in GameButton.builtInControls {
+                var buttonCustomization = next.buttonCustomization(for: button)
+                buttonCustomization.isHidden = hidden
+                next.setButtonCustomization(buttonCustomization, for: button)
+            }
+        }
+        if !hidden {
+            selectedControlID = .builtin(.jump)
+        }
+    }
+
     private func update(_ mutate: (inout GamepadCustomization) -> Void) {
         var next = customization
         mutate(&next)
@@ -2315,9 +3317,9 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func createProfile() {
-        let profile = GamepadEditorConfigurationProfile(
+        let profile = GamepadConfigurationProfile(
             name: "Setup \(profiles.count + 1)",
-            customization: GamepadCustomization.defaultValue
+            customization: GamepadCustomization.blankCanvas
         )
         profiles.append(profile)
         selectedProfileID = profile.id
@@ -2328,7 +3330,7 @@ struct GamepadCustomizationEditor: View {
 
     private func duplicateProfile() {
         let sourceName = selectedProfile?.name ?? "Setup"
-        let duplicate = GamepadEditorConfigurationProfile(
+        let duplicate = GamepadConfigurationProfile(
             name: "\(sourceName) Copy",
             customization: customization.normalized
         )
@@ -2348,10 +3350,15 @@ struct GamepadCustomizationEditor: View {
         persistProfiles()
     }
 
-    private func selectProfile(_ profile: GamepadEditorConfigurationProfile) {
+    private func selectProfile(_ profile: GamepadConfigurationProfile) {
         selectedProfileID = profile.id
         selectedControlID = .builtin(.jump)
         applyCustomization(profile.customization)
+        persistProfiles()
+    }
+
+    private func setSelectedProfileAsDefault() {
+        defaultProfileID = selectedProfileID
         persistProfiles()
     }
 
@@ -2371,8 +3378,47 @@ struct GamepadCustomizationEditor: View {
         persistProfiles()
     }
 
+    private func syncExternalProfileState() {
+        guard let externalProfiles,
+              let externalSelectedProfileID,
+              let externalDefaultProfileID
+        else { return }
+
+        let state = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: externalProfiles,
+            activeProfileID: externalSelectedProfileID,
+            defaultProfileID: externalDefaultProfileID,
+            fallbackCustomization: customization
+        )
+        guard profiles != state.profiles
+            || selectedProfileID != state.activeProfileID
+            || defaultProfileID != state.defaultProfileID
+        else { return }
+
+        profiles = state.profiles
+        selectedProfileID = state.activeProfileID
+        defaultProfileID = state.defaultProfileID
+        if !controlSelectionOptions.contains(selectedControlID) {
+            selectedControlID = .builtin(.jump)
+        }
+    }
+
     private func persistProfiles() {
-        GamepadEditorConfigurationProfilePersistence.save(profiles, activeProfileID: selectedProfileID)
+        let state = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: profiles,
+            activeProfileID: selectedProfileID,
+            defaultProfileID: defaultProfileID,
+            fallbackCustomization: customization
+        )
+        profiles = state.profiles
+        selectedProfileID = state.activeProfileID
+        defaultProfileID = state.defaultProfileID
+        GamepadConfigurationProfilePersistence.save(
+            state.profiles,
+            activeProfileID: state.activeProfileID,
+            defaultProfileID: state.defaultProfileID
+        )
+        onProfilesChanged?(state.profiles, state.activeProfileID, state.defaultProfileID)
     }
 
     private func profileSubtitle(for customization: GamepadCustomization) -> String {
@@ -2430,6 +3476,8 @@ private struct GamepadLayoutDesigner: View {
     var layoutSize: CGSize?
     var displayScale: CGFloat = 1
     @State private var activeDrag: GamepadControlDragState?
+    @State private var activeResize: GamepadControlResizeState?
+    @State private var activeRadiusDrag: GamepadControlRadiusDragState?
 
     private static let dragActivationDistance: CGFloat = 4
 
@@ -2445,10 +3493,28 @@ private struct GamepadLayoutDesigner: View {
                 layoutGrid
 
                 ForEach(controls) { control in
+                    let isSelected = selectedControlID == control.id
+
                     GamepadDesignerButton(
                         control: control,
                         customization: customization,
-                        isSelected: selectedControlID == control.id
+                        isSelected: isSelected,
+                        displayScale: resolvedDisplayScale,
+                        onResizeChanged: { corner, value in
+                            selectedControlID = control.id
+                            guard !control.isLocationLocked else { return }
+                            updateResize(corner, value: value, control: control, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
+                        },
+                        onResizeEnded: {
+                            activeResize = nil
+                        },
+                        onRadiusChanged: { value in
+                            selectedControlID = control.id
+                            updateRadius(value, control: control, displayScale: resolvedDisplayScale)
+                        },
+                        onRadiusEnded: {
+                            activeRadiusDrag = nil
+                        }
                     )
                     .scaleEffect(resolvedDisplayScale)
                     .position(
@@ -2521,11 +3587,209 @@ private struct GamepadLayoutDesigner: View {
         hypot(translation.width, translation.height) >= dragActivationDistance
     }
 
+    private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        min(max(value, lower), upper)
+    }
+
     private func updatePosition(_ point: CGPoint, control: GamepadResolvedControl, canvasSize: CGSize) {
         let normalizedPosition = GamepadLayoutResolver.normalizedPosition(for: point, visualSize: control.size, in: canvasSize)
         var next = customization
         next.setPosition(normalizedPosition, for: control.id)
         customization = next.normalized
+    }
+
+    private func updateResize(
+        _ corner: GamepadResizeHandleCorner,
+        value: DragGesture.Value,
+        control: GamepadResolvedControl,
+        canvasSize: CGSize,
+        displayScale: CGFloat
+    ) {
+        let currentLayout = layoutCustomization(for: control.id)
+        if activeResize?.identity != control.id {
+            activeResize = GamepadControlResizeState(
+                identity: control.id,
+                startCenter: control.center,
+                startSize: control.size,
+                startWidthScale: currentLayout.widthScale,
+                startHeightScale: currentLayout.heightScale,
+                shape: control.shape
+            )
+        }
+
+        guard let activeResize else { return }
+
+        let baseWidth = max(1, activeResize.startSize.width / max(activeResize.startWidthScale, 0.001))
+        let baseHeight = max(1, activeResize.startSize.height / max(activeResize.startHeightScale, 0.001))
+        let minWidth = baseWidth * GamepadButtonCustomization.minimumScale
+        let minHeight = baseHeight * GamepadButtonCustomization.minimumScale
+        let maxWidth = min(canvasSize.width, baseWidth * GamepadButtonCustomization.maximumScale)
+        let maxHeight = min(canvasSize.height, baseHeight * GamepadButtonCustomization.maximumScale)
+        let translation = CGSize(
+            width: value.translation.width / max(displayScale, 0.001),
+            height: value.translation.height / max(displayScale, 0.001)
+        )
+        let startRect = CGRect(
+            x: activeResize.startCenter.x - activeResize.startSize.width / 2,
+            y: activeResize.startCenter.y - activeResize.startSize.height / 2,
+            width: activeResize.startSize.width,
+            height: activeResize.startSize.height
+        )
+        let resizedRect = resizedFrame(
+            from: startRect,
+            corner: corner,
+            translation: translation,
+            minSize: CGSize(width: minWidth, height: minHeight),
+            maxSize: CGSize(width: maxWidth, height: maxHeight),
+            canvasSize: canvasSize
+        )
+        let newSize: CGSize
+        if activeResize.shape == .circle {
+            let side = min(resizedRect.width, resizedRect.height)
+            newSize = CGSize(width: side, height: side)
+        } else {
+            newSize = resizedRect.size
+        }
+        let newCenter = CGPoint(x: resizedRect.midX, y: resizedRect.midY)
+
+        updateLayoutCustomization(for: control.id) { layout in
+            layout.widthScale = newSize.width / baseWidth
+            layout.heightScale = newSize.height / baseHeight
+            layout.centerX = newCenter.x / max(canvasSize.width, 1)
+            layout.centerY = newCenter.y / max(canvasSize.height, 1)
+        }
+    }
+
+    private func resizedFrame(
+        from rect: CGRect,
+        corner: GamepadResizeHandleCorner,
+        translation: CGSize,
+        minSize: CGSize,
+        maxSize: CGSize,
+        canvasSize: CGSize
+    ) -> CGRect {
+        var minX = rect.minX
+        var maxX = rect.maxX
+        var minY = rect.minY
+        var maxY = rect.maxY
+
+        switch corner {
+        case .topLeading:
+            minX += translation.width
+            minY += translation.height
+        case .topTrailing:
+            maxX += translation.width
+            minY += translation.height
+        case .bottomTrailing:
+            maxX += translation.width
+            maxY += translation.height
+        case .bottomLeading:
+            minX += translation.width
+            maxY += translation.height
+        }
+
+        if corner.movesLeadingEdge {
+            minX = Self.clamp(minX, lower: 0, upper: maxX - minSize.width)
+            let width = Self.clamp(maxX - minX, lower: minSize.width, upper: maxSize.width)
+            minX = maxX - width
+        } else {
+            maxX = Self.clamp(maxX, lower: minX + minSize.width, upper: canvasSize.width)
+            let width = Self.clamp(maxX - minX, lower: minSize.width, upper: maxSize.width)
+            maxX = minX + width
+        }
+
+        if corner.movesTopEdge {
+            minY = Self.clamp(minY, lower: 0, upper: maxY - minSize.height)
+            let height = Self.clamp(maxY - minY, lower: minSize.height, upper: maxSize.height)
+            minY = maxY - height
+        } else {
+            maxY = Self.clamp(maxY, lower: minY + minSize.height, upper: canvasSize.height)
+            let height = Self.clamp(maxY - minY, lower: minSize.height, upper: maxSize.height)
+            maxY = minY + height
+        }
+
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    private func updateRadius(_ value: DragGesture.Value, control: GamepadResolvedControl, displayScale: CGFloat) {
+        guard control.shape == .roundedRectangle else { return }
+        let currentRadii = layoutCustomization(for: control.id).resolvedCornerRadii()
+        if activeRadiusDrag?.identity != control.id {
+            activeRadiusDrag = GamepadControlRadiusDragState(identity: control.id, startRadius: currentRadii.averageRadius)
+        }
+
+        guard let activeRadiusDrag else { return }
+        let diagonalDelta = (value.translation.width + value.translation.height) / 2 / max(displayScale, 0.001)
+        let maximumRadius = min(GamepadButtonCustomization.maximumCornerRadius, min(control.size.width, control.size.height) / 2)
+        let nextRadius = Self.clamp(activeRadiusDrag.startRadius + diagonalDelta, lower: GamepadButtonCustomization.minimumCornerRadius, upper: maximumRadius)
+
+        updateLayoutCustomization(for: control.id) { layout in
+            layout.shape = .roundedRectangle
+            layout.cornerRadius = nil
+            layout.cornerRadii = abs(nextRadius - GamepadButtonCustomization.defaultCornerRadius) < 0.001 ? nil : .uniform(nextRadius)
+        }
+    }
+
+    private func layoutCustomization(for identity: GamepadControlIdentity) -> GamepadButtonCustomization {
+        switch identity {
+        case .builtin(let button):
+            customization.buttonCustomization(for: button)
+        case .custom(let id):
+            customization.customButtons.first { $0.id == id }?.layout.normalized ?? .defaultValue
+        }
+    }
+
+    private func updateLayoutCustomization(for identity: GamepadControlIdentity, mutate: (inout GamepadButtonCustomization) -> Void) {
+        var next = customization
+        switch identity {
+        case .builtin(let button):
+            var buttonCustomization = next.buttonCustomization(for: button)
+            mutate(&buttonCustomization)
+            next.setButtonCustomization(buttonCustomization, for: button)
+        case .custom(let id):
+            guard let index = next.customButtons.firstIndex(where: { $0.id == id }) else { return }
+            mutate(&next.customButtons[index].layout)
+        }
+        customization = next.normalized
+    }
+}
+
+private enum GamepadResizeHandleCorner: CaseIterable, Identifiable {
+    case topLeading
+    case topTrailing
+    case bottomTrailing
+    case bottomLeading
+
+    var id: String {
+        switch self {
+        case .topLeading: "topLeading"
+        case .topTrailing: "topTrailing"
+        case .bottomTrailing: "bottomTrailing"
+        case .bottomLeading: "bottomLeading"
+        }
+    }
+
+    var movesLeadingEdge: Bool {
+        switch self {
+        case .topLeading, .bottomLeading: true
+        case .topTrailing, .bottomTrailing: false
+        }
+    }
+
+    var movesTopEdge: Bool {
+        switch self {
+        case .topLeading, .topTrailing: true
+        case .bottomLeading, .bottomTrailing: false
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .topLeading: "Resize from top left"
+        case .topTrailing: "Resize from top right"
+        case .bottomTrailing: "Resize from bottom right"
+        case .bottomLeading: "Resize from bottom left"
+        }
     }
 }
 
@@ -2534,11 +3798,30 @@ private struct GamepadControlDragState {
     let startCenter: CGPoint
 }
 
+private struct GamepadControlResizeState {
+    let identity: GamepadControlIdentity
+    let startCenter: CGPoint
+    let startSize: CGSize
+    let startWidthScale: CGFloat
+    let startHeightScale: CGFloat
+    let shape: GamepadButtonShapeStyle
+}
+
+private struct GamepadControlRadiusDragState {
+    let identity: GamepadControlIdentity
+    let startRadius: CGFloat
+}
+
 private struct GamepadDesignerButton: View {
     @Environment(\.colorScheme) private var colorScheme
     let control: GamepadResolvedControl
     let customization: GamepadCustomization
     let isSelected: Bool
+    let displayScale: CGFloat
+    let onResizeChanged: (GamepadResizeHandleCorner, DragGesture.Value) -> Void
+    let onResizeEnded: () -> Void
+    let onRadiusChanged: (DragGesture.Value) -> Void
+    let onRadiusEnded: () -> Void
 
     var body: some View {
         ZStack {
@@ -2549,10 +3832,9 @@ private struct GamepadDesignerButton: View {
                     .geistTypography(control.size.width <= 44 ? .button12 : .button14)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
-                    .foregroundStyle(customization.accentStyle.buttonForeground(isPressed: false, scheme: colorScheme))
+                    .foregroundStyle(control.layoutCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme))
                     .padding(.horizontal, 4)
             }
-
         }
         .frame(width: control.size.width, height: control.size.height)
         .overlay {
@@ -2561,21 +3843,116 @@ private struct GamepadDesignerButton: View {
                     .foregroundStyle(.clear)
             }
         }
-        .shadow(color: Color.black.opacity(isSelected ? 0.12 : 0.04), radius: isSelected ? 5 : 1, y: isSelected ? 3 : 1)
+        .overlay {
+            if isSelected {
+                selectionHandles
+            }
+        }
+        .shadow(
+            color: Color.black.opacity((isSelected ? 0.12 : 0.04) * resolvedShadowStrength),
+            radius: (isSelected ? 5 : 1) * max(0.25, resolvedShadowStrength),
+            y: (isSelected ? 3 : 1) * resolvedShadowStrength
+        )
         .accessibilityLabel(control.label)
+    }
+
+    private var resolvedAccentStyle: GamepadAccentStyle {
+        control.layoutCustomization.accentStyle ?? customization.accentStyle
+    }
+
+    private var resolvedCornerRadii: GamepadCornerRadii {
+        control.layoutCustomization.resolvedCornerRadii()
+    }
+
+    private var resolvedShadowStrength: CGFloat {
+        control.layoutCustomization.shadowStrength
+    }
+
+    private var inverseDisplayScale: CGFloat {
+        1 / max(displayScale, 0.001)
+    }
+
+    private var selectionHandles: some View {
+        ZStack {
+            ForEach(GamepadResizeHandleCorner.allCases) { corner in
+                resizeHandle(corner)
+                    .position(handlePosition(for: corner))
+            }
+
+            if control.shape == .roundedRectangle {
+                radiusHandle
+                    .position(radiusHandlePosition)
+            }
+        }
+        .allowsHitTesting(true)
+    }
+
+    private func resizeHandle(_ corner: GamepadResizeHandleCorner) -> some View {
+        RoundedRectangle(cornerRadius: 3 * inverseDisplayScale, style: .continuous)
+            .fill(Geist.color(.background100, scheme: colorScheme))
+            .overlay(
+                RoundedRectangle(cornerRadius: 3 * inverseDisplayScale, style: .continuous)
+                    .stroke(Geist.color(.blue700, scheme: colorScheme), lineWidth: 1.5 * inverseDisplayScale)
+            )
+            .frame(width: 11 * inverseDisplayScale, height: 11 * inverseDisplayScale)
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("gamepadLayoutDesigner"))
+                    .onChanged { value in onResizeChanged(corner, value) }
+                    .onEnded { _ in onResizeEnded() }
+            )
+            .accessibilityLabel(Text(corner.accessibilityLabel))
+            .accessibilityHint(Text("Drag to resize this component"))
+    }
+
+    private var radiusHandle: some View {
+        Circle()
+            .fill(Geist.color(.purple900, scheme: colorScheme))
+            .overlay(
+                Circle()
+                    .stroke(Geist.color(.background100, scheme: colorScheme), lineWidth: 1.5 * inverseDisplayScale)
+            )
+            .frame(width: 10 * inverseDisplayScale, height: 10 * inverseDisplayScale)
+            .contentShape(Circle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("gamepadLayoutDesigner"))
+                    .onChanged(onRadiusChanged)
+                    .onEnded { _ in onRadiusEnded() }
+            )
+            .accessibilityLabel(Text("Adjust border radius"))
+            .accessibilityHint(Text("Drag diagonally to round all corners"))
+    }
+
+    private func handlePosition(for corner: GamepadResizeHandleCorner) -> CGPoint {
+        switch corner {
+        case .topLeading:
+            CGPoint(x: 0, y: 0)
+        case .topTrailing:
+            CGPoint(x: control.size.width, y: 0)
+        case .bottomTrailing:
+            CGPoint(x: control.size.width, y: control.size.height)
+        case .bottomLeading:
+            CGPoint(x: 0, y: control.size.height)
+        }
+    }
+
+    private var radiusHandlePosition: CGPoint {
+        let radius = min(resolvedCornerRadii.averageRadius, min(control.size.width, control.size.height) / 2)
+        let inset = max(13 * inverseDisplayScale, radius)
+        return CGPoint(x: min(control.size.width - 10 * inverseDisplayScale, inset), y: min(control.size.height - 10 * inverseDisplayScale, inset))
     }
 
     @ViewBuilder
     private func background(isSelected: Bool) -> some View {
-        let fillColor = isSelected ? Color.clear : customization.accentStyle.buttonFill(isPressed: false, scheme: colorScheme)
-        let strokeColor = isSelected ? Geist.color(.blue700, scheme: colorScheme) : customization.accentStyle.buttonStroke(isPressed: false, scheme: colorScheme)
+        let fillColor = isSelected ? Color.clear : control.layoutCustomization.buttonFill(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+        let strokeColor = isSelected ? Geist.color(.blue700, scheme: colorScheme) : control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
         let lineWidth: CGFloat = isSelected ? 3 : 1
 
         switch control.shape {
         case .roundedRectangle:
-            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+            UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
                 .fill(fillColor)
-                .overlay(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
         case .capsule:
             Capsule()
                 .fill(fillColor)
@@ -2598,3 +3975,4 @@ private struct GamepadCustomizationPreview: View {
         )
     }
 }
+#endif

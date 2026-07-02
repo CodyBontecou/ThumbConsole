@@ -26,6 +26,9 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var lastSentEvent = "None"
     @Published private(set) var lastError: String?
     @Published private(set) var gamepadCustomization: GamepadCustomization
+    @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
+    @Published private(set) var selectedGamepadProfileID: UUID
+    @Published private(set) var defaultGamepadProfileID: UUID
 
     private let networkQueue = DispatchQueue(label: "PocketPad.iOS.Network", qos: .userInteractive)
     private var connection: NWConnection?
@@ -54,8 +57,34 @@ final class ControllerClient: ObservableObject {
         state == .pairingCodeRequired
     }
 
+    var selectedGamepadProfile: GamepadConfigurationProfile? {
+        gamepadProfiles.first { $0.id == selectedGamepadProfileID }
+    }
+
+    var selectedGamepadProfileName: String {
+        selectedGamepadProfile?.name ?? "Keypad"
+    }
+
+    var isSelectedGamepadProfileDefault: Bool {
+        selectedGamepadProfileID == defaultGamepadProfileID
+    }
+
     init() {
-        gamepadCustomization = GamepadCustomizationPersistence.load()
+        let savedCustomization = GamepadCustomizationPersistence.load()
+        let loadedProfileState = GamepadConfigurationProfilePersistence.load(activeCustomization: savedCustomization)
+        let startupProfile = loadedProfileState.defaultProfile ?? loadedProfileState.activeProfile ?? loadedProfileState.profiles[0]
+        let startupCustomization = startupProfile.customization.normalized
+
+        gamepadCustomization = startupCustomization
+        gamepadProfiles = loadedProfileState.profiles
+        selectedGamepadProfileID = startupProfile.id
+        defaultGamepadProfileID = loadedProfileState.defaultProfileID
+        GamepadCustomizationPersistence.save(startupCustomization)
+        GamepadConfigurationProfilePersistence.save(
+            loadedProfileState.profiles,
+            activeProfileID: startupProfile.id,
+            defaultProfileID: loadedProfileState.defaultProfileID
+        )
     }
 
     func connect(hostField: String, port: String, pairingCode: String) {
@@ -145,41 +174,75 @@ final class ControllerClient: ObservableObject {
         updateLastSentEvent("release_all", immediately: true)
     }
 
-    func updateGamepadCustomization(_ customization: GamepadCustomization, syncsToMac: Bool = true) {
-        var normalizedCustomization = customization.normalized
+    func selectGamepadProfile(_ profileID: UUID) {
+        guard let profile = gamepadProfiles.first(where: { $0.id == profileID }) else { return }
+        releaseAll()
+        selectedGamepadProfileID = profile.id
+        applyLocalGamepadCustomization(profile.customization.stampedForLocalUpdate)
+        persistGamepadProfiles()
+        send(.init(type: .gamepadProfileSelection, timestamp: 0, gamepadProfileID: profile.id))
+        updateLastSentEvent("keypad setup: \(profile.name)", immediately: true)
+    }
 
-        if syncsToMac {
-            guard !normalizedCustomization.hasSamePresentation(as: gamepadCustomization) else { return }
-            normalizedCustomization = normalizedCustomization.stampedForLocalUpdate
-        } else if gamepadCustomization.updatedAt > normalizedCustomization.updatedAt {
-            sendGamepadCustomizationToMac(gamepadCustomization)
+    func setDefaultGamepadProfile(_ profileID: UUID) {
+        guard gamepadProfiles.contains(where: { $0.id == profileID }) else { return }
+        defaultGamepadProfileID = profileID
+        persistGamepadProfiles()
+        send(
+            .init(
+                type: .gamepadDefaultProfile,
+                timestamp: 0,
+                gamepadProfileID: profileID,
+                defaultGamepadProfileID: profileID
+            )
+        )
+        updateLastSentEvent("default keypad saved", immediately: true)
+    }
+
+    private func applyLocalGamepadCustomization(_ customization: GamepadCustomization) {
+        let normalizedCustomization = customization.normalized
+        guard normalizedCustomization != gamepadCustomization else { return }
+        gamepadCustomization = normalizedCustomization
+        GamepadCustomizationPersistence.save(normalizedCustomization)
+    }
+
+    private func applyGamepadCustomizationFromMac(_ customization: GamepadCustomization) {
+        applyLocalGamepadCustomization(customization)
+    }
+
+    private func applyGamepadProfileStateFromMac(_ message: ControllerMessage) {
+        guard let incomingProfiles = message.gamepadProfiles, !incomingProfiles.isEmpty else {
+            if let customization = message.gamepadCustomization {
+                applyGamepadCustomizationFromMac(customization)
+            }
             return
         }
 
-        guard normalizedCustomization != gamepadCustomization else { return }
-
-        gamepadCustomization = normalizedCustomization
-        GamepadCustomizationPersistence.save(normalizedCustomization)
-
-        if syncsToMac {
-            sendGamepadCustomizationToMac(normalizedCustomization)
-        }
-    }
-
-    func resetGamepadCustomization() {
-        updateGamepadCustomization(.defaultValue)
-    }
-
-    private func sendGamepadCustomizationToMac(_ customization: GamepadCustomization) {
-        guard connection != nil else { return }
-        send(
-            .init(
-                type: .gamepadCustomization,
-                timestamp: 0,
-                gamepadCustomization: customization.normalized
-            )
+        let state = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: incomingProfiles,
+            activeProfileID: message.gamepadProfileID,
+            defaultProfileID: message.defaultGamepadProfileID,
+            fallbackCustomization: message.gamepadCustomization ?? gamepadCustomization
         )
-        updateLastSentEvent("keypad customization", immediately: true)
+        gamepadProfiles = state.profiles
+        selectedGamepadProfileID = state.activeProfileID
+        defaultGamepadProfileID = state.defaultProfileID
+
+        if let customization = message.gamepadCustomization {
+            applyGamepadCustomizationFromMac(customization)
+        } else if let activeProfile = state.activeProfile {
+            applyGamepadCustomizationFromMac(activeProfile.customization)
+        }
+
+        persistGamepadProfiles()
+    }
+
+    private func persistGamepadProfiles() {
+        GamepadConfigurationProfilePersistence.save(
+            gamepadProfiles,
+            activeProfileID: selectedGamepadProfileID,
+            defaultProfileID: defaultGamepadProfileID
+        )
     }
 
     func appWillBecomeInactive() {
@@ -376,9 +439,7 @@ final class ControllerClient: ObservableObject {
             updateLastSentEvent(decoded.message ?? "pairing request accepted", immediately: true)
 
         case .pairingAccepted, .hello:
-            if let gamepadCustomization = decoded.gamepadCustomization {
-                updateGamepadCustomization(gamepadCustomization, syncsToMac: false)
-            }
+            applyGamepadProfileStateFromMac(decoded)
             finishPairing(
                 on: messageConnection,
                 message: decoded.message,
@@ -386,10 +447,14 @@ final class ControllerClient: ObservableObject {
             )
 
         case .gamepadCustomization:
-            if let gamepadCustomization = decoded.gamepadCustomization {
-                updateGamepadCustomization(gamepadCustomization, syncsToMac: false)
+            applyGamepadProfileStateFromMac(decoded)
+            if decoded.gamepadCustomization != nil {
                 updateLastSentEvent("keypad customization updated", immediately: true)
             }
+
+        case .gamepadProfiles:
+            applyGamepadProfileStateFromMac(decoded)
+            updateLastSentEvent("keypad setups updated", immediately: true)
 
         case .pong:
             break
@@ -398,6 +463,9 @@ final class ControllerClient: ObservableObject {
             lastError = decoded.message ?? "Mac helper returned an error"
             state = .failed(lastError ?? "Unknown error")
             disconnect(sendReleaseAll: false)
+
+        case .gamepadProfileSelection, .gamepadDefaultProfile:
+            break
 
         default:
             break

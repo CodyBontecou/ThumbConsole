@@ -14,6 +14,7 @@ struct IOSContentView: View {
         ZStack {
             if client.isConnected {
                 ControllerPadView()
+                    .ignoresSafeArea()
             } else {
                 ConnectionView(macHost: $macHost, macPort: $macPort, pairingCode: $pairingCode)
             }
@@ -81,7 +82,6 @@ private struct ConnectionView: View {
     @Binding var pairingCode: String
 
     @State private var isShowingScanner = false
-    @State private var isShowingCustomization = false
     @State private var qrScanError: String?
     @State private var pendingPairingCode = ""
 
@@ -134,9 +134,6 @@ private struct ConnectionView: View {
                     }
                 }
             }
-        }
-        .sheet(isPresented: $isShowingCustomization) {
-            GamepadCustomizationSheet()
         }
     }
 
@@ -218,15 +215,6 @@ private struct ConnectionView: View {
             .geistButtonStyle(.primary, size: .medium)
             .disabled(macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            DividerLabel("Keypad")
-
-            Button {
-                isShowingCustomization = true
-            } label: {
-                Label("Customize iPhone Keypad", systemImage: "slider.horizontal.3")
-                    .frame(maxWidth: .infinity)
-            }
-            .geistButtonStyle(.secondary, size: .medium)
         }
         .geistPanel(padding: Geist.Spacing.s6, radius: Geist.Radius.sm)
     }
@@ -468,55 +456,34 @@ private struct LabeledInput<Content: View>: View {
     }
 }
 
-private struct GamepadCustomizationSheet: View {
-    @EnvironmentObject private var client: ControllerClient
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            GamepadCustomizationEditor(
-                customization: Binding(
-                    get: { client.gamepadCustomization },
-                    set: { client.updateGamepadCustomization($0) }
-                ),
-                onReset: { client.resetGamepadCustomization() }
-            )
-            .geistScreenBackground()
-            .navigationTitle("Keypad Editor")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-}
-
 private struct ControllerPadView: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
-    @State private var isShowingCustomization = false
+    @State private var isTopBarVisible = false
 
     var body: some View {
         GeometryReader { proxy in
             let isLandscape = proxy.size.width >= proxy.size.height
 
-            VStack(spacing: 0) {
-                topBar
-                    .padding(.leading, max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, proxy.safeAreaInsets.leading + Geist.Spacing.s3))
-                    .padding(.trailing, max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, proxy.safeAreaInsets.trailing + Geist.Spacing.s3))
-                    .padding(.top, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s2, proxy.safeAreaInsets.top + Geist.Spacing.s2))
+            ZStack(alignment: .top) {
+                Group {
+                    if isLandscape {
+                        landscapeControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+                    } else {
+                        portraitControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if isLandscape {
-                    landscapeControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
-                } else {
-                    portraitControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+                ControllerTopBarDrawer(
+                    isVisible: $isTopBarVisible,
+                    safeAreaInsets: proxy.safeAreaInsets,
+                    isLandscape: isLandscape
+                ) {
+                    topBar
                 }
             }
-        }
-        .sheet(isPresented: $isShowingCustomization) {
-            GamepadCustomizationSheet()
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .onChange(of: client.gamepadCustomization) { _, _ in
             TouchCaptureUIView.deactivateAllRegisteredTouches()
@@ -676,6 +643,10 @@ private struct ControllerPadView: View {
         HStack(spacing: Geist.Spacing.s3) {
             StatusPill(title: "Connected", systemImage: "wifi", tone: .success)
 
+            if !client.gamepadProfiles.isEmpty {
+                keypadProfileMenu
+            }
+
             Text(client.lastSentEvent)
                 .geistTypography(.label12Mono)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -683,17 +654,6 @@ private struct ControllerPadView: View {
                 .minimumScaleFactor(0.7)
 
             Spacer(minLength: Geist.Spacing.s2)
-
-            Button {
-                TouchCaptureUIView.deactivateAllRegisteredTouches()
-                client.releaseAll()
-                isShowingCustomization = true
-            } label: {
-                Label("Customize", systemImage: "slider.horizontal.3")
-                    .labelStyle(.iconOnly)
-            }
-            .geistButtonStyle(.secondary, size: .small)
-            .accessibilityLabel("Customize keypad")
 
             Button("Disconnect iPhone") {
                 client.disconnect(sendReleaseAll: true)
@@ -703,6 +663,150 @@ private struct ControllerPadView: View {
         .padding(Geist.Spacing.s2)
         .background(Geist.color(.background100, scheme: colorScheme), in: Capsule())
         .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
+    }
+
+    private var keypadProfileMenu: some View {
+        Menu {
+            ForEach(client.gamepadProfiles) { profile in
+                Button {
+                    client.selectGamepadProfile(profile.id)
+                } label: {
+                    Label(
+                        profile.name,
+                        systemImage: profile.id == client.selectedGamepadProfileID ? "checkmark.circle.fill" : (profile.id == client.defaultGamepadProfileID ? "star.fill" : "rectangle.grid.2x2")
+                    )
+                }
+            }
+
+            Divider()
+
+            Button {
+                client.setDefaultGamepadProfile(client.selectedGamepadProfileID)
+            } label: {
+                Label(
+                    client.isSelectedGamepadProfileDefault ? "Current Is Default" : "Make Current Default",
+                    systemImage: client.isSelectedGamepadProfileDefault ? "star.fill" : "star"
+                )
+            }
+            .disabled(client.isSelectedGamepadProfileDefault)
+        } label: {
+            HStack(spacing: Geist.Spacing.s1) {
+                Image(systemName: client.isSelectedGamepadProfileDefault ? "star.fill" : "rectangle.grid.2x2")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(client.selectedGamepadProfileName)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+            .frame(maxWidth: 160)
+        }
+        .geistButtonStyle(.secondary, size: .small)
+        .accessibilityLabel("Keypad setup")
+    }
+}
+
+private struct ControllerTopBarDrawer<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var isVisible: Bool
+    let safeAreaInsets: EdgeInsets
+    let isLandscape: Bool
+    let content: Content
+
+    init(
+        isVisible: Binding<Bool>,
+        safeAreaInsets: EdgeInsets,
+        isLandscape: Bool,
+        @ViewBuilder content: () -> Content
+    ) {
+        self._isVisible = isVisible
+        self.safeAreaInsets = safeAreaInsets
+        self.isLandscape = isLandscape
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(spacing: Geist.Spacing.s1) {
+            if isVisible {
+                content
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.08), radius: 10, y: 4)
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(drawerDragGesture)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            revealHandle
+        }
+        .padding(.top, topPadding)
+        .padding(.leading, leadingPadding)
+        .padding(.trailing, trailingPadding)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .animation(drawerAnimation, value: isVisible)
+        .zIndex(10)
+    }
+
+    private var revealHandle: some View {
+        VStack(spacing: 3) {
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .fill(Geist.color(.grayAlpha700, scheme: colorScheme))
+                .frame(width: isVisible ? 36 : 56, height: 5)
+
+            if !isVisible {
+                Text("Controls")
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, isVisible ? Geist.Spacing.s3 : Geist.Spacing.s4)
+        .padding(.vertical, Geist.Spacing.s2)
+        .background(
+            Capsule()
+                .fill(Geist.color(.background100, scheme: colorScheme).opacity(isVisible ? 0.74 : 0.94))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                .opacity(isVisible ? 0 : 1)
+        )
+        .contentShape(Capsule())
+        .onTapGesture {
+            setVisible(!isVisible)
+        }
+        .simultaneousGesture(drawerDragGesture)
+        .accessibilityLabel(isVisible ? "Hide connection bar" : "Show connection bar")
+        .accessibilityHint(isVisible ? "Swipe up or tap to hide the connection controls." : "Swipe down or tap to show the connection controls.")
+    }
+
+    private var drawerDragGesture: some Gesture {
+        DragGesture(minimumDistance: 16, coordinateSpace: .local)
+            .onEnded { value in
+                let verticalMovement = value.predictedEndTranslation.height
+                let horizontalMovement = abs(value.predictedEndTranslation.width)
+                guard abs(verticalMovement) > max(22, horizontalMovement * 0.65) else { return }
+
+                setVisible(verticalMovement > 0)
+            }
+    }
+
+    private var topPadding: CGFloat {
+        max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s2, safeAreaInsets.top + Geist.Spacing.s2)
+    }
+
+    private var leadingPadding: CGFloat {
+        max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s3)
+    }
+
+    private var trailingPadding: CGFloat {
+        max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s3)
+    }
+
+    private var drawerAnimation: Animation {
+        .spring(response: 0.26, dampingFraction: 0.86)
+    }
+
+    private func setVisible(_ visible: Bool) {
+        withAnimation(drawerAnimation) {
+            isVisible = visible
+        }
     }
 }
 
@@ -741,12 +845,12 @@ private struct LandscapeControllerMetrics {
 
     init(size: CGSize, safeAreaInsets: EdgeInsets, controlScale: GamepadControlScale) {
         let customizationScale = controlScale.multiplier
-        let availableHeight = max(220, size.height - 58)
         let sideSafePadding = Geist.Spacing.s2
         leadingPadding = max(Geist.Spacing.s3, safeAreaInsets.leading + sideSafePadding)
         trailingPadding = max(Geist.Spacing.s3, safeAreaInsets.trailing + sideSafePadding)
         bottomPadding = max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2)
 
+        let availableHeight = max(220, size.height - bottomPadding)
         let contentWidth = max(320, size.width - leadingPadding - trailingPadding)
         utilitySpacing = contentWidth < 780 ? Geist.Spacing.s2 : Geist.Spacing.s4
         controlSpacing = contentWidth < 780 ? Geist.Spacing.s3 : max(Geist.Spacing.s4, min(Geist.Spacing.s6, contentWidth * 0.02))
@@ -813,6 +917,7 @@ private struct GamepadFreeformControllerCanvas: View {
                         size: control.size,
                         shape: control.shape,
                         labelOverride: control.label,
+                        elementCustomization: control.layoutCustomization,
                         customization: customization
                     )
                     .position(control.center)
@@ -883,6 +988,7 @@ private struct GamepadButton: View {
     let size: CGSize
     var shape: GamepadButtonShapeStyle = .roundedRectangle
     var labelOverride: String? = nil
+    var elementCustomization: GamepadButtonCustomization? = nil
     let customization: GamepadCustomization
 
     @State private var isPressed = false
@@ -899,14 +1005,18 @@ private struct GamepadButton: View {
         ZStack {
             ZStack {
                 buttonBackground
-                    .shadow(color: Color.black.opacity(isPressed ? 0.16 : 0.04), radius: isPressed ? 2 : 1, y: isPressed ? 1 : 2)
+                    .shadow(
+                        color: Color.black.opacity((isPressed ? 0.16 : 0.04) * resolvedShadowStrength),
+                        radius: (isPressed ? 2 : 1) * max(0.25, resolvedShadowStrength),
+                        y: (isPressed ? 1 : 2) * resolvedShadowStrength
+                    )
 
                 if customization.showsButtonLabels {
                     Text(title)
                         .geistTypography(title.count <= 2 ? .heading32 : .button16)
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
-                        .foregroundStyle(customization.accentStyle.buttonForeground(isPressed: isPressed, scheme: colorScheme))
+                        .foregroundStyle(resolvedButtonCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme))
                         .padding(.horizontal, 4)
                 }
             }
@@ -929,17 +1039,37 @@ private struct GamepadButton: View {
         }
     }
 
+    private var resolvedButtonCustomization: GamepadButtonCustomization {
+        elementCustomization ?? customization.buttonCustomization(for: button)
+    }
+
+    private var resolvedShape: GamepadButtonShapeStyle {
+        resolvedButtonCustomization.resolvedShape(defaultShape: shape)
+    }
+
+    private var resolvedAccentStyle: GamepadAccentStyle {
+        resolvedButtonCustomization.accentStyle ?? customization.accentStyle
+    }
+
+    private var resolvedCornerRadii: GamepadCornerRadii {
+        resolvedButtonCustomization.resolvedCornerRadii()
+    }
+
+    private var resolvedShadowStrength: CGFloat {
+        resolvedButtonCustomization.shadowStrength
+    }
+
     @ViewBuilder
     private var buttonBackground: some View {
-        let fillColor = customization.accentStyle.buttonFill(isPressed: isPressed, scheme: colorScheme)
-        let strokeColor = customization.accentStyle.buttonStroke(isPressed: isPressed, scheme: colorScheme)
+        let fillColor = resolvedButtonCustomization.buttonFill(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme)
+        let strokeColor = resolvedButtonCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme)
         let lineWidth: CGFloat = isPressed ? 2 : 1
 
-        switch shape {
+        switch resolvedShape {
         case .roundedRectangle:
-            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+            UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
                 .fill(fillColor)
-                .overlay(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
         case .capsule:
             Capsule()
                 .fill(fillColor)

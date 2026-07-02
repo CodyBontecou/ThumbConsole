@@ -77,11 +77,23 @@ struct MacContentView: View {
                 get: { server.gamepadCustomization },
                 set: { server.setGamepadCustomization($0) }
             ),
+            initialProfiles: server.gamepadProfiles,
+            initialSelectedProfileID: server.activeGamepadProfileID,
+            initialDefaultProfileID: server.defaultGamepadProfileID,
             onReset: { server.resetGamepadCustomization() },
-            keyBindingsContent: AnyView(
-                MacGamepadKeyBindingsInspector(keyCaptureButton: $keyCaptureButton)
-                    .environmentObject(server)
-            )
+            onProfilesChanged: { profiles, activeProfileID, defaultProfileID in
+                server.setGamepadProfileState(
+                    profiles: profiles,
+                    activeProfileID: activeProfileID,
+                    defaultProfileID: defaultProfileID
+                )
+            },
+            selectedKeyBindingContent: { button in
+                AnyView(
+                    MacGamepadSelectedKeyBindingInspector(button: button, keyCaptureButton: $keyCaptureButton)
+                        .environmentObject(server)
+                )
+            }
         )
         .geistScreenBackground()
     }
@@ -735,6 +747,52 @@ private struct TestKeyButton: View {
 
     private var buttonFill: Color {
         isPressed ? Geist.color(.gray1000, scheme: colorScheme) : Geist.color(.gray100, scheme: colorScheme)
+    }
+}
+
+private struct MacGamepadSelectedKeyBindingInspector: View {
+    @EnvironmentObject private var server: MacControllerServer
+    @Environment(\.colorScheme) private var colorScheme
+    let button: GameButton
+    @Binding var keyCaptureButton: GameButton?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Shortcut")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s3) {
+                Text(button.displayName)
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                Spacer(minLength: Geist.Spacing.s2)
+                Text(server.keyLabel(for: button))
+                    .geistTypography(.label13Mono)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .lineLimit(1)
+                    .padding(.horizontal, Geist.Spacing.s2)
+                    .frame(height: Geist.Spacing.s8)
+                    .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                            .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                    )
+            }
+
+            HStack(spacing: Geist.Spacing.s2) {
+                Button("Record Shortcut") {
+                    keyCaptureButton = button
+                }
+                .geistButtonStyle(.primary, size: .small)
+
+                Button("Default") {
+                    server.resetKeyBinding(button)
+                }
+                .geistButtonStyle(.tertiary, size: .small)
+                .disabled(server.isDefaultBinding(for: button))
+            }
+        }
     }
 }
 
