@@ -1,0 +1,440 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1CEC429B738164F29705D382 /* PairingPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED972AD760E84285E8C4B596 /* PairingPayload.swift */; };
+		219120CF4CD32EE487DD3D1B /* KeyboardInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F6D6EFB1D6903413D75DDC /* KeyboardInjector.swift */; };
+		2E05D8EBAD0CAD586BF9BEED /* MacControllerServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C89F51B6A80B1068097A64E /* MacControllerServer.swift */; };
+		3BB1AE0B303818DE1B7AAD41 /* ControllerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F8E4E0048EB775369CAB45B /* ControllerClient.swift */; };
+		45FBD400874A016245675BE8 /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6628198D96F8304B59FD6AF /* QRCodeScannerView.swift */; };
+		4687661823546351CD6C1146 /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */; };
+		5491AD076F81ADCFF4B5A072 /* PocketPadiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 252777ED386D695443B445F6 /* PocketPadiOSApp.swift */; };
+		A7794BC74ADDF42A158EE591 /* KeyMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52DA2C9503876B04B5F82CED /* KeyMap.swift */; };
+		AEE86D2D421A00321BC28B13 /* PocketPadMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0354CA7F7F471B40C715D4 /* PocketPadMacApp.swift */; };
+		CEB5D57147954DA28AE8D640 /* IOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F9B7D6317F0548DB0C87CE /* IOSContentView.swift */; };
+		D0329A5F2B9E58AF0E701A1E /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */; };
+		D2113CC27BF4077951FD74B7 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C2F6CF097E93197F4FD6CA8 /* MacContentView.swift */; };
+		E9777B1E6B22CB4D293A0DB9 /* TouchCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59D3034E486928F2E986F424 /* TouchCaptureView.swift */; };
+		F38907CC2E45FC5D72A2AB62 /* PairingPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED972AD760E84285E8C4B596 /* PairingPayload.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0C89F51B6A80B1068097A64E /* MacControllerServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacControllerServer.swift; sourceTree = "<group>"; };
+		252777ED386D695443B445F6 /* PocketPadiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadiOSApp.swift; sourceTree = "<group>"; };
+		52DA2C9503876B04B5F82CED /* KeyMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyMap.swift; sourceTree = "<group>"; };
+		59D3034E486928F2E986F424 /* TouchCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchCaptureView.swift; sourceTree = "<group>"; };
+		5C2F6CF097E93197F4FD6CA8 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
+		681B687067A5F4292A2D4111 /* PocketPadMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PocketPadMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6F8E4E0048EB775369CAB45B /* ControllerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerClient.swift; sourceTree = "<group>"; };
+		82F6D6EFB1D6903413D75DDC /* KeyboardInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardInjector.swift; sourceTree = "<group>"; };
+		8A0354CA7F7F471B40C715D4 /* PocketPadMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadMacApp.swift; sourceTree = "<group>"; };
+		C1F9B7D6317F0548DB0C87CE /* IOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSContentView.swift; sourceTree = "<group>"; };
+		D2C56AD3A6E47B2A242D7249 /* PocketPadiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PocketPadiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ED972AD760E84285E8C4B596 /* PairingPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPayload.swift; sourceTree = "<group>"; };
+		F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerProtocol.swift; sourceTree = "<group>"; };
+		F6628198D96F8304B59FD6AF /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		9007050BF108B206560E1708 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */,
+				ED972AD760E84285E8C4B596 /* PairingPayload.swift */,
+			);
+			name = Shared;
+			path = Sources/Shared;
+			sourceTree = "<group>";
+		};
+		972EFCCDE343C1B277C5A689 /* Mac */ = {
+			isa = PBXGroup;
+			children = (
+				82F6D6EFB1D6903413D75DDC /* KeyboardInjector.swift */,
+				52DA2C9503876B04B5F82CED /* KeyMap.swift */,
+				5C2F6CF097E93197F4FD6CA8 /* MacContentView.swift */,
+				0C89F51B6A80B1068097A64E /* MacControllerServer.swift */,
+				8A0354CA7F7F471B40C715D4 /* PocketPadMacApp.swift */,
+			);
+			name = Mac;
+			path = Sources/Mac;
+			sourceTree = "<group>";
+		};
+		DF4E1E82332AB6D6C0090F90 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D2C56AD3A6E47B2A242D7249 /* PocketPadiOS.app */,
+				681B687067A5F4292A2D4111 /* PocketPadMac.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FA7E1B651905F2FE01A0C45A = {
+			isa = PBXGroup;
+			children = (
+				FD88EB9638384D17E9D9EDFD /* iOS */,
+				972EFCCDE343C1B277C5A689 /* Mac */,
+				9007050BF108B206560E1708 /* Shared */,
+				DF4E1E82332AB6D6C0090F90 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FD88EB9638384D17E9D9EDFD /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				6F8E4E0048EB775369CAB45B /* ControllerClient.swift */,
+				C1F9B7D6317F0548DB0C87CE /* IOSContentView.swift */,
+				252777ED386D695443B445F6 /* PocketPadiOSApp.swift */,
+				F6628198D96F8304B59FD6AF /* QRCodeScannerView.swift */,
+				59D3034E486928F2E986F424 /* TouchCaptureView.swift */,
+			);
+			name = iOS;
+			path = Sources/iOS;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		835D8DAC0C5A302CFAF00554 /* PocketPadMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C259EDFBB79DBEDF04E27407 /* Build configuration list for PBXNativeTarget "PocketPadMac" */;
+			buildPhases = (
+				939D515A639AFC3460847E80 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PocketPadMac;
+			packageProductDependencies = (
+			);
+			productName = PocketPadMac;
+			productReference = 681B687067A5F4292A2D4111 /* PocketPadMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9D03AA5F394755FB7D4FA4AD /* PocketPadiOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 431267B53BDDDF2870E6B4B0 /* Build configuration list for PBXNativeTarget "PocketPadiOS" */;
+			buildPhases = (
+				375D033A26419FC8280AA4BB /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PocketPadiOS;
+			packageProductDependencies = (
+			);
+			productName = PocketPadiOS;
+			productReference = D2C56AD3A6E47B2A242D7249 /* PocketPadiOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8C6FE65439A37FCB161B9FDA /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					835D8DAC0C5A302CFAF00554 = {
+						ProvisioningStyle = Automatic;
+					};
+					9D03AA5F394755FB7D4FA4AD = {
+						DevelopmentTeam = 67KC823C9A;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = D0429458AA524B128CDA495D /* Build configuration list for PBXProject "PocketPad" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = FA7E1B651905F2FE01A0C45A;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				835D8DAC0C5A302CFAF00554 /* PocketPadMac */,
+				9D03AA5F394755FB7D4FA4AD /* PocketPadiOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		375D033A26419FC8280AA4BB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3BB1AE0B303818DE1B7AAD41 /* ControllerClient.swift in Sources */,
+				D0329A5F2B9E58AF0E701A1E /* ControllerProtocol.swift in Sources */,
+				CEB5D57147954DA28AE8D640 /* IOSContentView.swift in Sources */,
+				F38907CC2E45FC5D72A2AB62 /* PairingPayload.swift in Sources */,
+				5491AD076F81ADCFF4B5A072 /* PocketPadiOSApp.swift in Sources */,
+				45FBD400874A016245675BE8 /* QRCodeScannerView.swift in Sources */,
+				E9777B1E6B22CB4D293A0DB9 /* TouchCaptureView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		939D515A639AFC3460847E80 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4687661823546351CD6C1146 /* ControllerProtocol.swift in Sources */,
+				A7794BC74ADDF42A158EE591 /* KeyMap.swift in Sources */,
+				219120CF4CD32EE487DD3D1B /* KeyboardInjector.swift in Sources */,
+				D2113CC27BF4077951FD74B7 /* MacContentView.swift in Sources */,
+				2E05D8EBAD0CAD586BF9BEED /* MacControllerServer.swift in Sources */,
+				1CEC429B738164F29705D382 /* PairingPayload.swift in Sources */,
+				AEE86D2D421A00321BC28B13 /* PocketPadMacApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		02531C769648902E9318A091 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 67KC823C9A;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Resources/Mac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.codybontecou.PocketPadMac;
+				PRODUCT_NAME = "PocketPad Mac";
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		5FECE56EEA5634AF9A228171 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		6DF55524DBDB092B9838C457 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		8FE3D1BBC8FE4E65A9969377 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 67KC823C9A;
+				INFOPLIST_FILE = Resources/iOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.codybontecou.PocketPad.iOS;
+				PRODUCT_NAME = PocketPad;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A07A49F4CFD2C3AACF84F289 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 67KC823C9A;
+				INFOPLIST_FILE = Resources/iOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.codybontecou.PocketPad.iOS;
+				PRODUCT_NAME = PocketPad;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		B01FF2DDB389844530E95274 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 67KC823C9A;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Resources/Mac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.codybontecou.PocketPadMac;
+				PRODUCT_NAME = "PocketPad Mac";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		431267B53BDDDF2870E6B4B0 /* Build configuration list for PBXNativeTarget "PocketPadiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8FE3D1BBC8FE4E65A9969377 /* Debug */,
+				A07A49F4CFD2C3AACF84F289 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C259EDFBB79DBEDF04E27407 /* Build configuration list for PBXNativeTarget "PocketPadMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				02531C769648902E9318A091 /* Debug */,
+				B01FF2DDB389844530E95274 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D0429458AA524B128CDA495D /* Build configuration list for PBXProject "PocketPad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5FECE56EEA5634AF9A228171 /* Debug */,
+				6DF55524DBDB092B9838C457 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 8C6FE65439A37FCB161B9FDA /* Project object */;
+}
