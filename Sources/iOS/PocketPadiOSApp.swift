@@ -12,8 +12,10 @@ struct PocketPadiOSApp: App {
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
                     case .inactive:
+                        TouchCaptureUIView.deactivateAllRegisteredTouches()
                         client.appWillBecomeInactive()
                     case .background:
+                        TouchCaptureUIView.deactivateAllRegisteredTouches()
                         client.appDidEnterBackground()
                     default:
                         break

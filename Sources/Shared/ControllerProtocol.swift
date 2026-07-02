@@ -37,6 +37,9 @@ public enum ButtonPressState: String, Codable, Sendable {
 
 public enum ControllerMessageType: String, Codable, Sendable {
     case hello
+    case pairingRequest = "pairing_request"
+    case pairingChallenge = "pairing_challenge"
+    case pairingAccepted = "pairing_accepted"
     case button
     case releaseAll = "release_all"
     case heartbeat
@@ -70,6 +73,341 @@ public struct ControllerMessage: Codable, Sendable {
         self.pairingCode = pairingCode
         self.clientName = clientName
         self.message = message
+    }
+}
+
+struct ButtonSequenceInspection: Equatable {
+    var hasSequence = false
+    var missedFrameBeforeButton = false
+    var expectedSequence: UInt64?
+    var receivedSequence: UInt64?
+    var missedFrameCount: UInt64 = 0
+    var totalMissedFrameCount = 0
+    var isOutOfOrderOrReset = false
+}
+
+struct ButtonSequenceTracker {
+    private var nextExpectedButtonSequence: UInt64?
+    private var acceptsNextSequenceAsBaseline = false
+    private(set) var totalMissedFrameCount = 0
+
+    mutating func inspect(_ message: ControllerMessage) -> ButtonSequenceInspection {
+        guard let sequenceNumber = ControllerWireCodec.buttonSequenceNumber(from: message) else {
+            return ButtonSequenceInspection()
+        }
+
+        var inspection = ButtonSequenceInspection(
+            hasSequence: true,
+            receivedSequence: sequenceNumber,
+            totalMissedFrameCount: totalMissedFrameCount
+        )
+
+        if acceptsNextSequenceAsBaseline {
+            acceptsNextSequenceAsBaseline = false
+        } else if let expectedSequence = nextExpectedButtonSequence, sequenceNumber != expectedSequence {
+            inspection.expectedSequence = expectedSequence
+            if sequenceNumber > expectedSequence {
+                inspection.missedFrameBeforeButton = true
+                inspection.missedFrameCount = sequenceNumber - expectedSequence
+                inspection.totalMissedFrameCount = recordMissedFrames(inspection.missedFrameCount)
+            } else {
+                inspection.isOutOfOrderOrReset = true
+                return inspection
+            }
+        } else if nextExpectedButtonSequence == nil, sequenceNumber > 1 {
+            inspection.expectedSequence = 1
+            inspection.missedFrameBeforeButton = true
+            inspection.missedFrameCount = sequenceNumber - 1
+            inspection.totalMissedFrameCount = recordMissedFrames(inspection.missedFrameCount)
+        }
+
+        if sequenceNumber >= ControllerWireCodec.maximumButtonSequenceNumber {
+            nextExpectedButtonSequence = 1
+        } else {
+            nextExpectedButtonSequence = sequenceNumber + 1
+        }
+
+        return inspection
+    }
+
+    mutating func reset() {
+        nextExpectedButtonSequence = nil
+        acceptsNextSequenceAsBaseline = false
+        totalMissedFrameCount = 0
+    }
+
+    mutating func resetAcceptingNextSequenceAsBaseline() {
+        nextExpectedButtonSequence = nil
+        acceptsNextSequenceAsBaseline = true
+        totalMissedFrameCount = 0
+    }
+
+    @discardableResult
+    private mutating func recordMissedFrames(_ count: UInt64) -> Int {
+        let clampedMissedFrameCount = Int(min(count, UInt64(Int.max)))
+        if Int.max - totalMissedFrameCount <= clampedMissedFrameCount {
+            totalMissedFrameCount = Int.max
+        } else {
+            totalMissedFrameCount += clampedMissedFrameCount
+        }
+        return totalMissedFrameCount
+    }
+}
+
+public enum ControllerWireCodec {
+    private static let magic: [UInt8] = [0x50, 0x50] // "PP"
+    private static let version: UInt8 = 1
+    private static let emptyField: UInt8 = UInt8.max
+    private static let compactMessageSize = 14
+    private static let buttonSequenceMarker: UInt64 = UInt64(1) << 63
+    private static let buttonSequenceBitCount: UInt64 = 48
+    private static let buttonSequenceMask: UInt64 = (UInt64(1) << buttonSequenceBitCount) - 1
+    private static let buttonPressIdentifierShift = buttonSequenceBitCount
+    private static let buttonPressIdentifierMask: UInt64 = (UInt64(1) << 15) - 1
+    public static let maximumButtonSequenceNumber = buttonSequenceMask
+    public static let maximumButtonPressIdentifier = buttonPressIdentifierMask
+    private static let buttonDownFrames = GameButton.allCases.map {
+        compactData(
+            typeCode: ControllerMessageType.button.compactWireCode!,
+            timestamp: 0,
+            buttonCode: $0.compactWireCode,
+            stateCode: ButtonPressState.down.compactWireCode
+        )
+    }
+    private static let buttonUpFrames = GameButton.allCases.map {
+        compactData(
+            typeCode: ControllerMessageType.button.compactWireCode!,
+            timestamp: 0,
+            buttonCode: $0.compactWireCode,
+            stateCode: ButtonPressState.up.compactWireCode
+        )
+    }
+
+    public static func encode(_ message: ControllerMessage, using encoder: JSONEncoder) throws -> Data {
+        if let compactData = compactData(for: message) {
+            return compactData
+        }
+        return try encoder.encode(message)
+    }
+
+    public static func decode(_ data: Data, using decoder: JSONDecoder) throws -> ControllerMessage {
+        if let compactMessage = compactMessage(from: data) {
+            return compactMessage
+        }
+        return try decoder.decode(ControllerMessage.self, from: data)
+    }
+
+    public static func encodeButton(_ button: GameButton, state: ButtonPressState) -> Data {
+        switch state {
+        case .down: buttonDownFrames[button.compactFrameIndex]
+        case .up: buttonUpFrames[button.compactFrameIndex]
+        }
+    }
+
+    public static func encodeButton(
+        _ button: GameButton,
+        state: ButtonPressState,
+        sequenceNumber: UInt64,
+        pressIdentifier: UInt64? = nil
+    ) -> Data {
+        compactData(
+            typeCode: ControllerMessageType.button.compactWireCode!,
+            timestamp: buttonSequenceTimestamp(
+                for: sequenceNumber,
+                pressIdentifier: pressIdentifier
+            ),
+            buttonCode: button.compactWireCode,
+            stateCode: state.compactWireCode
+        )
+    }
+
+    public static func buttonSequenceNumber(from message: ControllerMessage) -> UInt64? {
+        guard message.type == .button else { return nil }
+
+        let timestampBits = UInt64(bitPattern: message.timestamp)
+        guard timestampBits & buttonSequenceMarker == buttonSequenceMarker else { return nil }
+
+        let sequenceNumber = timestampBits & buttonSequenceMask
+        return sequenceNumber == 0 ? nil : sequenceNumber
+    }
+
+    public static func buttonPressIdentifier(from message: ControllerMessage) -> UInt64? {
+        guard message.type == .button else { return nil }
+
+        let timestampBits = UInt64(bitPattern: message.timestamp)
+        guard timestampBits & buttonSequenceMarker == buttonSequenceMarker else { return nil }
+
+        let pressIdentifier = (timestampBits >> buttonPressIdentifierShift) & buttonPressIdentifierMask
+        return pressIdentifier == 0 ? nil : pressIdentifier
+    }
+
+    private static func compactData(for message: ControllerMessage) -> Data? {
+        guard message.pairingCode == nil,
+              message.clientName == nil,
+              message.message == nil,
+              let typeCode = message.type.compactWireCode
+        else {
+            return nil
+        }
+
+        if message.type == .button, (message.button == nil || message.state == nil) {
+            return nil
+        }
+
+        return compactData(
+            typeCode: typeCode,
+            timestamp: message.timestamp,
+            buttonCode: message.button?.compactWireCode,
+            stateCode: message.state?.compactWireCode
+        )
+    }
+
+    private static func compactData(
+        typeCode: UInt8,
+        timestamp: Int64,
+        buttonCode: UInt8?,
+        stateCode: UInt8?
+    ) -> Data {
+        var data = Data(count: compactMessageSize)
+        data.withUnsafeMutableBytes { rawBuffer in
+            guard let bytes = rawBuffer.bindMemory(to: UInt8.self).baseAddress else { return }
+
+            bytes[0] = magic[0]
+            bytes[1] = magic[1]
+            bytes[2] = version
+            bytes[3] = typeCode
+
+            let timestampBits = UInt64(bitPattern: timestamp)
+            for offset in 0..<8 {
+                bytes[4 + offset] = UInt8(truncatingIfNeeded: timestampBits >> UInt64(offset * 8))
+            }
+
+            bytes[12] = buttonCode ?? emptyField
+            bytes[13] = stateCode ?? emptyField
+        }
+        return data
+    }
+
+    private static func buttonSequenceTimestamp(
+        for sequenceNumber: UInt64,
+        pressIdentifier: UInt64?
+    ) -> Int64 {
+        let boundedSequenceNumber = min(max(sequenceNumber, 1), maximumButtonSequenceNumber)
+        let boundedPressIdentifier = min(pressIdentifier ?? 0, maximumButtonPressIdentifier)
+        let pressIdentifierBits = boundedPressIdentifier << buttonPressIdentifierShift
+        return Int64(bitPattern: buttonSequenceMarker | pressIdentifierBits | boundedSequenceNumber)
+    }
+
+    private static func compactMessage(from data: Data) -> ControllerMessage? {
+        guard data.count == compactMessageSize else { return nil }
+
+        return data.withUnsafeBytes { rawBuffer -> ControllerMessage? in
+            guard let bytes = rawBuffer.bindMemory(to: UInt8.self).baseAddress,
+                  bytes[0] == magic[0],
+                  bytes[1] == magic[1],
+                  bytes[2] == version,
+                  let type = ControllerMessageType(compactWireCode: bytes[3])
+            else {
+                return nil
+            }
+
+            var timestampBits: UInt64 = 0
+            for offset in 0..<8 {
+                timestampBits |= UInt64(bytes[4 + offset]) << UInt64(offset * 8)
+            }
+
+            let button = bytes[12] == emptyField ? nil : GameButton(compactWireCode: bytes[12])
+            let state = bytes[13] == emptyField ? nil : ButtonPressState(compactWireCode: bytes[13])
+
+            if type == .button, (button == nil || state == nil) {
+                return nil
+            }
+
+            return ControllerMessage(
+                type: type,
+                button: button,
+                state: state,
+                timestamp: Int64(bitPattern: timestampBits)
+            )
+        }
+    }
+}
+
+private extension ControllerMessageType {
+    var compactWireCode: UInt8? {
+        switch self {
+        case .button: 1
+        case .releaseAll: 2
+        case .heartbeat: 3
+        case .ping: 4
+        case .pong: 5
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .error: nil
+        }
+    }
+
+    init?(compactWireCode: UInt8) {
+        switch compactWireCode {
+        case 1: self = .button
+        case 2: self = .releaseAll
+        case 3: self = .heartbeat
+        case 4: self = .ping
+        case 5: self = .pong
+        default: return nil
+        }
+    }
+}
+
+private extension GameButton {
+    var compactFrameIndex: Int {
+        Int(compactWireCode - 1)
+    }
+
+    var compactWireCode: UInt8 {
+        switch self {
+        case .up: 1
+        case .down: 2
+        case .left: 3
+        case .right: 4
+        case .jump: 5
+        case .attack: 6
+        case .dash: 7
+        case .focus: 8
+        case .map: 9
+        case .pause: 10
+        }
+    }
+
+    init?(compactWireCode: UInt8) {
+        switch compactWireCode {
+        case 1: self = .up
+        case 2: self = .down
+        case 3: self = .left
+        case 4: self = .right
+        case 5: self = .jump
+        case 6: self = .attack
+        case 7: self = .dash
+        case 8: self = .focus
+        case 9: self = .map
+        case 10: self = .pause
+        default: return nil
+        }
+    }
+}
+
+private extension ButtonPressState {
+    var compactWireCode: UInt8 {
+        switch self {
+        case .down: 1
+        case .up: 2
+        }
+    }
+
+    init?(compactWireCode: UInt8) {
+        switch compactWireCode {
+        case 1: self = .down
+        case 2: self = .up
+        default: return nil
+        }
     }
 }
 

@@ -13,17 +13,24 @@
 		3BB1AE0B303818DE1B7AAD41 /* ControllerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F8E4E0048EB775369CAB45B /* ControllerClient.swift */; };
 		45FBD400874A016245675BE8 /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6628198D96F8304B59FD6AF /* QRCodeScannerView.swift */; };
 		4687661823546351CD6C1146 /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */; };
+		49CF065CF4DBF0EC25D0C2F2 /* ButtonPulseSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */; };
 		5491AD076F81ADCFF4B5A072 /* PocketPadiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 252777ED386D695443B445F6 /* PocketPadiOSApp.swift */; };
+		57FB2550A180A899489C75D9 /* GeistDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4588ADAD4AD4DB008BBFD16 /* GeistDesign.swift */; };
+		760F88A66260ADDBDDD55C5D /* ButtonPulseSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */; };
+		90C7458E718B5427933E263D /* GeistDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4588ADAD4AD4DB008BBFD16 /* GeistDesign.swift */; };
 		A7794BC74ADDF42A158EE591 /* KeyMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52DA2C9503876B04B5F82CED /* KeyMap.swift */; };
 		AEE86D2D421A00321BC28B13 /* PocketPadMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0354CA7F7F471B40C715D4 /* PocketPadMacApp.swift */; };
+		CA54904E2A33552672BAE4A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FD78FB378801E9BB89ADC472 /* Assets.xcassets */; };
 		CEB5D57147954DA28AE8D640 /* IOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F9B7D6317F0548DB0C87CE /* IOSContentView.swift */; };
 		D0329A5F2B9E58AF0E701A1E /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */; };
 		D2113CC27BF4077951FD74B7 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C2F6CF097E93197F4FD6CA8 /* MacContentView.swift */; };
+		D5558ADF1D4BEC21EC65E5FE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D83664C1515CB78B79E90837 /* Assets.xcassets */; };
 		E9777B1E6B22CB4D293A0DB9 /* TouchCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59D3034E486928F2E986F424 /* TouchCaptureView.swift */; };
 		F38907CC2E45FC5D72A2AB62 /* PairingPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED972AD760E84285E8C4B596 /* PairingPayload.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonPulseSequencer.swift; sourceTree = "<group>"; };
 		0C89F51B6A80B1068097A64E /* MacControllerServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacControllerServer.swift; sourceTree = "<group>"; };
 		252777ED386D695443B445F6 /* PocketPadiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadiOSApp.swift; sourceTree = "<group>"; };
 		52DA2C9503876B04B5F82CED /* KeyMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyMap.swift; sourceTree = "<group>"; };
@@ -33,25 +40,18 @@
 		6F8E4E0048EB775369CAB45B /* ControllerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerClient.swift; sourceTree = "<group>"; };
 		82F6D6EFB1D6903413D75DDC /* KeyboardInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardInjector.swift; sourceTree = "<group>"; };
 		8A0354CA7F7F471B40C715D4 /* PocketPadMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadMacApp.swift; sourceTree = "<group>"; };
+		A4588ADAD4AD4DB008BBFD16 /* GeistDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeistDesign.swift; sourceTree = "<group>"; };
 		C1F9B7D6317F0548DB0C87CE /* IOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSContentView.swift; sourceTree = "<group>"; };
 		D2C56AD3A6E47B2A242D7249 /* PocketPadiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PocketPadiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D83664C1515CB78B79E90837 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		ED972AD760E84285E8C4B596 /* PairingPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPayload.swift; sourceTree = "<group>"; };
 		F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerProtocol.swift; sourceTree = "<group>"; };
 		F6628198D96F8304B59FD6AF /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
+		FD78FB378801E9BB89ADC472 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
-		9007050BF108B206560E1708 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */,
-				ED972AD760E84285E8C4B596 /* PairingPayload.swift */,
-			);
-			name = Shared;
-			path = Sources/Shared;
-			sourceTree = "<group>";
-		};
-		972EFCCDE343C1B277C5A689 /* Mac */ = {
+		5A00246C391F7AA6FB6083DB /* Mac */ = {
 			isa = PBXGroup;
 			children = (
 				82F6D6EFB1D6903413D75DDC /* KeyboardInjector.swift */,
@@ -64,6 +64,27 @@
 			path = Sources/Mac;
 			sourceTree = "<group>";
 		};
+		9007050BF108B206560E1708 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */,
+				F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */,
+				A4588ADAD4AD4DB008BBFD16 /* GeistDesign.swift */,
+				ED972AD760E84285E8C4B596 /* PairingPayload.swift */,
+			);
+			name = Shared;
+			path = Sources/Shared;
+			sourceTree = "<group>";
+		};
+		972EFCCDE343C1B277C5A689 /* Mac */ = {
+			isa = PBXGroup;
+			children = (
+				D83664C1515CB78B79E90837 /* Assets.xcassets */,
+			);
+			name = Mac;
+			path = Resources/Mac;
+			sourceTree = "<group>";
+		};
 		DF4E1E82332AB6D6C0090F90 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -73,17 +94,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		FA7E1B651905F2FE01A0C45A = {
-			isa = PBXGroup;
-			children = (
-				FD88EB9638384D17E9D9EDFD /* iOS */,
-				972EFCCDE343C1B277C5A689 /* Mac */,
-				9007050BF108B206560E1708 /* Shared */,
-				DF4E1E82332AB6D6C0090F90 /* Products */,
-			);
-			sourceTree = "<group>";
-		};
-		FD88EB9638384D17E9D9EDFD /* iOS */ = {
+		E6EB7F9AA2C6B49F2FCE9C3D /* iOS */ = {
 			isa = PBXGroup;
 			children = (
 				6F8E4E0048EB775369CAB45B /* ControllerClient.swift */,
@@ -96,6 +107,27 @@
 			path = Sources/iOS;
 			sourceTree = "<group>";
 		};
+		FA7E1B651905F2FE01A0C45A = {
+			isa = PBXGroup;
+			children = (
+				FD88EB9638384D17E9D9EDFD /* iOS */,
+				E6EB7F9AA2C6B49F2FCE9C3D /* iOS */,
+				972EFCCDE343C1B277C5A689 /* Mac */,
+				5A00246C391F7AA6FB6083DB /* Mac */,
+				9007050BF108B206560E1708 /* Shared */,
+				DF4E1E82332AB6D6C0090F90 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FD88EB9638384D17E9D9EDFD /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				FD78FB378801E9BB89ADC472 /* Assets.xcassets */,
+			);
+			name = iOS;
+			path = Resources/iOS;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -104,6 +136,7 @@
 			buildConfigurationList = C259EDFBB79DBEDF04E27407 /* Build configuration list for PBXNativeTarget "PocketPadMac" */;
 			buildPhases = (
 				939D515A639AFC3460847E80 /* Sources */,
+				BC5B56A799D4E1B105A4BD5F /* Resources */,
 			);
 			buildRules = (
 			);
@@ -121,6 +154,7 @@
 			buildConfigurationList = 431267B53BDDDF2870E6B4B0 /* Build configuration list for PBXNativeTarget "PocketPadiOS" */;
 			buildPhases = (
 				375D033A26419FC8280AA4BB /* Sources */,
+				EA3F7221383BDE13EE159B7F /* Resources */,
 			);
 			buildRules = (
 			);
@@ -143,6 +177,7 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					835D8DAC0C5A302CFAF00554 = {
+						DevelopmentTeam = 67KC823C9A;
 						ProvisioningStyle = Automatic;
 					};
 					9D03AA5F394755FB7D4FA4AD = {
@@ -171,13 +206,34 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		BC5B56A799D4E1B105A4BD5F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D5558ADF1D4BEC21EC65E5FE /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EA3F7221383BDE13EE159B7F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CA54904E2A33552672BAE4A8 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		375D033A26419FC8280AA4BB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				760F88A66260ADDBDDD55C5D /* ButtonPulseSequencer.swift in Sources */,
 				3BB1AE0B303818DE1B7AAD41 /* ControllerClient.swift in Sources */,
 				D0329A5F2B9E58AF0E701A1E /* ControllerProtocol.swift in Sources */,
+				57FB2550A180A899489C75D9 /* GeistDesign.swift in Sources */,
 				CEB5D57147954DA28AE8D640 /* IOSContentView.swift in Sources */,
 				F38907CC2E45FC5D72A2AB62 /* PairingPayload.swift in Sources */,
 				5491AD076F81ADCFF4B5A072 /* PocketPadiOSApp.swift in Sources */,
@@ -190,7 +246,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				49CF065CF4DBF0EC25D0C2F2 /* ButtonPulseSequencer.swift in Sources */,
 				4687661823546351CD6C1146 /* ControllerProtocol.swift in Sources */,
+				90C7458E718B5427933E263D /* GeistDesign.swift in Sources */,
 				A7794BC74ADDF42A158EE591 /* KeyMap.swift in Sources */,
 				219120CF4CD32EE487DD3D1B /* KeyboardInjector.swift in Sources */,
 				D2113CC27BF4077951FD74B7 /* MacContentView.swift in Sources */,

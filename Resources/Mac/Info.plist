@@ -22,6 +22,8 @@
   <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
   <key>NSHumanReadableCopyright</key>
   <string></string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>PocketPad hosts a local controller server so your iPhone can connect on your Wi‑Fi network.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

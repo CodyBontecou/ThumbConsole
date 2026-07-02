@@ -12,17 +12,13 @@ struct IOSContentView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [.black, Color(red: 0.05, green: 0.06, blue: 0.09)], startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
-
             if client.isConnected {
                 ControllerPadView()
-                    .ignoresSafeArea()
             } else {
                 ConnectionView(macHost: $macHost, macPort: $macPort, pairingCode: $pairingCode)
             }
         }
-        .preferredColorScheme(.dark)
+        .geistScreenBackground()
         .statusBarHidden(client.isConnected)
         .persistentSystemOverlays(client.isConnected ? .hidden : .automatic)
         .onAppear {
@@ -39,14 +35,54 @@ struct IOSContentView: View {
     }
 }
 
+private enum GeistInterfaceTone {
+    case neutral
+    case success
+    case warning
+    case error
+    case accent
+
+    func foreground(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.gray900, scheme: scheme)
+        case .success: Geist.color(.blue900, scheme: scheme)
+        case .warning: Geist.color(.amber900, scheme: scheme)
+        case .error: Geist.color(.red900, scheme: scheme)
+        case .accent: Geist.color(.blue900, scheme: scheme)
+        }
+    }
+
+    func background(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.gray100, scheme: scheme)
+        case .success: Geist.color(.blue100, scheme: scheme)
+        case .warning: Geist.color(.amber100, scheme: scheme)
+        case .error: Geist.color(.red100, scheme: scheme)
+        case .accent: Geist.color(.blue100, scheme: scheme)
+        }
+    }
+
+    func border(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.grayAlpha400, scheme: scheme)
+        case .success: Geist.color(.blue400, scheme: scheme)
+        case .warning: Geist.color(.amber400, scheme: scheme)
+        case .error: Geist.color(.red400, scheme: scheme)
+        case .accent: Geist.color(.blue400, scheme: scheme)
+        }
+    }
+}
+
 private struct ConnectionView: View {
     @EnvironmentObject private var client: ControllerClient
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var macHost: String
     @Binding var macPort: String
     @Binding var pairingCode: String
 
     @State private var isShowingScanner = false
     @State private var qrScanError: String?
+    @State private var pendingPairingCode = ""
 
     var body: some View {
         GeometryReader { proxy in
@@ -55,26 +91,31 @@ private struct ConnectionView: View {
             ScrollView(.vertical) {
                 Group {
                     if isWide {
-                        HStack(alignment: .center, spacing: 32) {
+                        HStack(alignment: .center, spacing: Geist.Spacing.s8) {
                             header
                                 .frame(maxWidth: 380, alignment: .leading)
-                            form
+                            activePairingContent
                                 .frame(maxWidth: 460)
                         }
                     } else {
-                        VStack(alignment: .leading, spacing: 24) {
+                        VStack(alignment: .leading, spacing: Geist.Spacing.s8) {
                             header
-                            form
+                            activePairingContent
                         }
-                        .frame(maxWidth: 520)
+                        .frame(maxWidth: 540)
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, isWide ? 36 : 20)
-                .padding(.vertical, isWide ? 20 : 18)
+                .padding(.horizontal, isWide ? Geist.Spacing.s10 : Geist.Spacing.s6)
+                .padding(.vertical, isWide ? Geist.Spacing.s6 : Geist.Spacing.s8)
                 .frame(minHeight: proxy.size.height, alignment: isWide ? .center : .top)
             }
             .scrollDismissesKeyboard(.interactively)
+        }
+        .onChange(of: client.state) { _, newState in
+            if newState == .pairingCodeRequired {
+                pendingPairingCode = ""
+            }
         }
         .sheet(isPresented: $isShowingScanner) {
             NavigationStack {
@@ -86,7 +127,7 @@ private struct ConnectionView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Cancel") {
+                        Button("Close Scanner") {
                             isShowingScanner = false
                         }
                     }
@@ -95,97 +136,135 @@ private struct ConnectionView: View {
         }
     }
 
+    @ViewBuilder
+    private var activePairingContent: some View {
+        if client.isAwaitingPairingCode {
+            pairingCodePrompt
+        } else {
+            form
+        }
+    }
+
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
             Text("PocketPad")
-                .font(.system(size: 42, weight: .black, design: .rounded))
+                .geistTypography(.heading40)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 .minimumScaleFactor(0.75)
+
             Text("Use this iPhone as a controller for Hollow Knight on your Mac.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                .geistTypography(.copy16)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
-            Text(client.state.label)
-                .font(.headline)
-                .foregroundStyle(statusColor)
-                .fixedSize(horizontal: false, vertical: true)
+
+            StatusPill(title: client.state.label, systemImage: statusSystemImage, tone: statusTone)
+
             if let error = client.lastError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                MessageBanner(text: error, tone: .warning)
             }
             if let qrScanError {
-                Text(qrScanError)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                MessageBanner(text: qrScanError, tone: .warning)
             }
         }
     }
 
     private var form: some View {
-        VStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Pair With Mac")
+                    .geistTypography(.heading20)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text("Scan the Mac helper QR code or request a secure six-digit pairing code.")
+                    .geistTypography(.copy14)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            }
+
             Button {
                 qrScanError = nil
                 isShowingScanner = true
             } label: {
                 Label("Scan Mac QR Code", systemImage: "qrcode.viewfinder")
-                    .font(.title3.bold())
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
             }
-            .buttonStyle(.plain)
+            .geistButtonStyle(.primary, size: .large)
 
-            HStack(spacing: 10) {
-                Rectangle()
-                    .fill(Color.white.opacity(0.18))
-                    .frame(height: 1)
-                Text("or enter manually")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: true, vertical: false)
-                Rectangle()
-                    .fill(Color.white.opacity(0.18))
-                    .frame(height: 1)
+            DividerLabel("Manual Connection")
+
+            LabeledInput(title: "Mac Host") {
+                TextField("Mac IP, e.g. 192.168.1.24", text: $macHost)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.numbersAndPunctuation)
+                    .geistInput()
             }
 
-            TextField("Mac IP, e.g. 192.168.1.24", text: $macHost)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.numbersAndPunctuation)
-                .fieldStyle()
-
-            TextField("Port", text: $macPort)
-                .keyboardType(.numberPad)
-                .fieldStyle()
-
-            TextField("Pairing code (optional)", text: $pairingCode)
-                .keyboardType(.numberPad)
-                .fieldStyle()
+            LabeledInput(title: "Port") {
+                TextField("8765", text: $macPort)
+                    .keyboardType(.numberPad)
+                    .geistInput()
+            }
 
             Button {
-                client.connect(hostField: macHost, port: macPort, pairingCode: pairingCode)
+                pairingCode = ""
+                client.connect(hostField: macHost, port: macPort, pairingCode: "")
             } label: {
-                Text("Connect")
-                    .font(.title3.bold())
+                Text(client.state == .connecting ? "Requesting…" : "Request Pairing")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 16))
             }
-            .buttonStyle(.plain)
+            .geistButtonStyle(.primary, size: .medium)
             .disabled(macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .opacity(macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
         }
+        .geistPanel(padding: Geist.Spacing.s6, radius: Geist.Radius.sm)
+    }
+
+    private var pairingCodePrompt: some View {
+        VStack(alignment: .center, spacing: Geist.Spacing.s6) {
+            Image(systemName: "macbook.and.iphone")
+                .font(.system(size: 54, weight: .semibold))
+                .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
+                .symbolRenderingMode(.hierarchical)
+
+            VStack(spacing: Geist.Spacing.s2) {
+                Text("Pairing request accepted")
+                    .geistTypography(.heading24)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .multilineTextAlignment(.center)
+
+                Text("Enter the code shown on PocketPad Mac.")
+                    .geistTypography(.copy14)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            PairingCodeInput(code: $pendingPairingCode)
+
+            VStack(spacing: Geist.Spacing.s3) {
+                Button {
+                    pairingCode = pendingPairingCode
+                    client.submitPairingCode(pendingPairingCode)
+                } label: {
+                    Text("Pair")
+                        .frame(maxWidth: .infinity)
+                }
+                .geistButtonStyle(.primary, size: .large)
+                .disabled(pendingPairingCode.count < 6)
+
+                Button("Cancel Pairing") {
+                    pendingPairingCode = ""
+                    client.disconnect(sendReleaseAll: false)
+                }
+                .geistButtonStyle(.tertiary, size: .medium)
+            }
+        }
+        .geistPanel(padding: Geist.Spacing.s6, radius: Geist.Radius.md)
     }
 
     private func handleScannedPairingCode(_ text: String) {
         guard let payload = PairingPayload.decode(from: text),
               let urlString = payload.urls.first
         else {
-            qrScanError = "That QR code is not a PocketPad pairing code."
+            qrScanError = "QR code not recognized. Scan the PocketPad code shown on your Mac."
             isShowingScanner = false
             return
         }
@@ -209,18 +288,175 @@ private struct ConnectionView: View {
         macPort = components.port.map(String.init) ?? "8765"
     }
 
-    private var statusColor: Color {
+    private var statusTone: GeistInterfaceTone {
         switch client.state {
-        case .connected: .green
-        case .connecting: .yellow
-        case .failed: .orange
-        case .disconnected: .secondary
+        case .connected: .success
+        case .connecting, .pairingCodeRequired: .warning
+        case .failed: .error
+        case .disconnected: .neutral
+        }
+    }
+
+    private var statusSystemImage: String {
+        switch client.state {
+        case .connected: "checkmark.circle.fill"
+        case .connecting: "arrow.triangle.2.circlepath"
+        case .pairingCodeRequired: "key.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .disconnected: "circle"
+        }
+    }
+}
+
+private struct PairingCodeInput: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var code: String
+    @FocusState private var isFocused: Bool
+
+    private let digitCount = 6
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: Geist.Spacing.s2) {
+                ForEach(0..<digitCount, id: \.self) { index in
+                    digitBox(at: index)
+                }
+            }
+
+            TextField("Pairing code", text: $code)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+                .focused($isFocused)
+                .foregroundStyle(.clear)
+                .tint(.clear)
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .accessibilityLabel("Pairing code")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { isFocused = true }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                isFocused = true
+            }
+        }
+        .onChange(of: code) { _, newValue in
+            let filtered = String(newValue.filter(\.isNumber).prefix(digitCount))
+            if filtered != newValue {
+                code = filtered
+            }
+        }
+    }
+
+    private func digitBox(at index: Int) -> some View {
+        let digits = Array(code)
+        let digit = index < digits.count ? String(digits[index]) : ""
+        let isActive = index == min(code.count, digitCount - 1)
+
+        return Text(digit)
+            .geistTypography(.heading24)
+            .monospacedDigit()
+            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            .frame(width: 44, height: 52)
+            .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                    .stroke(isActive ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isActive ? 2 : 1)
+            )
+    }
+}
+
+private struct StatusPill: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let systemImage: String
+    let tone: GeistInterfaceTone
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .geistTypography(.label13)
+            .foregroundStyle(tone.foreground(scheme: colorScheme))
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+            .background(tone.background(scheme: colorScheme), in: Capsule())
+            .overlay(Capsule().stroke(tone.border(scheme: colorScheme), lineWidth: 1))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct MessageBanner: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let text: String
+    let tone: GeistInterfaceTone
+
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.triangle.fill")
+            .geistTypography(.copy13)
+            .foregroundStyle(tone.foreground(scheme: colorScheme))
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(tone.background(scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(tone.border(scheme: colorScheme), lineWidth: 1)
+            )
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct DividerLabel: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        HStack(spacing: Geist.Spacing.s3) {
+            Rectangle()
+                .fill(Geist.color(.grayAlpha400, scheme: colorScheme))
+                .frame(height: 1)
+            Text(title)
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            Rectangle()
+                .fill(Geist.color(.grayAlpha400, scheme: colorScheme))
+                .frame(height: 1)
+        }
+        .padding(.vertical, Geist.Spacing.s1)
+    }
+}
+
+private struct LabeledInput<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    var helper: String?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            HStack(spacing: Geist.Spacing.s2) {
+                Text(title)
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                if let helper {
+                    Text(helper)
+                        .geistTypography(.label12)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                }
+            }
+            content
         }
     }
 }
 
 private struct ControllerPadView: View {
     @EnvironmentObject private var client: ControllerClient
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { proxy in
@@ -228,9 +464,9 @@ private struct ControllerPadView: View {
 
             VStack(spacing: 0) {
                 topBar
-                    .padding(.leading, max(isLandscape ? 24 : 16, proxy.safeAreaInsets.leading + 12))
-                    .padding(.trailing, max(isLandscape ? 24 : 16, proxy.safeAreaInsets.trailing + 12))
-                    .padding(.top, max(isLandscape ? 12 : 8, proxy.safeAreaInsets.top + 8))
+                    .padding(.leading, max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, proxy.safeAreaInsets.leading + Geist.Spacing.s3))
+                    .padding(.trailing, max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, proxy.safeAreaInsets.trailing + Geist.Spacing.s3))
+                    .padding(.top, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s2, proxy.safeAreaInsets.top + Geist.Spacing.s2))
 
                 if isLandscape {
                     landscapeControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
@@ -246,98 +482,130 @@ private struct ControllerPadView: View {
         let dPadButton = min(82, max(64, availableHeight * 0.24), size.width * 0.095)
         let actionButton = min(86, max(64, availableHeight * 0.25), size.width * 0.10)
         let utilityHeight = min(64, max(52, availableHeight * 0.18))
+        let dPadHitButton = ControllerLayoutMetrics.hitSize(for: CGSize(width: dPadButton, height: dPadButton))
+        let actionHitButton = ControllerLayoutMetrics.hitSize(for: CGSize(width: actionButton, height: actionButton))
 
-        return HStack(alignment: .center, spacing: max(16, size.width * 0.035)) {
+        return HStack(alignment: .center, spacing: max(Geist.Spacing.s4, size.width * 0.035)) {
             DPadView(buttonSize: CGSize(width: dPadButton, height: dPadButton))
-                .frame(width: dPadButton * 3 + 16, height: dPadButton * 3 + 16)
+                .frame(width: dPadHitButton.width * 3, height: dPadHitButton.height * 3)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Geist.Spacing.s2)
 
-            HStack(spacing: 18) {
+            HStack(spacing: Geist.Spacing.s4) {
                 GamepadButton(button: .map, title: "Map", size: CGSize(width: 92, height: utilityHeight), shape: .capsule)
                 GamepadButton(button: .pause, title: "Pause", size: CGSize(width: 104, height: utilityHeight), shape: .capsule)
             }
             .layoutPriority(1)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Geist.Spacing.s2)
 
             ActionButtonsView(buttonSize: CGSize(width: actionButton, height: actionButton))
-                .frame(width: actionButton * 2 + 18, height: actionButton * 2 + 18)
+                .frame(width: actionHitButton.width * 2, height: actionHitButton.height * 2)
         }
-        .padding(.leading, max(20, max(size.width * 0.045, safeAreaInsets.leading + 12)))
-        .padding(.trailing, max(20, max(size.width * 0.045, safeAreaInsets.trailing + 12)))
-        .padding(.bottom, max(18, safeAreaInsets.bottom + 8))
+        .padding(.leading, max(Geist.Spacing.s6, max(size.width * 0.045, safeAreaInsets.leading + Geist.Spacing.s3)))
+        .padding(.trailing, max(Geist.Spacing.s6, max(size.width * 0.045, safeAreaInsets.trailing + Geist.Spacing.s3)))
+        .padding(.bottom, max(Geist.Spacing.s6, safeAreaInsets.bottom + Geist.Spacing.s2))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            TouchRoutingView()
+        }
     }
 
     private func portraitControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
-        let usableWidth = max(300, size.width - 32)
+        let usableWidth = max(300, size.width - Geist.Spacing.s8)
         let dPadButton = min(82, max(64, usableWidth / 4.2))
         let actionButton = min(82, max(64, usableWidth / 4.5))
+        let dPadHitButton = ControllerLayoutMetrics.hitSize(for: CGSize(width: dPadButton, height: dPadButton))
+        let actionHitButton = ControllerLayoutMetrics.hitSize(for: CGSize(width: actionButton, height: actionButton))
 
-        return VStack(spacing: 16) {
-            Spacer(minLength: 6)
+        return VStack(spacing: Geist.Spacing.s4) {
+            Spacer(minLength: Geist.Spacing.s2)
 
             DPadView(buttonSize: CGSize(width: dPadButton, height: dPadButton))
-                .frame(width: dPadButton * 3 + 16, height: dPadButton * 3 + 16)
+                .frame(width: dPadHitButton.width * 3, height: dPadHitButton.height * 3)
 
-            HStack(spacing: 16) {
+            HStack(spacing: Geist.Spacing.s4) {
                 GamepadButton(button: .map, title: "Map", size: CGSize(width: 94, height: 58), shape: .capsule)
                 GamepadButton(button: .pause, title: "Pause", size: CGSize(width: 108, height: 58), shape: .capsule)
             }
 
             ActionButtonsView(buttonSize: CGSize(width: actionButton, height: actionButton))
-                .frame(width: actionButton * 2 + 18, height: actionButton * 2 + 18)
+                .frame(width: actionHitButton.width * 2, height: actionHitButton.height * 2)
 
-            Spacer(minLength: 6)
+            Spacer(minLength: Geist.Spacing.s2)
         }
-        .padding(.leading, max(16, safeAreaInsets.leading + 12))
-        .padding(.trailing, max(16, safeAreaInsets.trailing + 12))
-        .padding(.bottom, max(16, safeAreaInsets.bottom + 8))
+        .padding(.leading, max(Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s3))
+        .padding(.trailing, max(Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s3))
+        .padding(.bottom, max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            TouchRoutingView()
+        }
     }
 
     private var topBar: some View {
-        HStack(spacing: 10) {
-            Label("Connected", systemImage: "wifi")
-                .foregroundStyle(.green)
-                .font(.headline)
+        HStack(spacing: Geist.Spacing.s3) {
+            StatusPill(title: "Connected", systemImage: "wifi", tone: .success)
+
             Text(client.lastSentEvent)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
+                .geistTypography(.label12Mono)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Spacer(minLength: 8)
-            Button("Disconnect") {
+
+            Spacer(minLength: Geist.Spacing.s2)
+
+            Button("Disconnect iPhone") {
                 client.disconnect(sendReleaseAll: true)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red.opacity(0.75))
+            .geistButtonStyle(.error, size: .small)
         }
+        .padding(Geist.Spacing.s2)
+        .background(Geist.color(.background100, scheme: colorScheme), in: Capsule())
+        .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
+    }
+}
+
+private enum ControllerLayoutMetrics {
+    static let buttonHitOutset: CGFloat = 10
+
+    static func hitSize(for visualSize: CGSize) -> CGSize {
+        CGSize(
+            width: visualSize.width + buttonHitOutset * 2,
+            height: visualSize.height + buttonHitOutset * 2
+        )
     }
 }
 
 private struct DPadView: View {
+    @Environment(\.colorScheme) private var colorScheme
     var buttonSize = CGSize(width: 78, height: 78)
 
     var body: some View {
-        Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+        let hitSize = ControllerLayoutMetrics.hitSize(for: buttonSize)
+
+        Grid(horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
-                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                Color.clear.frame(width: hitSize.width, height: hitSize.height)
                 GamepadButton(button: .up, title: "↑", size: buttonSize)
-                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                Color.clear.frame(width: hitSize.width, height: hitSize.height)
             }
             GridRow {
                 GamepadButton(button: .left, title: "←", size: buttonSize)
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .fill(Geist.color(.gray100, scheme: colorScheme))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                            .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                    )
                     .frame(width: buttonSize.width, height: buttonSize.height)
+                    .frame(width: hitSize.width, height: hitSize.height)
                 GamepadButton(button: .right, title: "→", size: buttonSize)
             }
             GridRow {
-                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                Color.clear.frame(width: hitSize.width, height: hitSize.height)
                 GamepadButton(button: .down, title: "↓", size: buttonSize)
-                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                Color.clear.frame(width: hitSize.width, height: hitSize.height)
             }
         }
     }
@@ -347,14 +615,14 @@ private struct ActionButtonsView: View {
     var buttonSize = CGSize(width: 82, height: 82)
 
     var body: some View {
-        Grid(horizontalSpacing: 14, verticalSpacing: 14) {
+        Grid(horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
-                GamepadButton(button: .focus, title: "Focus", size: buttonSize, tint: .purple)
-                GamepadButton(button: .dash, title: "Dash", size: buttonSize, tint: .cyan)
+                GamepadButton(button: .focus, title: "Focus", size: buttonSize)
+                GamepadButton(button: .dash, title: "Dash", size: buttonSize)
             }
             GridRow {
-                GamepadButton(button: .attack, title: "Attack", size: buttonSize, tint: .orange)
-                GamepadButton(button: .jump, title: "Jump", size: buttonSize, tint: .green)
+                GamepadButton(button: .attack, title: "Attack", size: buttonSize)
+                GamepadButton(button: .jump, title: "Jump", size: buttonSize)
             }
         }
     }
@@ -367,48 +635,58 @@ private enum GamepadButtonShape {
 
 private struct GamepadButton: View {
     @EnvironmentObject private var client: ControllerClient
+    @Environment(\.colorScheme) private var colorScheme
     let button: GameButton
     let title: String
     let size: CGSize
-    var tint: Color = .blue
     var shape: GamepadButtonShape = .roundedRectangle
 
     @State private var isPressed = false
-    private let haptic = UIImpactFeedbackGenerator(style: .light)
+    private static let hapticsEnabled = false
+    private let haptic = GamepadButton.hapticsEnabled ? UIImpactFeedbackGenerator(style: .light) : nil
 
     var body: some View {
+        let hitSize = ControllerLayoutMetrics.hitSize(for: size)
+
         ZStack {
-            buttonBackground
-                .shadow(color: tint.opacity(isPressed ? 0.55 : 0.25), radius: isPressed ? 16 : 7, y: isPressed ? 3 : 8)
+            ZStack {
+                buttonBackground
+                    .shadow(color: Color.black.opacity(isPressed ? 0.16 : 0.04), radius: isPressed ? 2 : 1, y: isPressed ? 1 : 2)
 
-            Text(title)
-                .font(.system(size: title.count <= 2 ? 34 : 17, weight: .bold, design: .rounded))
-                .minimumScaleFactor(0.65)
-                .foregroundStyle(.white)
-
-            TouchCaptureView { pressed in
-                setPressed(pressed)
+                Text(title)
+                    .geistTypography(title.count <= 2 ? .heading32 : .button16)
+                    .minimumScaleFactor(0.65)
+                    .foregroundStyle(isPressed ? Geist.color(.background100, scheme: colorScheme) : Geist.color(.gray1000, scheme: colorScheme))
             }
+            .scaleEffect(isPressed ? 0.96 : 1)
+            .allowsHitTesting(false)
+            .frame(width: size.width, height: size.height)
+
+            TouchCaptureView { pressed, isActive, pressIdentifier in
+                handlePressEdge(pressed, isActive: isActive, pressIdentifier: pressIdentifier)
+            }
+            .frame(width: hitSize.width, height: hitSize.height)
         }
-        .frame(width: size.width, height: size.height)
-        .scaleEffect(isPressed ? 0.93 : 1)
-        .animation(.snappy(duration: 0.08), value: isPressed)
+        .frame(width: hitSize.width, height: hitSize.height)
+        .onAppear {
+            haptic?.prepare()
+        }
         .onDisappear {
-            if isPressed { setPressed(false) }
+            isPressed = false
         }
     }
 
     @ViewBuilder
     private var buttonBackground: some View {
-        let fillColor = tint.opacity(isPressed ? 0.95 : 0.34)
-        let strokeColor = Color.white.opacity(isPressed ? 0.45 : 0.16)
-        let lineWidth: CGFloat = isPressed ? 3 : 1
+        let fillColor = isPressed ? Geist.color(.gray1000, scheme: colorScheme) : Geist.color(.gray100, scheme: colorScheme)
+        let strokeColor = isPressed ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme)
+        let lineWidth: CGFloat = isPressed ? 2 : 1
 
         switch shape {
         case .roundedRectangle:
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
                 .fill(fillColor)
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
         case .capsule:
             Capsule()
                 .fill(fillColor)
@@ -416,24 +694,18 @@ private struct GamepadButton: View {
         }
     }
 
-    private func setPressed(_ pressed: Bool) {
-        guard pressed != isPressed else { return }
-        isPressed = pressed
+    private func handlePressEdge(_ pressed: Bool, isActive: Bool, pressIdentifier: UInt64) {
+        // The UIKit touch view is authoritative for press edges. Send every edge to
+        // ControllerClient before consulting SwiftUI state so fast taps cannot lose a
+        // release through a stale render closure.
+        client.setButton(button, pressed: pressed, pressIdentifier: pressIdentifier)
+
+        guard isActive != isPressed else { return }
+        isPressed = isActive
+
         if pressed {
-            haptic.impactOccurred(intensity: 0.55)
+            haptic?.impactOccurred(intensity: 0.45)
+            haptic?.prepare()
         }
-        client.setButton(button, pressed: pressed)
-    }
-}
-
-
-private extension View {
-    func fieldStyle() -> some View {
-        self
-            .textFieldStyle(.plain)
-            .font(.title3.monospaced())
-            .padding(14)
-            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.16)))
     }
 }

@@ -24,7 +24,7 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+        view.backgroundColor = UIColor(geistHex: "#000000")
         checkCameraPermissionAndStart()
     }
 
@@ -94,12 +94,14 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = "Point the camera at the QR code on your Mac"
-        label.textColor = .white
-        label.font = .preferredFont(forTextStyle: .headline)
+        label.textColor = UIColor(geistHex: "#ededed")
+        label.font = UIFont(name: "Geist Sans", size: 14) ?? .systemFont(ofSize: 14, weight: .regular)
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-        label.layer.cornerRadius = 12
+        label.backgroundColor = UIColor(geistHex: "#1a1a1a")
+        label.layer.cornerRadius = 6
+        label.layer.borderWidth = 1
+        label.layer.borderColor = UIColor(geistHex: "#ffffff24").cgColor
         label.clipsToBounds = true
 
         view.addSubview(label)
@@ -115,8 +117,8 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = text
-        label.textColor = .white
-        label.font = .preferredFont(forTextStyle: .headline)
+        label.textColor = UIColor(geistHex: "#ededed")
+        label.font = UIFont(name: "Geist Sans", size: 14) ?? .systemFont(ofSize: 14, weight: .regular)
         label.textAlignment = .center
         label.numberOfLines = 0
 
@@ -145,5 +147,43 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
         session.stopRunning()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         onScan?(stringValue)
+    }
+}
+
+private extension UIColor {
+    convenience init(geistHex hex: String) {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var value: UInt64 = 0
+        Scanner(string: cleaned).scanHexInt64(&value)
+
+        let red: UInt64
+        let green: UInt64
+        let blue: UInt64
+        let alpha: UInt64
+
+        switch cleaned.count {
+        case 8:
+            red = (value >> 24) & 0xff
+            green = (value >> 16) & 0xff
+            blue = (value >> 8) & 0xff
+            alpha = value & 0xff
+        case 6:
+            red = (value >> 16) & 0xff
+            green = (value >> 8) & 0xff
+            blue = value & 0xff
+            alpha = 0xff
+        default:
+            red = 0
+            green = 0
+            blue = 0
+            alpha = 0xff
+        }
+
+        self.init(
+            red: CGFloat(red) / 255,
+            green: CGFloat(green) / 255,
+            blue: CGFloat(blue) / 255,
+            alpha: CGFloat(alpha) / 255
+        )
     }
 }

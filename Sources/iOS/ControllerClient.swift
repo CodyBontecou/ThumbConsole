@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import UIKit
 
 @MainActor
@@ -6,6 +7,7 @@ final class ControllerClient: ObservableObject {
     enum ConnectionState: Equatable {
         case disconnected
         case connecting
+        case pairingCodeRequired
         case connected
         case failed(String)
 
@@ -13,6 +15,7 @@ final class ControllerClient: ObservableObject {
             switch self {
             case .disconnected: "Disconnected"
             case .connecting: "Connecting…"
+            case .pairingCodeRequired: "Enter pairing code"
             case .connected: "Connected"
             case .failed(let message): "Failed: \(message)"
             }
@@ -20,23 +23,37 @@ final class ControllerClient: ObservableObject {
     }
 
     @Published private(set) var state: ConnectionState = .disconnected
-    @Published private(set) var pressedButtons: Set<GameButton> = []
     @Published private(set) var lastSentEvent = "None"
     @Published private(set) var lastError: String?
 
-    private var task: URLSessionWebSocketTask?
+    private let networkQueue = DispatchQueue(label: "PocketPad.iOS.WebSocket", qos: .userInteractive)
+    private var connection: NWConnection?
     private var heartbeatTask: Task<Void, Never>?
+    private var lastSentEventUpdateTask: Task<Void, Never>?
+    private var pendingLastSentEvent = "None"
+    private var buttonSequenceNumber: UInt64 = 0
+    private let binaryMessageContext = NWConnection.ContentContext(
+        identifier: "PocketPadMessage",
+        metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
+    )
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private static let liveInputStatusUpdatesEnabled = false
 
     var isConnected: Bool {
         state == .connected
     }
 
+    var isAwaitingPairingCode: Bool {
+        state == .pairingCodeRequired
+    }
+
     func connect(hostField: String, port: String, pairingCode: String) {
         disconnect(sendReleaseAll: false)
 
-        guard let url = makeURL(hostField: hostField, port: port) else {
+        guard let url = makeURL(hostField: hostField, port: port),
+              url.host?.isEmpty == false
+        else {
             state = .failed("Enter a valid ws:// host and port")
             return
         }
@@ -44,18 +61,36 @@ final class ControllerClient: ObservableObject {
         state = .connecting
         lastError = nil
 
-        let request = URLRequest(url: url, timeoutInterval: 3)
-        let task = URLSession.shared.webSocketTask(with: request)
-        self.task = task
-        task.resume()
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.noDelay = true
 
-        state = .connected
-        UIApplication.shared.isIdleTimerDisabled = true
+        let scheme = url.scheme?.lowercased()
+        let tlsOptions = scheme == "wss" ? NWProtocolTLS.Options() : nil
+        let parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
+        let websocketOptions = NWProtocolWebSocket.Options()
+        websocketOptions.autoReplyPing = true
+        parameters.defaultProtocolStack.applicationProtocols.insert(websocketOptions, at: 0)
+
+        let connection = NWConnection(to: .url(url), using: parameters)
+        self.connection = connection
+        buttonSequenceNumber = 0
 
         let deviceName = UIDevice.current.name
-        send(.init(type: .hello, pairingCode: pairingCode.nilIfBlank, clientName: deviceName))
-        startHeartbeat()
-        receiveNext()
+        let pairingCode = pairingCode.nilIfBlank
+
+        connection.stateUpdateHandler = { [weak self, weak connection] connectionState in
+            guard let connection else { return }
+            Task { @MainActor in
+                self?.handleConnectionState(
+                    connectionState,
+                    connection: connection,
+                    pairingCode: pairingCode,
+                    clientName: deviceName
+                )
+            }
+        }
+
+        connection.start(queue: networkQueue)
     }
 
     func disconnect(sendReleaseAll: Bool = true) {
@@ -64,9 +99,10 @@ final class ControllerClient: ObservableObject {
         }
         heartbeatTask?.cancel()
         heartbeatTask = nil
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
-        pressedButtons.removeAll()
+        lastSentEventUpdateTask?.cancel()
+        lastSentEventUpdateTask = nil
+        connection?.cancel()
+        connection = nil
         UIApplication.shared.isIdleTimerDisabled = false
         if case .failed = state {
             return
@@ -74,25 +110,26 @@ final class ControllerClient: ObservableObject {
         state = .disconnected
     }
 
-    func setButton(_ button: GameButton, pressed: Bool) {
-        guard isConnected else { return }
+    func submitPairingCode(_ code: String) {
+        let normalizedCode = String(code.filter(\.isNumber).prefix(6))
+        guard !normalizedCode.isEmpty, connection != nil else { return }
 
-        if pressed {
-            guard !pressedButtons.contains(button) else { return }
-            pressedButtons.insert(button)
-            sendButton(button, state: .down)
-        } else {
-            guard pressedButtons.contains(button) else { return }
-            pressedButtons.remove(button)
-            sendButton(button, state: .up)
-        }
+        lastError = nil
+        updateLastSentEvent("pairing code sent", immediately: true)
+        send(.init(type: .hello, timestamp: 0, pairingCode: normalizedCode, clientName: UIDevice.current.name))
+    }
+
+    func setButton(_ button: GameButton, pressed: Bool, pressIdentifier: UInt64? = nil) {
+        guard isConnected else { return }
+        // Send raw per-touch edges immediately. The Mac helper turns them into
+        // game-safe key pulses at the point of keyboard injection.
+        sendButton(button, state: pressed ? .down : .up, pressIdentifier: pressIdentifier)
     }
 
     func releaseAll() {
-        guard task != nil else { return }
-        send(.init(type: .releaseAll))
-        pressedButtons.removeAll()
-        lastSentEvent = "release_all"
+        guard connection != nil else { return }
+        send(.init(type: .releaseAll, timestamp: 0))
+        updateLastSentEvent("release_all", immediately: true)
     }
 
     func appWillBecomeInactive() {
@@ -107,9 +144,96 @@ final class ControllerClient: ObservableObject {
         disconnect(sendReleaseAll: false)
     }
 
-    private func sendButton(_ button: GameButton, state: ButtonPressState) {
-        send(.init(type: .button, button: button, state: state))
-        lastSentEvent = "\(button.rawValue) \(state.rawValue)"
+    private func handleConnectionState(
+        _ connectionState: NWConnection.State,
+        connection stateConnection: NWConnection,
+        pairingCode: String?,
+        clientName: String
+    ) {
+        guard connection === stateConnection else { return }
+
+        switch connectionState {
+        case .ready:
+            guard state != .connected else { return }
+            lastSentEvent = "Socket ready"
+            receiveNext(on: stateConnection)
+
+            if let pairingCode {
+                send(.init(type: .hello, timestamp: 0, pairingCode: pairingCode, clientName: clientName))
+            } else {
+                send(.init(type: .pairingRequest, timestamp: 0, clientName: clientName))
+            }
+
+        case .waiting(let error):
+            lastError = error.localizedDescription
+
+        case .failed(let error):
+            handleSocketError(error, for: stateConnection)
+
+        case .cancelled:
+            guard connection === stateConnection else { return }
+            heartbeatTask?.cancel()
+            heartbeatTask = nil
+            lastSentEventUpdateTask?.cancel()
+            lastSentEventUpdateTask = nil
+            connection = nil
+            UIApplication.shared.isIdleTimerDisabled = false
+            if case .failed = state {
+                return
+            }
+            state = .disconnected
+
+        default:
+            break
+        }
+    }
+
+    private func sendButton(
+        _ button: GameButton,
+        state: ButtonPressState,
+        pressIdentifier: UInt64?
+    ) {
+        let sequenceNumber = nextButtonSequenceNumber()
+        sendData(
+            ControllerWireCodec.encodeButton(
+                button,
+                state: state,
+                sequenceNumber: sequenceNumber,
+                pressIdentifier: pressIdentifier
+            ),
+            reportsSendErrors: false
+        )
+        if Self.liveInputStatusUpdatesEnabled {
+            updateLastSentEvent("\(button.rawValue) \(state.rawValue)")
+        }
+    }
+
+    private func nextButtonSequenceNumber() -> UInt64 {
+        if buttonSequenceNumber >= ControllerWireCodec.maximumButtonSequenceNumber {
+            buttonSequenceNumber = 1
+        } else {
+            buttonSequenceNumber += 1
+        }
+        return buttonSequenceNumber
+    }
+
+    private func updateLastSentEvent(_ value: String, immediately: Bool = false) {
+        pendingLastSentEvent = value
+
+        if immediately {
+            lastSentEventUpdateTask?.cancel()
+            lastSentEventUpdateTask = nil
+            lastSentEvent = value
+            return
+        }
+
+        guard lastSentEventUpdateTask == nil else { return }
+        lastSentEventUpdateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.lastSentEvent = self.pendingLastSentEvent
+            self.lastSentEventUpdateTask = nil
+        }
     }
 
     private func sendHeartbeat() {
@@ -117,71 +241,99 @@ final class ControllerClient: ObservableObject {
     }
 
     private func send(_ message: ControllerMessage) {
-        guard let task else { return }
-
         do {
-            let data = try encoder.encode(message)
-            let text = String(decoding: data, as: UTF8.self)
-            task.send(.string(text)) { [weak self, task] error in
-                guard let error else { return }
-                Task { @MainActor in
-                    self?.handleSocketError(error, for: task)
-                }
-            }
+            let data = try ControllerWireCodec.encode(message, using: encoder)
+            sendData(data)
         } catch {
             lastError = error.localizedDescription
         }
     }
 
-    private func receiveNext() {
-        guard let task else { return }
-        task.receive { [weak self] result in
-            Task { @MainActor in
-                guard let self, self.task === task else { return }
-                switch result {
-                case .success(let message):
-                    self.handleIncoming(message)
-                    self.receiveNext()
-                case .failure(let error):
-                    self.handleSocketError(error, for: task)
+    private func sendData(_ data: Data) {
+        sendData(data, reportsSendErrors: true)
+    }
+
+    private func sendData(_ data: Data, reportsSendErrors: Bool) {
+        guard let connection else { return }
+
+        if reportsSendErrors {
+            connection.send(content: data, contentContext: binaryMessageContext, isComplete: true, completion: .contentProcessed { [weak self, connection] error in
+                guard let error else { return }
+                Task { @MainActor in
+                    self?.handleSocketError(error, for: connection)
                 }
-            }
+            })
+        } else {
+            connection.send(content: data, contentContext: binaryMessageContext, isComplete: true, completion: .idempotent)
         }
     }
 
-    private func handleIncoming(_ message: URLSessionWebSocketTask.Message) {
-        let data: Data?
-        switch message {
-        case .data(let incomingData):
-            data = incomingData
-        case .string(let text):
-            data = text.data(using: .utf8)
-        @unknown default:
-            data = nil
-        }
+    nonisolated private func receiveNext(on connection: NWConnection) {
+        connection.receiveMessage { [weak self, weak connection] data, _, _, error in
+            guard let self, let connection else { return }
 
-        guard let data else { return }
-        guard let decoded = try? decoder.decode(ControllerMessage.self, from: data) else { return }
+            if let error {
+                Task { @MainActor in
+                    self.handleSocketError(error, for: connection)
+                }
+                return
+            }
+
+            if let data, !data.isEmpty {
+                Task { @MainActor in
+                    self.handleIncoming(data, from: connection)
+                }
+            }
+
+            self.receiveNext(on: connection)
+        }
+    }
+
+    private func handleIncoming(_ data: Data, from messageConnection: NWConnection) {
+        guard connection === messageConnection else { return }
+        guard let decoded = try? ControllerWireCodec.decode(data, using: decoder) else { return }
 
         switch decoded.type {
+        case .pairingChallenge:
+            lastError = nil
+            state = .pairingCodeRequired
+            updateLastSentEvent(decoded.message ?? "pairing request accepted", immediately: true)
+
+        case .pairingAccepted, .hello:
+            finishPairing(on: messageConnection, message: decoded.message)
+
         case .pong:
             break
+
         case .error:
             lastError = decoded.message ?? "Mac helper returned an error"
             state = .failed(lastError ?? "Unknown error")
             disconnect(sendReleaseAll: false)
+
         default:
             break
         }
     }
 
-    private func handleSocketError(_ error: Error, for failedTask: URLSessionWebSocketTask) {
-        guard task === failedTask else { return }
+    private func finishPairing(on pairedConnection: NWConnection, message: String?) {
+        guard connection === pairedConnection else { return }
+        guard state != .connected else { return }
+
+        state = .connected
+        lastError = nil
+        lastSentEvent = message ?? "Pairing complete"
+        UIApplication.shared.isIdleTimerDisabled = true
+        startHeartbeat()
+    }
+
+    private func handleSocketError(_ error: Error, for failedConnection: NWConnection) {
+        guard connection === failedConnection else { return }
         lastError = error.localizedDescription
         heartbeatTask?.cancel()
         heartbeatTask = nil
-        task = nil
-        pressedButtons.removeAll()
+        lastSentEventUpdateTask?.cancel()
+        lastSentEventUpdateTask = nil
+        connection = nil
         UIApplication.shared.isIdleTimerDisabled = false
         state = .failed(error.localizedDescription)
     }
@@ -191,7 +343,7 @@ final class ControllerClient: ObservableObject {
         heartbeatTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 500_000_000)
-                await self?.sendHeartbeat()
+                self?.sendHeartbeat()
             }
         }
     }
@@ -208,6 +360,7 @@ final class ControllerClient: ObservableObject {
         let finalPort = cleanPort.isEmpty ? "8765" : cleanPort
         return URL(string: "ws://\(trimmedHost):\(finalPort)")
     }
+
 }
 
 private extension String {

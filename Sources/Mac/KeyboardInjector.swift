@@ -4,10 +4,22 @@ import CoreGraphics
 import Foundation
 
 final class KeyboardInjector {
-    private let source = CGEventSource(stateID: .hidSystemState)
+    private let source: CGEventSource?
+    private var cachedAccessibilityTrusted = AXIsProcessTrusted()
+
+    init() {
+        source = CGEventSource(stateID: .hidSystemState)
+        source?.localEventsSuppressionInterval = 0
+    }
 
     var isAccessibilityTrusted: Bool {
-        AXIsProcessTrusted()
+        cachedAccessibilityTrusted
+    }
+
+    @discardableResult
+    func refreshAccessibilityStatus() -> Bool {
+        cachedAccessibilityTrusted = AXIsProcessTrusted()
+        return cachedAccessibilityTrusted
     }
 
     @discardableResult
@@ -32,7 +44,7 @@ final class KeyboardInjector {
     }
 
     private func post(keyCode: CGKeyCode, keyDown: Bool) {
-        guard isAccessibilityTrusted else { return }
+        guard cachedAccessibilityTrusted else { return }
         let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: keyDown)
         event?.post(tap: .cghidEventTap)
     }

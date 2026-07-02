@@ -16,12 +16,15 @@ targets:
     sources:
       - path: Sources/Shared
       - path: Sources/Mac
+      - path: Resources/Mac/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadMac
         PRODUCT_NAME: PocketPad Mac
         INFOPLIST_FILE: Resources/Mac/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 67KC823C9A
         ENABLE_HARDENED_RUNTIME: YES
         MACOSX_DEPLOYMENT_TARGET: "14.0"
   PocketPadiOS:
@@ -31,11 +34,13 @@ targets:
     sources:
       - path: Sources/Shared
       - path: Sources/iOS
+      - path: Resources/iOS/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPad.iOS
         PRODUCT_NAME: PocketPad
         INFOPLIST_FILE: Resources/iOS/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 67KC823C9A
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"

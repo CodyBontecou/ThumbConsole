@@ -5,21 +5,27 @@ import AppKit
 
 struct MacContentView: View {
     @EnvironmentObject private var server: MacControllerServer
+    @Environment(\.colorScheme) private var colorScheme
     @State private var keyCaptureButton: GameButton?
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
                 header
                 accessibilityPanel
                 connectionPanel
+                if server.isPairingPending {
+                    pairingRequestPanel
+                }
                 keyBindingsPanel
                 debugPanel
                 testPanel
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Geist.Spacing.s8)
+            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
+        .geistScreenBackground()
         .sheet(item: $keyCaptureButton) { button in
             KeyCaptureSheet(button: button)
                 .environmentObject(server)
@@ -27,212 +33,352 @@ struct MacContentView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top, spacing: Geist.Spacing.s6) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                 Text("PocketPad Mac Helper")
-                    .font(.largeTitle.bold())
+                    .geistTypography(.heading40)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 Text("iPhone controller → WebSocket → CGEvent keyboard injection")
-                    .foregroundStyle(.secondary)
+                    .geistTypography(.copy16)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             }
-            Spacer()
+
+            Spacer(minLength: Geist.Spacing.s4)
             statusBadge
         }
     }
 
     private var statusBadge: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(server.isClientConnected ? .green : (server.isRunning ? .orange : .red))
-                .frame(width: 10, height: 10)
-            Text(server.statusText)
-                .font(.callout.weight(.medium))
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.quaternary, in: Capsule())
+        MacStatusPill(
+            title: server.statusText,
+            systemImage: server.isClientConnected ? "iphone.gen3.radiowaves.left.and.right" : (server.isPairingPending ? "lock.fill" : (server.isRunning ? "dot.radiowaves.left.and.right" : "xmark.circle.fill")),
+            tone: server.isClientConnected ? .success : (server.isRunning ? .warning : .error)
+        )
     }
 
     private var accessibilityPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(
-                server.accessibilityTrusted ? "Accessibility permission granted" : "Accessibility permission required",
-                systemImage: server.accessibilityTrusted ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
-            )
-            .foregroundStyle(server.accessibilityTrusted ? .green : .orange)
-            .font(.headline)
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s4) {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    Text("Accessibility Permission")
+                        .geistTypography(.heading20)
+                    Text("macOS requires Accessibility access before PocketPad can inject keyboard events.")
+                        .geistTypography(.copy14)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                }
+
+                Spacer()
+
+                MacStatusPill(
+                    title: server.accessibilityTrusted ? "Permission Granted" : "Permission Required",
+                    systemImage: server.accessibilityTrusted ? "checkmark.shield.fill" : "exclamationmark.triangle.fill",
+                    tone: server.accessibilityTrusted ? .success : .warning
+                )
+            }
 
             if !server.accessibilityTrusted {
-                Text("macOS blocks keyboard injection until this helper is allowed in System Settings → Privacy & Security → Accessibility.")
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Button("Request Permission") { server.promptForAccessibility() }
-                    Button("Open Accessibility Settings") { server.openAccessibilitySettings() }
-                    Button("Refresh") { server.refreshAccessibilityStatus() }
+                Text("Keyboard injection is blocked. Open System Settings → Privacy & Security → Accessibility and enable PocketPad Mac.")
+                    .geistTypography(.copy14)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Geist.Spacing.s3) {
+                        accessibilityButtons
+                    }
+                    VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                        accessibilityButtons
+                    }
                 }
             }
         }
-        .panelStyle()
+        .geistPanel()
+    }
+
+    @ViewBuilder
+    private var accessibilityButtons: some View {
+        Button("Request Accessibility Permission") { server.promptForAccessibility() }
+            .geistButtonStyle(.primary)
+        Button("Open Accessibility Settings") { server.openAccessibilitySettings() }
+            .geistButtonStyle(.secondary)
+        Button("Refresh Permission Status") { server.refreshAccessibilityStatus() }
+            .geistButtonStyle(.tertiary)
     }
 
     private var connectionPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Connect from iPhone")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            SectionHeader(
+                title: "Connect From iPhone",
+                subtitle: "Scan the QR code or enter one of these local WebSocket addresses in the iOS app."
+            )
 
-            HStack(alignment: .top, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    if server.localURLs.isEmpty {
-                        Text("No local IPv4 address found. Make sure Wi‑Fi is enabled.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(server.localURLs, id: \.self) { url in
-                            Text(url)
-                                .font(.system(.title3, design: .monospaced).weight(.semibold))
-                                .textSelection(.enabled)
-                        }
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: Geist.Spacing.s6) {
+                    connectionAddresses
+                    Spacer(minLength: Geist.Spacing.s4)
+                    qrCodeCard
                 }
-
-                Spacer(minLength: 12)
-
-                VStack(spacing: 8) {
-                    Text("Scan with iPhone")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    QRCodeView(text: server.pairingPayload)
-                        .frame(width: 152, height: 152)
-                    Text("Tap Scan Mac QR Code in the iOS app.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+                    connectionAddresses
+                    qrCodeCard
                 }
-                .frame(width: 190)
             }
 
-            HStack(spacing: 18) {
-                VStack(alignment: .leading) {
-                    Text("Pairing code")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(server.pairingCode)
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
+            Divider()
+                .overlay(Geist.color(.grayAlpha400, scheme: colorScheme))
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Geist.Spacing.s4) {
+                    serverInfoTiles
+                    Spacer()
+                    serverControls
                 }
+                VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+                    serverInfoTiles
+                    serverControls
+                }
+            }
+        }
+        .geistPanel()
+    }
 
-                Divider()
-                    .frame(height: 44)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Client")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(server.clientName)
-                    Text("Port \(server.port)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+    private var pairingRequestPanel: some View {
+        VStack(spacing: Geist.Spacing.s4) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    Text("Secure Pairing Request")
+                        .geistTypography(.heading20)
+                        .foregroundStyle(Color.white)
+                    Text("\(server.pendingPairingClientName ?? "An iPhone") wants to pair with PocketPad Mac.")
+                        .geistTypography(.copy14)
+                        .foregroundStyle(Color.white.opacity(0.68))
                 }
 
                 Spacer()
 
-                Button(server.isRunning ? "Restart Server" : "Start Server") {
-                    server.stop()
-                    server.start()
+                Button {
+                    server.cancelPairing()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.72))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.12), in: Circle())
                 }
-                Button("Stop") { server.stop() }
-                    .disabled(!server.isRunning)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Cancel pairing")
+            }
+
+            VStack(spacing: Geist.Spacing.s3) {
+                Text("Enter this code on PocketPad iPhone:")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Color.white.opacity(0.72))
+
+                Text(server.pairingCode)
+                    .geistTypography(.heading32)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.white)
+                    .textSelection(.enabled)
+
+                HStack(spacing: Geist.Spacing.s2) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Waiting for iPhone to enter the code…")
+                        .geistTypography(.copy13)
+                }
+                .foregroundStyle(Color.white.opacity(0.62))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Geist.Spacing.s4)
+        }
+        .padding(Geist.Spacing.s6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                .fill(Color(red: 0.08, green: 0.08, blue: 0.09))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 18, x: 0, y: 10)
+    }
+
+    private var connectionAddresses: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Local Addresses")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+            if server.localURLs.isEmpty {
+                MessageRow(
+                    text: "No local IPv4 address found. Enable Wi‑Fi and refresh the server.",
+                    tone: .warning
+                )
+            } else {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    ForEach(server.localURLs, id: \.self) { url in
+                        Text(url)
+                            .geistTypography(.label14Mono)
+                            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                            .textSelection(.enabled)
+                            .padding(.horizontal, Geist.Spacing.s3)
+                            .frame(height: Geist.Spacing.s10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                            )
+                    }
+                }
             }
         }
-        .panelStyle()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var qrCodeCard: some View {
+        VStack(alignment: .center, spacing: Geist.Spacing.s3) {
+            Text("Scan With iPhone")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            QRCodeView(text: server.pairingPayload)
+                .frame(width: 152, height: 152)
+            Text("Tap Scan Mac QR Code in PocketPad on iPhone.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .multilineTextAlignment(.center)
+        }
+        .padding(Geist.Spacing.s4)
+        .frame(width: 200)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var serverInfoTiles: some View {
+        HStack(spacing: Geist.Spacing.s3) {
+            InfoTile(title: "Pairing Code", value: server.pairingCode, mono: true)
+            InfoTile(title: "Client", value: server.clientName)
+            InfoTile(title: "Port", value: "\(server.port)", mono: true)
+        }
+    }
+
+    private var serverControls: some View {
+        HStack(spacing: Geist.Spacing.s3) {
+            Button(server.isRunning ? "Restart Server" : "Start Server") {
+                if server.isRunning {
+                    server.restart()
+                } else {
+                    server.start()
+                }
+            }
+            .geistButtonStyle(.primary)
+
+            Button("Stop Server") { server.stop() }
+                .geistButtonStyle(.secondary)
+                .disabled(!server.isRunning)
+        }
     }
 
     private var keyBindingsPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Controller Key Bindings")
-                        .font(.headline)
-                    Text("Record any Mac keyboard key for each iPhone controller button. Changes are saved automatically.")
-                        .foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s4) {
+                SectionHeader(
+                    title: "Controller Key Bindings",
+                    subtitle: "Record any Mac key for each iPhone controller button. Changes are saved automatically."
+                )
 
                 Spacer()
 
-                Button("Reset All") {
+                Button("Reset Key Bindings") {
                     server.resetAllKeyBindings()
                 }
+                .geistButtonStyle(.secondary)
             }
 
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+            Grid(alignment: .leading, horizontalSpacing: Geist.Spacing.s3, verticalSpacing: Geist.Spacing.s2) {
                 ForEach(GameButton.allCases) { button in
                     GridRow {
                         Text(button.displayName)
-                            .font(.callout.weight(.semibold))
+                            .geistTypography(.heading14)
+                            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                             .frame(width: 82, alignment: .leading)
 
                         Text(server.keyLabel(for: button))
-                            .font(.system(.body, design: .monospaced).weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .geistTypography(.label14Mono)
+                            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                            .padding(.horizontal, Geist.Spacing.s3)
+                            .frame(height: Geist.Spacing.s8)
                             .frame(minWidth: 112, alignment: .leading)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                            .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                            )
 
-                        Button("Record") {
+                        Button("Record Key") {
                             keyCaptureButton = button
                         }
+                        .geistButtonStyle(.primary, size: .small)
 
-                        Button("Default") {
+                        Button("Restore Default") {
                             server.resetKeyBinding(button)
                         }
+                        .geistButtonStyle(.tertiary, size: .small)
                         .disabled(server.isDefaultBinding(for: button))
                     }
                 }
             }
         }
-        .panelStyle()
+        .geistPanel()
     }
 
     private var debugPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Debug")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            SectionHeader(
+                title: "Input Diagnostics",
+                subtitle: "Transport and keyboard-injection details for live testing."
+            )
 
-            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
-                GridRow {
-                    Text("Last heartbeat").foregroundStyle(.secondary)
-                    Text(lastHeartbeatText)
-                }
-                GridRow {
-                    Text("Estimated latency").foregroundStyle(.secondary)
-                    Text(server.estimatedLatencyMS.map { "\($0) ms" } ?? "—")
-                }
-                GridRow {
-                    Text("Last event").foregroundStyle(.secondary)
-                    Text(server.lastReceivedEvent)
-                }
-                GridRow {
-                    Text("Pressed buttons").foregroundStyle(.secondary)
-                    Text(pressedButtonsText)
-                }
+            VStack(spacing: 0) {
+                DiagnosticRow(title: "Last Heartbeat", value: lastHeartbeatText)
+                DiagnosticRow(title: "Estimated Latency", value: server.estimatedLatencyMS.map { "\($0) ms" } ?? "—")
+                DiagnosticRow(title: "Missing Input Frames", value: "\(server.missedButtonFrames)")
+                DiagnosticRow(title: "Ignored Input Edges", value: "\(server.ignoredButtonEdges)")
+                DiagnosticRow(title: "Recovered Input Edges", value: "\(server.recoveredButtonEdges)")
+                DiagnosticRow(title: "Last Event", value: server.lastReceivedEvent)
+                DiagnosticRow(title: "Pressed Buttons", value: pressedButtonsText)
             }
+            .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+            )
         }
-        .panelStyle()
+        .geistPanel()
     }
 
     private var testPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Milestone 1 Local Keyboard Test")
-                .font(.headline)
-            Text("Hold a test button to emit keyDown; release it to emit keyUp. Use Release All if anything sticks.")
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            SectionHeader(
+                title: "Local Keyboard Test",
+                subtitle: "Hold a test button to emit keyDown; release it to emit keyUp. Use Release All Keys if anything sticks."
+            )
 
-            HStack(spacing: 12) {
+            HStack(spacing: Geist.Spacing.s3) {
                 TestKeyButton(button: .left)
                 TestKeyButton(button: .jump)
                 TestKeyButton(button: .attack)
-                Button("Release All") { server.releaseAll(reason: "Manual release all") }
+                Button("Release All Keys") { server.releaseAll(reason: "Manual release all") }
+                    .geistButtonStyle(.error)
                     .keyboardShortcut(.escape, modifiers: [.command])
             }
         }
-        .panelStyle()
+        .geistPanel()
     }
 
     private var lastHeartbeatText: String {
@@ -249,19 +395,169 @@ struct MacContentView: View {
     }
 }
 
+private enum MacInterfaceTone {
+    case neutral
+    case success
+    case warning
+    case error
+
+    func foreground(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.gray900, scheme: scheme)
+        case .success: Geist.color(.blue900, scheme: scheme)
+        case .warning: Geist.color(.amber900, scheme: scheme)
+        case .error: Geist.color(.red900, scheme: scheme)
+        }
+    }
+
+    func background(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.gray100, scheme: scheme)
+        case .success: Geist.color(.blue100, scheme: scheme)
+        case .warning: Geist.color(.amber100, scheme: scheme)
+        case .error: Geist.color(.red100, scheme: scheme)
+        }
+    }
+
+    func border(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.grayAlpha400, scheme: scheme)
+        case .success: Geist.color(.blue400, scheme: scheme)
+        case .warning: Geist.color(.amber400, scheme: scheme)
+        case .error: Geist.color(.red400, scheme: scheme)
+        }
+    }
+}
+
+private struct MacStatusPill: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let systemImage: String
+    let tone: MacInterfaceTone
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .geistTypography(.label13)
+            .foregroundStyle(tone.foreground(scheme: colorScheme))
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+            .background(tone.background(scheme: colorScheme), in: Capsule())
+            .overlay(Capsule().stroke(tone.border(scheme: colorScheme), lineWidth: 1))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct MessageRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let text: String
+    let tone: MacInterfaceTone
+
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.triangle.fill")
+            .geistTypography(.copy13)
+            .foregroundStyle(tone.foreground(scheme: colorScheme))
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(tone.background(scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(tone.border(scheme: colorScheme), lineWidth: 1)
+            )
+    }
+}
+
+private struct SectionHeader: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text(title)
+                .geistTypography(.heading20)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            Text(subtitle)
+                .geistTypography(.copy14)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct InfoTile: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let value: String
+    var mono = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+            Text(title)
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            Text(value)
+                .geistTypography(mono ? .label14Mono : .label14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .frame(height: 56, alignment: .center)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+}
+
+private struct DiagnosticRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s4) {
+            Text(title)
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(width: 180, alignment: .leading)
+            Text(value)
+                .geistTypography(.label13Mono)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .textSelection(.enabled)
+            Spacer(minLength: Geist.Spacing.s2)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Geist.color(.grayAlpha400, scheme: colorScheme))
+                .frame(height: 1)
+        }
+    }
+}
+
 private struct TestKeyButton: View {
     @EnvironmentObject private var server: MacControllerServer
+    @Environment(\.colorScheme) private var colorScheme
     let button: GameButton
     @State private var isPressed = false
 
     var body: some View {
-        Text("\(server.keyLabel(for: button)) \(button.displayName)")
-            .font(.headline)
+        Text("\(server.keyLabel(for: button))  \(button.displayName)")
+            .geistTypography(.button14)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .frame(width: 124, height: 52)
-            .background(isPressed ? Color.accentColor : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
-            .foregroundStyle(isPressed ? .white : .primary)
+            .background(buttonFill, in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(isPressed ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isPressed ? 2 : 1)
+            )
+            .foregroundStyle(isPressed ? Geist.color(.background100, scheme: colorScheme) : Geist.color(.gray1000, scheme: colorScheme))
+            .contentShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in
@@ -282,36 +578,45 @@ private struct TestKeyButton: View {
                 }
             }
     }
+
+    private var buttonFill: Color {
+        isPressed ? Geist.color(.gray1000, scheme: colorScheme) : Geist.color(.gray100, scheme: colorScheme)
+    }
 }
 
 private struct KeyCaptureSheet: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     let button: GameButton
     @State private var monitor: Any?
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: Geist.Spacing.s4) {
             Image(systemName: "keyboard")
                 .font(.system(size: 46))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
 
             Text("Record \(button.displayName)")
-                .font(.title2.bold())
+                .geistTypography(.heading24)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
 
             Text("Press any key on this Mac. That key will be sent whenever \(button.displayName) is pressed on the iPhone controller.")
-                .foregroundStyle(.secondary)
+                .geistTypography(.copy14)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button("Cancel") {
+            Button("Cancel Recording") {
                 dismiss()
             }
+            .geistButtonStyle(.secondary)
             .keyboardShortcut(.cancelAction)
         }
-        .padding(28)
-        .frame(width: 360)
+        .padding(Geist.Spacing.s6)
+        .frame(width: 380)
+        .background(Geist.color(.background100, scheme: colorScheme))
         .onAppear {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 server.setKeyBinding(CGKeyCode(event.keyCode), for: button)
@@ -329,6 +634,7 @@ private struct KeyCaptureSheet: View {
 }
 
 private struct QRCodeView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let text: String
 
     var body: some View {
@@ -341,11 +647,15 @@ private struct QRCodeView: View {
             } else {
                 Image(systemName: "qrcode")
                     .font(.system(size: 72))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             }
         }
         .padding(10)
-        .background(.white, in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
     }
 }
 
@@ -363,14 +673,5 @@ private enum QRCodeRenderer {
 
         guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else { return nil }
         return NSImage(cgImage: cgImage, size: NSSize(width: scaledImage.extent.width, height: scaledImage.extent.height))
-    }
-}
-
-private extension View {
-    func panelStyle() -> some View {
-        self
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 }
