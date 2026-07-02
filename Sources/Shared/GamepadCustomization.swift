@@ -1854,12 +1854,6 @@ struct GamepadCustomizationEditor: View {
                                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                         }
                     }
-
-                    Text(profileSubtitle(for: profile.customization))
-                        .geistTypography(.label12)
-                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                        .lineLimit(2)
-                        .padding(.leading, 20)
                 }
                 .padding(Geist.Spacing.s3)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1947,12 +1941,30 @@ struct GamepadCustomizationEditor: View {
             }
             .padding(.horizontal, Geist.Spacing.s2)
 
-            VStack(spacing: Geist.Spacing.s1) {
-                ForEach(componentListItems) { item in
-                    componentRow(item)
+            if componentListItems.isEmpty {
+                emptyComponentsMessage
+            } else {
+                VStack(spacing: Geist.Spacing.s1) {
+                    ForEach(componentListItems) { item in
+                        componentRow(item)
+                    }
                 }
             }
         }
+    }
+
+    private var emptyComponentsMessage: some View {
+        Text("No components yet. Draw a shape on the canvas or use Layout tools → Show Default Controls.")
+            .geistTypography(.copy13)
+            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(Geist.Spacing.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+            )
     }
 
     private func componentRow(_ item: GamepadEditorComponentItem) -> some View {
@@ -2047,22 +2059,16 @@ struct GamepadCustomizationEditor: View {
         Button {
             selectProfile(profile)
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: Geist.Spacing.s1) {
-                    Text(profile.name)
-                        .geistTypography(.heading14)
-                        .lineLimit(1)
-
-                    if profile.id == defaultProfileID {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Geist.color(.amber700, scheme: colorScheme))
-                    }
-                }
-                Text(profile.customization.layoutMode.displayName)
-                    .geistTypography(.label12)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            HStack(spacing: Geist.Spacing.s1) {
+                Text(profile.name)
+                    .geistTypography(.heading14)
                     .lineLimit(1)
+
+                if profile.id == defaultProfileID {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Geist.color(.amber700, scheme: colorScheme))
+                }
             }
             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
             .padding(.horizontal, Geist.Spacing.s3)
@@ -2466,7 +2472,7 @@ struct GamepadCustomizationEditor: View {
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
 
-            Label(selectedControlTitle, systemImage: "scope")
+            Label(selectedInspectorTitle, systemImage: selectedControlIsEditable ? "scope" : "rectangle.dashed")
                 .geistTypography(.label13)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 .padding(.horizontal, Geist.Spacing.s3)
@@ -2482,18 +2488,42 @@ struct GamepadCustomizationEditor: View {
         selectedElementInspector
     }
 
+    @ViewBuilder
     private var selectedElementInspector: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
-            selectedElementIdentitySection
-            Divider()
-            selectedElementColorSection
-            Divider()
-            selectedElementSizeSection
-            Divider()
-            selectedElementRadiusSection
-            Divider()
-            selectedElementEffectsSection
+        if selectedControlIsEditable {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+                selectedElementIdentitySection
+                Divider()
+                selectedElementColorSection
+                Divider()
+                selectedElementSizeSection
+                Divider()
+                selectedElementRadiusSection
+                Divider()
+                selectedElementEffectsSection
+            }
+        } else {
+            emptySelectionInspector
         }
+    }
+
+    private var emptySelectionInspector: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Blank setup")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            Text("Draw a shape on the canvas or choose Layout tools → Show Default Controls to add keypad components.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Geist.Spacing.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
     }
 
     private var selectedElementIdentitySection: some View {
@@ -2789,22 +2819,47 @@ struct GamepadCustomizationEditor: View {
         }
     }
 
+    private var selectedControlIsEditable: Bool {
+        controlSelectionOptions.contains(selectedControlID)
+    }
+
     private var controlSelectionOptions: [GamepadControlIdentity] {
-        GameButton.builtInControls.map { GamepadControlIdentity.builtin($0) }
-            + customization.customButtons.map { GamepadControlIdentity.custom($0.id) }
+        controlSelectionOptions(for: customization)
+    }
+
+    private func controlSelectionOptions(for customization: GamepadCustomization) -> [GamepadControlIdentity] {
+        let builtinItems = shouldListBuiltInComponents(for: customization)
+            ? GameButton.builtInControls.map { GamepadControlIdentity.builtin($0) }
+            : []
+        return builtinItems + customization.customButtons.map { GamepadControlIdentity.custom($0.id) }
+    }
+
+    private func shouldListBuiltInComponents(for customization: GamepadCustomization) -> Bool {
+        GameButton.builtInControls.contains { !customization.buttonCustomization(for: $0).isHidden }
+    }
+
+    private func preferredControlSelection(for customization: GamepadCustomization) -> GamepadControlIdentity? {
+        let options = controlSelectionOptions(for: customization)
+        let preferred = GamepadControlIdentity.builtin(.jump)
+        return options.contains(preferred) ? preferred : options.first
     }
 
     private var componentListItems: [GamepadEditorComponentItem] {
-        let builtinItems = GameButton.builtInControls.map { button -> GamepadEditorComponentItem in
-            let buttonCustomization = customization.buttonCustomization(for: button)
-            return GamepadEditorComponentItem(
-                identity: .builtin(button),
-                title: button.displayName,
-                subtitle: visualLabel(for: button),
-                isCustom: false,
-                isHidden: buttonCustomization.isHidden,
-                isLocationLocked: buttonCustomization.isLocationLocked
-            )
+        let builtinItems: [GamepadEditorComponentItem]
+        if shouldListBuiltInComponents(for: customization) {
+            builtinItems = GameButton.builtInControls.map { button -> GamepadEditorComponentItem in
+                let buttonCustomization = customization.buttonCustomization(for: button)
+                return GamepadEditorComponentItem(
+                    identity: .builtin(button),
+                    title: button.displayName,
+                    subtitle: visualLabel(for: button),
+                    isCustom: false,
+                    isHidden: buttonCustomization.isHidden,
+                    isLocationLocked: buttonCustomization.isLocationLocked
+                )
+            }
+        } else {
+            builtinItems = []
         }
 
         let customItems = customization.customButtons.map { customButton -> GamepadEditorComponentItem in
@@ -3000,6 +3055,10 @@ struct GamepadCustomizationEditor: View {
 
     private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
         min(max(value, lower), upper)
+    }
+
+    private var selectedInspectorTitle: String {
+        selectedControlIsEditable ? selectedControlTitle : "No component selected"
     }
 
     private var selectedControlTitle: String {
@@ -3572,7 +3631,7 @@ struct GamepadCustomizationEditor: View {
         selectedProfileID = profile.id
         selectedProfileNameDraft = profile.name
         isSelectedProfileExpanded = true
-        selectedControlID = .builtin(.jump)
+        selectedControlID = preferredControlSelection(for: profile.customization) ?? .builtin(.jump)
         applyCustomization(profile.customization)
         persistProfiles()
     }
@@ -3620,12 +3679,8 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func validControlSelection(_ selection: GamepadControlIdentity, in customization: GamepadCustomization) -> GamepadControlIdentity {
-        switch selection {
-        case .builtin(let button):
-            return GameButton.builtInControls.contains(button) ? selection : .builtin(.jump)
-        case .custom(let id):
-            return customization.customButtons.contains(where: { $0.id == id }) ? selection : .builtin(.jump)
-        }
+        let options = controlSelectionOptions(for: customization)
+        return options.contains(selection) ? selection : preferredControlSelection(for: customization) ?? .builtin(.jump)
     }
 
     private func beginRenamingSelectedProfile() {
@@ -3689,7 +3744,7 @@ struct GamepadCustomizationEditor: View {
         selectedProfileNameDraft = duplicate.name
         isSelectedProfileExpanded = true
         if !isDuplicatingCurrentSelection {
-            selectedControlID = .builtin(.jump)
+            selectedControlID = preferredControlSelection(for: duplicate.customization) ?? .builtin(.jump)
         }
         applyCustomization(duplicate.customization)
         persistProfiles()
@@ -3715,7 +3770,7 @@ struct GamepadCustomizationEditor: View {
             selectedProfileID = nextProfile.id
             selectedProfileNameDraft = nextProfile.name
             isSelectedProfileExpanded = true
-            selectedControlID = .builtin(.jump)
+            selectedControlID = preferredControlSelection(for: nextProfile.customization) ?? .builtin(.jump)
             if wasDefaultProfile {
                 defaultProfileID = nextProfile.id
             }
@@ -3733,7 +3788,7 @@ struct GamepadCustomizationEditor: View {
         selectedProfileID = nextProfile.id
         selectedProfileNameDraft = nextProfile.name
         isSelectedProfileExpanded = true
-        selectedControlID = .builtin(.jump)
+        selectedControlID = preferredControlSelection(for: nextProfile.customization) ?? .builtin(.jump)
         applyCustomization(nextProfile.customization)
         persistProfiles()
     }
@@ -3805,7 +3860,7 @@ struct GamepadCustomizationEditor: View {
             syncSelectedProfileNameDraft()
         }
         if !controlSelectionOptions.contains(selectedControlID) {
-            selectedControlID = .builtin(.jump)
+            selectedControlID = preferredControlSelection(for: customization) ?? .builtin(.jump)
         }
     }
 
@@ -3828,20 +3883,6 @@ struct GamepadCustomizationEditor: View {
             defaultProfileID: state.defaultProfileID
         )
         onProfilesChanged?(state.profiles, state.activeProfileID, state.defaultProfileID)
-    }
-
-    private func profileSubtitle(for customization: GamepadCustomization) -> String {
-        var components = [
-            customization.layoutMode.displayName,
-            customization.controlScale.displayName,
-            customization.accentStyle.displayName
-        ]
-
-        if customization.usesFreeformLayout {
-            components.append("Freeform")
-        }
-
-        return components.joined(separator: " · ")
     }
 }
 
