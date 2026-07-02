@@ -1,22 +1,117 @@
+import AppKit
 import CoreGraphics
 
-/// Default keyboard mapping for the built-in Hollow Knight profile.
-enum HollowKnightKeyMap {
-    static let defaultKeyCodes: [GameButton: CGKeyCode] = [
-        .left: MacVirtualKey.leftArrow,
-        .right: MacVirtualKey.rightArrow,
-        .up: MacVirtualKey.upArrow,
-        .down: MacVirtualKey.downArrow,
-        .jump: MacVirtualKey.z,
-        .attack: MacVirtualKey.x,
-        .dash: MacVirtualKey.c,
-        .focus: MacVirtualKey.a,
-        .map: MacVirtualKey.tab,
-        .pause: MacVirtualKey.escape
+struct MacKeyModifiers: OptionSet, Codable, Hashable, Sendable {
+    let rawValue: UInt8
+
+    static let command = MacKeyModifiers(rawValue: 1 << 0)
+    static let shift = MacKeyModifiers(rawValue: 1 << 1)
+    static let option = MacKeyModifiers(rawValue: 1 << 2)
+    static let control = MacKeyModifiers(rawValue: 1 << 3)
+
+    init(rawValue: UInt8) {
+        self.rawValue = rawValue
+    }
+
+    init(eventFlags: NSEvent.ModifierFlags) {
+        var modifiers: MacKeyModifiers = []
+        let deviceIndependentFlags = eventFlags.intersection(.deviceIndependentFlagsMask)
+
+        if deviceIndependentFlags.contains(.command) {
+            modifiers.insert(.command)
+        }
+        if deviceIndependentFlags.contains(.shift) {
+            modifiers.insert(.shift)
+        }
+        if deviceIndependentFlags.contains(.option) {
+            modifiers.insert(.option)
+        }
+        if deviceIndependentFlags.contains(.control) {
+            modifiers.insert(.control)
+        }
+
+        self = modifiers
+    }
+
+    var cgEventFlags: CGEventFlags {
+        var flags: CGEventFlags = []
+        if contains(.command) { flags.insert(.maskCommand) }
+        if contains(.shift) { flags.insert(.maskShift) }
+        if contains(.option) { flags.insert(.maskAlternate) }
+        if contains(.control) { flags.insert(.maskControl) }
+        return flags
+    }
+
+    var displaySymbols: String {
+        var symbols = ""
+        if contains(.control) { symbols += "⌃" }
+        if contains(.option) { symbols += "⌥" }
+        if contains(.shift) { symbols += "⇧" }
+        if contains(.command) { symbols += "⌘" }
+        return symbols
+    }
+}
+
+struct MacKeyBinding: Codable, Equatable, Hashable, Sendable {
+    var keyCode: CGKeyCode
+    var modifiers: MacKeyModifiers
+
+    init(keyCode: CGKeyCode, modifiers: MacKeyModifiers = []) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+    }
+
+    init(event: NSEvent) {
+        self.init(
+            keyCode: CGKeyCode(event.keyCode),
+            modifiers: MacKeyModifiers(eventFlags: event.modifierFlags)
+        )
+    }
+
+    var displayName: String {
+        "\(modifiers.displaySymbols)\(MacVirtualKey.displayName(for: keyCode))"
+    }
+
+    func withAdditionalModifiers(_ additionalModifiers: MacKeyModifiers) -> MacKeyBinding {
+        var copy = self
+        copy.modifiers.formUnion(additionalModifiers)
+        return copy
+    }
+
+    func cgEventFlags(keyDown: Bool) -> CGEventFlags {
+        var flags = modifiers.cgEventFlags
+
+        if keyDown, let modifierFlag = MacVirtualKey.modifierFlag(for: keyCode) {
+            flags.insert(modifierFlag)
+        }
+
+        return flags
+    }
+
+    static let controlKey = MacKeyBinding(keyCode: MacVirtualKey.control)
+    static let optionKey = MacKeyBinding(keyCode: MacVirtualKey.option)
+    static let shiftKey = MacKeyBinding(keyCode: MacVirtualKey.shift)
+    static let commandKey = MacKeyBinding(keyCode: MacVirtualKey.command)
+    static let tmuxPrefix = MacKeyBinding(keyCode: MacVirtualKey.b, modifiers: .control)
+}
+
+/// General-purpose starter bindings for a programmable Mac keypad.
+enum DefaultKeypadKeyMap {
+    static let defaultBindings: [GameButton: MacKeyBinding] = [
+        .left: MacKeyBinding(keyCode: MacVirtualKey.leftArrow),
+        .right: MacKeyBinding(keyCode: MacVirtualKey.rightArrow),
+        .up: MacKeyBinding(keyCode: MacVirtualKey.upArrow),
+        .down: MacKeyBinding(keyCode: MacVirtualKey.downArrow),
+        .jump: MacKeyBinding(keyCode: MacVirtualKey.returnKey),
+        .attack: MacKeyBinding(keyCode: MacVirtualKey.tab),
+        .dash: MacKeyBinding(keyCode: MacVirtualKey.k, modifiers: .command),
+        .focus: .tmuxPrefix,
+        .map: MacKeyBinding(keyCode: MacVirtualKey.p, modifiers: [.command, .shift]),
+        .pause: MacKeyBinding(keyCode: MacVirtualKey.escape)
     ]
 
-    static func defaultKeyCode(for button: GameButton) -> CGKeyCode? {
-        defaultKeyCodes[button]
+    static func defaultBinding(for button: GameButton) -> MacKeyBinding? {
+        defaultBindings[button]
     }
 }
 
@@ -26,16 +121,56 @@ enum MacVirtualKey {
     static let downArrow: CGKeyCode = 125
     static let upArrow: CGKeyCode = 126
 
-    static let z: CGKeyCode = 6
-    static let x: CGKeyCode = 7
-    static let c: CGKeyCode = 8
     static let a: CGKeyCode = 0
+    static let b: CGKeyCode = 11
+    static let c: CGKeyCode = 8
+    static let k: CGKeyCode = 40
+    static let p: CGKeyCode = 35
+    static let x: CGKeyCode = 7
+    static let z: CGKeyCode = 6
 
+    static let returnKey: CGKeyCode = 36
     static let tab: CGKeyCode = 48
     static let escape: CGKeyCode = 53
+    static let command: CGKeyCode = 55
+    static let shift: CGKeyCode = 56
+    static let option: CGKeyCode = 58
+    static let control: CGKeyCode = 59
 
     static func displayName(for keyCode: CGKeyCode) -> String {
         keyNames[keyCode] ?? "Key \(keyCode)"
+    }
+
+    static func modifierFlag(for keyCode: CGKeyCode) -> CGEventFlags? {
+        switch keyCode {
+        case 54, 55:
+            return .maskCommand
+        case 56, 60:
+            return .maskShift
+        case 58, 61:
+            return .maskAlternate
+        case 59, 62:
+            return .maskControl
+        case 63:
+            return .maskSecondaryFn
+        default:
+            return nil
+        }
+    }
+
+    static func keyModifier(for keyCode: CGKeyCode) -> MacKeyModifiers? {
+        switch keyCode {
+        case 54, 55:
+            return .command
+        case 56, 60:
+            return .shift
+        case 58, 61:
+            return .option
+        case 59, 62:
+            return .control
+        default:
+            return nil
+        }
     }
 
     private static let keyNames: [CGKeyCode: String] = [

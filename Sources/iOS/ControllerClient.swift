@@ -25,6 +25,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var state: ConnectionState = .disconnected
     @Published private(set) var lastSentEvent = "None"
     @Published private(set) var lastError: String?
+    @Published private(set) var gamepadCustomization: GamepadCustomization
 
     private let networkQueue = DispatchQueue(label: "PocketPad.iOS.Network", qos: .userInteractive)
     private var connection: NWConnection?
@@ -51,6 +52,10 @@ final class ControllerClient: ObservableObject {
 
     var isAwaitingPairingCode: Bool {
         state == .pairingCodeRequired
+    }
+
+    init() {
+        gamepadCustomization = GamepadCustomizationPersistence.load()
     }
 
     func connect(hostField: String, port: String, pairingCode: String) {
@@ -140,9 +145,46 @@ final class ControllerClient: ObservableObject {
         updateLastSentEvent("release_all", immediately: true)
     }
 
+    func updateGamepadCustomization(_ customization: GamepadCustomization, syncsToMac: Bool = true) {
+        var normalizedCustomization = customization.normalized
+
+        if syncsToMac {
+            guard !normalizedCustomization.hasSamePresentation(as: gamepadCustomization) else { return }
+            normalizedCustomization = normalizedCustomization.stampedForLocalUpdate
+        } else if gamepadCustomization.updatedAt > normalizedCustomization.updatedAt {
+            sendGamepadCustomizationToMac(gamepadCustomization)
+            return
+        }
+
+        guard normalizedCustomization != gamepadCustomization else { return }
+
+        gamepadCustomization = normalizedCustomization
+        GamepadCustomizationPersistence.save(normalizedCustomization)
+
+        if syncsToMac {
+            sendGamepadCustomizationToMac(normalizedCustomization)
+        }
+    }
+
+    func resetGamepadCustomization() {
+        updateGamepadCustomization(.defaultValue)
+    }
+
+    private func sendGamepadCustomizationToMac(_ customization: GamepadCustomization) {
+        guard connection != nil else { return }
+        send(
+            .init(
+                type: .gamepadCustomization,
+                timestamp: 0,
+                gamepadCustomization: customization.normalized
+            )
+        )
+        updateLastSentEvent("keypad customization", immediately: true)
+    }
+
     func appWillBecomeInactive() {
         // Losing focus briefly (Control Center, alerts, app switcher, etc.) should not
-        // tear down the controller socket. Release held buttons for safety, then keep
+        // tear down the keypad socket. Release held buttons for safety, then keep
         // heartbeats running so the Mac helper can recover when the app is active again.
         releaseAll()
     }
@@ -334,11 +376,20 @@ final class ControllerClient: ObservableObject {
             updateLastSentEvent(decoded.message ?? "pairing request accepted", immediately: true)
 
         case .pairingAccepted, .hello:
+            if let gamepadCustomization = decoded.gamepadCustomization {
+                updateGamepadCustomization(gamepadCustomization, syncsToMac: false)
+            }
             finishPairing(
                 on: messageConnection,
                 message: decoded.message,
                 realtimeToken: decoded.realtimeToken
             )
+
+        case .gamepadCustomization:
+            if let gamepadCustomization = decoded.gamepadCustomization {
+                updateGamepadCustomization(gamepadCustomization, syncsToMac: false)
+                updateLastSentEvent("keypad customization updated", immediately: true)
+            }
 
         case .pong:
             break

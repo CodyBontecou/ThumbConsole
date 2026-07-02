@@ -11,6 +11,14 @@ public enum GameButton: String, Codable, CaseIterable, Identifiable, Hashable, S
     case focus
     case map
     case pause
+    case custom1
+    case custom2
+    case custom3
+    case custom4
+    case custom5
+    case custom6
+    case custom7
+    case custom8
 
     public var id: String { rawValue }
 
@@ -20,13 +28,29 @@ public enum GameButton: String, Codable, CaseIterable, Identifiable, Hashable, S
         case .down: "Down"
         case .left: "Left"
         case .right: "Right"
-        case .jump: "Jump"
-        case .attack: "Attack"
-        case .dash: "Dash"
-        case .focus: "Focus"
-        case .map: "Map"
-        case .pause: "Pause"
+        case .jump: "Action 1"
+        case .attack: "Action 2"
+        case .dash: "Action 3"
+        case .focus: "Action 4"
+        case .map: "Utility 1"
+        case .pause: "Utility 2"
+        case .custom1: "Custom 1"
+        case .custom2: "Custom 2"
+        case .custom3: "Custom 3"
+        case .custom4: "Custom 4"
+        case .custom5: "Custom 5"
+        case .custom6: "Custom 6"
+        case .custom7: "Custom 7"
+        case .custom8: "Custom 8"
         }
+    }
+
+    static var builtInControls: [GameButton] {
+        [.up, .down, .left, .right, .jump, .attack, .dash, .focus, .map, .pause]
+    }
+
+    static var customSlots: [GameButton] {
+        [.custom1, .custom2, .custom3, .custom4, .custom5, .custom6, .custom7, .custom8]
     }
 }
 
@@ -45,6 +69,7 @@ public enum ControllerMessageType: String, Codable, Sendable {
     case heartbeat
     case ping
     case pong
+    case gamepadCustomization = "gamepad_customization"
     case error
 }
 
@@ -57,6 +82,7 @@ public struct ControllerMessage: Codable, Sendable {
     public var clientName: String?
     public var message: String?
     public var realtimeToken: String?
+    public var gamepadCustomization: GamepadCustomization?
 
     public init(
         type: ControllerMessageType,
@@ -66,7 +92,8 @@ public struct ControllerMessage: Codable, Sendable {
         pairingCode: String? = nil,
         clientName: String? = nil,
         message: String? = nil,
-        realtimeToken: String? = nil
+        realtimeToken: String? = nil,
+        gamepadCustomization: GamepadCustomization? = nil
     ) {
         self.type = type
         self.button = button
@@ -76,6 +103,7 @@ public struct ControllerMessage: Codable, Sendable {
         self.clientName = clientName
         self.message = message
         self.realtimeToken = realtimeToken
+        self.gamepadCustomization = gamepadCustomization
     }
 }
 
@@ -249,6 +277,7 @@ public enum ControllerWireCodec {
               message.clientName == nil,
               message.message == nil,
               message.realtimeToken == nil,
+              message.gamepadCustomization == nil,
               let typeCode = message.type.compactWireCode
         else {
             return nil
@@ -345,7 +374,7 @@ private extension ControllerMessageType {
         case .heartbeat: 3
         case .ping: 4
         case .pong: 5
-        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .error: nil
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .gamepadCustomization, .error: nil
         }
     }
 
@@ -378,6 +407,14 @@ private extension GameButton {
         case .focus: 8
         case .map: 9
         case .pause: 10
+        case .custom1: 11
+        case .custom2: 12
+        case .custom3: 13
+        case .custom4: 14
+        case .custom5: 15
+        case .custom6: 16
+        case .custom7: 17
+        case .custom8: 18
         }
     }
 
@@ -393,6 +430,14 @@ private extension GameButton {
         case 8: self = .focus
         case 9: self = .map
         case 10: self = .pause
+        case 11: self = .custom1
+        case 12: self = .custom2
+        case 13: self = .custom3
+        case 14: self = .custom4
+        case 15: self = .custom5
+        case 16: self = .custom6
+        case 17: self = .custom7
+        case 18: self = .custom8
         default: return nil
         }
     }

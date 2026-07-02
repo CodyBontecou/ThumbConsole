@@ -7,23 +7,22 @@ struct MacContentView: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
     @State private var keyCaptureButton: GameButton?
+    @State private var selectedSection: MacSidebarSection? = .home
+    @State private var advancedConfigExpanded = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
-                header
-                accessibilityPanel
-                connectionPanel
-                if server.isPairingPending {
-                    pairingRequestPanel
+        NavigationSplitView {
+            List(selection: $selectedSection) {
+                ForEach(MacSidebarSection.allCases) { section in
+                    Label(section.title, systemImage: section.systemImage)
+                        .tag(section)
                 }
-                keyBindingsPanel
-                debugPanel
-                testPanel
             }
-            .padding(Geist.Spacing.s8)
-            .frame(maxWidth: 1100, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .navigationTitle("PocketPad")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
+        } detail: {
+            selectedContent
+                .navigationTitle((selectedSection ?? .home).title)
         }
         .geistScreenBackground()
         .sheet(item: $keyCaptureButton) { button in
@@ -32,13 +31,68 @@ struct MacContentView: View {
         }
     }
 
+    @ViewBuilder
+    private var selectedContent: some View {
+        switch selectedSection ?? .home {
+        case .home:
+            contentScroll {
+                header
+                accessibilityPanel
+                connectionPanel
+                if server.isPairingPending {
+                    pairingRequestPanel
+                }
+                testPanel
+            }
+        case .gamepad:
+            gamepadEditorPage
+        case .settings:
+            contentScroll {
+                pageHeader(
+                    title: "Settings",
+                    subtitle: "Diagnostics and advanced configuration for the Mac keypad helper.",
+                    systemImage: "gearshape.fill"
+                )
+                debugPanel
+                advancedConfigurationPanel
+            }
+        }
+    }
+
+    private func contentScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
+                content()
+            }
+            .padding(Geist.Spacing.s8)
+            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        .geistScreenBackground()
+    }
+
+    private var gamepadEditorPage: some View {
+        GamepadCustomizationEditor(
+            customization: Binding(
+                get: { server.gamepadCustomization },
+                set: { server.setGamepadCustomization($0) }
+            ),
+            onReset: { server.resetGamepadCustomization() },
+            keyBindingsContent: AnyView(
+                MacGamepadKeyBindingsInspector(keyCaptureButton: $keyCaptureButton)
+                    .environmentObject(server)
+            )
+        )
+        .geistScreenBackground()
+    }
+
     private var header: some View {
         HStack(alignment: .top, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                 Text("PocketPad Mac Helper")
                     .geistTypography(.heading40)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                Text("iPhone controller → WebSocket → CGEvent keyboard injection")
+                Text("iPhone keypad → WebSocket → CGEvent keyboard shortcuts")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             }
@@ -54,6 +108,30 @@ struct MacContentView: View {
             systemImage: server.isClientConnected ? "iphone.gen3.radiowaves.left.and.right" : (server.isPairingPending ? "lock.fill" : (server.isRunning ? "dot.radiowaves.left.and.right" : "xmark.circle.fill")),
             tone: server.isClientConnected ? .success : (server.isRunning ? .warning : .error)
         )
+    }
+
+    private func pageHeader(title: String, subtitle: String, systemImage: String) -> some View {
+        HStack(alignment: .top, spacing: Geist.Spacing.s4) {
+            Image(systemName: systemImage)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .frame(width: 48, height: 48)
+                .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                        .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                )
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text(title)
+                    .geistTypography(.heading40)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text(subtitle)
+                    .geistTypography(.copy16)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var accessibilityPanel: some View {
@@ -121,21 +199,6 @@ struct MacContentView: View {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
                     connectionAddresses
                     qrCodeCard
-                }
-            }
-
-            Divider()
-                .overlay(Geist.color(.grayAlpha400, scheme: colorScheme))
-
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: Geist.Spacing.s4) {
-                    serverInfoTiles
-                    Spacer()
-                    serverControls
-                }
-                VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
-                    serverInfoTiles
-                    serverControls
                 }
             }
         }
@@ -284,17 +347,57 @@ struct MacContentView: View {
         }
     }
 
+    private var serverPortConfigurationContent: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            connectionAddresses
+
+            Divider()
+                .overlay(Geist.color(.grayAlpha400, scheme: colorScheme))
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Geist.Spacing.s4) {
+                    serverInfoTiles
+                    Spacer()
+                    serverControls
+                }
+                VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+                    serverInfoTiles
+                    serverControls
+                }
+            }
+        }
+    }
+
+    private var gamepadCustomizationPanel: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            SectionHeader(
+                title: "iPhone Keypad Appearance",
+                subtitle: "Customize the keypad rendered on the iPhone. Changes sync live to a connected phone and are sent during pairing."
+            )
+
+            GamepadCustomizationEditor(
+                customization: Binding(
+                    get: { server.gamepadCustomization },
+                    set: { server.setGamepadCustomization($0) }
+                ),
+                onReset: { server.resetGamepadCustomization() }
+            )
+            .frame(maxWidth: 720, alignment: .leading)
+        }
+        .geistPanel()
+    }
+
     private var keyBindingsPanel: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
             HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s4) {
                 SectionHeader(
-                    title: "Controller Key Bindings",
-                    subtitle: "Record any Mac key for each iPhone controller button. Changes are saved automatically."
+                    title: "Keypad Shortcuts",
+                    subtitle: "Record a Mac key or modifier combo for each iPhone button. Changes are saved automatically."
                 )
 
                 Spacer()
 
-                Button("Reset Key Bindings") {
+                Button("Reset Shortcuts") {
                     server.resetAllKeyBindings()
                 }
                 .geistButtonStyle(.secondary)
@@ -320,7 +423,7 @@ struct MacContentView: View {
                                     .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
                             )
 
-                        Button("Record Key") {
+                        Button("Record Shortcut") {
                             keyCaptureButton = button
                         }
                         .geistButtonStyle(.primary, size: .small)
@@ -351,7 +454,7 @@ struct MacContentView: View {
                 DiagnosticRow(title: "Ignored Input Edges", value: "\(server.ignoredButtonEdges)")
                 DiagnosticRow(title: "Recovered Input Edges", value: "\(server.recoveredButtonEdges)")
                 DiagnosticRow(title: "Last Event", value: server.lastReceivedEvent)
-                DiagnosticRow(title: "Pressed Buttons", value: pressedButtonsText)
+                DiagnosticRow(title: "Pressed Controls", value: pressedButtonsText)
             }
             .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
             .overlay(
@@ -362,11 +465,38 @@ struct MacContentView: View {
         .geistPanel()
     }
 
+    private var advancedConfigurationPanel: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            DisclosureGroup(isExpanded: $advancedConfigExpanded) {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+                    Text("Current WebSocket addresses, active port, and server controls update live from the Mac helper.")
+                        .geistTypography(.copy14)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    serverPortConfigurationContent
+                }
+                .padding(.top, Geist.Spacing.s3)
+            } label: {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    Text("Advanced Configuration")
+                        .geistTypography(.heading20)
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    Text("Manage listener addresses, port status, and the Mac helper server.")
+                        .geistTypography(.copy14)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                }
+            }
+            .tint(Geist.color(.gray1000, scheme: colorScheme))
+        }
+        .geistPanel()
+    }
+
     private var testPanel: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
             SectionHeader(
-                title: "Local Keyboard Test",
-                subtitle: "Hold a test button to emit keyDown; release it to emit keyUp. Use Release All Keys if anything sticks."
+                title: "Local Shortcut Test",
+                subtitle: "Hold a test control to emit keyDown; release it to emit keyUp. Use Release All Keys if anything sticks."
             )
 
             HStack(spacing: Geist.Spacing.s3) {
@@ -392,6 +522,30 @@ struct MacContentView: View {
             .map(\.rawValue)
             .sorted()
             .joined(separator: ", ")
+    }
+}
+
+private enum MacSidebarSection: String, CaseIterable, Identifiable, Hashable {
+    case home
+    case gamepad
+    case settings
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .home: "Home"
+        case .gamepad: "Keypad"
+        case .settings: "Settings"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .home: "house.fill"
+        case .gamepad: "keyboard.fill"
+        case .settings: "gearshape.fill"
+        }
     }
 }
 
@@ -584,6 +738,86 @@ private struct TestKeyButton: View {
     }
 }
 
+private struct MacGamepadKeyBindingsInspector: View {
+    @EnvironmentObject private var server: MacControllerServer
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var keyCaptureButton: GameButton?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                    Text("Keypad Shortcuts")
+                        .geistTypography(.heading14)
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    Text("Record the Mac key or modifier combo sent by each virtual button.")
+                        .geistTypography(.copy13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Button("Reset All") {
+                    server.resetAllKeyBindings()
+                }
+                .geistButtonStyle(.tertiary, size: .small)
+            }
+
+            VStack(spacing: Geist.Spacing.s2) {
+                ForEach(GameButton.allCases) { button in
+                    keyBindingRow(for: button)
+                }
+            }
+        }
+    }
+
+    private func keyBindingRow(for button: GameButton) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s3) {
+                Text(button.displayName)
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .lineLimit(1)
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Text(server.keyLabel(for: button))
+                    .geistTypography(.label13Mono)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .lineLimit(1)
+                    .padding(.horizontal, Geist.Spacing.s2)
+                    .frame(height: Geist.Spacing.s8)
+                    .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                            .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                    )
+            }
+
+            HStack(spacing: Geist.Spacing.s2) {
+                Button("Record Shortcut") {
+                    keyCaptureButton = button
+                }
+                .geistButtonStyle(.primary, size: .small)
+
+                Button("Default") {
+                    server.resetKeyBinding(button)
+                }
+                .geistButtonStyle(.tertiary, size: .small)
+                .disabled(server.isDefaultBinding(for: button))
+            }
+        }
+        .padding(Geist.Spacing.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Geist.color(.background100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+}
+
 private struct KeyCaptureSheet: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.dismiss) private var dismiss
@@ -602,11 +836,22 @@ private struct KeyCaptureSheet: View {
                 .geistTypography(.heading24)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
 
-            Text("Press any key on this Mac. That key will be sent whenever \(button.displayName) is pressed on the iPhone controller.")
+            Text("Press any key or shortcut on this Mac. PocketPad records held modifiers too, so Control+B becomes ⌃B. Use the quick buttons for modifier-only pads.")
                 .geistTypography(.copy14)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: Geist.Spacing.s2) {
+                Text("Quick modifier buttons")
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Geist.Spacing.s2) { quickBindingButtons }
+                    VStack(spacing: Geist.Spacing.s2) { quickBindingButtons }
+                }
+            }
 
             Button("Cancel Recording") {
                 dismiss()
@@ -615,12 +860,11 @@ private struct KeyCaptureSheet: View {
             .keyboardShortcut(.cancelAction)
         }
         .padding(Geist.Spacing.s6)
-        .frame(width: 380)
+        .frame(width: 440)
         .background(Geist.color(.background100, scheme: colorScheme))
         .onAppear {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                server.setKeyBinding(CGKeyCode(event.keyCode), for: button)
-                DispatchQueue.main.async { dismiss() }
+                record(MacKeyBinding(event: event))
                 return nil
             }
         }
@@ -630,6 +874,25 @@ private struct KeyCaptureSheet: View {
             }
             monitor = nil
         }
+    }
+
+    @ViewBuilder
+    private var quickBindingButtons: some View {
+        Button("⌃ Control") { record(.controlKey) }
+            .geistButtonStyle(.secondary, size: .small)
+        Button("⌥ Option") { record(.optionKey) }
+            .geistButtonStyle(.secondary, size: .small)
+        Button("⇧ Shift") { record(.shiftKey) }
+            .geistButtonStyle(.secondary, size: .small)
+        Button("⌘ Command") { record(.commandKey) }
+            .geistButtonStyle(.secondary, size: .small)
+        Button("⌃B Tmux") { record(.tmuxPrefix) }
+            .geistButtonStyle(.primary, size: .small)
+    }
+
+    private func record(_ binding: MacKeyBinding) {
+        server.setKeyBinding(binding, for: button)
+        DispatchQueue.main.async { dismiss() }
     }
 }
 

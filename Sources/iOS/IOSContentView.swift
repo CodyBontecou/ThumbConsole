@@ -81,6 +81,7 @@ private struct ConnectionView: View {
     @Binding var pairingCode: String
 
     @State private var isShowingScanner = false
+    @State private var isShowingCustomization = false
     @State private var qrScanError: String?
     @State private var pendingPairingCode = ""
 
@@ -134,6 +135,9 @@ private struct ConnectionView: View {
                 }
             }
         }
+        .sheet(isPresented: $isShowingCustomization) {
+            GamepadCustomizationSheet()
+        }
     }
 
     @ViewBuilder
@@ -152,7 +156,7 @@ private struct ConnectionView: View {
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 .minimumScaleFactor(0.75)
 
-            Text("Use this iPhone as a controller for Hollow Knight on your Mac.")
+            Text("Use this iPhone as a programmable shortcut keypad for your Mac.")
                 .geistTypography(.copy16)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
@@ -213,6 +217,16 @@ private struct ConnectionView: View {
             }
             .geistButtonStyle(.primary, size: .medium)
             .disabled(macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            DividerLabel("Keypad")
+
+            Button {
+                isShowingCustomization = true
+            } label: {
+                Label("Customize iPhone Keypad", systemImage: "slider.horizontal.3")
+                    .frame(maxWidth: .infinity)
+            }
+            .geistButtonStyle(.secondary, size: .medium)
         }
         .geistPanel(padding: Geist.Spacing.s6, radius: Geist.Radius.sm)
     }
@@ -454,9 +468,35 @@ private struct LabeledInput<Content: View>: View {
     }
 }
 
+private struct GamepadCustomizationSheet: View {
+    @EnvironmentObject private var client: ControllerClient
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            GamepadCustomizationEditor(
+                customization: Binding(
+                    get: { client.gamepadCustomization },
+                    set: { client.updateGamepadCustomization($0) }
+                ),
+                onReset: { client.resetGamepadCustomization() }
+            )
+            .geistScreenBackground()
+            .navigationTitle("Keypad Editor")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
 private struct ControllerPadView: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isShowingCustomization = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -475,70 +515,160 @@ private struct ControllerPadView: View {
                 }
             }
         }
+        .sheet(isPresented: $isShowingCustomization) {
+            GamepadCustomizationSheet()
+        }
+        .onChange(of: client.gamepadCustomization) { _, _ in
+            TouchCaptureUIView.deactivateAllRegisteredTouches()
+            client.releaseAll()
+        }
     }
 
+    @ViewBuilder
     private func landscapeControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
-        let metrics = LandscapeControllerMetrics(size: size, safeAreaInsets: safeAreaInsets)
+        let customization = client.gamepadCustomization
 
-        return HStack(alignment: .center, spacing: metrics.controlSpacing) {
-            DPadView(buttonSize: metrics.dPadButtonSize)
-                .frame(width: metrics.dPadHitSize.width * 3, height: metrics.dPadHitSize.height * 3)
-                .fixedSize()
+        if customization.usesFreeformLayout {
+            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets)
+        } else {
+            let metrics = LandscapeControllerMetrics(
+                size: size,
+                safeAreaInsets: safeAreaInsets,
+                controlScale: customization.controlScale
+            )
 
-            Spacer(minLength: metrics.spacerMinLength)
-
-            HStack(spacing: metrics.utilitySpacing) {
-                GamepadButton(button: .map, title: "Map", size: metrics.mapButtonSize, shape: .capsule)
-                GamepadButton(button: .pause, title: "Pause", size: metrics.pauseButtonSize, shape: .capsule)
+            HStack(alignment: .center, spacing: metrics.controlSpacing) {
+                if customization.layoutMode == .standard {
+                    landscapeDPad(metrics: metrics, customization: customization)
+                    Spacer(minLength: metrics.spacerMinLength)
+                    landscapeUtilityButtons(metrics: metrics, customization: customization)
+                    Spacer(minLength: metrics.spacerMinLength)
+                    landscapeActions(metrics: metrics, customization: customization)
+                } else {
+                    landscapeActions(metrics: metrics, customization: customization)
+                    Spacer(minLength: metrics.spacerMinLength)
+                    landscapeUtilityButtons(metrics: metrics, customization: customization)
+                    Spacer(minLength: metrics.spacerMinLength)
+                    landscapeDPad(metrics: metrics, customization: customization)
+                }
             }
-            .frame(width: metrics.utilityHitWidth, height: metrics.utilityHitHeight)
-            .fixedSize()
-            .layoutPriority(1)
-
-            Spacer(minLength: metrics.spacerMinLength)
-
-            ActionButtonsView(buttonSize: metrics.actionButtonSize)
-                .frame(width: metrics.actionHitSize.width * 2, height: metrics.actionHitSize.height * 2)
-                .fixedSize()
-        }
-        .padding(.leading, metrics.leadingPadding)
-        .padding(.trailing, metrics.trailingPadding)
-        .padding(.bottom, metrics.bottomPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay {
-            TouchRoutingView()
+            .padding(.leading, metrics.leadingPadding)
+            .padding(.trailing, metrics.trailingPadding)
+            .padding(.bottom, metrics.bottomPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                TouchRoutingView()
+            }
         }
     }
 
+    @ViewBuilder
     private func portraitControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
-        let usableWidth = max(300, size.width - Geist.Spacing.s8)
-        let dPadButton = min(82, max(64, usableWidth / 4.2))
-        let actionButton = min(82, max(64, usableWidth / 4.5))
-        let dPadHitButton = ControllerLayoutMetrics.hitSize(for: CGSize(width: dPadButton, height: dPadButton))
-        let actionHitButton = ControllerLayoutMetrics.hitSize(for: CGSize(width: actionButton, height: actionButton))
+        let customization = client.gamepadCustomization
 
-        return VStack(spacing: Geist.Spacing.s4) {
-            Spacer(minLength: Geist.Spacing.s2)
+        if customization.usesFreeformLayout {
+            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets)
+        } else {
+            let scale = customization.controlScale.multiplier
+            let usableWidth = max(300, size.width - Geist.Spacing.s8)
+            let dPadButton = min(82 * scale, max(64 * scale, (usableWidth / 4.2) * scale))
+            let actionButton = min(82 * scale, max(64 * scale, (usableWidth / 4.5) * scale))
+            let mapButtonSize = CGSize(width: 94 * scale, height: 58 * scale)
+            let pauseButtonSize = CGSize(width: 108 * scale, height: 58 * scale)
+            let dPadSize = CGSize(width: dPadButton, height: dPadButton)
+            let actionSize = CGSize(width: actionButton, height: actionButton)
+            let dPadHitButton = ControllerLayoutMetrics.hitSize(for: dPadSize)
+            let actionHitButton = ControllerLayoutMetrics.hitSize(for: actionSize)
 
-            DPadView(buttonSize: CGSize(width: dPadButton, height: dPadButton))
-                .frame(width: dPadHitButton.width * 3, height: dPadHitButton.height * 3)
+            VStack(spacing: Geist.Spacing.s4) {
+                Spacer(minLength: Geist.Spacing.s2)
 
-            HStack(spacing: Geist.Spacing.s4) {
-                GamepadButton(button: .map, title: "Map", size: CGSize(width: 94, height: 58), shape: .capsule)
-                GamepadButton(button: .pause, title: "Pause", size: CGSize(width: 108, height: 58), shape: .capsule)
+                if customization.layoutMode == .standard {
+                    DPadView(buttonSize: dPadSize, customization: customization)
+                        .frame(width: dPadHitButton.width * 3, height: dPadHitButton.height * 3)
+
+                    utilityButtons(
+                        mapButtonSize: mapButtonSize,
+                        pauseButtonSize: pauseButtonSize,
+                        spacing: Geist.Spacing.s4,
+                        customization: customization
+                    )
+
+                    ActionButtonsView(buttonSize: actionSize, customization: customization)
+                        .frame(width: actionHitButton.width * 2, height: actionHitButton.height * 2)
+                } else {
+                    ActionButtonsView(buttonSize: actionSize, customization: customization)
+                        .frame(width: actionHitButton.width * 2, height: actionHitButton.height * 2)
+
+                    utilityButtons(
+                        mapButtonSize: mapButtonSize,
+                        pauseButtonSize: pauseButtonSize,
+                        spacing: Geist.Spacing.s4,
+                        customization: customization
+                    )
+
+                    DPadView(buttonSize: dPadSize, customization: customization)
+                        .frame(width: dPadHitButton.width * 3, height: dPadHitButton.height * 3)
+                }
+
+                Spacer(minLength: Geist.Spacing.s2)
             }
-
-            ActionButtonsView(buttonSize: CGSize(width: actionButton, height: actionButton))
-                .frame(width: actionHitButton.width * 2, height: actionHitButton.height * 2)
-
-            Spacer(minLength: Geist.Spacing.s2)
+            .padding(.leading, max(Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s3))
+            .padding(.trailing, max(Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s3))
+            .padding(.bottom, max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                TouchRoutingView()
+            }
         }
-        .padding(.leading, max(Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s3))
-        .padding(.trailing, max(Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s3))
-        .padding(.bottom, max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay {
-            TouchRoutingView()
+    }
+
+    private func freeformControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
+        let isLandscape = size.width >= size.height
+
+        return GamepadFreeformControllerCanvas(customization: client.gamepadCustomization)
+            .padding(.leading, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s2))
+            .padding(.trailing, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s2))
+            .padding(.bottom, max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                TouchRoutingView()
+            }
+    }
+
+    private func landscapeDPad(metrics: LandscapeControllerMetrics, customization: GamepadCustomization) -> some View {
+        DPadView(buttonSize: metrics.dPadButtonSize, customization: customization)
+            .frame(width: metrics.dPadHitSize.width * 3, height: metrics.dPadHitSize.height * 3)
+            .fixedSize()
+    }
+
+    private func landscapeActions(metrics: LandscapeControllerMetrics, customization: GamepadCustomization) -> some View {
+        ActionButtonsView(buttonSize: metrics.actionButtonSize, customization: customization)
+            .frame(width: metrics.actionHitSize.width * 2, height: metrics.actionHitSize.height * 2)
+            .fixedSize()
+    }
+
+    private func landscapeUtilityButtons(metrics: LandscapeControllerMetrics, customization: GamepadCustomization) -> some View {
+        utilityButtons(
+            mapButtonSize: metrics.mapButtonSize,
+            pauseButtonSize: metrics.pauseButtonSize,
+            spacing: metrics.utilitySpacing,
+            customization: customization
+        )
+        .frame(width: metrics.utilityHitWidth, height: metrics.utilityHitHeight)
+        .fixedSize()
+        .layoutPriority(1)
+    }
+
+    private func utilityButtons(
+        mapButtonSize: CGSize,
+        pauseButtonSize: CGSize,
+        spacing: CGFloat,
+        customization: GamepadCustomization
+    ) -> some View {
+        HStack(spacing: spacing) {
+            GamepadButton(button: .map, size: mapButtonSize, shape: .capsule, customization: customization)
+            GamepadButton(button: .pause, size: pauseButtonSize, shape: .capsule, customization: customization)
         }
     }
 
@@ -553,6 +683,17 @@ private struct ControllerPadView: View {
                 .minimumScaleFactor(0.7)
 
             Spacer(minLength: Geist.Spacing.s2)
+
+            Button {
+                TouchCaptureUIView.deactivateAllRegisteredTouches()
+                client.releaseAll()
+                isShowingCustomization = true
+            } label: {
+                Label("Customize", systemImage: "slider.horizontal.3")
+                    .labelStyle(.iconOnly)
+            }
+            .geistButtonStyle(.secondary, size: .small)
+            .accessibilityLabel("Customize keypad")
 
             Button("Disconnect iPhone") {
                 client.disconnect(sendReleaseAll: true)
@@ -598,7 +739,8 @@ private struct LandscapeControllerMetrics {
         )
     }
 
-    init(size: CGSize, safeAreaInsets: EdgeInsets) {
+    init(size: CGSize, safeAreaInsets: EdgeInsets, controlScale: GamepadControlScale) {
+        let customizationScale = controlScale.multiplier
         let availableHeight = max(220, size.height - 58)
         let sideSafePadding = Geist.Spacing.s2
         leadingPadding = max(Geist.Spacing.s3, safeAreaInsets.leading + sideSafePadding)
@@ -610,11 +752,11 @@ private struct LandscapeControllerMetrics {
         controlSpacing = contentWidth < 780 ? Geist.Spacing.s3 : max(Geist.Spacing.s4, min(Geist.Spacing.s6, contentWidth * 0.02))
         spacerMinLength = Geist.Spacing.s2
 
-        let baseDPadButton = min(82, max(64, availableHeight * 0.24), contentWidth * 0.12)
-        let baseActionButton = min(86, max(64, availableHeight * 0.25), contentWidth * 0.13)
-        let baseMapWidth = min(92, max(74, contentWidth * 0.13))
-        let basePauseWidth = min(104, max(84, contentWidth * 0.145))
-        let baseUtilityHeight = min(64, max(52, availableHeight * 0.18))
+        let baseDPadButton = min(82 * customizationScale, max(64 * customizationScale, availableHeight * 0.24 * customizationScale), contentWidth * 0.12 * customizationScale)
+        let baseActionButton = min(86 * customizationScale, max(64 * customizationScale, availableHeight * 0.25 * customizationScale), contentWidth * 0.13 * customizationScale)
+        let baseMapWidth = min(92 * customizationScale, max(74 * customizationScale, contentWidth * 0.13 * customizationScale))
+        let basePauseWidth = min(104 * customizationScale, max(84 * customizationScale, contentWidth * 0.145 * customizationScale))
+        let baseUtilityHeight = min(64 * customizationScale, max(52 * customizationScale, availableHeight * 0.18 * customizationScale))
 
         // Landscape iPhones have a lot less horizontal room after the safe-area
         // notches are removed. Scale the visual controls as one group so the full
@@ -657,9 +799,34 @@ private enum ControllerLayoutMetrics {
     }
 }
 
+private struct GamepadFreeformControllerCanvas: View {
+    let customization: GamepadCustomization
+
+    var body: some View {
+        GeometryReader { proxy in
+            let controls = customization.resolvedControls(in: proxy.size)
+
+            ZStack {
+                ForEach(controls) { control in
+                    GamepadButton(
+                        button: control.mappedButton,
+                        size: control.size,
+                        shape: control.shape,
+                        labelOverride: control.label,
+                        customization: customization
+                    )
+                    .position(control.center)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
 private struct DPadView: View {
     @Environment(\.colorScheme) private var colorScheme
     var buttonSize = CGSize(width: 78, height: 78)
+    let customization: GamepadCustomization
 
     var body: some View {
         let hitSize = ControllerLayoutMetrics.hitSize(for: buttonSize)
@@ -667,11 +834,11 @@ private struct DPadView: View {
         Grid(horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
                 Color.clear.frame(width: hitSize.width, height: hitSize.height)
-                GamepadButton(button: .up, title: "↑", size: buttonSize)
+                GamepadButton(button: .up, size: buttonSize, customization: customization)
                 Color.clear.frame(width: hitSize.width, height: hitSize.height)
             }
             GridRow {
-                GamepadButton(button: .left, title: "←", size: buttonSize)
+                GamepadButton(button: .left, size: buttonSize, customization: customization)
                 RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
                     .fill(Geist.color(.gray100, scheme: colorScheme))
                     .overlay(
@@ -680,11 +847,11 @@ private struct DPadView: View {
                     )
                     .frame(width: buttonSize.width, height: buttonSize.height)
                     .frame(width: hitSize.width, height: hitSize.height)
-                GamepadButton(button: .right, title: "→", size: buttonSize)
+                GamepadButton(button: .right, size: buttonSize, customization: customization)
             }
             GridRow {
                 Color.clear.frame(width: hitSize.width, height: hitSize.height)
-                GamepadButton(button: .down, title: "↓", size: buttonSize)
+                GamepadButton(button: .down, size: buttonSize, customization: customization)
                 Color.clear.frame(width: hitSize.width, height: hitSize.height)
             }
         }
@@ -693,37 +860,38 @@ private struct DPadView: View {
 
 private struct ActionButtonsView: View {
     var buttonSize = CGSize(width: 82, height: 82)
+    let customization: GamepadCustomization
 
     var body: some View {
         Grid(horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
-                GamepadButton(button: .focus, title: "Focus", size: buttonSize)
-                GamepadButton(button: .dash, title: "Dash", size: buttonSize)
+                GamepadButton(button: .focus, size: buttonSize, customization: customization)
+                GamepadButton(button: .dash, size: buttonSize, customization: customization)
             }
             GridRow {
-                GamepadButton(button: .attack, title: "Attack", size: buttonSize)
-                GamepadButton(button: .jump, title: "Jump", size: buttonSize)
+                GamepadButton(button: .attack, size: buttonSize, customization: customization)
+                GamepadButton(button: .jump, size: buttonSize, customization: customization)
             }
         }
     }
-}
-
-private enum GamepadButtonShape {
-    case roundedRectangle
-    case capsule
 }
 
 private struct GamepadButton: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
     let button: GameButton
-    let title: String
     let size: CGSize
-    var shape: GamepadButtonShape = .roundedRectangle
+    var shape: GamepadButtonShapeStyle = .roundedRectangle
+    var labelOverride: String? = nil
+    let customization: GamepadCustomization
 
     @State private var isPressed = false
     private static let hapticsEnabled = false
     private let haptic = GamepadButton.hapticsEnabled ? UIImpactFeedbackGenerator(style: .light) : nil
+
+    private var title: String {
+        labelOverride ?? customization.visualLabel(for: button)
+    }
 
     var body: some View {
         let hitSize = ControllerLayoutMetrics.hitSize(for: size)
@@ -733,10 +901,14 @@ private struct GamepadButton: View {
                 buttonBackground
                     .shadow(color: Color.black.opacity(isPressed ? 0.16 : 0.04), radius: isPressed ? 2 : 1, y: isPressed ? 1 : 2)
 
-                Text(title)
-                    .geistTypography(title.count <= 2 ? .heading32 : .button16)
-                    .minimumScaleFactor(0.65)
-                    .foregroundStyle(isPressed ? Geist.color(.background100, scheme: colorScheme) : Geist.color(.gray1000, scheme: colorScheme))
+                if customization.showsButtonLabels {
+                    Text(title)
+                        .geistTypography(title.count <= 2 ? .heading32 : .button16)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
+                        .foregroundStyle(customization.accentStyle.buttonForeground(isPressed: isPressed, scheme: colorScheme))
+                        .padding(.horizontal, 4)
+                }
             }
             .scaleEffect(isPressed ? 0.96 : 1)
             .allowsHitTesting(false)
@@ -748,6 +920,7 @@ private struct GamepadButton: View {
             .frame(width: hitSize.width, height: hitSize.height)
         }
         .frame(width: hitSize.width, height: hitSize.height)
+        .accessibilityLabel(button.displayName)
         .onAppear {
             haptic?.prepare()
         }
@@ -758,8 +931,8 @@ private struct GamepadButton: View {
 
     @ViewBuilder
     private var buttonBackground: some View {
-        let fillColor = isPressed ? Geist.color(.gray1000, scheme: colorScheme) : Geist.color(.gray100, scheme: colorScheme)
-        let strokeColor = isPressed ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme)
+        let fillColor = customization.accentStyle.buttonFill(isPressed: isPressed, scheme: colorScheme)
+        let strokeColor = customization.accentStyle.buttonStroke(isPressed: isPressed, scheme: colorScheme)
         let lineWidth: CGFloat = isPressed ? 2 : 1
 
         switch shape {
@@ -771,6 +944,10 @@ private struct GamepadButton: View {
             Capsule()
                 .fill(fillColor)
                 .overlay(Capsule().stroke(strokeColor, lineWidth: lineWidth))
+        case .circle:
+            Circle()
+                .fill(fillColor)
+                .overlay(Circle().stroke(strokeColor, lineWidth: lineWidth))
         }
     }
 

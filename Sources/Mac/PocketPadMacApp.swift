@@ -9,7 +9,7 @@ struct PocketPadMacApp: App {
         WindowGroup {
             MacContentView()
                 .environmentObject(server)
-                .frame(minWidth: 620, minHeight: 620)
+                .frame(minWidth: 840, minHeight: 620)
                 .onAppear { server.start() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     server.releaseAll(reason: "Mac helper quitting")

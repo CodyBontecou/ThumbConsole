@@ -20,7 +20,8 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var ignoredButtonEdges = 0
     @Published private(set) var recoveredButtonEdges = 0
     @Published private(set) var accessibilityTrusted = false
-    @Published private(set) var keyBindings: [GameButton: CGKeyCode]
+    @Published private(set) var keyBindings: [GameButton: MacKeyBinding]
+    @Published private(set) var gamepadCustomization: GamepadCustomization
     @Published private(set) var port: UInt16 = MacControllerServer.preferredPort
 
     var pairingPayload: String {
@@ -37,7 +38,8 @@ final class MacControllerServer: ObservableObject {
     private let debugLogURL = URL(fileURLWithPath: "/tmp/pocketpad-mac-events.log")
     private let logQueue = DispatchQueue(label: "PocketPad.DebugLog", qos: .utility)
     private static let preferredPort: UInt16 = 8765
-    private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v1"
+    private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
+    private static let legacyKeyBindingsDefaultsKey = "PocketPadMac.keyBindings.v1"
     private static let inputEventLoggingEnabled = false
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
@@ -56,15 +58,16 @@ final class MacControllerServer: ObservableObject {
     private var heartbeatTimer: Timer?
     private var heartbeatTimedOut = false
     private var inputPressedButtons: Set<GameButton> = []
-    private var realtimeKeyBindings: [GameButton: CGKeyCode]
+    private var realtimeKeyBindings: [GameButton: MacKeyBinding]
+    private var realtimeGamepadCustomization: GamepadCustomization
     private var pendingLastReceivedEvent: String?
     private var pendingPressedButtons: Set<GameButton>?
     private var controllerDebugUpdateTask: Task<Void, Never>?
     private var lastInputDebugPublishUptime: UInt64 = 0
     private var lastClientActivityPublishUptime: UInt64 = 0
     private var lastAccessibilityRefresh = Date.distantPast
-    private var activeKeyCodes: [GameButton: CGKeyCode] = [:]
-    private var heldKeyCounts: [CGKeyCode: Int] = [:]
+    private var activeBindings: [GameButton: MacKeyBinding] = [:]
+    private var heldBindingCounts: [MacKeyBinding: Int] = [:]
     private var activePressIdentifiersByButton: [GameButton: Set<UInt64>] = [:]
     private var anonymousPressCountsByButton: [GameButton: Int] = [:]
     private var buttonSequenceTracker = ButtonSequenceTracker()
@@ -77,8 +80,11 @@ final class MacControllerServer: ObservableObject {
         activePairingCode = initialPairingCode
 
         let loadedKeyBindings = Self.loadKeyBindings()
+        let loadedGamepadCustomization = GamepadCustomizationPersistence.load()
         keyBindings = loadedKeyBindings
         realtimeKeyBindings = loadedKeyBindings
+        gamepadCustomization = loadedGamepadCustomization
+        realtimeGamepadCustomization = loadedGamepadCustomization
         networkQueue.setSpecific(key: networkQueueKey, value: true)
         refreshAccessibilityStatus()
         localURLs = Self.localIPv4Addresses().map { "ws://\($0):\(port)" }
@@ -224,39 +230,64 @@ final class MacControllerServer: ObservableObject {
     }
 
     func keyLabel(for button: GameButton) -> String {
-        guard let keyCode = keyBindings[button] else { return "Unmapped" }
-        return MacVirtualKey.displayName(for: keyCode)
+        guard let binding = keyBindings[button] else { return "Unmapped" }
+        return binding.displayName
     }
 
     func isDefaultBinding(for button: GameButton) -> Bool {
-        keyBindings[button] == HollowKnightKeyMap.defaultKeyCode(for: button)
+        keyBindings[button] == DefaultKeypadKeyMap.defaultBinding(for: button)
+    }
+
+    func setKeyBinding(_ binding: MacKeyBinding, for button: GameButton) {
+        keyBindings[button] = binding
+        syncOnNetworkQueue {
+            releaseIfPressedOnNetworkQueue(button)
+            realtimeKeyBindings[button] = binding
+        }
+        saveKeyBindings()
+        lastReceivedEvent = "Mapped \(button.displayName) to \(binding.displayName)"
+        logDebug("key_binding button=\(button.rawValue) keyCode=\(binding.keyCode) modifiers=\(binding.modifiers.rawValue)")
     }
 
     func setKeyBinding(_ keyCode: CGKeyCode, for button: GameButton) {
-        keyBindings[button] = keyCode
-        syncOnNetworkQueue {
-            releaseIfPressedOnNetworkQueue(button)
-            realtimeKeyBindings[button] = keyCode
-        }
-        saveKeyBindings()
-        lastReceivedEvent = "Mapped \(button.displayName) to \(MacVirtualKey.displayName(for: keyCode))"
-        logDebug("key_binding button=\(button.rawValue) keyCode=\(keyCode)")
+        setKeyBinding(MacKeyBinding(keyCode: keyCode), for: button)
     }
 
     func resetKeyBinding(_ button: GameButton) {
-        guard let defaultKeyCode = HollowKnightKeyMap.defaultKeyCode(for: button) else { return }
-        setKeyBinding(defaultKeyCode, for: button)
+        guard let defaultBinding = DefaultKeypadKeyMap.defaultBinding(for: button) else { return }
+        setKeyBinding(defaultBinding, for: button)
     }
 
     func resetAllKeyBindings() {
-        keyBindings = HollowKnightKeyMap.defaultKeyCodes
+        keyBindings = DefaultKeypadKeyMap.defaultBindings
         syncOnNetworkQueue {
             releaseAllOnNetworkQueue(reason: "Reset all key bindings")
-            realtimeKeyBindings = HollowKnightKeyMap.defaultKeyCodes
+            realtimeKeyBindings = DefaultKeypadKeyMap.defaultBindings
         }
         saveKeyBindings()
         lastReceivedEvent = "Reset all key bindings"
         logDebug("key_bindings_reset_all")
+    }
+
+    func setGamepadCustomization(_ customization: GamepadCustomization) {
+        var normalizedCustomization = customization.normalized
+        guard !normalizedCustomization.hasSamePresentation(as: gamepadCustomization) else { return }
+        normalizedCustomization = normalizedCustomization.stampedForLocalUpdate
+
+        gamepadCustomization = normalizedCustomization
+        GamepadCustomizationPersistence.save(normalizedCustomization)
+        lastReceivedEvent = "Updated iPhone keypad layout"
+
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            self.realtimeGamepadCustomization = normalizedCustomization
+            self.sendGamepadCustomizationOnNetworkQueue(normalizedCustomization)
+        }
+        logDebug("gamepad_customization_updated source=mac")
+    }
+
+    func resetGamepadCustomization() {
+        setGamepadCustomization(.defaultValue)
     }
 
     func sendTestDown(_ button: GameButton) {
@@ -281,12 +312,12 @@ final class MacControllerServer: ObservableObject {
         resetPhysicalInputTrackingOnNetworkQueue()
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
 
-        guard !inputPressedButtons.isEmpty || !heldKeyCounts.isEmpty else { return }
-        for keyCode in heldKeyCounts.keys {
-            injector.keyUp(keyCode)
+        guard !inputPressedButtons.isEmpty || !heldBindingCounts.isEmpty else { return }
+        for binding in heldBindingCounts.keys {
+            injector.keyUp(binding)
         }
-        heldKeyCounts.removeAll()
-        activeKeyCodes.removeAll()
+        heldBindingCounts.removeAll()
+        activeBindings.removeAll()
         inputPressedButtons.removeAll()
         publishControllerDebug(event: reason, pressedButtons: [], immediately: true)
         logDebug("release_all reason=\(reason) pressed=[]")
@@ -543,7 +574,7 @@ final class MacControllerServer: ObservableObject {
             let message = try ControllerWireCodec.decode(data, using: decoder)
             handleMessageOnNetworkQueue(message, from: connection)
         } catch {
-            publishControllerDebug(event: "Invalid controller message: \(error.localizedDescription)", immediately: true)
+            publishControllerDebug(event: "Invalid keypad message: \(error.localizedDescription)", immediately: true)
             logDebug("invalid_message error=\(error.localizedDescription)")
         }
     }
@@ -597,6 +628,12 @@ final class MacControllerServer: ObservableObject {
             if let latency = roundTripLatencyMilliseconds(from: message.timestamp) {
                 publishEstimatedLatency(latency, from: connection)
             }
+
+        case .gamepadCustomization:
+            guard isPairedConnection,
+                  let gamepadCustomization = message.gamepadCustomization
+            else { return }
+            applyGamepadCustomizationFromClientOnNetworkQueue(gamepadCustomization)
 
         case .pairingChallenge, .pairingAccepted:
             break
@@ -655,7 +692,8 @@ final class MacControllerServer: ObservableObject {
             .init(
                 type: .pairingAccepted,
                 message: "Pairing complete",
-                realtimeToken: newRealtimeToken
+                realtimeToken: newRealtimeToken,
+                gamepadCustomization: realtimeGamepadCustomization
             ),
             on: connection
         )
@@ -835,7 +873,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func handleButtonOnNetworkQueue(_ button: GameButton, state: ButtonPressState, source: String) {
-        guard let keyCode = realtimeKeyBindings[button] else { return }
+        guard let binding = realtimeKeyBindings[button] else { return }
 
         switch state {
         case .down:
@@ -843,22 +881,23 @@ final class MacControllerServer: ObservableObject {
                 noteIgnoredButtonEdge(button: button, state: state, reason: "duplicate_down")
                 return
             }
-            activeKeyCodes[button] = keyCode
-            pressKey(keyCode)
+            let effectiveBinding = binding.withAdditionalModifiers(activeModifierKeysOnNetworkQueue())
+            activeBindings[button] = effectiveBinding
+            pressBinding(effectiveBinding)
             inputPressedButtons.insert(button)
-            publishInputDebugIfDue(source: source, button: button, state: state, keyCode: keyCode)
-            logInputEvent("button source=\(source) button=\(button.rawValue) state=down keyCode=\(keyCode) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
+            publishInputDebugIfDue(source: source, button: button, state: state, binding: effectiveBinding)
+            logInputEvent("button source=\(source) button=\(button.rawValue) state=down keyCode=\(effectiveBinding.keyCode) modifiers=\(effectiveBinding.modifiers.rawValue) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
 
         case .up:
             guard inputPressedButtons.contains(button) else {
                 noteIgnoredButtonEdge(button: button, state: state, reason: "orphan_up")
                 return
             }
-            let releasedKeyCode = activeKeyCodes.removeValue(forKey: button) ?? keyCode
-            releaseKey(releasedKeyCode)
+            let releasedBinding = activeBindings.removeValue(forKey: button) ?? binding
+            releaseBinding(releasedBinding)
             inputPressedButtons.remove(button)
-            publishInputDebugIfDue(source: source, button: button, state: state, keyCode: releasedKeyCode)
-            logInputEvent("button source=\(source) button=\(button.rawValue) state=up keyCode=\(releasedKeyCode) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
+            publishInputDebugIfDue(source: source, button: button, state: state, binding: releasedBinding)
+            logInputEvent("button source=\(source) button=\(button.rawValue) state=up keyCode=\(releasedBinding.keyCode) modifiers=\(releasedBinding.modifiers.rawValue) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
         }
     }
 
@@ -978,32 +1017,40 @@ final class MacControllerServer: ObservableObject {
         clearPhysicalHoldsOnNetworkQueue(for: button)
         guard inputPressedButtons.contains(button) else { return }
         inputPressedButtons.remove(button)
-        if let activeKeyCode = activeKeyCodes.removeValue(forKey: button) {
-            releaseKey(activeKeyCode)
+        if let activeBinding = activeBindings.removeValue(forKey: button) {
+            releaseBinding(activeBinding)
         }
         publishControllerDebug(pressedButtons: inputPressedButtons, immediately: true)
     }
 
-    private func pressKey(_ keyCode: CGKeyCode) {
-        let currentCount = heldKeyCounts[keyCode, default: 0]
-        heldKeyCounts[keyCode] = currentCount + 1
+    private func pressBinding(_ binding: MacKeyBinding) {
+        let currentCount = heldBindingCounts[binding, default: 0]
+        heldBindingCounts[binding] = currentCount + 1
         if currentCount == 0 {
-            injector.keyDown(keyCode)
+            injector.keyDown(binding)
         }
     }
 
-    private func releaseKey(_ keyCode: CGKeyCode) {
-        let currentCount = heldKeyCounts[keyCode, default: 0]
+    private func activeModifierKeysOnNetworkQueue() -> MacKeyModifiers {
+        heldBindingCounts.reduce(into: MacKeyModifiers()) { modifiers, entry in
+            let (binding, count) = entry
+            guard count > 0, let keyModifier = MacVirtualKey.keyModifier(for: binding.keyCode) else { return }
+            modifiers.formUnion(keyModifier)
+        }
+    }
+
+    private func releaseBinding(_ binding: MacKeyBinding) {
+        let currentCount = heldBindingCounts[binding, default: 0]
         guard currentCount > 0 else {
-            injector.keyUp(keyCode)
+            injector.keyUp(binding)
             return
         }
 
         if currentCount == 1 {
-            heldKeyCounts[keyCode] = nil
-            injector.keyUp(keyCode)
+            heldBindingCounts[binding] = nil
+            injector.keyUp(binding)
         } else {
-            heldKeyCounts[keyCode] = currentCount - 1
+            heldBindingCounts[binding] = currentCount - 1
         }
     }
 
@@ -1012,6 +1059,38 @@ final class MacControllerServer: ObservableObject {
         let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
         let context = NWConnection.ContentContext(identifier: "PocketPadMessage", metadata: [metadata])
         connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
+    }
+
+    private func sendGamepadCustomizationOnNetworkQueue(_ customization: GamepadCustomization) {
+        guard let pairedConnection else { return }
+        send(
+            .init(
+                type: .gamepadCustomization,
+                timestamp: 0,
+                gamepadCustomization: customization.normalized
+            ),
+            on: pairedConnection
+        )
+    }
+
+    private func applyGamepadCustomizationFromClientOnNetworkQueue(_ customization: GamepadCustomization) {
+        let normalizedCustomization = customization.normalized
+
+        if realtimeGamepadCustomization.updatedAt > normalizedCustomization.updatedAt {
+            sendGamepadCustomizationOnNetworkQueue(realtimeGamepadCustomization)
+            return
+        }
+
+        guard normalizedCustomization != realtimeGamepadCustomization else { return }
+        realtimeGamepadCustomization = normalizedCustomization
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.gamepadCustomization = normalizedCustomization
+            GamepadCustomizationPersistence.save(normalizedCustomization)
+            self.lastReceivedEvent = "Updated iPhone keypad layout"
+        }
+        logDebug("gamepad_customization_updated source=iphone")
     }
 
     private func handleListenerState(
@@ -1155,7 +1234,7 @@ final class MacControllerServer: ObservableObject {
         guard backgroundActivity == nil else { return }
         backgroundActivity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
-            reason: "PocketPad is forwarding controller input to a game"
+            reason: "PocketPad is forwarding keypad input to the Mac"
         )
     }
 
@@ -1204,13 +1283,13 @@ final class MacControllerServer: ObservableObject {
         source: String,
         button: GameButton,
         state: ButtonPressState,
-        keyCode: CGKeyCode
+        binding: MacKeyBinding
     ) {
         let now = DispatchTime.now().uptimeNanoseconds
         guard inputPressedButtons.isEmpty || now - lastInputDebugPublishUptime >= Self.inputDebugPublishIntervalNanoseconds else { return }
         lastInputDebugPublishUptime = now
 
-        let event = "\(source): \(button.rawValue) \(state.rawValue) (\(MacVirtualKey.displayName(for: keyCode)))"
+        let event = "\(source): \(button.rawValue) \(state.rawValue) (\(binding.displayName))"
         publishControllerDebug(event: event, pressedButtons: inputPressedButtons)
     }
 
@@ -1372,15 +1451,31 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func saveKeyBindings() {
-        let stored = Dictionary(uniqueKeysWithValues: keyBindings.map { button, keyCode in
-            (button.rawValue, Int(keyCode))
+        let stored = Dictionary(uniqueKeysWithValues: keyBindings.map { button, binding in
+            (button.rawValue, binding)
         })
-        UserDefaults.standard.set(stored, forKey: Self.keyBindingsDefaultsKey)
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        UserDefaults.standard.set(data, forKey: Self.keyBindingsDefaultsKey)
     }
 
-    private static func loadKeyBindings() -> [GameButton: CGKeyCode] {
-        var bindings = HollowKnightKeyMap.defaultKeyCodes
-        guard let stored = UserDefaults.standard.dictionary(forKey: keyBindingsDefaultsKey) else {
+    private static func loadKeyBindings() -> [GameButton: MacKeyBinding] {
+        var bindings = DefaultKeypadKeyMap.defaultBindings
+
+        if let data = UserDefaults.standard.data(forKey: keyBindingsDefaultsKey),
+           let stored = try? JSONDecoder().decode([String: MacKeyBinding].self, from: data) {
+            for (rawButton, binding) in stored {
+                guard let button = GameButton(rawValue: rawButton) else { continue }
+                bindings[button] = binding
+            }
+            return bindings
+        }
+
+        return loadLegacyKeyBindings(fallback: bindings)
+    }
+
+    private static func loadLegacyKeyBindings(fallback: [GameButton: MacKeyBinding]) -> [GameButton: MacKeyBinding] {
+        var bindings = fallback
+        guard let stored = UserDefaults.standard.dictionary(forKey: legacyKeyBindingsDefaultsKey) else {
             return bindings
         }
 
@@ -1397,7 +1492,7 @@ final class MacControllerServer: ObservableObject {
             }
 
             guard let keyCode, keyCode >= 0, keyCode <= Int(UInt16.max) else { continue }
-            bindings[button] = CGKeyCode(keyCode)
+            bindings[button] = MacKeyBinding(keyCode: CGKeyCode(keyCode))
         }
 
         return bindings
