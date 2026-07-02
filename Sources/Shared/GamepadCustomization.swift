@@ -1416,12 +1416,12 @@ struct GamepadCustomizationEditor: View {
     private static let resizeHandleWidth: CGFloat = 10
     private static let canvasZoomMin: CGFloat = 0.5
     private static let canvasZoomMax: CGFloat = 2.25
-    private static let canvasZoomStep: CGFloat = 0.1
 
     @State private var selectedControlID: GamepadControlIdentity
     @State private var profiles: [GamepadConfigurationProfile]
     @State private var selectedProfileID: UUID
     @State private var defaultProfileID: UUID
+    @State private var isSelectedProfileExpanded: Bool
     @State private var configurationSidebarDragStart: CGFloat?
     @State private var inspectorSidebarDragStart: CGFloat?
     @State private var canvasZoomGestureStart: CGFloat?
@@ -1466,6 +1466,7 @@ struct GamepadCustomizationEditor: View {
         self._profiles = State(initialValue: loadedProfiles.profiles)
         self._selectedProfileID = State(initialValue: loadedProfiles.activeProfileID)
         self._defaultProfileID = State(initialValue: loadedProfiles.defaultProfileID)
+        self._isSelectedProfileExpanded = State(initialValue: true)
     }
 
     var body: some View {
@@ -1626,14 +1627,15 @@ struct GamepadCustomizationEditor: View {
     @ViewBuilder
     private func profileRow(_ profile: GamepadConfigurationProfile) -> some View {
         let isSelected = profile.id == selectedProfileID
+        let isExpanded = isSelected && isSelectedProfileExpanded
 
-        VStack(alignment: .leading, spacing: isSelected ? Geist.Spacing.s2 : 0) {
+        VStack(alignment: .leading, spacing: isExpanded ? Geist.Spacing.s2 : 0) {
             Button {
-                selectProfile(profile)
+                toggleProfileRow(profile, isSelected: isSelected)
             } label: {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
                     HStack(spacing: Geist.Spacing.s2) {
-                        Image(systemName: isSelected ? "chevron.down" : "chevron.right")
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                             .frame(width: 12)
@@ -1677,8 +1679,10 @@ struct GamepadCustomizationEditor: View {
                 )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(Text("\(profile.name) keypad setup"))
+            .accessibilityHint(Text(profileRowAccessibilityHint(isSelected: isSelected, isExpanded: isExpanded)))
 
-            if isSelected {
+            if isExpanded {
                 activeSetupComponentsList
                     .padding(.leading, Geist.Spacing.s2)
                     .padding(.bottom, Geist.Spacing.s1)
@@ -1924,8 +1928,8 @@ struct GamepadCustomizationEditor: View {
 
     private var canvasStage: some View {
         GeometryReader { proxy in
-            let viewportWidth = max(160, proxy.size.width - Geist.Spacing.s6 * 2)
-            let viewportHeight = max(160, proxy.size.height - 188)
+            let viewportWidth = max(160, proxy.size.width)
+            let viewportHeight = max(160, proxy.size.height)
             let canvasChrome = Geist.Spacing.s2 * 2
             let fitWidth = max(120, viewportWidth - canvasChrome)
             let fitHeight = max(120, viewportHeight - canvasChrome)
@@ -1934,21 +1938,14 @@ struct GamepadCustomizationEditor: View {
             let canvasWidth = baseCanvasWidth * effectiveCanvasZoom
             let canvasHeight = baseCanvasHeight * effectiveCanvasZoom
 
-            VStack(spacing: Geist.Spacing.s4) {
-                canvasHeader
-
-                canvasViewport(
-                    layoutCanvasWidth: baseCanvasWidth,
-                    layoutCanvasHeight: baseCanvasHeight,
-                    canvasWidth: canvasWidth,
-                    canvasHeight: canvasHeight,
-                    viewportWidth: viewportWidth,
-                    viewportHeight: viewportHeight
-                )
-
-                canvasActionBar
-            }
-            .padding(Geist.Spacing.s6)
+            canvasViewport(
+                layoutCanvasWidth: baseCanvasWidth,
+                layoutCanvasHeight: baseCanvasHeight,
+                canvasWidth: canvasWidth,
+                canvasHeight: canvasHeight,
+                viewportWidth: viewportWidth,
+                viewportHeight: viewportHeight
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Geist.color(.background100, scheme: colorScheme))
             .onAppear {
@@ -2020,96 +2017,6 @@ struct GamepadCustomizationEditor: View {
                     canvasZoomGestureStart = nil
                 }
         )
-    }
-
-    private var canvasHeader: some View {
-        HStack(alignment: .top, spacing: Geist.Spacing.s4) {
-            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                Text(selectedProfile?.name ?? "Keypad")
-                    .geistTypography(.heading24)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    .lineLimit(1)
-                Text("Drag controls on the canvas. Use the inspector to tune the selected element’s color, size, radius, and effects.")
-                    .geistTypography(.copy13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: Geist.Spacing.s2)
-
-            Label(selectedControlTitle, systemImage: "scope")
-                .geistTypography(.label13)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                .padding(.horizontal, Geist.Spacing.s3)
-                .padding(.vertical, Geist.Spacing.s2)
-                .background(Geist.color(.gray100, scheme: colorScheme), in: Capsule())
-                .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
-                .lineLimit(1)
-        }
-    }
-
-    private var canvasActionBar: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: Geist.Spacing.s3) {
-                resetLayoutButton
-                Spacer(minLength: Geist.Spacing.s4)
-                canvasZoomControls
-            }
-            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                resetLayoutButton
-                canvasZoomControls
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var canvasZoomControls: some View {
-        HStack(spacing: Geist.Spacing.s2) {
-            Button {
-                adjustCanvasZoom(by: -Self.canvasZoomStep)
-            } label: {
-                Image(systemName: "minus")
-                    .frame(width: 14)
-            }
-            .geistButtonStyle(.secondary, size: .small)
-            .accessibilityLabel("Zoom out")
-            .disabled(effectiveCanvasZoom <= Self.canvasZoomMin + 0.001)
-
-            Text("\(Int((effectiveCanvasZoom * 100).rounded()))%")
-                .geistTypography(.label12Mono)
-                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                .frame(width: 54, height: Geist.ControlSize.small.height)
-                .background(Geist.color(.background100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                        .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                )
-                .accessibilityLabel("Canvas zoom")
-
-            Button {
-                adjustCanvasZoom(by: Self.canvasZoomStep)
-            } label: {
-                Image(systemName: "plus")
-                    .frame(width: 14)
-            }
-            .geistButtonStyle(.secondary, size: .small)
-            .accessibilityLabel("Zoom in")
-            .disabled(effectiveCanvasZoom >= Self.canvasZoomMax - 0.001)
-
-            Button("100%") {
-                setCanvasZoom(1.0)
-            }
-            .geistButtonStyle(.tertiary, size: .small)
-            .accessibilityLabel("Reset canvas zoom")
-        }
-    }
-
-    private var resetLayoutButton: some View {
-        Button("Reset Key Layout") {
-            resetKeyLayout()
-        }
-        .geistButtonStyle(.secondary, size: .small)
-        .disabled(!customization.usesFreeformLayout)
     }
 
     private var canvasFloatingCreationToolbar: some View {
@@ -2241,9 +2148,19 @@ struct GamepadCustomizationEditor: View {
 
     private var inspectorHeader: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-            Text("Inspector")
-                .geistTypography(.heading20)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s3) {
+                Text("Inspector")
+                    .geistTypography(.heading20)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Text(canvasZoomPercentageText)
+                    .geistTypography(.label13Mono)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .accessibilityLabel("Canvas zoom \(canvasZoomPercentageText)")
+            }
+
             Text("Selected element properties")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -2703,6 +2620,10 @@ struct GamepadCustomizationEditor: View {
         )
     }
 
+    private var canvasZoomPercentageText: String {
+        "\(Int((effectiveCanvasZoom * 100).rounded()))%"
+    }
+
     private func effectiveSidebarWidths(totalWidth: CGFloat) -> (configuration: CGFloat, inspector: CGFloat) {
         var configurationWidth = configurationSidebarWidth
         var inspectorWidth = inspectorSidebarWidth
@@ -2762,10 +2683,6 @@ struct GamepadCustomizationEditor: View {
         )
         let nextWidth = (inspectorSidebarDragStart ?? currentWidths.inspector) - value.translation.width
         inspectorSidebarWidthValue = Double(Self.clamp(nextWidth, lower: Self.inspectorSidebarMinWidth, upper: maxWidth))
-    }
-
-    private func adjustCanvasZoom(by delta: CGFloat) {
-        setCanvasZoom(effectiveCanvasZoom + delta)
     }
 
     private func setCanvasZoom(_ zoom: CGFloat) {
@@ -3323,6 +3240,7 @@ struct GamepadCustomizationEditor: View {
         )
         profiles.append(profile)
         selectedProfileID = profile.id
+        isSelectedProfileExpanded = true
         selectedControlID = .builtin(.jump)
         applyCustomization(profile.customization)
         persistProfiles()
@@ -3336,6 +3254,7 @@ struct GamepadCustomizationEditor: View {
         )
         profiles.append(duplicate)
         selectedProfileID = duplicate.id
+        isSelectedProfileExpanded = true
         persistProfiles()
     }
 
@@ -3345,6 +3264,7 @@ struct GamepadCustomizationEditor: View {
 
         guard let nextProfile = profiles.first else { return }
         selectedProfileID = nextProfile.id
+        isSelectedProfileExpanded = true
         selectedControlID = .builtin(.jump)
         applyCustomization(nextProfile.customization)
         persistProfiles()
@@ -3352,9 +3272,26 @@ struct GamepadCustomizationEditor: View {
 
     private func selectProfile(_ profile: GamepadConfigurationProfile) {
         selectedProfileID = profile.id
+        isSelectedProfileExpanded = true
         selectedControlID = .builtin(.jump)
         applyCustomization(profile.customization)
         persistProfiles()
+    }
+
+    private func toggleProfileRow(_ profile: GamepadConfigurationProfile, isSelected: Bool) {
+        if isSelected {
+            isSelectedProfileExpanded.toggle()
+        } else {
+            selectProfile(profile)
+        }
+    }
+
+    private func profileRowAccessibilityHint(isSelected: Bool, isExpanded: Bool) -> String {
+        if isSelected {
+            return isExpanded ? "Closes the keypad setup details." : "Opens the keypad setup details."
+        }
+
+        return "Selects and opens this keypad setup."
     }
 
     private func setSelectedProfileAsDefault() {
@@ -3395,9 +3332,14 @@ struct GamepadCustomizationEditor: View {
             || defaultProfileID != state.defaultProfileID
         else { return }
 
+        let didChangeSelectedProfile = selectedProfileID != state.activeProfileID
+
         profiles = state.profiles
         selectedProfileID = state.activeProfileID
         defaultProfileID = state.defaultProfileID
+        if didChangeSelectedProfile {
+            isSelectedProfileExpanded = true
+        }
         if !controlSelectionOptions.contains(selectedControlID) {
             selectedControlID = .builtin(.jump)
         }
