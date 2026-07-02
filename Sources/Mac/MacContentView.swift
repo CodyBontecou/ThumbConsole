@@ -6,7 +6,6 @@ import AppKit
 struct MacContentView: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
-    @State private var keyCaptureButton: GameButton?
     @State private var selectedSection: MacSidebarSection? = .home
     @State private var advancedConfigExpanded = false
 
@@ -25,10 +24,6 @@ struct MacContentView: View {
                 .navigationTitle((selectedSection ?? .home).title)
         }
         .geistScreenBackground()
-        .sheet(item: $keyCaptureButton) { button in
-            KeyCaptureSheet(button: button)
-                .environmentObject(server)
-        }
     }
 
     @ViewBuilder
@@ -93,7 +88,7 @@ struct MacContentView: View {
             },
             selectedKeyBindingContent: { button in
                 AnyView(
-                    MacGamepadSelectedKeyBindingInspector(button: button, keyCaptureButton: $keyCaptureButton)
+                    MacGamepadSelectedKeyBindingInspector(button: button)
                         .environmentObject(server)
                 )
             }
@@ -410,7 +405,7 @@ struct MacContentView: View {
             HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s4) {
                 SectionHeader(
                     title: "Keypad Shortcuts",
-                    subtitle: "Record a Mac key or modifier combo for each iPhone button. Changes are saved automatically."
+                    subtitle: "Record a Mac key, modifier combo, or prefix sequence for each iPhone button. Changes are saved automatically."
                 )
 
                 Spacer()
@@ -429,22 +424,8 @@ struct MacContentView: View {
                             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                             .frame(width: 82, alignment: .leading)
 
-                        Text(server.keyLabel(for: button))
-                            .geistTypography(.label14Mono)
-                            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                            .padding(.horizontal, Geist.Spacing.s3)
-                            .frame(height: Geist.Spacing.s8)
-                            .frame(minWidth: 112, alignment: .leading)
-                            .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                            )
-
-                        Button("Record Shortcut") {
-                            keyCaptureButton = button
-                        }
-                        .geistButtonStyle(.primary, size: .small)
+                        MacKeyBindingRecorderField(button: button)
+                            .frame(minWidth: 180, maxWidth: 260)
 
                         Button("Restore Default") {
                             server.resetKeyBinding(button)
@@ -760,37 +741,15 @@ private struct MacGamepadSelectedKeyBindingInspector: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
     let button: GameButton
-    @Binding var keyCaptureButton: GameButton?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Shortcut")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
-            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s3) {
-                Text(button.displayName)
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s2) {
+                Text("Shortcut")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                Spacer(minLength: Geist.Spacing.s2)
-                Text(server.keyLabel(for: button))
-                    .geistTypography(.label13Mono)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    .lineLimit(1)
-                    .padding(.horizontal, Geist.Spacing.s2)
-                    .frame(height: Geist.Spacing.s8)
-                    .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                            .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                    )
-            }
 
-            HStack(spacing: Geist.Spacing.s2) {
-                Button("Record Shortcut") {
-                    keyCaptureButton = button
-                }
-                .geistButtonStyle(.primary, size: .small)
+                Spacer(minLength: Geist.Spacing.s2)
 
                 Button("Default") {
                     server.resetKeyBinding(button)
@@ -798,6 +757,13 @@ private struct MacGamepadSelectedKeyBindingInspector: View {
                 .geistButtonStyle(.tertiary, size: .small)
                 .disabled(server.isDefaultBinding(for: button))
             }
+
+            MacKeyBindingRecorderField(button: button)
+
+            Text("Click the field, press one or more keys, then pause. It saves automatically.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -805,7 +771,6 @@ private struct MacGamepadSelectedKeyBindingInspector: View {
 private struct MacGamepadKeyBindingsInspector: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
-    @Binding var keyCaptureButton: GameButton?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
@@ -814,7 +779,7 @@ private struct MacGamepadKeyBindingsInspector: View {
                     Text("Keypad Shortcuts")
                         .geistTypography(.heading14)
                         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    Text("Record the Mac key or modifier combo sent by each virtual button.")
+                    Text("Click a shortcut field and press the Mac key, modifier combo, or prefix sequence sent by each virtual button.")
                         .geistTypography(.copy13)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                         .fixedSize(horizontal: false, vertical: true)
@@ -846,31 +811,14 @@ private struct MacGamepadKeyBindingsInspector: View {
 
                 Spacer(minLength: Geist.Spacing.s2)
 
-                Text(server.keyLabel(for: button))
-                    .geistTypography(.label13Mono)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    .lineLimit(1)
-                    .padding(.horizontal, Geist.Spacing.s2)
-                    .frame(height: Geist.Spacing.s8)
-                    .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                            .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                    )
-            }
-
-            HStack(spacing: Geist.Spacing.s2) {
-                Button("Record Shortcut") {
-                    keyCaptureButton = button
-                }
-                .geistButtonStyle(.primary, size: .small)
-
                 Button("Default") {
                     server.resetKeyBinding(button)
                 }
                 .geistButtonStyle(.tertiary, size: .small)
                 .disabled(server.isDefaultBinding(for: button))
             }
+
+            MacKeyBindingRecorderField(button: button)
         }
         .padding(Geist.Spacing.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -882,81 +830,171 @@ private struct MacGamepadKeyBindingsInspector: View {
     }
 }
 
-private struct KeyCaptureSheet: View {
+private struct MacKeyBindingRecorderField: View {
     @EnvironmentObject private var server: MacControllerServer
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
     let button: GameButton
-    @State private var monitor: Any?
+    @State private var isRecording = false
+    @State private var eventMonitor: Any?
+    @State private var recordedStrokes: [MacKeyStroke] = []
+    @State private var pendingModifierStroke: MacKeyStroke?
+    @State private var commitWorkItem: DispatchWorkItem?
+
+    private let sequenceCommitDelay: TimeInterval = 0.85
 
     var body: some View {
-        VStack(spacing: Geist.Spacing.s4) {
-            Image(systemName: "keyboard")
-                .font(.system(size: 46))
-                .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
+        Button(action: handleTap) {
+            HStack(spacing: Geist.Spacing.s2) {
+                Text(fieldText)
+                    .geistTypography(.label13Mono)
+                    .foregroundStyle(fieldForeground)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("Record \(button.displayName)")
-                .geistTypography(.heading24)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
-            Text("Press any key or shortcut on this Mac. PocketPad records held modifiers too, so Control+B becomes ⌃B. Use the quick buttons for modifier-only pads.")
-                .geistTypography(.copy14)
-                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-
-            VStack(spacing: Geist.Spacing.s2) {
-                Text("Quick modifier buttons")
-                    .geistTypography(.label12)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: Geist.Spacing.s2) { quickBindingButtons }
-                    VStack(spacing: Geist.Spacing.s2) { quickBindingButtons }
-                }
+                Image(systemName: isRecording ? "record.circle.fill" : "keyboard")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isRecording ? Geist.color(.red900, scheme: colorScheme) : Geist.color(.gray900, scheme: colorScheme))
             }
-
-            Button("Cancel Recording") {
-                dismiss()
-            }
-            .geistButtonStyle(.secondary)
-            .keyboardShortcut(.cancelAction)
+            .padding(.horizontal, Geist.Spacing.s3)
+            .frame(height: Geist.Spacing.s8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(fieldBackground, in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(fieldBorder, lineWidth: isRecording ? 1.5 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
         }
-        .padding(Geist.Spacing.s6)
-        .frame(width: 440)
-        .background(Geist.color(.background100, scheme: colorScheme))
-        .onAppear {
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                record(MacKeyBinding(event: event))
-                return nil
-            }
-        }
+        .buttonStyle(.plain)
+        .help(isRecording ? "Recording shortcut for \(button.displayName)" : "Click to record \(button.displayName)")
+        .accessibilityLabel("Shortcut for \(button.displayName)")
+        .accessibilityValue(fieldText)
         .onDisappear {
-            if let monitor {
-                NSEvent.removeMonitor(monitor)
+            if isRecording {
+                commitRecording()
             }
-            monitor = nil
         }
     }
 
-    @ViewBuilder
-    private var quickBindingButtons: some View {
-        Button("⌃ Control") { record(.controlKey) }
-            .geistButtonStyle(.secondary, size: .small)
-        Button("⌥ Option") { record(.optionKey) }
-            .geistButtonStyle(.secondary, size: .small)
-        Button("⇧ Shift") { record(.shiftKey) }
-            .geistButtonStyle(.secondary, size: .small)
-        Button("⌘ Command") { record(.commandKey) }
-            .geistButtonStyle(.secondary, size: .small)
-        Button("⌃B Tmux") { record(.tmuxPrefix) }
-            .geistButtonStyle(.primary, size: .small)
+    private var fieldText: String {
+        if isRecording {
+            if !recordedStrokes.isEmpty {
+                return MacKeyBinding(strokes: recordedStrokes).displayName
+            }
+            if let pendingModifierStroke {
+                return pendingModifierStroke.displayName
+            }
+            return "Press shortcut…"
+        }
+
+        return server.keyLabel(for: button)
     }
 
-    private func record(_ binding: MacKeyBinding) {
-        server.setKeyBinding(binding, for: button)
-        DispatchQueue.main.async { dismiss() }
+    private var isShowingPlaceholder: Bool {
+        isRecording && recordedStrokes.isEmpty && pendingModifierStroke == nil
+    }
+
+    private var fieldForeground: Color {
+        isShowingPlaceholder ? Geist.color(.gray900, scheme: colorScheme) : Geist.color(.gray1000, scheme: colorScheme)
+    }
+
+    private var fieldBackground: Color {
+        isRecording ? Geist.color(.blue100, scheme: colorScheme) : Geist.color(.background100, scheme: colorScheme)
+    }
+
+    private var fieldBorder: Color {
+        isRecording ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme)
+    }
+
+    private func handleTap() {
+        if isRecording {
+            commitRecording()
+        } else {
+            startRecording()
+        }
+    }
+
+    private func startRecording() {
+        stopRecording()
+        isRecording = true
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+            guard isRecording else { return event }
+
+            switch event.type {
+            case .keyDown:
+                handleKeyDown(event)
+            case .flagsChanged:
+                handleFlagsChanged(event)
+            default:
+                break
+            }
+
+            return nil
+        }
+    }
+
+    private func handleKeyDown(_ event: NSEvent) {
+        guard !event.isARepeat else { return }
+        pendingModifierStroke = nil
+        recordedStrokes.append(MacKeyStroke(event: event))
+        scheduleCommit(after: sequenceCommitDelay)
+    }
+
+    private func handleFlagsChanged(_ event: NSEvent) {
+        guard recordedStrokes.isEmpty else { return }
+
+        let keyCode = CGKeyCode(event.keyCode)
+        guard let modifier = MacVirtualKey.keyModifier(for: keyCode) else { return }
+        let activeModifiers = MacKeyModifiers(eventFlags: event.modifierFlags)
+
+        if activeModifiers.contains(modifier) {
+            pendingModifierStroke = MacKeyStroke(keyCode: keyCode)
+        } else if let pendingModifierStroke, pendingModifierStroke.keyCode == keyCode {
+            recordedStrokes = [pendingModifierStroke]
+            self.pendingModifierStroke = nil
+            scheduleCommit(after: 0.15)
+        }
+    }
+
+    private func scheduleCommit(after delay: TimeInterval) {
+        commitWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            commitRecording()
+        }
+        commitWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func commitRecording() {
+        let strokesToSave: [MacKeyStroke]
+        if recordedStrokes.isEmpty, let pendingModifierStroke {
+            strokesToSave = [pendingModifierStroke]
+        } else {
+            strokesToSave = recordedStrokes
+        }
+
+        guard !strokesToSave.isEmpty else {
+            stopRecording()
+            return
+        }
+
+        server.setKeyBinding(MacKeyBinding(strokes: strokesToSave), for: button)
+        stopRecording()
+    }
+
+    private func stopRecording() {
+        commitWorkItem?.cancel()
+        commitWorkItem = nil
+
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+        eventMonitor = nil
+
+        isRecording = false
+        recordedStrokes.removeAll(keepingCapacity: true)
+        pendingModifierStroke = nil
     }
 }
 

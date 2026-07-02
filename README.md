@@ -31,7 +31,7 @@ Customize keypad setups from the macOS helper's **Keypad** section. The iOS app 
 
 ## Shortcut bindings
 
-The Mac helper includes a **Keypad Shortcuts** panel. Click **Record Shortcut** next to any iPhone button, then press a Mac key or shortcut. PocketPad records held modifiers, so pressing `Control+B` saves `⌃B`. The recording sheet also has quick modifier-only buttons for Control, Option, Shift, Command, plus a tmux prefix preset.
+The Mac helper shows a shortcut field in the Keypad editor's **Element** inspector. Click the field for the selected button/shape, press one or more Mac keystrokes, then pause; the shortcut saves automatically. PocketPad records held modifiers, so pressing `Control+B` saves `⌃B`; pressing `Control+B`, releasing it, then pressing `H` saves `⌃B H` for Herdr/tmux-style prefix bindings. Modifier-only shortcuts save when you press and release the modifier key.
 
 Starter defaults are defined in `Sources/Mac/KeyMap.swift`:
 

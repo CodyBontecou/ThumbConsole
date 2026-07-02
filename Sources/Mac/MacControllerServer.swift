@@ -284,7 +284,7 @@ final class MacControllerServer: ObservableObject {
         }
         saveKeyBindings()
         lastReceivedEvent = "Mapped \(button.displayName) to \(binding.displayName)"
-        logDebug("key_binding button=\(button.rawValue) keyCode=\(binding.keyCode) modifiers=\(binding.modifiers.rawValue)")
+        logDebug("key_binding button=\(button.rawValue) binding=\(binding.displayName) sequence=\(binding.isSequence)")
     }
 
     func setKeyBinding(_ keyCode: CGKeyCode, for button: GameButton) {
@@ -1146,10 +1146,10 @@ final class MacControllerServer: ObservableObject {
             }
             let effectiveBinding = binding.withAdditionalModifiers(activeModifierKeysOnNetworkQueue())
             activeBindings[button] = effectiveBinding
-            pressBinding(effectiveBinding)
+            activateBinding(effectiveBinding)
             inputPressedButtons.insert(button)
             publishInputDebugIfDue(source: source, button: button, state: state, binding: effectiveBinding)
-            logInputEvent("button source=\(source) button=\(button.rawValue) state=down keyCode=\(effectiveBinding.keyCode) modifiers=\(effectiveBinding.modifiers.rawValue) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
+            logInputEvent("button source=\(source) button=\(button.rawValue) state=down binding=\(effectiveBinding.displayName) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
 
         case .up:
             guard inputPressedButtons.contains(button) else {
@@ -1157,10 +1157,10 @@ final class MacControllerServer: ObservableObject {
                 return
             }
             let releasedBinding = activeBindings.removeValue(forKey: button) ?? binding
-            releaseBinding(releasedBinding)
+            deactivateBinding(releasedBinding)
             inputPressedButtons.remove(button)
             publishInputDebugIfDue(source: source, button: button, state: state, binding: releasedBinding)
-            logInputEvent("button source=\(source) button=\(button.rawValue) state=up keyCode=\(releasedBinding.keyCode) modifiers=\(releasedBinding.modifiers.rawValue) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
+            logInputEvent("button source=\(source) button=\(button.rawValue) state=up binding=\(releasedBinding.displayName) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
         }
     }
 
@@ -1282,9 +1282,22 @@ final class MacControllerServer: ObservableObject {
         guard inputPressedButtons.contains(button) else { return }
         inputPressedButtons.remove(button)
         if let activeBinding = activeBindings.removeValue(forKey: button) {
-            releaseBinding(activeBinding)
+            deactivateBinding(activeBinding)
         }
         publishControllerDebug(pressedButtons: inputPressedButtons, immediately: true)
+    }
+
+    private func activateBinding(_ binding: MacKeyBinding) {
+        if binding.isSequence {
+            injector.tapSequence(binding)
+        } else {
+            pressBinding(binding)
+        }
+    }
+
+    private func deactivateBinding(_ binding: MacKeyBinding) {
+        guard !binding.isSequence else { return }
+        releaseBinding(binding)
     }
 
     private func pressBinding(_ binding: MacKeyBinding) {

@@ -34,14 +34,14 @@ public enum GameButton: String, Codable, CaseIterable, Identifiable, Hashable, S
         case .focus: "Action 4"
         case .map: "Utility 1"
         case .pause: "Utility 2"
-        case .custom1: "Custom 1"
-        case .custom2: "Custom 2"
-        case .custom3: "Custom 3"
-        case .custom4: "Custom 4"
-        case .custom5: "Custom 5"
-        case .custom6: "Custom 6"
-        case .custom7: "Custom 7"
-        case .custom8: "Custom 8"
+        case .custom1: "Custom Key 1"
+        case .custom2: "Custom Key 2"
+        case .custom3: "Custom Key 3"
+        case .custom4: "Custom Key 4"
+        case .custom5: "Custom Key 5"
+        case .custom6: "Custom Key 6"
+        case .custom7: "Custom Key 7"
+        case .custom8: "Custom Key 8"
         }
     }
 

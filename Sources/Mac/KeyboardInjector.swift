@@ -36,17 +36,28 @@ final class KeyboardInjector {
     }
 
     func keyDown(_ binding: MacKeyBinding) {
-        post(binding: binding, keyDown: true)
+        post(stroke: MacKeyStroke(keyCode: binding.keyCode, modifiers: binding.modifiers), keyDown: true)
     }
 
     func keyUp(_ binding: MacKeyBinding) {
-        post(binding: binding, keyDown: false)
+        post(stroke: MacKeyStroke(keyCode: binding.keyCode, modifiers: binding.modifiers), keyDown: false)
     }
 
-    private func post(binding: MacKeyBinding, keyDown: Bool) {
+    func tapSequence(_ binding: MacKeyBinding) {
+        for stroke in binding.strokes {
+            tap(stroke)
+        }
+    }
+
+    private func tap(_ stroke: MacKeyStroke) {
+        post(stroke: stroke, keyDown: true)
+        post(stroke: stroke, keyDown: false)
+    }
+
+    private func post(stroke: MacKeyStroke, keyDown: Bool) {
         guard cachedAccessibilityTrusted else { return }
-        let event = CGEvent(keyboardEventSource: source, virtualKey: binding.keyCode, keyDown: keyDown)
-        event?.flags = binding.cgEventFlags(keyDown: keyDown)
+        let event = CGEvent(keyboardEventSource: source, virtualKey: stroke.keyCode, keyDown: keyDown)
+        event?.flags = stroke.cgEventFlags(keyDown: keyDown)
         event?.post(tap: .cghidEventTap)
     }
 }

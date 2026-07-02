@@ -52,7 +52,7 @@ struct MacKeyModifiers: OptionSet, Codable, Hashable, Sendable {
     }
 }
 
-struct MacKeyBinding: Codable, Equatable, Hashable, Sendable {
+struct MacKeyStroke: Codable, Equatable, Hashable, Sendable {
     var keyCode: CGKeyCode
     var modifiers: MacKeyModifiers
 
@@ -72,7 +72,7 @@ struct MacKeyBinding: Codable, Equatable, Hashable, Sendable {
         "\(modifiers.displaySymbols)\(MacVirtualKey.displayName(for: keyCode))"
     }
 
-    func withAdditionalModifiers(_ additionalModifiers: MacKeyModifiers) -> MacKeyBinding {
+    func withAdditionalModifiers(_ additionalModifiers: MacKeyModifiers) -> MacKeyStroke {
         var copy = self
         copy.modifiers.formUnion(additionalModifiers)
         return copy
@@ -87,12 +87,78 @@ struct MacKeyBinding: Codable, Equatable, Hashable, Sendable {
 
         return flags
     }
+}
+
+struct MacKeyBinding: Codable, Equatable, Hashable, Sendable {
+    var keyCode: CGKeyCode
+    var modifiers: MacKeyModifiers
+    var sequence: [MacKeyStroke]?
+
+    init(keyCode: CGKeyCode, modifiers: MacKeyModifiers = []) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+        self.sequence = nil
+    }
+
+    init(stroke: MacKeyStroke) {
+        self.init(keyCode: stroke.keyCode, modifiers: stroke.modifiers)
+    }
+
+    init(strokes: [MacKeyStroke]) {
+        guard let firstStroke = strokes.first else {
+            keyCode = MacVirtualKey.escape
+            modifiers = []
+            sequence = nil
+            return
+        }
+
+        keyCode = firstStroke.keyCode
+        modifiers = firstStroke.modifiers
+        sequence = strokes.count > 1 ? strokes : nil
+    }
+
+    init(event: NSEvent) {
+        self.init(stroke: MacKeyStroke(event: event))
+    }
+
+    var strokes: [MacKeyStroke] {
+        guard let sequence, !sequence.isEmpty else {
+            return [MacKeyStroke(keyCode: keyCode, modifiers: modifiers)]
+        }
+        return sequence
+    }
+
+    var isSequence: Bool {
+        strokes.count > 1
+    }
+
+    var displayName: String {
+        strokes.map(\.displayName).joined(separator: " ")
+    }
+
+    func withAdditionalModifiers(_ additionalModifiers: MacKeyModifiers) -> MacKeyBinding {
+        guard isSequence else {
+            var copy = self
+            copy.modifiers.formUnion(additionalModifiers)
+            return copy
+        }
+
+        return MacKeyBinding(strokes: strokes.map { $0.withAdditionalModifiers(additionalModifiers) })
+    }
+
+    func cgEventFlags(keyDown: Bool) -> CGEventFlags {
+        MacKeyStroke(keyCode: keyCode, modifiers: modifiers).cgEventFlags(keyDown: keyDown)
+    }
 
     static let controlKey = MacKeyBinding(keyCode: MacVirtualKey.control)
     static let optionKey = MacKeyBinding(keyCode: MacVirtualKey.option)
     static let shiftKey = MacKeyBinding(keyCode: MacVirtualKey.shift)
     static let commandKey = MacKeyBinding(keyCode: MacVirtualKey.command)
     static let tmuxPrefix = MacKeyBinding(keyCode: MacVirtualKey.b, modifiers: .control)
+    static let herdrLeft = MacKeyBinding(strokes: [.init(keyCode: MacVirtualKey.b, modifiers: .control), .init(keyCode: MacVirtualKey.h)])
+    static let herdrDown = MacKeyBinding(strokes: [.init(keyCode: MacVirtualKey.b, modifiers: .control), .init(keyCode: MacVirtualKey.j)])
+    static let herdrUp = MacKeyBinding(strokes: [.init(keyCode: MacVirtualKey.b, modifiers: .control), .init(keyCode: MacVirtualKey.k)])
+    static let herdrRight = MacKeyBinding(strokes: [.init(keyCode: MacVirtualKey.b, modifiers: .control), .init(keyCode: MacVirtualKey.l)])
 }
 
 /// General-purpose starter bindings for a programmable Mac keypad.
@@ -124,7 +190,10 @@ enum MacVirtualKey {
     static let a: CGKeyCode = 0
     static let b: CGKeyCode = 11
     static let c: CGKeyCode = 8
+    static let h: CGKeyCode = 4
+    static let j: CGKeyCode = 38
     static let k: CGKeyCode = 40
+    static let l: CGKeyCode = 37
     static let p: CGKeyCode = 35
     static let x: CGKeyCode = 7
     static let z: CGKeyCode = 6

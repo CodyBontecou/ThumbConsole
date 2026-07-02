@@ -555,7 +555,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
     public init(
         id: UUID = UUID(),
         mappedButton: GameButton = .custom1,
-        label: String = "Extra",
+        label: String = "Shape",
         layout: GamepadButtonCustomization = GamepadButtonCustomization(
             centerX: 0.5,
             centerY: 0.5,
@@ -721,7 +721,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             GamepadCustomButton(
                 id: id,
                 mappedButton: targetButton,
-                label: "Extra",
+                label: "Shape",
                 layout: GamepadButtonCustomization(
                     centerX: 0.5,
                     centerY: 0.5,
@@ -1332,6 +1332,13 @@ enum GamepadConfigurationProfilePersistence {
 }
 
 #if os(macOS)
+private final class GamepadEditorUndoTarget {}
+
+private struct GamepadEditorUndoSnapshot: Equatable {
+    var customization: GamepadCustomization
+    var selectedControlID: GamepadControlIdentity
+}
+
 private struct GamepadEditorComponentItem: Identifiable, Hashable {
     let identity: GamepadControlIdentity
     let title: String
@@ -1560,6 +1567,7 @@ private struct GeistCheckboxToggle: View {
 
 struct GamepadCustomizationEditor: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.undoManager) private var undoManager
     @Binding private var customization: GamepadCustomization
 
     private let showsPreview: Bool
@@ -1590,6 +1598,7 @@ struct GamepadCustomizationEditor: View {
     @State private var canvasZoomGestureStart: CGFloat?
     @State private var currentCanvasLayoutSize = CGSize(width: 640, height: 360)
     @State private var activeCanvasTool: GamepadCanvasTool = .select
+    @State private var undoTarget = GamepadEditorUndoTarget()
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
     @AppStorage("PocketPad.GamepadEditor.canvasZoom") private var canvasZoomValue: Double = 1.0
@@ -1660,6 +1669,14 @@ struct GamepadCustomizationEditor: View {
         }
         .onChange(of: externalDefaultProfileID) { _, _ in
             syncExternalProfileState()
+        }
+        .background {
+            GamepadEditorKeyboardShortcutBridge(
+                onDelete: deleteSelectedControl,
+                onUndo: performUndo,
+                onRedo: performRedo
+            )
+            .frame(width: 0, height: 0)
         }
     }
 
@@ -1854,6 +1871,25 @@ struct GamepadCustomizationEditor: View {
                     .padding(.bottom, Geist.Spacing.s1)
             }
         }
+        .contextMenu {
+            profileContextMenu(for: profile)
+        }
+    }
+
+    @ViewBuilder
+    private func profileContextMenu(for profile: GamepadConfigurationProfile) -> some View {
+        Button {
+            duplicateProfile(profile)
+        } label: {
+            Label("Duplicate", systemImage: "doc.on.doc")
+        }
+
+        Button(role: .destructive) {
+            deleteProfile(profile)
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+        .disabled(profiles.count <= 1)
     }
 
     private var activeSetupComponentsList: some View {
@@ -2207,39 +2243,11 @@ struct GamepadCustomizationEditor: View {
 
             shapeDrawingToolMenu
 
-            toolbarMenu(systemImage: "square", accessibilityLabel: "Add button") {
-                Button("Add Custom Key") {
-                    addCustomKeyButton()
-                }
-                .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
-
-                Divider()
-
-                ForEach(GameButton.customSlots) { button in
-                    Button("Add \(button.displayName)") {
-                        addCustomKeyButton(mappedTo: button, label: GamepadCustomization.defaultVisualLabel(for: button))
-                    }
-                    .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
-                }
-            }
-
             toolbarMenu(systemImage: "pencil.tip", accessibilityLabel: "Style tools") {
                 ForEach(GamepadAccentStyle.allCases) { style in
                     Button(style.displayName) {
                         update { $0.accentStyle = style }
                     }
-                }
-            }
-
-            toolbarMenu(systemImage: "textformat", accessibilityLabel: "Text tools") {
-                Button("Add Labeled Key") {
-                    addCustomKeyButton(label: "Label")
-                }
-                .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
-
-                if case .custom = selectedControlID {
-                    Button("Edit Label in Inspector") {}
-                        .disabled(true)
                 }
             }
         }
@@ -2302,7 +2310,7 @@ struct GamepadCustomizationEditor: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .accessibilityLabel("Shape tools")
-        .help("Draw button shapes on the keypad")
+        .help("Draw key shapes on the keypad")
     }
 
     @ViewBuilder
@@ -2432,12 +2440,6 @@ struct GamepadCustomizationEditor: View {
             selectedElementRadiusSection
             Divider()
             selectedElementEffectsSection
-
-            if let shortcutButton = selectedShortcutButton,
-               let selectedKeyBindingContent {
-                Divider()
-                selectedKeyBindingContent(shortcutButton)
-            }
         }
     }
 
@@ -2463,13 +2465,18 @@ struct GamepadCustomizationEditor: View {
 
             controlSelectionPicker
             selectedElementLabelControls
+
+            if let shortcutButton = selectedShortcutButton,
+               let selectedKeyBindingContent {
+                selectedKeyBindingContent(shortcutButton)
+            }
+
             componentStateControls
 
             if case .custom(let id) = selectedControlID,
                customButton(id: id) != nil {
-                Button("Delete Custom Key") {
-                    update { $0.removeCustomButton(id: id) }
-                    selectedControlID = .builtin(.jump)
+                Button("Delete Shape") {
+                    _ = deleteCustomButton(id: id)
                 }
                 .geistButtonStyle(.error, size: .small)
             }
@@ -2752,7 +2759,7 @@ struct GamepadCustomizationEditor: View {
             return GamepadEditorComponentItem(
                 identity: .custom(normalizedButton.id),
                 title: normalizedButton.visualLabel(fallback: visualLabel(for: normalizedButton.mappedButton)),
-                subtitle: "Custom → \(normalizedButton.mappedButton.displayName)",
+                subtitle: "Shape → \(normalizedButton.mappedButton.displayName)",
                 isCustom: true,
                 isHidden: normalizedButton.layout.isHidden,
                 isLocationLocked: normalizedButton.layout.isLocationLocked
@@ -2785,7 +2792,7 @@ struct GamepadCustomizationEditor: View {
         case .builtin(let button):
             return button.displayName
         case .custom(let id):
-            guard let customButton = customButton(id: id) else { return "Custom Key" }
+            guard let customButton = customButton(id: id) else { return "Shape" }
             return customButton.visualLabel(fallback: visualLabel(for: customButton.mappedButton))
         }
     }
@@ -2807,7 +2814,7 @@ struct GamepadCustomizationEditor: View {
             TextField(defaultLabel(for: mappedButton), text: customLabelBinding(id: id))
                 .geistInput(size: .small)
 
-            Text("Custom slots are mapped to shortcuts in PocketPad Mac → Keypad.")
+            Text("Shapes send the selected shortcut slot; record that shortcut below.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
@@ -2947,8 +2954,8 @@ struct GamepadCustomizationEditor: View {
         case .builtin(let button):
             return button.displayName
         case .custom(let id):
-            guard let customButton = customButton(id: id) else { return "Custom key" }
-            return "Custom \(customButton.visualLabel(fallback: visualLabel(for: customButton.mappedButton)))"
+            guard let customButton = customButton(id: id) else { return "Shape" }
+            return "Shape: \(customButton.visualLabel(fallback: visualLabel(for: customButton.mappedButton)))"
         }
     }
 
@@ -3417,7 +3424,7 @@ struct GamepadCustomizationEditor: View {
             }
         case .custom(let id):
             updateCustomButton(id: id) {
-                $0.label = "Extra"
+                $0.label = "Shape"
                 $0.layout = GamepadButtonCustomization(
                     centerX: 0.5,
                     centerY: 0.5,
@@ -3438,19 +3445,6 @@ struct GamepadCustomizationEditor: View {
             guard let index = $0.customButtons.firstIndex(where: { $0.id == id }) else { return }
             mutate(&$0.customButtons[index])
         }
-    }
-
-    private func addCustomKeyButton(mappedTo mappedButton: GameButton? = nil, label: String? = nil) {
-        guard customization.customButtons.count < GamepadCustomization.maximumCustomButtons else { return }
-        let id = UUID()
-        update { next in
-            next.addCustomButton(id: id, mappedTo: mappedButton)
-            guard let index = next.customButtons.firstIndex(where: { $0.id == id }) else { return }
-            if let label {
-                next.customButtons[index].label = label
-            }
-        }
-        selectedControlID = .custom(id)
     }
 
     private func resetKeyLayout() {
@@ -3477,10 +3471,42 @@ struct GamepadCustomizationEditor: View {
         applyCustomization(next)
     }
 
-    private func applyCustomization(_ nextCustomization: GamepadCustomization) {
+    private func applyCustomization(
+        _ nextCustomization: GamepadCustomization,
+        selecting nextSelectedControlID: GamepadControlIdentity? = nil,
+        undoActionName: String? = nil
+    ) {
         let normalizedCustomization = nextCustomization.normalized
+        let resolvedSelection = nextSelectedControlID.map { validControlSelection($0, in: normalizedCustomization) }
+        let shouldUpdateCustomization = customization.normalized != normalizedCustomization
+        let shouldUpdateSelection = resolvedSelection.map { $0 != selectedControlID } ?? false
+        guard shouldUpdateCustomization || shouldUpdateSelection else { return }
+
+        if let undoActionName {
+            registerUndoSnapshot(actionName: undoActionName)
+        }
+
         customization = normalizedCustomization
+        if let resolvedSelection {
+            selectedControlID = resolvedSelection
+        }
         syncSelectedProfile(with: normalizedCustomization)
+    }
+
+    private func registerUndoSnapshot(actionName: String) {
+        guard let undoManager else { return }
+        let snapshot = GamepadEditorUndoSnapshot(
+            customization: customization.normalized,
+            selectedControlID: selectedControlID
+        )
+        undoManager.registerUndo(withTarget: undoTarget) { _ in
+            applyCustomization(
+                snapshot.customization,
+                selecting: snapshot.selectedControlID,
+                undoActionName: actionName
+            )
+        }
+        undoManager.setActionName(actionName)
     }
 
     private func createProfile() {
@@ -3496,27 +3522,107 @@ struct GamepadCustomizationEditor: View {
         persistProfiles()
     }
 
+    @discardableResult
+    private func deleteSelectedControl() -> Bool {
+        switch selectedControlID {
+        case .builtin(let button):
+            return deleteBuiltInControl(button)
+        case .custom(let id):
+            return deleteCustomButton(id: id)
+        }
+    }
+
+    @discardableResult
+    private func deleteCustomButton(id: UUID) -> Bool {
+        guard customization.customButtons.contains(where: { $0.id == id }) else { return false }
+        var next = customization
+        next.removeCustomButton(id: id)
+        applyCustomization(next, selecting: .builtin(.jump), undoActionName: "Delete Key")
+        return true
+    }
+
+    @discardableResult
+    private func deleteBuiltInControl(_ button: GameButton) -> Bool {
+        var buttonCustomization = customization.buttonCustomization(for: button)
+        guard !buttonCustomization.isHidden else { return false }
+        var next = customization
+        buttonCustomization.isHidden = true
+        next.setButtonCustomization(buttonCustomization, for: button)
+        applyCustomization(next, selecting: .builtin(button), undoActionName: "Delete Key")
+        return true
+    }
+
+    private func performUndo() -> Bool {
+        guard let undoManager, undoManager.canUndo else { return false }
+        undoManager.undo()
+        return true
+    }
+
+    private func performRedo() -> Bool {
+        guard let undoManager, undoManager.canRedo else { return false }
+        undoManager.redo()
+        return true
+    }
+
+    private func validControlSelection(_ selection: GamepadControlIdentity, in customization: GamepadCustomization) -> GamepadControlIdentity {
+        switch selection {
+        case .builtin(let button):
+            return GameButton.builtInControls.contains(button) ? selection : .builtin(.jump)
+        case .custom(let id):
+            return customization.customButtons.contains(where: { $0.id == id }) ? selection : .builtin(.jump)
+        }
+    }
+
     private func duplicateProfile() {
-        let sourceName = selectedProfile?.name ?? "Setup"
+        guard let selectedProfile else { return }
+        duplicateProfile(selectedProfile)
+    }
+
+    private func duplicateProfile(_ profile: GamepadConfigurationProfile) {
+        let isDuplicatingCurrentSelection = profile.id == selectedProfileID
+        let sourceName = profile.normalized.name
+        let sourceCustomization = isDuplicatingCurrentSelection ? customization.normalized : profile.customization.normalized
         let duplicate = GamepadConfigurationProfile(
             name: "\(sourceName) Copy",
-            customization: customization.normalized
+            customization: sourceCustomization
         )
         profiles.append(duplicate)
         selectedProfileID = duplicate.id
         isSelectedProfileExpanded = true
+        if !isDuplicatingCurrentSelection {
+            selectedControlID = .builtin(.jump)
+        }
+        applyCustomization(duplicate.customization)
         persistProfiles()
     }
 
     private func deleteSelectedProfile() {
-        guard profiles.count > 1 else { return }
-        profiles.removeAll { $0.id == selectedProfileID }
+        guard let selectedProfile else { return }
+        deleteProfile(selectedProfile)
+    }
 
-        guard let nextProfile = profiles.first else { return }
-        selectedProfileID = nextProfile.id
-        isSelectedProfileExpanded = true
-        selectedControlID = .builtin(.jump)
-        applyCustomization(nextProfile.customization)
+    private func deleteProfile(_ profile: GamepadConfigurationProfile) {
+        guard profiles.count > 1,
+              let removedIndex = profiles.firstIndex(where: { $0.id == profile.id })
+        else { return }
+
+        let wasSelectedProfile = profile.id == selectedProfileID
+        let wasDefaultProfile = profile.id == defaultProfileID
+        profiles.remove(at: removedIndex)
+
+        if wasSelectedProfile {
+            let nextProfile = profiles[min(removedIndex, profiles.count - 1)]
+            selectedProfileID = nextProfile.id
+            isSelectedProfileExpanded = true
+            selectedControlID = .builtin(.jump)
+            if wasDefaultProfile {
+                defaultProfileID = nextProfile.id
+            }
+            applyCustomization(nextProfile.customization)
+        } else if wasDefaultProfile {
+            defaultProfileID = selectedProfileID
+        }
+
         persistProfiles()
     }
 
@@ -3658,6 +3764,133 @@ private struct GamepadEditorResizeHandle: View {
         )
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityHint(Text("Drag horizontally to resize"))
+    }
+}
+
+private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
+    var onDelete: () -> Bool
+    var onUndo: () -> Bool
+    var onRedo: () -> Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onDelete: onDelete, onUndo: onUndo, onRedo: onRedo)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.view = view
+        context.coordinator.installMonitor()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.view = nsView
+        context.coordinator.onDelete = onDelete
+        context.coordinator.onUndo = onUndo
+        context.coordinator.onRedo = onRedo
+        context.coordinator.installMonitor()
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.uninstallMonitor()
+    }
+
+    final class Coordinator: NSObject {
+        var onDelete: () -> Bool
+        var onUndo: () -> Bool
+        var onRedo: () -> Bool
+        weak var view: NSView?
+        private var monitor: Any?
+
+        init(onDelete: @escaping () -> Bool, onUndo: @escaping () -> Bool, onRedo: @escaping () -> Bool) {
+            self.onDelete = onDelete
+            self.onUndo = onUndo
+            self.onRedo = onRedo
+        }
+
+        deinit {
+            uninstallMonitor()
+        }
+
+        func installMonitor() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                self?.handle(event) ?? event
+            }
+        }
+
+        func uninstallMonitor() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        private func handle(_ event: NSEvent) -> NSEvent? {
+            guard let view,
+                  let window = view.window,
+                  let eventWindow = event.window,
+                  eventWindow === window,
+                  window.isKeyWindow,
+                  !Self.isTextEditing(in: window)
+            else { return event }
+
+            if Self.isDeleteEvent(event) {
+                return onDelete() ? nil : event
+            }
+
+            if Self.isRedoEvent(event) {
+                return onRedo() ? nil : event
+            }
+
+            if Self.isUndoEvent(event) {
+                return onUndo() ? nil : event
+            }
+
+            return event
+        }
+
+        private static func isDeleteEvent(_ event: NSEvent) -> Bool {
+            guard !event.isARepeat else { return false }
+            guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
+            return event.keyCode == 51 || event.keyCode == 117
+        }
+
+        private static func isUndoEvent(_ event: NSEvent) -> Bool {
+            guard commandZFlagsMatch(event, requiresShift: false) else { return false }
+            return event.charactersIgnoringModifiers?.lowercased() == "z"
+        }
+
+        private static func isRedoEvent(_ event: NSEvent) -> Bool {
+            guard commandZFlagsMatch(event, requiresShift: true) else { return false }
+            return event.charactersIgnoringModifiers?.lowercased() == "z"
+        }
+
+        private static func commandZFlagsMatch(_ event: NSEvent, requiresShift: Bool) -> Bool {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains(.command),
+                  !flags.contains(.option),
+                  !flags.contains(.control)
+            else { return false }
+            return flags.contains(.shift) == requiresShift
+        }
+
+        private static func isTextEditing(in window: NSWindow) -> Bool {
+            var responder = window.firstResponder
+            while let currentResponder = responder {
+                if let textView = currentResponder as? NSTextView, textView.isEditable {
+                    return true
+                }
+
+                if let control = currentResponder as? NSControl,
+                   control.currentEditor() != nil {
+                    return true
+                }
+
+                responder = currentResponder.nextResponder
+            }
+            return false
+        }
     }
 }
 
