@@ -29,7 +29,7 @@ final class MacControllerServer: ObservableObject {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private let networkQueue = DispatchQueue(label: "PocketPad.WebSocketServer", qos: .userInteractive)
+    private let networkQueue = DispatchQueue(label: "PocketPad.NetworkServer", qos: .userInteractive)
     private let networkQueueKey = DispatchSpecificKey<Bool>()
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
@@ -42,11 +42,16 @@ final class MacControllerServer: ObservableObject {
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
     private var listener: NWListener?
+    private var datagramListener: NWListener?
+    private var datagramListenerPort: UInt16?
+    private var datagramConnections: [ObjectIdentifier: NWConnection] = [:]
+    private var authenticatedDatagramConnection: NWConnection?
     private var connection: NWConnection?
     private var realtimeConnection: NWConnection?
     private var pairedConnection: NWConnection?
     private var pendingPairingConnection: NWConnection?
     private var activePairingCode: String
+    private var realtimeToken: String?
     private var backgroundActivity: NSObjectProtocol?
     private var heartbeatTimer: Timer?
     private var heartbeatTimedOut = false
@@ -60,15 +65,11 @@ final class MacControllerServer: ObservableObject {
     private var lastAccessibilityRefresh = Date.distantPast
     private var activeKeyCodes: [GameButton: CGKeyCode] = [:]
     private var heldKeyCounts: [CGKeyCode: Int] = [:]
+    private var activePressIdentifiersByButton: [GameButton: Set<UInt64>] = [:]
+    private var anonymousPressCountsByButton: [GameButton: Int] = [:]
     private var buttonSequenceTracker = ButtonSequenceTracker()
     private var ignoredButtonEdgeCount = 0
     private var recoveredButtonEdgeCount = 0
-    private var inputPulseSequencer = ButtonPulseSequencer(
-        minimumTapDurationNanoseconds: ButtonPulseSequencer.actionGameMinimumTapDurationNanoseconds,
-        minimumInterTapGapNanoseconds: ButtonPulseSequencer.actionGameMinimumInterTapGapNanoseconds
-    )
-    private var pendingInputReleaseTimers: [GameButton: DispatchWorkItem] = [:]
-    private var pendingInputPressTimers: [GameButton: DispatchWorkItem] = [:]
 
     init() {
         let initialPairingCode = Self.generatePairingCode()
@@ -172,6 +173,8 @@ final class MacControllerServer: ObservableObject {
             realtimeConnection = nil
             pairedConnection = nil
             pendingPairingConnection = nil
+            realtimeToken = nil
+            stopDatagramListenerOnNetworkQueue()
         }
         connection?.cancel()
         listener?.cancel()
@@ -180,6 +183,10 @@ final class MacControllerServer: ObservableObject {
         endBackgroundActivity()
         connection = nil
         listener = nil
+        datagramListener = nil
+        datagramListenerPort = nil
+        datagramConnections.removeAll()
+        authenticatedDatagramConnection = nil
         heartbeatTimedOut = false
         isRunning = false
         isClientConnected = false
@@ -271,7 +278,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func releaseAllOnNetworkQueue(reason: String) {
-        resetInputPulseStateOnNetworkQueue()
+        resetPhysicalInputTrackingOnNetworkQueue()
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
 
         guard !inputPressedButtons.isEmpty || !heldKeyCounts.isEmpty else { return }
@@ -296,11 +303,13 @@ final class MacControllerServer: ObservableObject {
             releaseAllOnNetworkQueue(reason: "Replaced by new iPhone connection")
             existing.cancel()
         }
+        resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
         realtimeConnection = newConnection
         pairedConnection = nil
         pendingPairingConnection = newConnection
+        realtimeToken = nil
         resetButtonSequenceDiagnosticsOnNetworkQueue()
-        resetInputPulseStateOnNetworkQueue()
+        resetPhysicalInputTrackingOnNetworkQueue()
 
         newConnection.stateUpdateHandler = { [weak self, weak newConnection] state in
             guard let newConnection else { return }
@@ -348,6 +357,186 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
+    private func startDatagramListenerOnNetworkQueue(on port: UInt16) {
+        guard datagramListenerPort != port || datagramListener == nil else { return }
+
+        stopDatagramListenerOnNetworkQueue()
+
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
+        let parameters = NWParameters.udp
+        parameters.allowLocalEndpointReuse = true
+
+        do {
+            let listener = try NWListener(using: parameters, on: nwPort)
+            datagramListener = listener
+            datagramListenerPort = port
+
+            listener.stateUpdateHandler = { [weak self, weak listener] state in
+                guard let self, let listener else { return }
+                self.handleDatagramListenerStateOnNetworkQueue(state, listener: listener)
+            }
+
+            listener.newConnectionHandler = { [weak self] connection in
+                self?.acceptDatagramConnectionOnNetworkQueue(connection)
+            }
+
+            listener.start(queue: networkQueue)
+            logDebug("datagram_listener_starting port=\(port)")
+        } catch {
+            datagramListener = nil
+            datagramListenerPort = nil
+            logDebug("datagram_listener_failed port=\(port) error=\(error.localizedDescription)")
+        }
+    }
+
+    private func stopDatagramListenerOnNetworkQueue() {
+        datagramListener?.cancel()
+        datagramListener = nil
+        datagramListenerPort = nil
+        resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
+    }
+
+    private func handleDatagramListenerStateOnNetworkQueue(
+        _ state: NWListener.State,
+        listener stateListener: NWListener
+    ) {
+        guard datagramListener === stateListener else { return }
+
+        switch state {
+        case .ready:
+            logDebug("datagram_listener_ready port=\(datagramListenerPort ?? 0)")
+
+        case .failed(let error):
+            logDebug("datagram_listener_failed error=\(error.localizedDescription)")
+            stopDatagramListenerOnNetworkQueue()
+
+        case .cancelled:
+            if datagramListener === stateListener {
+                datagramListener = nil
+                datagramListenerPort = nil
+            }
+
+        default:
+            break
+        }
+    }
+
+    private func acceptDatagramConnectionOnNetworkQueue(_ newConnection: NWConnection) {
+        let id = ObjectIdentifier(newConnection)
+        datagramConnections[id] = newConnection
+
+        newConnection.stateUpdateHandler = { [weak self, weak newConnection] state in
+            guard let self, let newConnection else { return }
+            self.handleDatagramConnectionStateOnNetworkQueue(state, connection: newConnection)
+        }
+
+        newConnection.start(queue: networkQueue)
+        receiveNextDatagram(on: newConnection)
+    }
+
+    private func handleDatagramConnectionStateOnNetworkQueue(
+        _ state: NWConnection.State,
+        connection stateConnection: NWConnection
+    ) {
+        switch state {
+        case .failed, .cancelled:
+            removeDatagramConnectionOnNetworkQueue(stateConnection)
+
+        default:
+            break
+        }
+    }
+
+    private func receiveNextDatagram(on connection: NWConnection) {
+        connection.receiveMessage { [weak self, weak connection] data, _, _, error in
+            guard let self, let connection else { return }
+
+            if error != nil {
+                self.removeDatagramConnectionOnNetworkQueue(connection)
+                return
+            }
+
+            if let data, !data.isEmpty {
+                self.handleReceivedDatagramDataOnNetworkQueue(data, from: connection)
+            }
+
+            if self.datagramConnections[ObjectIdentifier(connection)] === connection {
+                self.receiveNextDatagram(on: connection)
+            }
+        }
+    }
+
+    private func handleReceivedDatagramDataOnNetworkQueue(_ data: Data, from connection: NWConnection) {
+        guard let message = try? ControllerWireCodec.decode(data, using: decoder) else {
+            logInputEvent("invalid_datagram_message bytes=\(data.count)")
+            return
+        }
+
+        if message.type == .hello {
+            authenticateDatagramConnectionOnNetworkQueue(connection, message: message)
+            return
+        }
+
+        guard authenticatedDatagramConnection === connection,
+              let pairedConnection
+        else {
+            logInputEvent("ignored_unauthenticated_datagram type=\(message.type.rawValue)")
+            return
+        }
+
+        publishClientActivity(from: pairedConnection, force: message.type != .button)
+
+        switch message.type {
+        case .button:
+            handleButtonMessageOnNetworkQueue(message, source: "iPhone UDP")
+
+        case .releaseAll:
+            releaseAllOnNetworkQueue(reason: "release_all from iPhone UDP")
+
+        case .heartbeat:
+            if let latency = oneWayLatencyMilliseconds(from: message.timestamp) {
+                publishEstimatedLatency(latency, from: pairedConnection)
+            }
+
+        default:
+            break
+        }
+    }
+
+    private func authenticateDatagramConnectionOnNetworkQueue(
+        _ connection: NWConnection,
+        message: ControllerMessage
+    ) {
+        guard let realtimeToken,
+              pairedConnection != nil,
+              message.realtimeToken == realtimeToken
+        else {
+            logInputEvent("ignored_datagram_hello")
+            return
+        }
+
+        authenticatedDatagramConnection = connection
+        logDebug("datagram_authenticated client=\(message.clientName ?? "iPhone")")
+    }
+
+    private func removeDatagramConnectionOnNetworkQueue(_ connection: NWConnection) {
+        datagramConnections[ObjectIdentifier(connection)] = nil
+        if authenticatedDatagramConnection === connection {
+            authenticatedDatagramConnection = nil
+        }
+        connection.cancel()
+    }
+
+    private func resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: Bool) {
+        authenticatedDatagramConnection = nil
+
+        guard cancelConnections else { return }
+        for connection in datagramConnections.values {
+            connection.cancel()
+        }
+        datagramConnections.removeAll()
+    }
+
     private func handleReceivedDataOnNetworkQueue(_ data: Data, from connection: NWConnection) {
         guard realtimeConnection === connection else { return }
         do {
@@ -387,18 +576,7 @@ final class MacControllerServer: ObservableObject {
                 logDebug("ignored_unpaired_message type=button")
                 return
             }
-            guard let button = message.button, let state = message.state else {
-                publishControllerDebug(event: "Ignored malformed button event", immediately: true)
-                return
-            }
-            let sequenceInspection = inspectButtonSequence(message, button: button, state: state)
-            handleInputPulseOnNetworkQueue(
-                button,
-                state: state,
-                source: "iPhone",
-                sequenceInspection: sequenceInspection,
-                pressIdentifier: ControllerWireCodec.buttonPressIdentifier(from: message)
-            )
+            handleButtonMessageOnNetworkQueue(message, source: "iPhone")
 
         case .releaseAll:
             guard isPairedConnection else { return }
@@ -436,6 +614,8 @@ final class MacControllerServer: ObservableObject {
         activePairingCode = newPairingCode
         pendingPairingConnection = connection
         pairedConnection = nil
+        resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
+        realtimeToken = nil
 
         send(
             .init(
@@ -467,9 +647,18 @@ final class MacControllerServer: ObservableObject {
     private func acceptPairedClientOnNetworkQueue(_ incomingClientName: String?, from connection: NWConnection) {
         guard realtimeConnection === connection else { return }
 
+        let newRealtimeToken = Self.generateRealtimeToken()
         pendingPairingConnection = nil
         pairedConnection = connection
-        send(.init(type: .pairingAccepted, message: "Pairing complete"), on: connection)
+        realtimeToken = newRealtimeToken
+        send(
+            .init(
+                type: .pairingAccepted,
+                message: "Pairing complete",
+                realtimeToken: newRealtimeToken
+            ),
+            on: connection
+        )
         publishHello(incomingClientName, from: connection)
 
         DispatchQueue.main.async { [weak self, weak connection] in
@@ -514,9 +703,15 @@ final class MacControllerServer: ObservableObject {
             if realtimeConnection === connection {
                 realtimeConnection = nil
             }
+            if pairedConnection == nil {
+                realtimeToken = nil
+                resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
+            }
         } else {
             pendingPairingConnection = nil
             pairedConnection = nil
+            realtimeToken = nil
+            resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
         }
 
         let clearedConnection = connection
@@ -562,105 +757,80 @@ final class MacControllerServer: ObservableObject {
                   let expectedSequence = inspection.expectedSequence,
                   let receivedSequence = inspection.receivedSequence
         {
-            logDebug("button_sequence_reset expected=\(expectedSequence) received=\(receivedSequence) button=\(button.rawValue) state=\(state.rawValue)")
+            logInputEvent("button_sequence_stale expected=\(expectedSequence) received=\(receivedSequence) button=\(button.rawValue) state=\(state.rawValue)")
         }
 
         return inspection
     }
 
-    private func handleInputPulseOnNetworkQueue(
+    private func handleButtonMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
+        guard let button = message.button, let state = message.state else {
+            publishControllerDebug(event: "Ignored malformed button event", immediately: true)
+            return
+        }
+
+        let sequenceInspection = inspectButtonSequence(message, button: button, state: state)
+        handleRealtimeInputOnNetworkQueue(
+            button,
+            state: state,
+            source: source,
+            sequenceInspection: sequenceInspection,
+            pressIdentifier: ControllerWireCodec.buttonPressIdentifier(from: message)
+        )
+    }
+
+    private enum PhysicalButtonReleaseResult {
+        case shouldReleaseKey
+        case stillHeld
+        case orphan
+    }
+
+    private func handleRealtimeInputOnNetworkQueue(
         _ button: GameButton,
         state: ButtonPressState,
         source: String,
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64? = nil
     ) {
-        let now = DispatchTime.now().uptimeNanoseconds
-        let commands: [ButtonPulseCommand]
-
-        if state == .up,
-           sequenceInspection.missedFrameBeforeButton,
-           !inputPulseSequencer.hasPhysicalPress(button, pressIdentifier: pressIdentifier)
-        {
-            noteRecoveredButtonEdge(button: button, state: state, reason: "missing_down_before_up")
-            commands = inputPulseSequencer.recoverMissingPressBeforeRelease(
-                button,
-                pressIdentifier: pressIdentifier,
-                now: now
-            )
-        } else if state == .down,
-                  inputPulseSequencer.isPressed(button),
-                  (!sequenceInspection.hasSequence || sequenceInspection.missedFrameBeforeButton)
-        {
-            noteRecoveredButtonEdge(button: button, state: state, reason: "missing_release_before_down")
-            commands = inputPulseSequencer.recoverMissingReleaseBeforePress(
-                button,
-                pressIdentifier: pressIdentifier,
-                now: now
-            )
-        } else {
-            commands = inputPulseSequencer.setButton(
-                button,
-                pressed: state == .down,
-                pressIdentifier: pressIdentifier,
-                now: now
-            )
+        if sequenceInspection.isOutOfOrderOrReset, sequenceInspection.hasSequence {
+            return
         }
 
-        handleInputPulseCommands(
-            commands,
-            source: source
-        )
-    }
-
-    private func handleInputPulseCommands(_ commands: [ButtonPulseCommand], source: String) {
-        for command in commands {
-            handleInputPulseCommand(command, source: source)
-        }
-    }
-
-    private func handleInputPulseCommand(_ command: ButtonPulseCommand, source: String) {
-        switch command {
-        case .send(let button, let state):
-            handleButtonOnNetworkQueue(button, state: state, source: source)
-
-        case .scheduleRelease(let button, let delayNanoseconds):
-            pendingInputReleaseTimers[button]?.cancel()
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.pendingInputReleaseTimers[button] = nil
-                self.handleInputPulseCommands(
-                    self.inputPulseSequencer.releaseTimerFired(
-                        for: button,
-                        now: DispatchTime.now().uptimeNanoseconds
-                    ),
-                    source: source
-                )
+        switch state {
+        case .down:
+            if inputPressedButtons.contains(button),
+               sequenceInspection.missedFrameBeforeButton
+            {
+                noteRecoveredButtonEdge(button: button, state: state, reason: "missing_release_before_down")
+                resetPhysicalHoldsOnNetworkQueue(for: button, keeping: pressIdentifier)
+                handleButtonOnNetworkQueue(button, state: .up, source: source)
+                handleButtonOnNetworkQueue(button, state: .down, source: source)
+                return
             }
-            pendingInputReleaseTimers[button] = workItem
-            networkQueue.asyncAfter(
-                deadline: .now() + dispatchDelay(for: delayNanoseconds),
-                execute: workItem
-            )
 
-        case .schedulePress(let button, let delayNanoseconds):
-            pendingInputPressTimers[button]?.cancel()
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.pendingInputPressTimers[button] = nil
-                self.handleInputPulseCommands(
-                    self.inputPulseSequencer.pressTimerFired(
-                        for: button,
-                        now: DispatchTime.now().uptimeNanoseconds
-                    ),
-                    source: source
-                )
+            if recordPhysicalPressBeganOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
+                handleButtonOnNetworkQueue(button, state: .down, source: source)
             }
-            pendingInputPressTimers[button] = workItem
-            networkQueue.asyncAfter(
-                deadline: .now() + dispatchDelay(for: delayNanoseconds),
-                execute: workItem
-            )
+
+        case .up:
+            switch recordPhysicalPressEndedOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
+            case .shouldReleaseKey:
+                handleButtonOnNetworkQueue(button, state: .up, source: source)
+
+            case .stillHeld:
+                break
+
+            case .orphan:
+                if sequenceInspection.missedFrameBeforeButton,
+                   !hasPhysicalPressOnNetworkQueue(button)
+                {
+                    noteRecoveredButtonEdge(button: button, state: state, reason: "missing_down_before_up")
+                    handleButtonOnNetworkQueue(button, state: .down, source: source)
+                    handleButtonOnNetworkQueue(button, state: .up, source: source)
+                } else {
+                    noteIgnoredButtonEdge(button: button, state: state, reason: "orphan_up")
+                }
+            }
         }
     }
 
@@ -698,20 +868,80 @@ final class MacControllerServer: ObservableObject {
         recoveredButtonEdgeCount = 0
     }
 
-    private func resetInputPulseStateOnNetworkQueue() {
-        for workItem in pendingInputReleaseTimers.values {
-            workItem.cancel()
-        }
-        for workItem in pendingInputPressTimers.values {
-            workItem.cancel()
-        }
-        pendingInputReleaseTimers.removeAll()
-        pendingInputPressTimers.removeAll()
-        inputPulseSequencer.reset()
+    private func resetPhysicalInputTrackingOnNetworkQueue() {
+        activePressIdentifiersByButton.removeAll()
+        anonymousPressCountsByButton.removeAll()
     }
 
-    private func dispatchDelay(for nanoseconds: UInt64) -> DispatchTimeInterval {
-        .nanoseconds(Int(min(nanoseconds, UInt64(Int.max))))
+    private func recordPhysicalPressBeganOnNetworkQueue(
+        _ button: GameButton,
+        pressIdentifier: UInt64?
+    ) -> Bool {
+        let wasPhysicallyPressed = hasPhysicalPressOnNetworkQueue(button)
+
+        if let pressIdentifier {
+            var identifiers = activePressIdentifiersByButton[button, default: []]
+            let inserted = identifiers.insert(pressIdentifier).inserted
+            activePressIdentifiersByButton[button] = identifiers
+            return inserted && !wasPhysicallyPressed
+        }
+
+        anonymousPressCountsByButton[button, default: 0] += 1
+        return !wasPhysicallyPressed
+    }
+
+    private func recordPhysicalPressEndedOnNetworkQueue(
+        _ button: GameButton,
+        pressIdentifier: UInt64?
+    ) -> PhysicalButtonReleaseResult {
+        guard hasPhysicalPressOnNetworkQueue(button) else { return .orphan }
+
+        if let pressIdentifier {
+            guard var identifiers = activePressIdentifiersByButton[button],
+                  identifiers.remove(pressIdentifier) != nil
+            else {
+                return .orphan
+            }
+
+            activePressIdentifiersByButton[button] = identifiers.isEmpty ? nil : identifiers
+        } else {
+            guard let count = anonymousPressCountsByButton[button],
+                  count > 0
+            else {
+                return .orphan
+            }
+
+            if count == 1 {
+                anonymousPressCountsByButton[button] = nil
+            } else {
+                anonymousPressCountsByButton[button] = count - 1
+            }
+        }
+
+        return hasPhysicalPressOnNetworkQueue(button) ? .stillHeld : .shouldReleaseKey
+    }
+
+    private func hasPhysicalPressOnNetworkQueue(_ button: GameButton) -> Bool {
+        activePressIdentifiersByButton[button]?.isEmpty == false
+            || (anonymousPressCountsByButton[button] ?? 0) > 0
+    }
+
+    private func resetPhysicalHoldsOnNetworkQueue(
+        for button: GameButton,
+        keeping pressIdentifier: UInt64?
+    ) {
+        if let pressIdentifier {
+            activePressIdentifiersByButton[button] = [pressIdentifier]
+            anonymousPressCountsByButton[button] = nil
+        } else {
+            activePressIdentifiersByButton[button] = nil
+            anonymousPressCountsByButton[button] = 1
+        }
+    }
+
+    private func clearPhysicalHoldsOnNetworkQueue(for button: GameButton) {
+        activePressIdentifiersByButton[button] = nil
+        anonymousPressCountsByButton[button] = nil
     }
 
     private func noteIgnoredButtonEdge(
@@ -745,6 +975,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func releaseIfPressedOnNetworkQueue(_ button: GameButton) {
+        clearPhysicalHoldsOnNetworkQueue(for: button)
         guard inputPressedButtons.contains(button) else { return }
         inputPressedButtons.remove(button)
         if let activeKeyCode = activeKeyCodes.removeValue(forKey: button) {
@@ -798,6 +1029,10 @@ final class MacControllerServer: ObservableObject {
         case .ready:
             if let assignedPort = stateListener.port?.rawValue, assignedPort != 0 {
                 port = assignedPort
+            }
+            let resolvedPort = port
+            asyncOnNetworkQueue { [weak self] in
+                self?.startDatagramListenerOnNetworkQueue(on: resolvedPort)
             }
             localURLs = Self.localIPv4Addresses().map { "ws://\($0):\(port)" }
             if usingFallbackPort {
@@ -882,6 +1117,8 @@ final class MacControllerServer: ObservableObject {
             }
             if pairedConnection === disconnectedConnection {
                 pairedConnection = nil
+                realtimeToken = nil
+                resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
             }
             if pendingPairingConnection === disconnectedConnection {
                 pendingPairingConnection = nil
@@ -1168,6 +1405,10 @@ final class MacControllerServer: ObservableObject {
 
     private static func generatePairingCode() -> String {
         String(format: "%06d", Int.random(in: 0...999_999))
+    }
+
+    private static func generateRealtimeToken() -> String {
+        UUID().uuidString
     }
 
     private static func localIPv4Addresses() -> [String] {

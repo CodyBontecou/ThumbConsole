@@ -152,7 +152,22 @@ final class TouchCaptureUIView: UIView {
         }
 
         let previousOwner = owner(for: touch)
-        let targetOwner = targetView(for: touch, in: sourceWindow)
+        guard let sourceWindow else {
+            if let previousOwner {
+                previousOwner.deactivateTouch(touch, clearsOwner: false)
+            }
+            clearOwner(for: touch)
+            return
+        }
+
+        let windowLocation = touch.location(in: sourceWindow)
+        if let previousOwner,
+           previousOwner.containsTouch(at: windowLocation, in: sourceWindow)
+        {
+            return
+        }
+
+        let targetOwner = targetView(at: windowLocation, in: sourceWindow)
 
         if let previousOwner, previousOwner !== targetOwner {
             previousOwner.deactivateTouch(touch, clearsOwner: false)
@@ -194,7 +209,15 @@ final class TouchCaptureUIView: UIView {
 
     fileprivate static func deactivateTouches(in window: UIWindow?) {
         guard let window else { return }
-        let owners = touchOwners.values.compactMap(\.view).filter { $0.window === window }
+        var owners: [TouchCaptureUIView] = []
+        for weakOwner in touchOwners.values {
+            guard let owner = weakOwner.view,
+                  owner.window === window
+            else { continue }
+
+            owners.append(owner)
+        }
+
         for owner in owners {
             owner.deactivateAllTouches()
         }
@@ -263,28 +286,37 @@ final class TouchCaptureUIView: UIView {
         }
     }
 
-    private static func targetView(for touch: UITouch, in sourceWindow: UIWindow?) -> TouchCaptureUIView? {
-        guard let sourceWindow else { return nil }
-        let windowLocation = touch.location(in: sourceWindow)
+    private func containsTouch(at windowLocation: CGPoint, in sourceWindow: UIWindow) -> Bool {
+        guard canReceiveRoutedTouch(in: sourceWindow) else { return false }
+        let localLocation = sourceWindow.convert(windowLocation, to: self)
+        return bounds.contains(localLocation)
+    }
 
-        return registeredViews.allObjects
-            .filter { view in
-                guard view.window === sourceWindow,
-                      !view.isHidden,
-                      view.alpha > 0.01,
-                      view.isUserInteractionEnabled,
-                      view.bounds.width > 0,
-                      view.bounds.height > 0
-                else {
-                    return false
-                }
+    private func canReceiveRoutedTouch(in sourceWindow: UIWindow) -> Bool {
+        window === sourceWindow
+            && !isHidden
+            && alpha > 0.01
+            && isUserInteractionEnabled
+            && bounds.width > 0
+            && bounds.height > 0
+    }
 
-                let localLocation = sourceWindow.convert(windowLocation, to: view)
-                return view.bounds.contains(localLocation)
+    private static func targetView(at windowLocation: CGPoint, in sourceWindow: UIWindow) -> TouchCaptureUIView? {
+        var bestView: TouchCaptureUIView?
+        var bestArea = CGFloat.greatestFiniteMagnitude
+        let enumerator = registeredViews.objectEnumerator()
+
+        while let view = enumerator.nextObject() as? TouchCaptureUIView {
+            guard view.containsTouch(at: windowLocation, in: sourceWindow) else { continue }
+
+            let area = view.bounds.width * view.bounds.height
+            if area < bestArea {
+                bestArea = area
+                bestView = view
             }
-            .min { lhs, rhs in
-                lhs.bounds.width * lhs.bounds.height < rhs.bounds.width * rhs.bounds.height
-            }
+        }
+
+        return bestView
     }
 
 }

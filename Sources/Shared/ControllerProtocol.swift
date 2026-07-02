@@ -56,6 +56,7 @@ public struct ControllerMessage: Codable, Sendable {
     public var pairingCode: String?
     public var clientName: String?
     public var message: String?
+    public var realtimeToken: String?
 
     public init(
         type: ControllerMessageType,
@@ -64,7 +65,8 @@ public struct ControllerMessage: Codable, Sendable {
         timestamp: Int64 = Date.currentMilliseconds,
         pairingCode: String? = nil,
         clientName: String? = nil,
-        message: String? = nil
+        message: String? = nil,
+        realtimeToken: String? = nil
     ) {
         self.type = type
         self.button = button
@@ -73,6 +75,7 @@ public struct ControllerMessage: Codable, Sendable {
         self.pairingCode = pairingCode
         self.clientName = clientName
         self.message = message
+        self.realtimeToken = realtimeToken
     }
 }
 
@@ -245,6 +248,7 @@ public enum ControllerWireCodec {
         guard message.pairingCode == nil,
               message.clientName == nil,
               message.message == nil,
+              message.realtimeToken == nil,
               let typeCode = message.type.compactWireCode
         else {
             return nil

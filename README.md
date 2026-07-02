@@ -1,10 +1,10 @@
 # PocketPad
 
-PocketPad is a local iPhone-as-controller prototype for macOS games. The iPhone sends WebSocket button state transitions to a macOS SwiftUI helper, and the helper injects Hollow Knight keyboard controls with Accessibility-approved `CGEvent` key down/up events.
+PocketPad is a local iPhone-as-controller prototype for macOS games. The iPhone pairs with a macOS SwiftUI helper over WebSocket, sends realtime button state transitions over an authenticated UDP fast path with WebSocket mirroring as fallback, and the helper injects Hollow Knight keyboard controls with Accessibility-approved `CGEvent` key down/up events.
 
 ## Targets
 
-- `PocketPadMac` — macOS 14+ SwiftUI helper, WebSocket server preferring port `8765` with automatic fallback if unavailable, CGEvent keyboard injection.
+- `PocketPadMac` — macOS 14+ SwiftUI helper, WebSocket pairing/control server plus UDP realtime listener preferring port `8765` with automatic fallback if unavailable, CGEvent keyboard injection.
 - `PocketPadiOS` — iOS 17+ landscape SwiftUI controller with multitouch virtual gamepad.
 
 ## Build
@@ -40,10 +40,10 @@ Built-in defaults are defined in `Sources/Mac/KeyMap.swift`:
 ## Safety behavior
 
 - Only sends key events on state transitions.
-- Button/heartbeat frames use a compact binary WebSocket payload, with JSON kept for hello/error messages.
+- Button frames use a compact 14-byte binary payload. After pairing, iOS sends those frames over authenticated UDP for lower latency and mirrors them over WebSocket so packet loss still recovers through the reliable path.
 - iOS and macOS WebSocket connections set TCP `noDelay` to avoid Nagle delays on small input packets.
-- iOS uses a controller-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, and skips per-input send callbacks, live status publishes, and haptics while playing. macOS then queues repeated or overlapping rapid taps through frame-safe low-latency down/up pulses at the point of keyboard injection.
-- macOS handles received button events on a user-interactive realtime queue, normalizes iPhone edges through the same minimum pulse timing before key injection, recovers transport-proven missing-up and missing-down edges as separate pulses, and posts key events before UI/debug updates.
+- iOS uses a controller-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, and skips per-input send callbacks, live status publishes, and haptics while playing.
+- macOS handles received button events on a user-interactive realtime queue, accepts the first authenticated UDP stream for the paired iPhone, silently drops stale mirrored frames, recovers transport-proven missing-up and missing-down edges, and posts key events before UI/debug updates.
 - macOS throttles input debug/status publishing so UI work does not compete with key injection.
 - During physical tap testing, the Mac debug panel shows missing transport frames, recovered duplicate-down edges, and ignored duplicate/orphan input edges separately.
 - iOS sends a heartbeat every 500 ms.
