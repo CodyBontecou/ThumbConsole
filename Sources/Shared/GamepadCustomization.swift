@@ -1585,6 +1585,8 @@ struct GamepadCustomizationEditor: View {
     private static let inspectorSidebarMaxWidth: CGFloat = 520
     private static let minimumCanvasColumnWidth: CGFloat = 320
     private static let resizeHandleWidth: CGFloat = 10
+    // Keep editor coordinates stable; viewport/sidebar changes scale the preview instead of re-laying out keys.
+    private static let designCanvasSize = CGSize(width: 640, height: 360)
     private static let canvasZoomMin: CGFloat = 0.5
     private static let canvasZoomMax: CGFloat = 2.25
 
@@ -1593,12 +1595,14 @@ struct GamepadCustomizationEditor: View {
     @State private var selectedProfileID: UUID
     @State private var defaultProfileID: UUID
     @State private var isSelectedProfileExpanded: Bool
+    @State private var selectedProfileNameDraft: String
     @State private var configurationSidebarDragStart: CGFloat?
     @State private var inspectorSidebarDragStart: CGFloat?
     @State private var canvasZoomGestureStart: CGFloat?
     @State private var currentCanvasLayoutSize = CGSize(width: 640, height: 360)
     @State private var activeCanvasTool: GamepadCanvasTool = .select
     @State private var undoTarget = GamepadEditorUndoTarget()
+    @FocusState private var isProfileNameFieldFocused: Bool
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
     @AppStorage("PocketPad.GamepadEditor.canvasZoom") private var canvasZoomValue: Double = 1.0
@@ -1642,6 +1646,7 @@ struct GamepadCustomizationEditor: View {
         self._selectedProfileID = State(initialValue: loadedProfiles.activeProfileID)
         self._defaultProfileID = State(initialValue: loadedProfiles.defaultProfileID)
         self._isSelectedProfileExpanded = State(initialValue: true)
+        self._selectedProfileNameDraft = State(initialValue: loadedProfiles.activeProfile?.name ?? "Current Setup")
     }
 
     var body: some View {
@@ -1669,6 +1674,11 @@ struct GamepadCustomizationEditor: View {
         }
         .onChange(of: externalDefaultProfileID) { _, _ in
             syncExternalProfileState()
+        }
+        .onChange(of: isProfileNameFieldFocused) { _, isFocused in
+            if !isFocused {
+                commitSelectedProfileNameDraft()
+            }
         }
         .background {
             GamepadEditorKeyboardShortcutBridge(
@@ -1800,6 +1810,7 @@ struct GamepadCustomizationEditor: View {
                 .padding(.vertical, 1)
             }
 
+            selectedSetupNameEditor
             activeSetupComponentsList
 
             configurationFooter
@@ -1866,6 +1877,10 @@ struct GamepadCustomizationEditor: View {
             .accessibilityHint(Text(profileRowAccessibilityHint(isSelected: isSelected, isExpanded: isExpanded)))
 
             if isExpanded {
+                selectedSetupNameEditor
+                    .padding(.horizontal, Geist.Spacing.s2)
+                    .padding(.bottom, Geist.Spacing.s1)
+
                 activeSetupComponentsList
                     .padding(.leading, Geist.Spacing.s2)
                     .padding(.bottom, Geist.Spacing.s1)
@@ -1879,6 +1894,12 @@ struct GamepadCustomizationEditor: View {
     @ViewBuilder
     private func profileContextMenu(for profile: GamepadConfigurationProfile) -> some View {
         Button {
+            beginRenamingProfile(profile)
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+
+        Button {
             duplicateProfile(profile)
         } label: {
             Label("Duplicate", systemImage: "doc.on.doc")
@@ -1890,6 +1911,28 @@ struct GamepadCustomizationEditor: View {
             Label("Delete", systemImage: "trash")
         }
         .disabled(profiles.count <= 1)
+    }
+
+    private var selectedSetupNameEditor: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text("Name")
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .textCase(.uppercase)
+
+            TextField("Setup name", text: $selectedProfileNameDraft)
+                .geistInput(size: .small)
+                .focused($isProfileNameFieldFocused)
+                .onSubmit {
+                    commitSelectedProfileNameDraft()
+                }
+                .accessibilityLabel("Keypad setup name")
+
+            Text("Press Return or click away to save this setup name.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var activeSetupComponentsList: some View {
@@ -2034,6 +2077,9 @@ struct GamepadCustomizationEditor: View {
             )
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            profileContextMenu(for: profile)
+        }
     }
 
     private var configurationFooter: some View {
@@ -2116,6 +2162,11 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private var profileManagementButtons: some View {
+        Button("Rename") {
+            beginRenamingSelectedProfile()
+        }
+        .geistButtonStyle(.secondary, size: .small)
+
         Button("Duplicate") {
             duplicateProfile()
         }
@@ -2135,29 +2186,30 @@ struct GamepadCustomizationEditor: View {
             let canvasChrome = Geist.Spacing.s2 * 2
             let fitWidth = max(120, viewportWidth - canvasChrome)
             let fitHeight = max(120, viewportHeight - canvasChrome)
-            let baseCanvasWidth = min(fitWidth, fitHeight * 16 / 9)
-            let baseCanvasHeight = min(fitHeight, baseCanvasWidth * 9 / 16)
-            let canvasWidth = baseCanvasWidth * effectiveCanvasZoom
-            let canvasHeight = baseCanvasHeight * effectiveCanvasZoom
+            let fitScale = max(
+                0.001,
+                min(
+                    fitWidth / Self.designCanvasSize.width,
+                    fitHeight / Self.designCanvasSize.height
+                )
+            )
+            let displayScale = fitScale * effectiveCanvasZoom
+            let canvasWidth = Self.designCanvasSize.width * displayScale
+            let canvasHeight = Self.designCanvasSize.height * displayScale
 
             canvasViewport(
-                layoutCanvasWidth: baseCanvasWidth,
-                layoutCanvasHeight: baseCanvasHeight,
+                layoutCanvasWidth: Self.designCanvasSize.width,
+                layoutCanvasHeight: Self.designCanvasSize.height,
                 canvasWidth: canvasWidth,
                 canvasHeight: canvasHeight,
+                displayScale: displayScale,
                 viewportWidth: viewportWidth,
                 viewportHeight: viewportHeight
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Geist.color(.background100, scheme: colorScheme))
             .onAppear {
-                noteCanvasLayoutSize(width: baseCanvasWidth, height: baseCanvasHeight)
-            }
-            .onChange(of: baseCanvasWidth) { _, _ in
-                noteCanvasLayoutSize(width: baseCanvasWidth, height: baseCanvasHeight)
-            }
-            .onChange(of: baseCanvasHeight) { _, _ in
-                noteCanvasLayoutSize(width: baseCanvasWidth, height: baseCanvasHeight)
+                noteCanvasLayoutSize(width: Self.designCanvasSize.width, height: Self.designCanvasSize.height)
             }
         }
     }
@@ -2167,6 +2219,7 @@ struct GamepadCustomizationEditor: View {
         layoutCanvasHeight: CGFloat,
         canvasWidth: CGFloat,
         canvasHeight: CGFloat,
+        displayScale: CGFloat,
         viewportWidth: CGFloat,
         viewportHeight: CGFloat
     ) -> some View {
@@ -2180,7 +2233,7 @@ struct GamepadCustomizationEditor: View {
                     selectedControlID: $selectedControlID,
                     activeTool: $activeCanvasTool,
                     layoutSize: CGSize(width: layoutCanvasWidth, height: layoutCanvasHeight),
-                    displayScale: effectiveCanvasZoom,
+                    displayScale: displayScale,
                     defaultLabelProvider: defaultLabelProvider
                 )
                     .frame(width: canvasWidth, height: canvasHeight)
@@ -3510,12 +3563,14 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func createProfile() {
+        commitSelectedProfileNameDraft()
         let profile = GamepadConfigurationProfile(
             name: "Setup \(profiles.count + 1)",
             customization: GamepadCustomization.blankCanvas
         )
         profiles.append(profile)
         selectedProfileID = profile.id
+        selectedProfileNameDraft = profile.name
         isSelectedProfileExpanded = true
         selectedControlID = .builtin(.jump)
         applyCustomization(profile.customization)
@@ -3573,21 +3628,65 @@ struct GamepadCustomizationEditor: View {
         }
     }
 
+    private func beginRenamingSelectedProfile() {
+        guard let selectedProfile else { return }
+        beginRenamingProfile(selectedProfile)
+    }
+
+    private func beginRenamingProfile(_ profile: GamepadConfigurationProfile) {
+        if profile.id != selectedProfileID {
+            selectProfile(profile)
+        } else {
+            isSelectedProfileExpanded = true
+        }
+
+        DispatchQueue.main.async {
+            isProfileNameFieldFocused = true
+        }
+    }
+
+    private func syncSelectedProfileNameDraft() {
+        selectedProfileNameDraft = selectedProfile?.name ?? "Untitled"
+    }
+
+    private func commitSelectedProfileNameDraft() {
+        guard let index = profiles.firstIndex(where: { $0.id == selectedProfileID }) else {
+            syncSelectedProfileNameDraft()
+            return
+        }
+
+        let trimmedName = selectedProfileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextName = trimmedName.isEmpty ? "Untitled" : trimmedName
+        selectedProfileNameDraft = nextName
+
+        guard profiles[index].name != nextName else { return }
+        profiles[index].name = nextName
+        profiles[index].updatedAt = Date.currentMilliseconds
+        persistProfiles()
+    }
+
     private func duplicateProfile() {
+        commitSelectedProfileNameDraft()
         guard let selectedProfile else { return }
         duplicateProfile(selectedProfile)
     }
 
     private func duplicateProfile(_ profile: GamepadConfigurationProfile) {
         let isDuplicatingCurrentSelection = profile.id == selectedProfileID
-        let sourceName = profile.normalized.name
-        let sourceCustomization = isDuplicatingCurrentSelection ? customization.normalized : profile.customization.normalized
+        if isDuplicatingCurrentSelection {
+            commitSelectedProfileNameDraft()
+        }
+
+        let sourceProfile = profiles.first { $0.id == profile.id } ?? profile
+        let sourceName = sourceProfile.normalized.name
+        let sourceCustomization = isDuplicatingCurrentSelection ? customization.normalized : sourceProfile.customization.normalized
         let duplicate = GamepadConfigurationProfile(
             name: "\(sourceName) Copy",
             customization: sourceCustomization
         )
         profiles.append(duplicate)
         selectedProfileID = duplicate.id
+        selectedProfileNameDraft = duplicate.name
         isSelectedProfileExpanded = true
         if !isDuplicatingCurrentSelection {
             selectedControlID = .builtin(.jump)
@@ -3602,6 +3701,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func deleteProfile(_ profile: GamepadConfigurationProfile) {
+        commitSelectedProfileNameDraft()
         guard profiles.count > 1,
               let removedIndex = profiles.firstIndex(where: { $0.id == profile.id })
         else { return }
@@ -3613,6 +3713,7 @@ struct GamepadCustomizationEditor: View {
         if wasSelectedProfile {
             let nextProfile = profiles[min(removedIndex, profiles.count - 1)]
             selectedProfileID = nextProfile.id
+            selectedProfileNameDraft = nextProfile.name
             isSelectedProfileExpanded = true
             selectedControlID = .builtin(.jump)
             if wasDefaultProfile {
@@ -3627,10 +3728,13 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func selectProfile(_ profile: GamepadConfigurationProfile) {
-        selectedProfileID = profile.id
+        commitSelectedProfileNameDraft()
+        let nextProfile = profiles.first { $0.id == profile.id } ?? profile
+        selectedProfileID = nextProfile.id
+        selectedProfileNameDraft = nextProfile.name
         isSelectedProfileExpanded = true
         selectedControlID = .builtin(.jump)
-        applyCustomization(profile.customization)
+        applyCustomization(nextProfile.customization)
         persistProfiles()
     }
 
@@ -3651,6 +3755,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func setSelectedProfileAsDefault() {
+        commitSelectedProfileNameDraft()
         defaultProfileID = selectedProfileID
         persistProfiles()
     }
@@ -3696,6 +3801,9 @@ struct GamepadCustomizationEditor: View {
         if didChangeSelectedProfile {
             isSelectedProfileExpanded = true
         }
+        if didChangeSelectedProfile || !isProfileNameFieldFocused {
+            syncSelectedProfileNameDraft()
+        }
         if !controlSelectionOptions.contains(selectedControlID) {
             selectedControlID = .builtin(.jump)
         }
@@ -3711,6 +3819,9 @@ struct GamepadCustomizationEditor: View {
         profiles = state.profiles
         selectedProfileID = state.activeProfileID
         defaultProfileID = state.defaultProfileID
+        if !isProfileNameFieldFocused {
+            syncSelectedProfileNameDraft()
+        }
         GamepadConfigurationProfilePersistence.save(
             state.profiles,
             activeProfileID: state.activeProfileID,
