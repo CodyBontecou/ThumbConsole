@@ -29,10 +29,18 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
     @Published private(set) var selectedGamepadProfileID: UUID
     @Published private(set) var defaultGamepadProfileID: UUID
+    @Published private(set) var hasSavedKeypadSnapshot = false
+    @Published private(set) var smartConnectStatus: String?
 
     private let networkQueue = DispatchQueue(label: "PocketPad.iOS.Network", qos: .userInteractive)
     private var connection: NWConnection?
     private var controlURL: URL?
+    private var trustedMacCredential: TrustedMacCredential?
+    private var currentAuthToken: String?
+    private var currentExpectedServerID: String?
+    private var smartDiscovery: SmartMacDiscovery?
+    private var reconnectTask: Task<Void, Never>?
+    private var autoReconnectEnabled = false
     private var realtimeDatagramConnection: NWConnection?
     private var isRealtimeDatagramReady = false
     private var heartbeatTask: Task<Void, Never>?
@@ -48,9 +56,19 @@ final class ControllerClient: ObservableObject {
     private let decoder = JSONDecoder()
     private static let liveInputStatusUpdatesEnabled = false
     private static let defaultPort: UInt16 = 8765
+    private static let trustedMacCredentialDefaultsKey = "PocketPad.iOS.trustedMacCredential.v1"
+    private static let hasSavedKeypadSnapshotDefaultsKey = "PocketPad.iOS.hasSavedKeypadSnapshot.v1"
 
     var isConnected: Bool {
         state == .connected
+    }
+
+    var canViewSavedKeypadOffline: Bool {
+        hasSavedKeypadSnapshot || trustedMacCredential != nil
+    }
+
+    var savedKeypadMacName: String? {
+        trustedMacCredential?.macName
     }
 
     var isAwaitingPairingCode: Bool {
@@ -72,6 +90,7 @@ final class ControllerClient: ObservableObject {
     init() {
         let savedCustomization = GamepadCustomizationPersistence.load()
         let loadedProfileState = GamepadConfigurationProfilePersistence.load(activeCustomization: savedCustomization)
+        let savedTrustedMacCredential = Self.loadTrustedMacCredential()
         let startupProfile = loadedProfileState.defaultProfile ?? loadedProfileState.activeProfile ?? loadedProfileState.profiles[0]
         let startupCustomization = startupProfile.customization.normalized
 
@@ -85,10 +104,74 @@ final class ControllerClient: ObservableObject {
             activeProfileID: startupProfile.id,
             defaultProfileID: loadedProfileState.defaultProfileID
         )
+        trustedMacCredential = savedTrustedMacCredential
+        hasSavedKeypadSnapshot = Self.loadHasSavedKeypadSnapshot() || savedTrustedMacCredential != nil
+        if hasSavedKeypadSnapshot {
+            UserDefaults.standard.set(true, forKey: Self.hasSavedKeypadSnapshotDefaultsKey)
+        }
+    }
+
+    func startSmartConnect() {
+        guard state != .connected, state != .connecting, state != .pairingCodeRequired else { return }
+        guard let credential = trustedMacCredential ?? Self.loadTrustedMacCredential() else {
+            smartConnectStatus = "Pair once with the Mac QR code to enable Smart Connect."
+            return
+        }
+
+        trustedMacCredential = credential
+        autoReconnectEnabled = true
+        lastError = nil
+        smartConnectStatus = "Smart Connect: looking for your Mac…"
+
+        if let url = credential.lastURL {
+            connectTrusted(to: url, credential: credential)
+        }
+        startSmartDiscovery(for: credential)
+    }
+
+    func appDidBecomeActive() {
+        startSmartConnect()
     }
 
     func connect(hostField: String, port: String, pairingCode: String) {
-        disconnect(sendReleaseAll: false)
+        stopSmartDiscovery()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        autoReconnectEnabled = false
+        smartConnectStatus = nil
+        openConnection(hostField: hostField, port: port, pairingCode: pairingCode)
+    }
+
+    func disconnect(sendReleaseAll: Bool = true) {
+        autoReconnectEnabled = false
+        stopSmartDiscovery()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        closeConnection(sendReleaseAll: sendReleaseAll)
+        if case .failed = state {
+            return
+        }
+        state = .disconnected
+    }
+
+    private func connectTrusted(to url: URL, credential: TrustedMacCredential) {
+        openConnection(
+            hostField: url.absoluteString,
+            port: "",
+            pairingCode: "",
+            authToken: credential.authToken,
+            expectedServerID: credential.serverID
+        )
+    }
+
+    private func openConnection(
+        hostField: String,
+        port: String,
+        pairingCode: String,
+        authToken: String? = nil,
+        expectedServerID: String? = nil
+    ) {
+        closeConnection(sendReleaseAll: false)
 
         guard let url = makeURL(hostField: hostField, port: port),
               url.host?.isEmpty == false
@@ -113,10 +196,14 @@ final class ControllerClient: ObservableObject {
         let connection = NWConnection(to: .url(url), using: parameters)
         self.connection = connection
         controlURL = url
+        currentAuthToken = authToken?.nilIfBlank
+        currentExpectedServerID = expectedServerID?.nilIfBlank
         buttonSequenceNumber = 0
 
         let deviceName = UIDevice.current.name
         let pairingCode = pairingCode.nilIfBlank
+        let connectionAuthToken = currentAuthToken
+        let connectionExpectedServerID = currentExpectedServerID
 
         connection.stateUpdateHandler = { [weak self, weak connection] connectionState in
             guard let connection else { return }
@@ -125,6 +212,8 @@ final class ControllerClient: ObservableObject {
                     connectionState,
                     connection: connection,
                     pairingCode: pairingCode,
+                    authToken: connectionAuthToken,
+                    expectedServerID: connectionExpectedServerID,
                     clientName: deviceName
                 )
             }
@@ -133,7 +222,7 @@ final class ControllerClient: ObservableObject {
         connection.start(queue: networkQueue)
     }
 
-    func disconnect(sendReleaseAll: Bool = true) {
+    private func closeConnection(sendReleaseAll: Bool) {
         if sendReleaseAll {
             releaseAll()
         }
@@ -145,11 +234,9 @@ final class ControllerClient: ObservableObject {
         connection?.cancel()
         connection = nil
         controlURL = nil
+        currentAuthToken = nil
+        currentExpectedServerID = nil
         UIApplication.shared.isIdleTimerDisabled = false
-        if case .failed = state {
-            return
-        }
-        state = .disconnected
     }
 
     func submitPairingCode(_ code: String) {
@@ -227,6 +314,7 @@ final class ControllerClient: ObservableObject {
         gamepadProfiles = state.profiles
         selectedGamepadProfileID = state.activeProfileID
         defaultGamepadProfileID = state.defaultProfileID
+        markSavedKeypadSnapshotAvailable()
 
         if let customization = message.gamepadCustomization {
             applyGamepadCustomizationFromMac(customization)
@@ -261,6 +349,8 @@ final class ControllerClient: ObservableObject {
         _ connectionState: NWConnection.State,
         connection stateConnection: NWConnection,
         pairingCode: String?,
+        authToken: String?,
+        expectedServerID: String?,
         clientName: String
     ) {
         guard connection === stateConnection else { return }
@@ -271,7 +361,9 @@ final class ControllerClient: ObservableObject {
             lastSentEvent = "Socket ready"
             receiveNext(on: stateConnection)
 
-            if let pairingCode {
+            if let authToken {
+                send(.init(type: .hello, timestamp: 0, clientName: clientName, authToken: authToken, serverID: expectedServerID))
+            } else if let pairingCode {
                 send(.init(type: .hello, timestamp: 0, pairingCode: pairingCode, clientName: clientName))
             } else {
                 send(.init(type: .pairingRequest, timestamp: 0, clientName: clientName))
@@ -292,11 +384,14 @@ final class ControllerClient: ObservableObject {
             lastSentEventUpdateTask = nil
             connection = nil
             controlURL = nil
+            currentAuthToken = nil
+            currentExpectedServerID = nil
             UIApplication.shared.isIdleTimerDisabled = false
             if case .failed = state {
                 return
             }
             state = .disconnected
+            scheduleSmartReconnectIfNeeded()
 
         default:
             break
@@ -443,7 +538,9 @@ final class ControllerClient: ObservableObject {
             finishPairing(
                 on: messageConnection,
                 message: decoded.message,
-                realtimeToken: decoded.realtimeToken
+                realtimeToken: decoded.realtimeToken,
+                authToken: decoded.authToken,
+                serverID: decoded.serverID
             )
 
         case .gamepadCustomization:
@@ -461,8 +558,11 @@ final class ControllerClient: ObservableObject {
 
         case .error:
             lastError = decoded.message ?? "Mac helper returned an error"
+            if decoded.message?.localizedCaseInsensitiveContains("Trusted pairing expired") == true {
+                clearTrustedMacCredential()
+            }
             state = .failed(lastError ?? "Unknown error")
-            disconnect(sendReleaseAll: false)
+            closeConnection(sendReleaseAll: false)
 
         case .gamepadProfileSelection, .gamepadDefaultProfile:
             break
@@ -475,17 +575,102 @@ final class ControllerClient: ObservableObject {
     private func finishPairing(
         on pairedConnection: NWConnection,
         message: String?,
-        realtimeToken: String?
+        realtimeToken: String?,
+        authToken: String?,
+        serverID: String?
     ) {
         guard connection === pairedConnection else { return }
         guard state != .connected else { return }
 
+        rememberTrustedMacIfAvailable(authToken: authToken, serverID: serverID)
+        stopSmartDiscovery()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        autoReconnectEnabled = trustedMacCredential != nil
         state = .connected
         lastError = nil
+        smartConnectStatus = nil
         lastSentEvent = message ?? "Pairing complete"
         UIApplication.shared.isIdleTimerDisabled = true
         startRealtimeDatagram(realtimeToken: realtimeToken)
         startHeartbeat()
+    }
+
+    private func rememberTrustedMacIfAvailable(authToken: String?, serverID: String?) {
+        guard let controlURL else { return }
+        let tokenToStore = authToken?.nilIfBlank ?? currentAuthToken?.nilIfBlank
+        let serverIDToStore = serverID?.nilIfBlank ?? currentExpectedServerID?.nilIfBlank
+        guard let tokenToStore, let serverIDToStore else { return }
+
+        let macName = trustedMacCredential?.macName ?? controlURL.host ?? "PocketPad Mac"
+        let credential = TrustedMacCredential(
+            serverID: serverIDToStore,
+            authToken: tokenToStore,
+            macName: macName,
+            lastURLString: controlURL.absoluteString,
+            updatedAt: Date.currentMilliseconds
+        )
+        trustedMacCredential = credential
+        Self.saveTrustedMacCredential(credential)
+    }
+
+    private func clearTrustedMacCredential() {
+        trustedMacCredential = nil
+        UserDefaults.standard.removeObject(forKey: Self.trustedMacCredentialDefaultsKey)
+        autoReconnectEnabled = false
+        smartConnectStatus = nil
+    }
+
+    private func startSmartDiscovery(for credential: TrustedMacCredential) {
+        smartDiscovery?.stop()
+        let discovery = SmartMacDiscovery(
+            expectedServerID: credential.serverID,
+            onStatus: { [weak self] status in
+                self?.smartConnectStatus = status
+            },
+            onResolved: { [weak self] url, serviceName in
+                guard let self else { return }
+                var updatedCredential = credential
+                updatedCredential.macName = serviceName.nilIfBlank ?? credential.macName
+                updatedCredential.lastURLString = url.absoluteString
+                updatedCredential.updatedAt = Date.currentMilliseconds
+                self.trustedMacCredential = updatedCredential
+                Self.saveTrustedMacCredential(updatedCredential)
+                self.stopSmartDiscovery()
+                self.smartConnectStatus = "Smart Connect: found \(updatedCredential.macName)"
+                self.connectTrusted(to: url, credential: updatedCredential)
+            }
+        )
+        smartDiscovery = discovery
+        discovery.start()
+    }
+
+    private func stopSmartDiscovery() {
+        smartDiscovery?.stop()
+        smartDiscovery = nil
+    }
+
+    private func scheduleSmartReconnectIfNeeded() {
+        guard autoReconnectEnabled, let credential = trustedMacCredential else { return }
+        guard state != .connected, state != .pairingCodeRequired else { return }
+        guard reconnectTask == nil else { return }
+
+        smartConnectStatus = "Smart Connect: reconnecting…"
+        reconnectTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            self.startSmartConnect(using: credential)
+        }
+    }
+
+    private func startSmartConnect(using credential: TrustedMacCredential) {
+        trustedMacCredential = credential
+        autoReconnectEnabled = true
+        if let url = credential.lastURL {
+            connectTrusted(to: url, credential: credential)
+        }
+        startSmartDiscovery(for: credential)
     }
 
     private func handleSocketError(_ error: Error, for failedConnection: NWConnection) {
@@ -498,8 +683,11 @@ final class ControllerClient: ObservableObject {
         lastSentEventUpdateTask = nil
         connection = nil
         controlURL = nil
+        currentAuthToken = nil
+        currentExpectedServerID = nil
         UIApplication.shared.isIdleTimerDisabled = false
         state = .failed(error.localizedDescription)
+        scheduleSmartReconnectIfNeeded()
     }
 
     private func startRealtimeDatagram(realtimeToken: String?) {
@@ -615,6 +803,26 @@ final class ControllerClient: ObservableObject {
         }
     }
 
+    private static func loadTrustedMacCredential() -> TrustedMacCredential? {
+        guard let data = UserDefaults.standard.data(forKey: trustedMacCredentialDefaultsKey) else { return nil }
+        return try? JSONDecoder().decode(TrustedMacCredential.self, from: data)
+    }
+
+    private static func saveTrustedMacCredential(_ credential: TrustedMacCredential) {
+        guard let data = try? JSONEncoder().encode(credential) else { return }
+        UserDefaults.standard.set(data, forKey: trustedMacCredentialDefaultsKey)
+    }
+
+    private static func loadHasSavedKeypadSnapshot() -> Bool {
+        UserDefaults.standard.bool(forKey: hasSavedKeypadSnapshotDefaultsKey)
+    }
+
+    private func markSavedKeypadSnapshotAvailable() {
+        guard !hasSavedKeypadSnapshot else { return }
+        hasSavedKeypadSnapshot = true
+        UserDefaults.standard.set(true, forKey: Self.hasSavedKeypadSnapshotDefaultsKey)
+    }
+
     private func makeURL(hostField: String, port: String) -> URL? {
         let trimmedHost = hostField.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedHost.isEmpty else { return nil }
@@ -628,6 +836,97 @@ final class ControllerClient: ObservableObject {
         return URL(string: "ws://\(trimmedHost):\(finalPort)")
     }
 
+}
+
+private struct TrustedMacCredential: Codable, Equatable {
+    var serverID: String
+    var authToken: String
+    var macName: String
+    var lastURLString: String
+    var updatedAt: Int64
+
+    var lastURL: URL? {
+        URL(string: lastURLString)
+    }
+}
+
+private final class SmartMacDiscovery: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {
+    private static let serviceType = "_pocketpad._tcp."
+
+    private let expectedServerID: String
+    private let onStatus: (String?) -> Void
+    private let onResolved: (URL, String) -> Void
+    private let browser = NetServiceBrowser()
+    private var services: [NetService] = []
+
+    init(
+        expectedServerID: String,
+        onStatus: @escaping (String?) -> Void,
+        onResolved: @escaping (URL, String) -> Void
+    ) {
+        self.expectedServerID = expectedServerID
+        self.onStatus = onStatus
+        self.onResolved = onResolved
+        super.init()
+        browser.delegate = self
+        browser.includesPeerToPeer = true
+    }
+
+    func start() {
+        onStatus("Smart Connect: scanning nearby Macs…")
+        browser.searchForServices(ofType: Self.serviceType, inDomain: "local.")
+    }
+
+    func stop() {
+        browser.stop()
+        services.forEach { $0.stop() }
+        services.removeAll()
+        onStatus(nil)
+    }
+
+    func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
+        service.delegate = self
+        service.includesPeerToPeer = true
+        services.append(service)
+        service.resolve(withTimeout: 4)
+    }
+
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        guard serviceServerID(sender) == expectedServerID,
+              sender.port > 0,
+              let hostName = sender.hostName?.trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+              !hostName.isEmpty
+        else {
+            return
+        }
+
+        var components = URLComponents()
+        components.scheme = "ws"
+        components.host = hostName
+        components.port = sender.port
+        guard let url = components.url else { return }
+
+        let serviceName = serviceDisplayName(sender) ?? sender.name
+        onResolved(url, serviceName)
+    }
+
+    func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+        services.removeAll { $0 === sender }
+    }
+
+    private func serviceServerID(_ service: NetService) -> String? {
+        guard let txtRecordData = service.txtRecordData() else { return nil }
+        let record = NetService.dictionary(fromTXTRecord: txtRecordData)
+        guard let data = record["id"] else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func serviceDisplayName(_ service: NetService) -> String? {
+        guard let txtRecordData = service.txtRecordData() else { return nil }
+        let record = NetService.dictionary(fromTXTRecord: txtRecordData)
+        guard let data = record["name"] else { return nil }
+        return String(data: data, encoding: .utf8)?.nilIfBlank
+    }
 }
 
 private extension String {

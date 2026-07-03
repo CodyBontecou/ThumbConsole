@@ -24,6 +24,10 @@
   <string></string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>PocketPad hosts a local keypad server so your iPhone can connect on your Wi‑Fi network.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_pocketpad._tcp</string>
+  </array>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

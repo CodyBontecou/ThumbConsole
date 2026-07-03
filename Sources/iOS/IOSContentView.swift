@@ -6,22 +6,38 @@ struct IOSContentView: View {
     @AppStorage("macHost") private var macHost = "192.168.0.113"
     @AppStorage("macPort") private var macPort = "8765"
     @AppStorage("pairingCode") private var pairingCode = ""
+    @State private var prefersConnectionView = false
 
     private let defaultMacHost = "192.168.0.113"
     private let defaultMacPort = "8765"
 
+    private var shouldShowControllerPad: Bool {
+        client.isConnected || (client.canViewSavedKeypadOffline && !prefersConnectionView)
+    }
+
     var body: some View {
+        let isShowingControllerPad = shouldShowControllerPad
+
         ZStack {
-            if client.isConnected {
-                ControllerPadView()
-                    .ignoresSafeArea()
+            if isShowingControllerPad {
+                ControllerPadView(onExitOfflinePreview: {
+                    prefersConnectionView = true
+                })
+                .ignoresSafeArea()
             } else {
-                ConnectionView(macHost: $macHost, macPort: $macPort, pairingCode: $pairingCode)
+                ConnectionView(
+                    macHost: $macHost,
+                    macPort: $macPort,
+                    pairingCode: $pairingCode,
+                    onShowSavedKeypad: {
+                        prefersConnectionView = false
+                    }
+                )
             }
         }
         .geistScreenBackground()
-        .statusBarHidden(client.isConnected)
-        .persistentSystemOverlays(client.isConnected ? .hidden : .automatic)
+        .statusBarHidden(isShowingControllerPad)
+        .persistentSystemOverlays(isShowingControllerPad ? .hidden : .automatic)
         .onAppear {
             if macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 macHost = defaultMacHost
@@ -29,9 +45,15 @@ struct IOSContentView: View {
             if macPort.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 macPort = defaultMacPort
             }
-            // Pairing is optional in the Mac helper. Keep this blank for faster local testing
-            // and to avoid stale saved pairing codes causing immediate disconnects.
+            // Pairing codes are one-time setup hints. Smart Connect uses the trusted token
+            // saved after a successful pairing instead of reusing stale six-digit codes.
             pairingCode = ""
+            client.startSmartConnect()
+        }
+        .onChange(of: client.isConnected) { _, isConnected in
+            if isConnected {
+                prefersConnectionView = false
+            }
         }
     }
 }
@@ -80,6 +102,7 @@ private struct ConnectionView: View {
     @Binding var macHost: String
     @Binding var macPort: String
     @Binding var pairingCode: String
+    let onShowSavedKeypad: () -> Void
 
     @State private var isShowingScanner = false
     @State private var qrScanError: String?
@@ -160,6 +183,9 @@ private struct ConnectionView: View {
 
             StatusPill(title: client.state.label, systemImage: statusSystemImage, tone: statusTone)
 
+            if let smartConnectStatus = client.smartConnectStatus {
+                MessageBanner(text: smartConnectStatus, tone: .accent)
+            }
             if let error = client.lastError {
                 MessageBanner(text: error, tone: .warning)
             }
@@ -181,13 +207,31 @@ private struct ConnectionView: View {
             }
 
             Button {
+                client.startSmartConnect()
+            } label: {
+                Label("Smart Connect", systemImage: "bolt.horizontal.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .geistButtonStyle(.primary, size: .large)
+
+            if client.canViewSavedKeypadOffline {
+                Button {
+                    onShowSavedKeypad()
+                } label: {
+                    Label("View Saved Keypad", systemImage: "rectangle.grid.2x2")
+                        .frame(maxWidth: .infinity)
+                }
+                .geistButtonStyle(.secondary, size: .large)
+            }
+
+            Button {
                 qrScanError = nil
                 isShowingScanner = true
             } label: {
                 Label("Scan Mac QR Code", systemImage: "qrcode.viewfinder")
                     .frame(maxWidth: .infinity)
             }
-            .geistButtonStyle(.primary, size: .large)
+            .geistButtonStyle(.secondary, size: .large)
 
             DividerLabel("Manual Connection")
 
@@ -461,6 +505,12 @@ private struct ControllerPadView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var isTopBarVisible = false
 
+    let onExitOfflinePreview: (() -> Void)?
+
+    init(onExitOfflinePreview: (() -> Void)? = nil) {
+        self.onExitOfflinePreview = onExitOfflinePreview
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let isLandscape = proxy.size.width >= proxy.size.height
@@ -478,12 +528,21 @@ private struct ControllerPadView: View {
                 ControllerTopBarDrawer(
                     isVisible: $isTopBarVisible,
                     safeAreaInsets: proxy.safeAreaInsets,
-                    isLandscape: isLandscape
+                    isLandscape: isLandscape,
+                    collapsedTitle: ""
                 ) {
                     topBar
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .onAppear {
+            if !client.isConnected {
+                isTopBarVisible = true
+            }
+        }
+        .onChange(of: client.isConnected) { _, isConnected in
+            isTopBarVisible = !isConnected
         }
         .onChange(of: client.gamepadCustomization) { _, _ in
             TouchCaptureUIView.deactivateAllRegisteredTouches()
@@ -641,13 +700,13 @@ private struct ControllerPadView: View {
 
     private var topBar: some View {
         HStack(spacing: Geist.Spacing.s3) {
-            StatusPill(title: "Connected", systemImage: "wifi", tone: .success)
+            StatusPill(title: controllerStatusTitle, systemImage: controllerStatusSystemImage, tone: controllerStatusTone)
 
             if !client.gamepadProfiles.isEmpty {
                 keypadProfileMenu
             }
 
-            Text(client.lastSentEvent)
+            Text(controllerStatusDetail)
                 .geistTypography(.label12Mono)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .lineLimit(1)
@@ -655,14 +714,68 @@ private struct ControllerPadView: View {
 
             Spacer(minLength: Geist.Spacing.s2)
 
-            Button("Disconnect iPhone") {
-                client.disconnect(sendReleaseAll: true)
+            if client.isConnected {
+                Button("Disconnect iPhone") {
+                    client.disconnect(sendReleaseAll: true)
+                }
+                .geistButtonStyle(.error, size: .small)
+            } else {
+                Button("Connect Mac") {
+                    onExitOfflinePreview?()
+                }
+                .geistButtonStyle(.secondary, size: .small)
+                .disabled(onExitOfflinePreview == nil)
             }
-            .geistButtonStyle(.error, size: .small)
         }
         .padding(Geist.Spacing.s2)
         .background(Geist.color(.background100, scheme: colorScheme), in: Capsule())
         .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
+    }
+
+    private var controllerStatusTitle: String {
+        switch client.state {
+        case .connected: "Connected"
+        case .connecting: "Connecting…"
+        case .pairingCodeRequired: "Pairing Needed"
+        case .failed, .disconnected: "Saved Keypad"
+        }
+    }
+
+    private var controllerStatusSystemImage: String {
+        switch client.state {
+        case .connected: "wifi"
+        case .connecting: "arrow.triangle.2.circlepath"
+        case .pairingCodeRequired: "key.fill"
+        case .failed, .disconnected: "rectangle.grid.2x2"
+        }
+    }
+
+    private var controllerStatusTone: GeistInterfaceTone {
+        switch client.state {
+        case .connected: .success
+        case .connecting, .pairingCodeRequired: .warning
+        case .failed, .disconnected: .neutral
+        }
+    }
+
+    private var controllerStatusDetail: String {
+        if client.isConnected {
+            return client.lastSentEvent
+        }
+
+        if case .failed = client.state, let error = client.lastError {
+            return error
+        }
+
+        if let smartConnectStatus = client.smartConnectStatus {
+            return smartConnectStatus
+        }
+
+        if let macName = client.savedKeypadMacName {
+            return "Saved from \(macName)"
+        }
+
+        return "Saved on this iPhone"
     }
 
     private var keypadProfileMenu: some View {
@@ -709,17 +822,20 @@ private struct ControllerTopBarDrawer<Content: View>: View {
     @Binding var isVisible: Bool
     let safeAreaInsets: EdgeInsets
     let isLandscape: Bool
+    let collapsedTitle: String
     let content: Content
 
     init(
         isVisible: Binding<Bool>,
         safeAreaInsets: EdgeInsets,
         isLandscape: Bool,
+        collapsedTitle: String = "Controls",
         @ViewBuilder content: () -> Content
     ) {
         self._isVisible = isVisible
         self.safeAreaInsets = safeAreaInsets
         self.isLandscape = isLandscape
+        self.collapsedTitle = collapsedTitle
         self.content = content()
     }
 
@@ -749,8 +865,8 @@ private struct ControllerTopBarDrawer<Content: View>: View {
                 .fill(Geist.color(.grayAlpha700, scheme: colorScheme))
                 .frame(width: isVisible ? 36 : 56, height: 5)
 
-            if !isVisible {
-                Text("Controls")
+            if !isVisible && !collapsedTitle.isEmpty {
+                Text(collapsedTitle)
                     .geistTypography(.label12)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .transition(.opacity)

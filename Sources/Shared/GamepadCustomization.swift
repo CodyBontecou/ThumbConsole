@@ -1568,6 +1568,524 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     }
 }
 
+enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
+    case nes
+    case snes
+    case nintendo64
+    case gameCube
+    case gameBoy
+    case gameBoyAdvance
+    case genesisSixButton
+    case saturn
+    case dreamcast
+    case arcadeStick
+    case psp
+    case playStation
+    case xbox
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .nes: "NES"
+        case .snes: "Super Nintendo"
+        case .nintendo64: "Nintendo 64"
+        case .gameCube: "GameCube"
+        case .gameBoy: "Game Boy"
+        case .gameBoyAdvance: "Game Boy Advance"
+        case .genesisSixButton: "Genesis 6-Button"
+        case .saturn: "Sega Saturn"
+        case .dreamcast: "Dreamcast"
+        case .arcadeStick: "Arcade Stick"
+        case .psp: "PSP"
+        case .playStation: "PlayStation"
+        case .xbox: "Xbox"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .nes: "Classic console pad: D-pad, A/B, Select, Start"
+        case .snes: "Super Nintendo pad: D-pad, ABXY, L/R shoulders, Select, Start"
+        case .nintendo64: "Three-prong N64 layout with analog stick, Z trigger, and C-buttons"
+        case .gameCube: "GameCube layout with oversized A, C-stick, shoulders, and Z"
+        case .gameBoy: "Classic handheld: D-pad, A/B, Select, Start"
+        case .gameBoyAdvance: "GBA handheld: D-pad, A/B, L/R shoulders, Select, Start"
+        case .genesisSixButton: "Sega Genesis/Mega Drive pad with D-pad, A/B/C, X/Y/Z, Mode, Start"
+        case .saturn: "Sega Saturn six-button layout with D-pad, L/R, and Start"
+        case .dreamcast: "Dreamcast layout with analog stick, D-pad, ABXY, L/R triggers, Start"
+        case .arcadeStick: "MAME/fight-stick layout with joystick, 8 buttons, Coin, and Start"
+        case .psp: "Portable emulator pad with D-pad, nub, shoulders, and face buttons"
+        case .playStation: "Dual-stick layout with PlayStation face symbols and shoulders"
+        case .xbox: "Dual-stick Xbox-style layout with ABXY and triggers"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .nes, .snes: "gamecontroller"
+        case .nintendo64: "circle.grid.cross"
+        case .gameCube: "gamecontroller.fill"
+        case .gameBoy, .gameBoyAdvance: "rectangle.roundedtop"
+        case .genesisSixButton, .saturn: "dpad"
+        case .dreamcast, .psp: "gamecontroller"
+        case .arcadeStick: "circle.grid.3x3.fill"
+        case .playStation: "gamecontroller.fill"
+        case .xbox: "circle.grid.cross"
+        }
+    }
+
+    func makeProfile() -> GamepadConfigurationProfile {
+        GamepadConfigurationProfile(name: displayName, customization: makeCustomization())
+    }
+
+    private func makeCustomization() -> GamepadCustomization {
+        switch self {
+        case .nes:
+            Self.nesCustomization()
+        case .snes:
+            Self.snesCustomization()
+        case .nintendo64:
+            Self.nintendo64Customization()
+        case .gameCube:
+            Self.gameCubeCustomization()
+        case .gameBoy:
+            Self.gameBoyCustomization()
+        case .gameBoyAdvance:
+            Self.gameBoyAdvanceCustomization()
+        case .genesisSixButton:
+            Self.genesisSixButtonCustomization()
+        case .saturn:
+            Self.saturnCustomization()
+        case .dreamcast:
+            Self.dreamcastCustomization()
+        case .arcadeStick:
+            Self.arcadeStickCustomization()
+        case .psp:
+            Self.pspCustomization()
+        case .playStation:
+            Self.playStationCustomization()
+        case .xbox:
+            Self.xboxCustomization()
+        }
+    }
+
+    private static func baseCustomization(accentStyle: GamepadAccentStyle, controlScale: GamepadControlScale = .compact) -> GamepadCustomization {
+        var customization = GamepadCustomization.blankCanvas
+        customization.layoutMode = .standard
+        customization.controlScale = controlScale
+        customization.accentStyle = accentStyle
+        customization.showsButtonLabels = true
+        return customization
+    }
+
+    private static func nesCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .monochrome, controlScale: .standard)
+        let dPadFill = "#202124"
+        let faceFill = "#B91C1C"
+        let utilityFill = "#6B7280"
+
+        setDPad(in: &customization, centerX: 0.18, centerY: 0.58, scale: 0.62, fill: dPadFill)
+        setButton(.attack, label: "B", in: &customization, x: 0.76, y: 0.58, width: 0.70, height: 0.70, shape: .circle, fill: faceFill, shadowStrength: 1.25)
+        setButton(.jump, label: "A", in: &customization, x: 0.88, y: 0.58, width: 0.70, height: 0.70, shape: .circle, fill: faceFill, shadowStrength: 1.25)
+        setButton(.map, label: "Select", in: &customization, x: 0.43, y: 0.80, width: 0.50, height: 0.48, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Start", in: &customization, x: 0.57, y: 0.80, width: 0.46, height: 0.48, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        return customization.normalized
+    }
+
+    private static func snesCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .purple, controlScale: .standard)
+        let dPadFill = "#202124"
+        let utilityFill = "#6B7280"
+        let shoulderFill = "#374151"
+
+        setDPad(in: &customization, centerX: 0.17, centerY: 0.54, scale: 0.58, fill: dPadFill)
+        setButton(.focus, label: "X", in: &customization, x: 0.84, y: 0.36, width: 0.58, height: 0.58, shape: .circle, fill: "#4F46E5")
+        setButton(.dash, label: "A", in: &customization, x: 0.93, y: 0.55, width: 0.58, height: 0.58, shape: .circle, fill: "#DC2626")
+        setButton(.jump, label: "B", in: &customization, x: 0.84, y: 0.74, width: 0.58, height: 0.58, shape: .circle, fill: "#EAB308")
+        setButton(.attack, label: "Y", in: &customization, x: 0.75, y: 0.55, width: 0.58, height: 0.58, shape: .circle, fill: "#16A34A")
+        setButton(.map, label: "Select", in: &customization, x: 0.43, y: 0.82, width: 0.48, height: 0.44, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Start", in: &customization, x: 0.57, y: 0.82, width: 0.44, height: 0.44, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        addButton(mappedTo: .custom1, label: "L", in: &customization, x: 0.20, y: 0.16, width: 1.12, height: 0.38, shape: .capsule, fill: shoulderFill)
+        addButton(mappedTo: .custom2, label: "R", in: &customization, x: 0.80, y: 0.16, width: 1.12, height: 0.38, shape: .capsule, fill: shoulderFill)
+
+        return customization.normalized
+    }
+
+    private static func nintendo64Customization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .amber)
+        let dPadFill = "#202124"
+        let stickFill = "#111827"
+        let shoulderFill = "#374151"
+        let cButtonFill = "#FACC15"
+
+        setDPad(in: &customization, centerX: 0.15, centerY: 0.58, scale: 0.46, fill: dPadFill)
+        addJoystick(label: "Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.32, y: 0.63, scale: 0.82, fill: stickFill)
+
+        setButton(.jump, label: "A", in: &customization, x: 0.73, y: 0.63, width: 0.72, height: 0.72, shape: .circle, fill: "#2563EB", shadowStrength: 1.25)
+        setButton(.attack, label: "B", in: &customization, x: 0.63, y: 0.75, width: 0.60, height: 0.60, shape: .circle, fill: "#22C55E", shadowStrength: 1.25)
+        setButton(.pause, label: "Start", in: &customization, x: 0.50, y: 0.55, width: 0.50, height: 0.50, shape: .circle, fill: "#DC2626", shadowStrength: 0.9)
+
+        addButton(mappedTo: .custom1, label: "C↑", in: &customization, x: 0.87, y: 0.35, width: 0.44, height: 0.44, shape: .circle, fill: cButtonFill)
+        addButton(mappedTo: .custom2, label: "C↓", in: &customization, x: 0.87, y: 0.61, width: 0.44, height: 0.44, shape: .circle, fill: cButtonFill)
+        addButton(mappedTo: .custom3, label: "C←", in: &customization, x: 0.79, y: 0.48, width: 0.44, height: 0.44, shape: .circle, fill: cButtonFill)
+        addButton(mappedTo: .custom4, label: "C→", in: &customization, x: 0.95, y: 0.48, width: 0.44, height: 0.44, shape: .circle, fill: cButtonFill)
+        addButton(mappedTo: .custom5, label: "Z", in: &customization, x: 0.43, y: 0.78, width: 0.58, height: 0.44, shape: .capsule, fill: shoulderFill)
+        addButton(mappedTo: .custom6, label: "L", in: &customization, x: 0.19, y: 0.14, width: 1.02, height: 0.34, shape: .capsule, fill: shoulderFill)
+        addButton(mappedTo: .custom7, label: "R", in: &customization, x: 0.81, y: 0.14, width: 1.02, height: 0.34, shape: .capsule, fill: shoulderFill)
+
+        return customization.normalized
+    }
+
+    private static func gameCubeCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .purple)
+        let stickFill = "#111827"
+        let dPadFill = "#1F2937"
+        let utilityFill = "#4B5563"
+        let cStickFill = "#F59E0B"
+
+        addJoystick(label: "Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.27, y: 0.46, scale: 0.82, fill: stickFill)
+        setDPad(in: &customization, centerX: 0.19, centerY: 0.75, scale: 0.44, fill: dPadFill)
+        addJoystick(label: "C Stick", mappedButton: .custom1, mapping: .secondary, in: &customization, x: 0.64, y: 0.76, scale: 0.62, fill: cStickFill)
+
+        setButton(.jump, label: "A", in: &customization, x: 0.80, y: 0.56, width: 0.90, height: 0.90, shape: .circle, fill: "#22C55E", shadowStrength: 1.35)
+        setButton(.attack, label: "B", in: &customization, x: 0.68, y: 0.69, width: 0.56, height: 0.56, shape: .circle, fill: "#EF4444", shadowStrength: 1.2)
+        setButton(.dash, label: "X", in: &customization, x: 0.92, y: 0.46, width: 0.56, height: 0.56, shape: .circle, fill: "#E5E7EB")
+        setButton(.focus, label: "Y", in: &customization, x: 0.76, y: 0.33, width: 0.56, height: 0.56, shape: .circle, fill: "#E5E7EB")
+        setButton(.pause, label: "Start", in: &customization, x: 0.51, y: 0.51, width: 0.42, height: 0.42, shape: .circle, fill: utilityFill, shadowStrength: 0.85)
+
+        addButton(mappedTo: .custom5, label: "L", in: &customization, x: 0.20, y: 0.13, width: 1.04, height: 0.34, shape: .capsule, fill: utilityFill)
+        addButton(mappedTo: .custom6, label: "R", in: &customization, x: 0.80, y: 0.13, width: 1.04, height: 0.34, shape: .capsule, fill: utilityFill)
+        addButton(mappedTo: .custom7, label: "Z", in: &customization, x: 0.88, y: 0.25, width: 0.58, height: 0.32, shape: .capsule, fill: "#6B7280")
+
+        return customization.normalized
+    }
+
+    private static func gameBoyCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .monochrome, controlScale: .standard)
+        let dPadFill = "#202124"
+        let faceFill = "#8B1E3F"
+        let utilityFill = "#6B7280"
+
+        setButton(.up, label: "↑", in: &customization, x: 0.18, y: 0.37, width: 0.70, height: 0.70, shape: .roundedRectangle, fill: dPadFill, cornerRadius: 9)
+        setButton(.down, label: "↓", in: &customization, x: 0.18, y: 0.75, width: 0.70, height: 0.70, shape: .roundedRectangle, fill: dPadFill, cornerRadius: 9)
+        setButton(.left, label: "←", in: &customization, x: 0.075, y: 0.56, width: 0.70, height: 0.70, shape: .roundedRectangle, fill: dPadFill, cornerRadius: 9)
+        setButton(.right, label: "→", in: &customization, x: 0.285, y: 0.56, width: 0.70, height: 0.70, shape: .roundedRectangle, fill: dPadFill, cornerRadius: 9)
+
+        setButton(.attack, label: "B", in: &customization, x: 0.75, y: 0.62, width: 0.78, height: 0.78, shape: .circle, fill: faceFill, shadowStrength: 1.25)
+        setButton(.jump, label: "A", in: &customization, x: 0.88, y: 0.50, width: 0.78, height: 0.78, shape: .circle, fill: faceFill, shadowStrength: 1.25)
+        setButton(.map, label: "Select", in: &customization, x: 0.43, y: 0.79, width: 0.50, height: 0.52, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Start", in: &customization, x: 0.57, y: 0.79, width: 0.46, height: 0.52, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        return customization.normalized
+    }
+
+    private static func gameBoyAdvanceCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .monochrome, controlScale: .standard)
+        let dPadFill = "#202124"
+        let faceFill = "#6D28D9"
+        let utilityFill = "#6B7280"
+        let shoulderFill = "#374151"
+
+        setButton(.up, label: "↑", in: &customization, x: 0.17, y: 0.35, width: 0.64, height: 0.64, shape: .roundedRectangle, fill: dPadFill, cornerRadius: 9)
+        setButton(.down, label: "↓", in: &customization, x: 0.17, y: 0.69, width: 0.64, height: 0.64, shape: .roundedRectangle, fill: dPadFill, cornerRadius: 9)
+        setButton(.left, label: "←", in: &customization, x: 0.075, y: 0.52, width: 0.64, height: 0.64, shape: .roundedRectangle, fill: dPadFill, cornerRadius: 9)
+        setButton(.right, label: "→", in: &customization, x: 0.265, y: 0.52, width: 0.64, height: 0.64, shape: .roundedRectangle, fill: dPadFill, cornerRadius: 9)
+
+        setButton(.attack, label: "B", in: &customization, x: 0.75, y: 0.61, width: 0.74, height: 0.74, shape: .circle, fill: faceFill, shadowStrength: 1.25)
+        setButton(.jump, label: "A", in: &customization, x: 0.88, y: 0.49, width: 0.74, height: 0.74, shape: .circle, fill: faceFill, shadowStrength: 1.25)
+        setButton(.map, label: "Select", in: &customization, x: 0.43, y: 0.79, width: 0.48, height: 0.50, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Start", in: &customization, x: 0.57, y: 0.79, width: 0.44, height: 0.50, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        addButton(mappedTo: .custom1, label: "L", in: &customization, x: 0.19, y: 0.16, width: 1.12, height: 0.40, shape: .capsule, fill: shoulderFill)
+        addButton(mappedTo: .custom2, label: "R", in: &customization, x: 0.81, y: 0.16, width: 1.12, height: 0.40, shape: .capsule, fill: shoulderFill)
+
+        return customization.normalized
+    }
+
+    private static func genesisSixButtonCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .amber, controlScale: .standard)
+        let dPadFill = "#202124"
+        let faceFill = "#111827"
+        let utilityFill = "#374151"
+
+        setDPad(in: &customization, centerX: 0.18, centerY: 0.56, scale: 0.58, fill: dPadFill)
+
+        setButton(.focus, label: "X", in: &customization, x: 0.72, y: 0.43, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        addButton(mappedTo: .custom1, label: "Y", in: &customization, x: 0.83, y: 0.43, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        addButton(mappedTo: .custom2, label: "Z", in: &customization, x: 0.94, y: 0.43, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        setButton(.jump, label: "A", in: &customization, x: 0.72, y: 0.63, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        setButton(.attack, label: "B", in: &customization, x: 0.83, y: 0.63, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        setButton(.dash, label: "C", in: &customization, x: 0.94, y: 0.63, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+
+        setButton(.map, label: "Mode", in: &customization, x: 0.44, y: 0.80, width: 0.44, height: 0.42, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Start", in: &customization, x: 0.56, y: 0.80, width: 0.44, height: 0.42, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        return customization.normalized
+    }
+
+    private static func saturnCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .blue, controlScale: .standard)
+        let dPadFill = "#202124"
+        let faceFill = "#111827"
+        let shoulderFill = "#374151"
+        let utilityFill = "#475569"
+
+        setDPad(in: &customization, centerX: 0.18, centerY: 0.56, scale: 0.58, fill: dPadFill)
+
+        setButton(.focus, label: "X", in: &customization, x: 0.72, y: 0.43, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        addButton(mappedTo: .custom1, label: "Y", in: &customization, x: 0.83, y: 0.43, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        addButton(mappedTo: .custom2, label: "Z", in: &customization, x: 0.94, y: 0.43, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        setButton(.jump, label: "A", in: &customization, x: 0.72, y: 0.63, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        setButton(.attack, label: "B", in: &customization, x: 0.83, y: 0.63, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+        setButton(.dash, label: "C", in: &customization, x: 0.94, y: 0.63, width: 0.54, height: 0.54, shape: .circle, fill: faceFill)
+
+        addButton(mappedTo: .custom3, label: "L", in: &customization, x: 0.18, y: 0.15, width: 1.12, height: 0.38, shape: .capsule, fill: shoulderFill)
+        addButton(mappedTo: .custom4, label: "R", in: &customization, x: 0.82, y: 0.15, width: 1.12, height: 0.38, shape: .capsule, fill: shoulderFill)
+        setButton(.pause, label: "Start", in: &customization, x: 0.50, y: 0.80, width: 0.48, height: 0.42, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        return customization.normalized
+    }
+
+    private static func dreamcastCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .blue)
+        let shellFill = "#CBD5E1"
+        let triggerFill = "#94A3B8"
+        let utilityFill = "#64748B"
+
+        addJoystick(label: "Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.18, y: 0.44, scale: 0.72, fill: shellFill)
+        setDPad(in: &customization, centerX: 0.33, centerY: 0.72, scale: 0.48, fill: shellFill)
+
+        setButton(.focus, label: "Y", in: &customization, x: 0.84, y: 0.32, width: 0.58, height: 0.58, shape: .circle, fill: "#FACC15")
+        setButton(.dash, label: "B", in: &customization, x: 0.93, y: 0.50, width: 0.58, height: 0.58, shape: .circle, fill: "#EF4444")
+        setButton(.jump, label: "A", in: &customization, x: 0.84, y: 0.68, width: 0.58, height: 0.58, shape: .circle, fill: "#22C55E")
+        setButton(.attack, label: "X", in: &customization, x: 0.75, y: 0.50, width: 0.58, height: 0.58, shape: .circle, fill: "#3B82F6")
+
+        addButton(mappedTo: .custom5, label: "L", in: &customization, x: 0.20, y: 0.13, width: 1.08, height: 0.36, shape: .capsule, fill: triggerFill)
+        addButton(mappedTo: .custom6, label: "R", in: &customization, x: 0.80, y: 0.13, width: 1.08, height: 0.36, shape: .capsule, fill: triggerFill)
+        setButton(.pause, label: "Start", in: &customization, x: 0.50, y: 0.45, width: 0.44, height: 0.40, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        return customization.normalized
+    }
+
+    private static func arcadeStickCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .amber, controlScale: .standard)
+        let stickFill = "#111827"
+        let utilityFill = "#374151"
+
+        addJoystick(label: "Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.22, y: 0.58, scale: 1.08, fill: stickFill)
+
+        setButton(.map, label: "Coin", in: &customization, x: 0.40, y: 0.20, width: 0.52, height: 0.38, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Start", in: &customization, x: 0.52, y: 0.20, width: 0.52, height: 0.38, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        setButton(.jump, label: "B1", in: &customization, x: 0.60, y: 0.39, width: 0.60, height: 0.60, shape: .circle, fill: "#EF4444", shadowStrength: 1.25)
+        setButton(.attack, label: "B2", in: &customization, x: 0.71, y: 0.36, width: 0.60, height: 0.60, shape: .circle, fill: "#F97316", shadowStrength: 1.25)
+        setButton(.dash, label: "B3", in: &customization, x: 0.82, y: 0.36, width: 0.60, height: 0.60, shape: .circle, fill: "#EAB308", shadowStrength: 1.25)
+        setButton(.focus, label: "B4", in: &customization, x: 0.93, y: 0.39, width: 0.60, height: 0.60, shape: .circle, fill: "#22C55E", shadowStrength: 1.25)
+        addButton(mappedTo: .custom1, label: "B5", in: &customization, x: 0.57, y: 0.62, width: 0.60, height: 0.60, shape: .circle, fill: "#3B82F6")
+        addButton(mappedTo: .custom2, label: "B6", in: &customization, x: 0.68, y: 0.59, width: 0.60, height: 0.60, shape: .circle, fill: "#6366F1")
+        addButton(mappedTo: .custom3, label: "B7", in: &customization, x: 0.79, y: 0.59, width: 0.60, height: 0.60, shape: .circle, fill: "#A855F7")
+        addButton(mappedTo: .custom4, label: "B8", in: &customization, x: 0.90, y: 0.62, width: 0.60, height: 0.60, shape: .circle, fill: "#EC4899")
+
+        return customization.normalized
+    }
+
+    private static func pspCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .monochrome)
+        let shellFill = "#111827"
+        let faceFill = "#1F2937"
+        let utilityFill = "#374151"
+
+        setDPad(in: &customization, centerX: 0.16, centerY: 0.50, scale: 0.58, fill: shellFill)
+        addJoystick(label: "Nub", mappedButton: .up, mapping: .movement, in: &customization, x: 0.30, y: 0.75, scale: 0.72, fill: shellFill)
+
+        setButton(.focus, label: "△", in: &customization, x: 0.84, y: 0.34, width: 0.60, height: 0.60, shape: .circle, fill: faceFill)
+        setButton(.dash, label: "○", in: &customization, x: 0.93, y: 0.52, width: 0.60, height: 0.60, shape: .circle, fill: faceFill)
+        setButton(.jump, label: "×", in: &customization, x: 0.84, y: 0.70, width: 0.60, height: 0.60, shape: .circle, fill: faceFill)
+        setButton(.attack, label: "□", in: &customization, x: 0.75, y: 0.52, width: 0.60, height: 0.60, shape: .circle, fill: faceFill)
+
+        setButton(.map, label: "Select", in: &customization, x: 0.43, y: 0.84, width: 0.48, height: 0.44, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Start", in: &customization, x: 0.57, y: 0.84, width: 0.44, height: 0.44, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        addButton(mappedTo: .custom1, label: "L", in: &customization, x: 0.18, y: 0.16, width: 1.16, height: 0.40, shape: .capsule, fill: utilityFill)
+        addButton(mappedTo: .custom2, label: "R", in: &customization, x: 0.82, y: 0.16, width: 1.16, height: 0.40, shape: .capsule, fill: utilityFill)
+
+        return customization.normalized
+    }
+
+    private static func playStationCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .purple)
+        let darkFill = "#171717"
+        let utilityFill = "#374151"
+
+        setDPad(in: &customization, centerX: 0.16, centerY: 0.50, scale: 0.56, fill: darkFill)
+        addJoystick(label: "L Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.32, y: 0.76, scale: 0.72, fill: darkFill)
+        addJoystick(label: "R Stick", mappedButton: .custom1, mapping: .secondary, in: &customization, x: 0.66, y: 0.76, scale: 0.72, fill: darkFill)
+
+        setButton(.focus, label: "△", in: &customization, x: 0.84, y: 0.34, width: 0.58, height: 0.58, shape: .circle, fill: "#22C55E")
+        setButton(.dash, label: "○", in: &customization, x: 0.93, y: 0.52, width: 0.58, height: 0.58, shape: .circle, fill: "#EF4444")
+        setButton(.jump, label: "×", in: &customization, x: 0.84, y: 0.70, width: 0.58, height: 0.58, shape: .circle, fill: "#3B82F6")
+        setButton(.attack, label: "□", in: &customization, x: 0.75, y: 0.52, width: 0.58, height: 0.58, shape: .circle, fill: "#EC4899")
+
+        setButton(.map, label: "Share", in: &customization, x: 0.43, y: 0.32, width: 0.44, height: 0.42, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Options", in: &customization, x: 0.57, y: 0.32, width: 0.44, height: 0.42, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        addButton(mappedTo: .custom5, label: "L2", in: &customization, x: 0.20, y: 0.10, width: 1.02, height: 0.34, shape: .capsule, fill: utilityFill)
+        addButton(mappedTo: .custom6, label: "R2", in: &customization, x: 0.80, y: 0.10, width: 1.02, height: 0.34, shape: .capsule, fill: utilityFill)
+        addButton(mappedTo: .custom7, label: "L1", in: &customization, x: 0.20, y: 0.21, width: 1.02, height: 0.34, shape: .capsule, fill: darkFill)
+        addButton(mappedTo: .custom8, label: "R1", in: &customization, x: 0.80, y: 0.21, width: 1.02, height: 0.34, shape: .capsule, fill: darkFill)
+
+        return customization.normalized
+    }
+
+    private static func xboxCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .green)
+        let darkFill = "#111827"
+        let utilityFill = "#374151"
+
+        addJoystick(label: "L Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.19, y: 0.47, scale: 0.72, fill: darkFill)
+        setDPad(in: &customization, centerX: 0.34, centerY: 0.70, scale: 0.52, fill: darkFill)
+        addJoystick(label: "R Stick", mappedButton: .custom1, mapping: .secondary, in: &customization, x: 0.64, y: 0.74, scale: 0.72, fill: darkFill)
+
+        setButton(.focus, label: "Y", in: &customization, x: 0.84, y: 0.32, width: 0.58, height: 0.58, shape: .circle, fill: "#EAB308")
+        setButton(.dash, label: "B", in: &customization, x: 0.93, y: 0.50, width: 0.58, height: 0.58, shape: .circle, fill: "#EF4444")
+        setButton(.jump, label: "A", in: &customization, x: 0.84, y: 0.68, width: 0.58, height: 0.58, shape: .circle, fill: "#22C55E")
+        setButton(.attack, label: "X", in: &customization, x: 0.75, y: 0.50, width: 0.58, height: 0.58, shape: .circle, fill: "#3B82F6")
+
+        setButton(.map, label: "View", in: &customization, x: 0.44, y: 0.38, width: 0.42, height: 0.40, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+        setButton(.pause, label: "Menu", in: &customization, x: 0.56, y: 0.38, width: 0.42, height: 0.40, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
+
+        addButton(mappedTo: .custom5, label: "LT", in: &customization, x: 0.20, y: 0.11, width: 1.02, height: 0.34, shape: .capsule, fill: utilityFill)
+        addButton(mappedTo: .custom6, label: "RT", in: &customization, x: 0.80, y: 0.11, width: 1.02, height: 0.34, shape: .capsule, fill: utilityFill)
+        addButton(mappedTo: .custom7, label: "LB", in: &customization, x: 0.20, y: 0.22, width: 1.02, height: 0.34, shape: .capsule, fill: darkFill)
+        addButton(mappedTo: .custom8, label: "RB", in: &customization, x: 0.80, y: 0.22, width: 1.02, height: 0.34, shape: .capsule, fill: darkFill)
+
+        return customization.normalized
+    }
+
+    private static func setDPad(
+        in customization: inout GamepadCustomization,
+        centerX: CGFloat,
+        centerY: CGFloat,
+        scale: CGFloat,
+        fill: String
+    ) {
+        let xStep: CGFloat = 0.092
+        let yStep: CGFloat = 0.17
+        setButton(.up, label: "↑", in: &customization, x: centerX, y: centerY - yStep, width: scale, height: scale, shape: .roundedRectangle, fill: fill, cornerRadius: 8)
+        setButton(.down, label: "↓", in: &customization, x: centerX, y: centerY + yStep, width: scale, height: scale, shape: .roundedRectangle, fill: fill, cornerRadius: 8)
+        setButton(.left, label: "←", in: &customization, x: centerX - xStep, y: centerY, width: scale, height: scale, shape: .roundedRectangle, fill: fill, cornerRadius: 8)
+        setButton(.right, label: "→", in: &customization, x: centerX + xStep, y: centerY, width: scale, height: scale, shape: .roundedRectangle, fill: fill, cornerRadius: 8)
+    }
+
+    private static func setButton(
+        _ button: GameButton,
+        label: String,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        fill: String,
+        cornerRadius: CGFloat? = nil,
+        shadowStrength: CGFloat = 1.0
+    ) {
+        customization.setButtonCustomization(
+            templateButton(
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                shape: shape,
+                fill: fill,
+                cornerRadius: cornerRadius,
+                shadowStrength: shadowStrength
+            ),
+            for: button
+        )
+        customization.setLabel(label, for: button)
+    }
+
+    private static func addButton(
+        mappedTo button: GameButton,
+        label: String,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        fill: String
+    ) {
+        customization.customButtons.append(
+            GamepadCustomButton(
+                mappedButton: button,
+                label: label,
+                layout: templateButton(x: x, y: y, width: width, height: height, shape: shape, fill: fill)
+            )
+        )
+    }
+
+    private static func addJoystick(
+        label: String,
+        mappedButton: GameButton,
+        mapping: GamepadJoystickMapping,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        scale: CGFloat,
+        fill: String
+    ) {
+        customization.customButtons.append(
+            GamepadCustomButton(
+                mappedButton: mappedButton,
+                label: label,
+                layout: templateButton(x: x, y: y, width: scale, height: scale, shape: .circle, fill: fill, shadowStrength: 1.25),
+                controlKind: .joystick,
+                joystickMapping: mapping
+            )
+        )
+    }
+
+    private static func templateButton(
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        fill: String,
+        cornerRadius: CGFloat? = nil,
+        shadowStrength: CGFloat = 1.0
+    ) -> GamepadButtonCustomization {
+        GamepadButtonCustomization(
+            centerX: x,
+            centerY: y,
+            widthScale: width,
+            heightScale: height,
+            shape: shape,
+            fillColor: GamepadRGBAColor(hexString: fill) ?? .defaultValue,
+            cornerRadius: cornerRadius ?? defaultCornerRadius(for: shape),
+            shadowStrength: shadowStrength,
+            isLocationLocked: false,
+            isHidden: false
+        )
+    }
+
+    private static func defaultCornerRadius(for shape: GamepadButtonShapeStyle) -> CGFloat? {
+        switch shape {
+        case .capsule, .circle, .ellipse:
+            nil
+        case .rectangle:
+            2
+        case .roundedRectangle, .polygon, .star:
+            12
+        }
+    }
+}
+
 enum GamepadConfigurationProfilePersistence {
     struct LoadedState: Equatable {
         let profiles: [GamepadConfigurationProfile]
@@ -1717,6 +2235,19 @@ enum GamepadConfigurationProfilePersistence {
 
         return [
             GamepadConfigurationProfile(name: "Current Setup", customization: activeCustomization),
+            GamepadControllerTemplate.nes.makeProfile(),
+            GamepadControllerTemplate.snes.makeProfile(),
+            GamepadControllerTemplate.nintendo64.makeProfile(),
+            GamepadControllerTemplate.gameCube.makeProfile(),
+            GamepadControllerTemplate.gameBoy.makeProfile(),
+            GamepadControllerTemplate.gameBoyAdvance.makeProfile(),
+            GamepadControllerTemplate.genesisSixButton.makeProfile(),
+            GamepadControllerTemplate.saturn.makeProfile(),
+            GamepadControllerTemplate.dreamcast.makeProfile(),
+            GamepadControllerTemplate.arcadeStick.makeProfile(),
+            GamepadControllerTemplate.psp.makeProfile(),
+            GamepadControllerTemplate.playStation.makeProfile(),
+            GamepadControllerTemplate.xbox.makeProfile(),
             GamepadConfigurationProfile(name: "Navigation Left", customization: standard),
             GamepadConfigurationProfile(name: "Actions Left", customization: southpaw),
             GamepadConfigurationProfile(name: "Dual Stick Shooter", customization: dualStick),
@@ -2152,6 +2683,8 @@ struct GamepadCustomizationEditor: View {
 
                     Spacer(minLength: Geist.Spacing.s2)
 
+                    templateMenu(showsTitle: false)
+
                     Button {
                         createProfile()
                     } label: {
@@ -2192,6 +2725,8 @@ struct GamepadCustomizationEditor: View {
 
                 Spacer()
 
+                templateMenu(showsTitle: true)
+
                 Button("New") { createProfile() }
                     .geistButtonStyle(.secondary, size: .small)
             }
@@ -2211,6 +2746,30 @@ struct GamepadCustomizationEditor: View {
             configurationFooter
         }
         .geistPanel(padding: Geist.Spacing.s4, radius: Geist.Radius.md, raised: false)
+    }
+
+    private func templateMenu(showsTitle: Bool) -> some View {
+        Menu {
+            ForEach(GamepadControllerTemplate.allCases) { template in
+                Button {
+                    createProfile(from: template)
+                } label: {
+                    Label(template.displayName, systemImage: template.systemImage)
+                }
+                .help(template.description)
+            }
+        } label: {
+            if showsTitle {
+                Label("Templates", systemImage: "gamecontroller.fill")
+            } else {
+                Image(systemName: "gamecontroller.fill")
+                    .frame(width: 22, height: 22)
+            }
+        }
+        .menuStyle(.button)
+        .geistButtonStyle(.secondary, size: .small)
+        .accessibilityLabel("Keypad templates")
+        .help("Create a setup from an emulator controller template")
     }
 
     @ViewBuilder
@@ -4148,6 +4707,15 @@ struct GamepadCustomizationEditor: View {
             name: "Setup \(profiles.count + 1)",
             customization: GamepadCustomization.blankCanvas
         )
+        selectNewProfile(profile)
+    }
+
+    private func createProfile(from template: GamepadControllerTemplate) {
+        commitSelectedProfileNameDraft()
+        selectNewProfile(template.makeProfile())
+    }
+
+    private func selectNewProfile(_ profile: GamepadConfigurationProfile) {
         profiles.append(profile)
         selectedProfileID = profile.id
         selectedProfileNameDraft = profile.name

@@ -6,6 +6,10 @@ struct PocketPadCLI {
     private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
     private static let profileKeyBindingsDefaultsKey = "PocketPadMac.profileKeyBindings.v1"
     private static let profileStoreChangedNotificationName = Notification.Name("com.codybontecou.PocketPadMac.profileStoreChanged")
+    private static let notificationProfileStateDataKey = "profileStateData"
+    private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
+    private static let notificationKeyBindingsDataKey = "keyBindingsData"
+    private static let notificationProfileKeyBindingsDataKey = "profileKeyBindingsData"
 
     private struct StoredProfileState: Codable {
         var profiles: [GamepadConfigurationProfile]
@@ -199,18 +203,33 @@ struct PocketPadCLI {
         )
         domain[GamepadConfigurationProfilePersistence.defaultsKey] = stateData
 
+        let activeCustomizationData: Data?
+        let keyBindingsData: Data?
         if select {
-            domain[GamepadCustomizationPersistence.defaultsKey] = try JSONEncoder().encode(profile.customization.normalized)
-            domain[keyBindingsDefaultsKey] = try JSONEncoder().encode(rawBindings(macBindings))
+            let customizationData = try JSONEncoder().encode(profile.customization.normalized)
+            let bindingsData = try JSONEncoder().encode(rawBindings(macBindings))
+            activeCustomizationData = customizationData
+            keyBindingsData = bindingsData
+            domain[GamepadCustomizationPersistence.defaultsKey] = customizationData
+            domain[keyBindingsDefaultsKey] = bindingsData
+        } else {
+            activeCustomizationData = nil
+            keyBindingsData = nil
         }
 
         var profileBindings = loadProfileBindings(from: domain)
         profileBindings[profile.id.uuidString] = rawBindings(macBindings)
-        domain[profileKeyBindingsDefaultsKey] = try JSONEncoder().encode(profileBindings)
+        let profileKeyBindingsData = try JSONEncoder().encode(profileBindings)
+        domain[profileKeyBindingsDefaultsKey] = profileKeyBindingsData
 
         UserDefaults.standard.setPersistentDomain(domain, forName: appDefaultsDomain)
         UserDefaults.standard.synchronize()
-        notifyRunningMacHelper()
+        notifyRunningMacHelper(
+            profileStateData: stateData,
+            activeCustomizationData: activeCustomizationData,
+            keyBindingsData: keyBindingsData,
+            profileKeyBindingsData: profileKeyBindingsData
+        )
     }
 
     private static func resolvedMacBindings(for generated: GeneratedGameKeypadProfile) throws -> [GameButton: MacKeyBinding] {
@@ -277,11 +296,28 @@ struct PocketPadCLI {
         return nil
     }
 
-    private static func notifyRunningMacHelper() {
-        DistributedNotificationCenter.default().post(
-            name: profileStoreChangedNotificationName,
+    private static func notifyRunningMacHelper(
+        profileStateData: Data,
+        activeCustomizationData: Data?,
+        keyBindingsData: Data?,
+        profileKeyBindingsData: Data
+    ) {
+        var userInfo: [String: Any] = [
+            notificationProfileStateDataKey: profileStateData,
+            notificationProfileKeyBindingsDataKey: profileKeyBindingsData
+        ]
+        if let activeCustomizationData {
+            userInfo[notificationActiveCustomizationDataKey] = activeCustomizationData
+        }
+        if let keyBindingsData {
+            userInfo[notificationKeyBindingsDataKey] = keyBindingsData
+        }
+
+        DistributedNotificationCenter.default().postNotificationName(
+            profileStoreChangedNotificationName,
             object: nil,
-            userInfo: nil
+            userInfo: userInfo,
+            deliverImmediately: true
         )
     }
 

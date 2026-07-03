@@ -85,6 +85,8 @@ public struct ControllerMessage: Codable, Sendable {
     public var clientName: String?
     public var message: String?
     public var realtimeToken: String?
+    public var authToken: String?
+    public var serverID: String?
     public var gamepadCustomization: GamepadCustomization?
     public var gamepadProfiles: [GamepadConfigurationProfile]?
     public var gamepadProfileID: UUID?
@@ -99,6 +101,8 @@ public struct ControllerMessage: Codable, Sendable {
         clientName: String? = nil,
         message: String? = nil,
         realtimeToken: String? = nil,
+        authToken: String? = nil,
+        serverID: String? = nil,
         gamepadCustomization: GamepadCustomization? = nil,
         gamepadProfiles: [GamepadConfigurationProfile]? = nil,
         gamepadProfileID: UUID? = nil,
@@ -112,6 +116,8 @@ public struct ControllerMessage: Codable, Sendable {
         self.clientName = clientName
         self.message = message
         self.realtimeToken = realtimeToken
+        self.authToken = authToken
+        self.serverID = serverID
         self.gamepadCustomization = gamepadCustomization
         self.gamepadProfiles = gamepadProfiles
         self.gamepadProfileID = gamepadProfileID
@@ -297,6 +303,8 @@ public enum ControllerWireCodec {
               message.clientName == nil,
               message.message == nil,
               message.realtimeToken == nil,
+              message.authToken == nil,
+              message.serverID == nil,
               message.gamepadCustomization == nil,
               message.gamepadProfiles == nil,
               message.gamepadProfileID == nil,

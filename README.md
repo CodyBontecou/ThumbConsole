@@ -6,8 +6,8 @@ It is no longer game-specific: use it for terminal workflows, tmux prefixes, Cur
 
 ## Targets
 
-- `PocketPadMac` — macOS 14+ SwiftUI helper, WebSocket pairing/control server plus UDP realtime listener preferring port `8765` with automatic fallback if unavailable, CGEvent keyboard shortcut injection.
-- `PocketPadiOS` — iOS 17+ SwiftUI programmable keypad with multitouch controls.
+- `PocketPadMac` — macOS 14+ SwiftUI helper, WebSocket pairing/control server plus UDP realtime listener preferring port `8765` with automatic fallback if unavailable, Bonjour Smart Connect advertising, CGEvent keyboard shortcut injection.
+- `PocketPadiOS` — iOS 17+ SwiftUI programmable keypad with multitouch controls and Smart Connect reconnects.
 - `PocketPadCLI` — macOS command-line generator that installs/selects game-specific keypad profiles for the Mac helper.
 
 ## Build
@@ -25,7 +25,9 @@ xcodebuild -project PocketPad.xcodeproj -scheme PocketPadCLI -destination 'platf
 2. Grant Accessibility permission when prompted, then restart/refresh if needed.
 3. Run `PocketPadiOS` on the iPhone and tap **Scan Mac QR Code** to connect instantly, or manually enter one of the displayed `ws://<mac-ip>:<port>` addresses and tap **Request Pairing**.
 4. For manual pairing, enter the six-digit code shown in the Mac helper's secure pairing card.
-5. Focus the Mac app you want to control, such as Terminal, Cursor, or a browser.
+5. After the first successful pair, **Smart Connect** remembers this Mac, discovers it over Bonjour, and reconnects automatically when the iOS app opens or returns to foreground.
+6. The iOS app also keeps the last synced keypads available for viewing and switching even when PocketPad Mac is not open.
+7. Focus the Mac app you want to control, such as Terminal, Cursor, or a browser.
 
 ## Programmatic keypad generation
 
@@ -98,6 +100,7 @@ Use **Default** for a single button or **Reset All** to restore the starter keyp
 - macOS throttles input debug/status publishing so UI work does not compete with key injection.
 - During physical tap testing, the Mac debug panel shows missing transport frames, recovered duplicate-down edges, and ignored duplicate/orphan input edges separately.
 - iOS sends a heartbeat every 500 ms.
+- Smart Connect stores a trusted reconnect token after successful pairing, advertises the Mac as `_pocketpad._tcp` on the local network, and avoids reusing stale six-digit pairing codes.
 - macOS releases all held keys after 1500 ms without heartbeat, but keeps the socket open so brief focus/app-launch stalls can recover.
 - macOS keeps a latency-critical activity while the helper is running to avoid App Nap when the target app is focused.
 - macOS releases all held keys on client disconnect, server stop, or manual Release All.

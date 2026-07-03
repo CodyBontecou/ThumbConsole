@@ -44,13 +44,23 @@ final class MacControllerServer: ObservableObject {
     private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
     private static let legacyKeyBindingsDefaultsKey = "PocketPadMac.keyBindings.v1"
     private static let profileKeyBindingsDefaultsKey = "PocketPadMac.profileKeyBindings.v1"
+    private static let serverIdentityDefaultsKey = "PocketPadMac.serverIdentity.v1"
+    private static let trustedClientsDefaultsKey = "PocketPadMac.trustedClients.v1"
+    private static let bonjourServiceType = "_pocketpad._tcp."
     private static let externalProfileStoreChangedNotificationName = Notification.Name("com.codybontecou.PocketPadMac.profileStoreChanged")
+    private static let notificationProfileStateDataKey = "profileStateData"
+    private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
+    private static let notificationKeyBindingsDataKey = "keyBindingsData"
+    private static let notificationProfileKeyBindingsDataKey = "profileKeyBindingsData"
     private static let inputEventLoggingEnabled = false
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let buttonReorderDelayNanoseconds: UInt64 = 8_000_000
+    private let serverID: String
+    private var trustedClients: [String: TrustedClient]
     private var listener: NWListener?
     private var datagramListener: NWListener?
+    private var bonjourService: NetService?
     private var datagramListenerPort: UInt16?
     private var datagramConnections: [ObjectIdentifier: NWConnection] = [:]
     private var authenticatedDatagramConnection: NWConnection?
@@ -85,6 +95,13 @@ final class MacControllerServer: ObservableObject {
         let source: String
     }
 
+    private struct TrustedClient: Codable {
+        var token: String
+        var clientName: String
+        var createdAt: Int64
+        var lastSeenAt: Int64
+    }
+
     private var activePressIdentifiersByButton: [GameButton: Set<UInt64>] = [:]
     private var anonymousPressCountsByButton: [GameButton: Int] = [:]
     private var buttonSequenceTracker = ButtonSequenceTracker()
@@ -95,7 +112,16 @@ final class MacControllerServer: ObservableObject {
     private var recoveredButtonEdgeCount = 0
     private var externalDefaultsObserver: NSObjectProtocol?
 
+    private struct ExternalStoredProfileState: Codable {
+        var profiles: [GamepadConfigurationProfile]
+        var activeProfileID: UUID?
+        var defaultProfileID: UUID?
+    }
+
     init() {
+        serverID = Self.loadOrCreateServerID()
+        trustedClients = Self.loadTrustedClients()
+
         let initialPairingCode = Self.generatePairingCode()
         pairingCode = initialPairingCode
         activePairingCode = initialPairingCode
@@ -141,8 +167,11 @@ final class MacControllerServer: ObservableObject {
             forName: Self.externalProfileStoreChangedNotificationName,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.reloadProfilesFromDefaults(source: "cli")
+        ) { [weak self] notification in
+            guard let self else { return }
+            if !self.applyProfileStoreChangeNotification(notification, source: "cli") {
+                self.reloadProfilesFromDefaults(source: "cli")
+            }
         }
     }
 
@@ -243,6 +272,7 @@ final class MacControllerServer: ObservableObject {
         }
         connection?.cancel()
         listener?.cancel()
+        stopBonjourService()
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
         endBackgroundActivity()
@@ -460,6 +490,71 @@ final class MacControllerServer: ObservableObject {
     private func pruneProfileKeyBindings() {
         let validProfileIDs = Set(gamepadProfiles.map(\.id))
         profileKeyBindings = profileKeyBindings.filter { validProfileIDs.contains($0.key) }
+    }
+
+    @discardableResult
+    private func applyProfileStoreChangeNotification(_ notification: Notification, source: String) -> Bool {
+        guard let profileStateData = Self.notificationData(from: notification.userInfo, key: Self.notificationProfileStateDataKey),
+              let storedState = try? JSONDecoder().decode(ExternalStoredProfileState.self, from: profileStateData)
+        else {
+            return false
+        }
+
+        let fallbackCustomization: GamepadCustomization
+        if let activeCustomizationData = Self.notificationData(from: notification.userInfo, key: Self.notificationActiveCustomizationDataKey),
+           let decodedCustomization = try? JSONDecoder().decode(GamepadCustomization.self, from: activeCustomizationData) {
+            fallbackCustomization = decodedCustomization.normalized
+        } else {
+            fallbackCustomization = gamepadCustomization
+        }
+
+        let state = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: storedState.profiles,
+            activeProfileID: storedState.activeProfileID,
+            defaultProfileID: storedState.defaultProfileID,
+            fallbackCustomization: fallbackCustomization
+        )
+        guard let activeProfile = state.activeProfile ?? state.defaultProfile ?? state.profiles.first else { return false }
+
+        let activeCustomization = activeProfile.customization.normalized
+        var loadedProfileKeyBindings = Self.notificationProfileKeyBindings(
+            from: Self.notificationData(from: notification.userInfo, key: Self.notificationProfileKeyBindingsDataKey)
+        ) ?? profileKeyBindings
+        let activeKeyBindings = Self.notificationKeyBindings(
+            from: Self.notificationData(from: notification.userInfo, key: Self.notificationKeyBindingsDataKey),
+            fallback: Self.resolvedKeyBindings(
+                for: activeProfile.id,
+                in: loadedProfileKeyBindings,
+                fallback: keyBindings
+            )
+        )
+        loadedProfileKeyBindings[activeProfile.id] = activeKeyBindings
+
+        releaseAll(reason: "Apply external keypad profile update")
+        gamepadProfiles = state.profiles
+        activeGamepadProfileID = state.activeProfileID
+        defaultGamepadProfileID = state.defaultProfileID
+        gamepadCustomization = activeCustomization
+        keyBindings = activeKeyBindings
+        profileKeyBindings = loadedProfileKeyBindings
+        pruneProfileKeyBindings()
+        GamepadCustomizationPersistence.save(activeCustomization)
+        persistGamepadProfileState()
+        saveKeyBindings()
+        saveProfileKeyBindings()
+        lastReceivedEvent = "Applied keypad profiles from \(source)"
+
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            self.realtimeKeyBindings = activeKeyBindings
+            self.realtimeGamepadCustomization = activeCustomization
+            self.realtimeGamepadProfiles = state.profiles
+            self.realtimeActiveGamepadProfileID = state.activeProfileID
+            self.realtimeDefaultGamepadProfileID = state.defaultProfileID
+            self.sendGamepadProfileStateOnNetworkQueue()
+        }
+        logDebug("gamepad_profiles_applied_from_notification source=\(source) profile=\(activeProfile.id.uuidString)")
+        return true
     }
 
     private func reloadProfilesFromDefaults(source: String) {
@@ -803,6 +898,24 @@ final class MacControllerServer: ObservableObject {
             handlePairingRequestOnNetworkQueue(message, from: connection)
 
         case .hello:
+            if let authToken = normalizedAuthToken(message.authToken) {
+                guard message.serverID == nil || message.serverID == serverID else {
+                    rejectPairingOnNetworkQueue(connection, reason: "This iPhone is trusted for a different Mac")
+                    return
+                }
+                guard trustedClients[authToken] != nil else {
+                    rejectPairingOnNetworkQueue(connection, reason: "Trusted pairing expired. Scan the Mac QR code once to reconnect.")
+                    return
+                }
+                acceptPairedClientOnNetworkQueue(
+                    message.clientName,
+                    from: connection,
+                    authToken: authToken,
+                    isTrustedReconnect: true
+                )
+                return
+            }
+
             guard let submittedCode = normalizedPairingCode(message.pairingCode) else {
                 handlePairingRequestOnNetworkQueue(message, from: connection)
                 return
@@ -908,10 +1021,17 @@ final class MacControllerServer: ObservableObject {
         logDebug("pairing_request client=\(requestClientName)")
     }
 
-    private func acceptPairedClientOnNetworkQueue(_ incomingClientName: String?, from connection: NWConnection) {
+    private func acceptPairedClientOnNetworkQueue(
+        _ incomingClientName: String?,
+        from connection: NWConnection,
+        authToken existingAuthToken: String? = nil,
+        isTrustedReconnect: Bool = false
+    ) {
         guard realtimeConnection === connection else { return }
 
         let newRealtimeToken = Self.generateRealtimeToken()
+        let trustedAuthToken = existingAuthToken ?? Self.generateAuthToken()
+        rememberTrustedClientOnNetworkQueue(token: trustedAuthToken, clientName: incomingClientName)
         pendingPairingConnection = nil
         pairedConnection = connection
         realtimeToken = newRealtimeToken
@@ -921,8 +1041,10 @@ final class MacControllerServer: ObservableObject {
         send(
             .init(
                 type: .pairingAccepted,
-                message: "Pairing complete",
+                message: isTrustedReconnect ? "Smart Connect complete" : "Pairing complete",
                 realtimeToken: newRealtimeToken,
+                authToken: trustedAuthToken,
+                serverID: serverID,
                 gamepadCustomization: clientGamepadCustomization,
                 gamepadProfiles: clientGamepadProfiles,
                 gamepadProfileID: realtimeActiveGamepadProfileID,
@@ -944,7 +1066,7 @@ final class MacControllerServer: ObservableObject {
             self.statusText = "Client connected"
         }
 
-        logDebug("pairing_accepted client=\(incomingClientName ?? "Connected iPhone")")
+        logDebug("pairing_accepted client=\(incomingClientName ?? "Connected iPhone") trusted=\(isTrustedReconnect)")
     }
 
     private func rejectPairingOnNetworkQueue(_ connection: NWConnection, reason: String) {
@@ -1003,6 +1125,25 @@ final class MacControllerServer: ObservableObject {
         guard let code else { return nil }
         let normalized = String(code.filter(\.isNumber).prefix(6))
         return normalized.isEmpty ? nil : normalized
+    }
+
+    private func normalizedAuthToken(_ token: String?) -> String? {
+        guard let token else { return nil }
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func rememberTrustedClientOnNetworkQueue(token: String, clientName: String?) {
+        let now = Date.currentMilliseconds
+        let resolvedName = clientName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "iPhone"
+        let existing = trustedClients[token]
+        trustedClients[token] = TrustedClient(
+            token: token,
+            clientName: resolvedName,
+            createdAt: existing?.createdAt ?? now,
+            lastSeenAt: now
+        )
+        saveTrustedClients()
     }
 
     private func inspectButtonSequence(
@@ -1479,6 +1620,32 @@ final class MacControllerServer: ObservableObject {
         )
     }
 
+    private func publishBonjourService(on port: UInt16) {
+        stopBonjourService()
+
+        let serviceName = Self.defaultBonjourServiceName()
+        let service = NetService(
+            domain: "local.",
+            type: Self.bonjourServiceType,
+            name: serviceName,
+            port: Int32(port)
+        )
+        service.includesPeerToPeer = true
+        let txtRecord: [String: Data] = [
+            "id": Data(serverID.utf8),
+            "name": Data(serviceName.utf8)
+        ]
+        service.setTXTRecord(NetService.data(fromTXTRecord: txtRecord))
+        service.publish()
+        bonjourService = service
+        logDebug("bonjour_published name=\(serviceName) type=\(Self.bonjourServiceType) port=\(port) server=\(serverID)")
+    }
+
+    private func stopBonjourService() {
+        bonjourService?.stop()
+        bonjourService = nil
+    }
+
     private func handleListenerState(
         _ state: NWListener.State,
         listener stateListener: NWListener,
@@ -1500,6 +1667,7 @@ final class MacControllerServer: ObservableObject {
                 self?.startDatagramListenerOnNetworkQueue(on: resolvedPort)
             }
             localURLs = Self.localIPv4Addresses().map { "ws://\($0):\(port)" }
+            publishBonjourService(on: port)
             if usingFallbackPort {
                 statusText = "Listening on port \(port) (\(Self.preferredPort) was unavailable)"
             } else {
@@ -1836,6 +2004,11 @@ final class MacControllerServer: ObservableObject {
         return Int(delta)
     }
 
+    private func saveTrustedClients() {
+        guard let data = try? JSONEncoder().encode(Array(trustedClients.values)) else { return }
+        UserDefaults.standard.set(data, forKey: Self.trustedClientsDefaultsKey)
+    }
+
     private func saveKeyBindings() {
         let stored = Dictionary(uniqueKeysWithValues: keyBindings.map { button, binding in
             (button.rawValue, binding)
@@ -1855,6 +2028,48 @@ final class MacControllerServer: ObservableObject {
         })
         guard let data = try? JSONEncoder().encode(stored) else { return }
         UserDefaults.standard.set(data, forKey: Self.profileKeyBindingsDefaultsKey)
+    }
+
+    private static func notificationData(from userInfo: [AnyHashable: Any]?, key: String) -> Data? {
+        let value = userInfo?[key]
+        if let data = value as? Data { return data }
+        if let data = value as? NSData { return data as Data }
+        return nil
+    }
+
+    private static func notificationKeyBindings(from data: Data?, fallback: [GameButton: MacKeyBinding]) -> [GameButton: MacKeyBinding] {
+        guard let data,
+              let stored = try? JSONDecoder().decode([String: MacKeyBinding].self, from: data)
+        else {
+            return fallback
+        }
+
+        var bindings = fallback
+        for (rawButton, binding) in stored {
+            guard let button = GameButton(rawValue: rawButton) else { continue }
+            bindings[button] = binding
+        }
+        return bindings
+    }
+
+    private static func notificationProfileKeyBindings(from data: Data?) -> [UUID: [GameButton: MacKeyBinding]]? {
+        guard let data,
+              let stored = try? JSONDecoder().decode([String: [String: MacKeyBinding]].self, from: data)
+        else {
+            return nil
+        }
+
+        var profiles: [UUID: [GameButton: MacKeyBinding]] = [:]
+        for (rawProfileID, rawBindings) in stored {
+            guard let profileID = UUID(uuidString: rawProfileID) else { continue }
+            var bindings: [GameButton: MacKeyBinding] = [:]
+            for (rawButton, binding) in rawBindings {
+                guard let button = GameButton(rawValue: rawButton) else { continue }
+                bindings[button] = binding
+            }
+            profiles[profileID] = bindings
+        }
+        return profiles
     }
 
     private static func loadProfileKeyBindings() -> [UUID: [GameButton: MacKeyBinding]] {
@@ -1931,8 +2146,39 @@ final class MacControllerServer: ObservableObject {
         return bindings
     }
 
+    private static func loadOrCreateServerID() -> String {
+        if let stored = UserDefaults.standard.string(forKey: serverIdentityDefaultsKey),
+           !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return stored
+        }
+
+        let generated = UUID().uuidString
+        UserDefaults.standard.set(generated, forKey: serverIdentityDefaultsKey)
+        return generated
+    }
+
+    private static func loadTrustedClients() -> [String: TrustedClient] {
+        guard let data = UserDefaults.standard.data(forKey: trustedClientsDefaultsKey),
+              let clients = try? JSONDecoder().decode([TrustedClient].self, from: data)
+        else {
+            return [:]
+        }
+
+        return Dictionary(uniqueKeysWithValues: clients.map { ($0.token, $0) })
+    }
+
+    private static func defaultBonjourServiceName() -> String {
+        let hostName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        let trimmedHostName = hostName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedHostName.isEmpty ? "PocketPad Mac" : "PocketPad on \(trimmedHostName)"
+    }
+
     private static func generatePairingCode() -> String {
         String(format: "%06d", Int.random(in: 0...999_999))
+    }
+
+    private static func generateAuthToken() -> String {
+        "\(UUID().uuidString)-\(UUID().uuidString)"
     }
 
     private static func generateRealtimeToken() -> String {
@@ -1974,5 +2220,11 @@ final class MacControllerServer: ObservableObject {
         }
 
         return addresses.isEmpty ? ["127.0.0.1"] : addresses
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

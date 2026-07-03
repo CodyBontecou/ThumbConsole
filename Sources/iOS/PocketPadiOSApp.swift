@@ -17,6 +17,8 @@ struct PocketPadiOSApp: App {
                     case .background:
                         TouchCaptureUIView.deactivateAllRegisteredTouches()
                         client.appDidEnterBackground()
+                    case .active:
+                        client.appDidBecomeActive()
                     default:
                         break
                     }

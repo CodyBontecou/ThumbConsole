@@ -273,6 +273,10 @@ private struct GeneratedControlDefinition {
     var widthScale: CGFloat
     var heightScale: CGFloat
     var shape: GamepadButtonShapeStyle
+    var fillColor: GamepadRGBAColor?
+    var accentStyle: GamepadAccentStyle?
+    var cornerRadius: CGFloat?
+    var shadowStrength: CGFloat?
 
     init(
         _ button: GameButton,
@@ -284,7 +288,11 @@ private struct GeneratedControlDefinition {
         y: CGFloat,
         width: CGFloat = 1.0,
         height: CGFloat = 1.0,
-        shape: GamepadButtonShapeStyle = .roundedRectangle
+        shape: GamepadButtonShapeStyle = .roundedRectangle,
+        fill: String? = nil,
+        accentStyle: GamepadAccentStyle? = nil,
+        cornerRadius: CGFloat? = nil,
+        shadowStrength: CGFloat? = nil
     ) {
         self.button = button
         self.label = label
@@ -295,6 +303,10 @@ private struct GeneratedControlDefinition {
         self.widthScale = width
         self.heightScale = height
         self.shape = shape
+        self.fillColor = fill.flatMap { GamepadRGBAColor(hexString: $0) }
+        self.accentStyle = accentStyle
+        self.cornerRadius = cornerRadius
+        self.shadowStrength = shadowStrength
     }
 }
 
@@ -305,12 +317,14 @@ private enum GeneratedProfileBuilder {
         controls: [GeneratedControlDefinition],
         source: String,
         confidence: GeneratedKeypadConfidence,
-        notes: [String]
+        notes: [String],
+        controlScale: GamepadControlScale = .standard,
+        accentStyle: GamepadAccentStyle = .purple
     ) -> GeneratedGameKeypadProfile {
         var customization = GamepadCustomization.blankCanvas
         customization.layoutMode = .standard
-        customization.controlScale = .standard
-        customization.accentStyle = .purple
+        customization.controlScale = controlScale
+        customization.accentStyle = accentStyle
         customization.showsButtonLabels = true
 
         var keyBindings: [GameButton: GeneratedKeyBindingSpec] = [:]
@@ -323,10 +337,10 @@ private enum GeneratedProfileBuilder {
                 widthScale: control.widthScale,
                 heightScale: control.heightScale,
                 shape: control.shape,
-                accentStyle: control.role.accentStyle,
-                fillColor: control.role.fillColor,
-                cornerRadius: resolvedCornerRadius(for: control.shape),
-                shadowStrength: control.role == .primary ? 1.25 : 1.0,
+                accentStyle: control.accentStyle ?? control.role.accentStyle,
+                fillColor: control.fillColor ?? control.role.fillColor,
+                cornerRadius: control.cornerRadius ?? resolvedCornerRadius(for: control.shape),
+                shadowStrength: control.shadowStrength ?? (control.role == .primary ? 1.25 : 1.0),
                 isLocationLocked: false,
                 isHidden: false
             )
@@ -582,36 +596,41 @@ private enum HollowKnightTemplate {
     }
 
     static func make(requestedGameName: String) -> GeneratedGameKeypadProfile {
+        let dPadFill = "#171717"
+        let utilityFill = "#374151"
+
         let controls: [GeneratedControlDefinition] = [
-            .init(.up, label: "Up", key: "UpArrow", role: .movement, x: 0.18, y: 0.30, width: 1.02, height: 0.92),
-            .init(.down, label: "Down", key: "DownArrow", role: .movement, x: 0.18, y: 0.72, width: 1.02, height: 0.92),
-            .init(.left, label: "Left", key: "LeftArrow", role: .movement, x: 0.07, y: 0.51, width: 1.02, height: 0.92),
-            .init(.right, label: "Right", key: "RightArrow", role: .movement, x: 0.29, y: 0.51, width: 1.02, height: 0.92),
+            .init(.up, label: "↑", key: "UpArrow", role: .movement, x: 0.16, y: 0.33, width: 0.64, height: 0.64, fill: dPadFill, cornerRadius: 8),
+            .init(.down, label: "↓", key: "DownArrow", role: .movement, x: 0.16, y: 0.67, width: 0.64, height: 0.64, fill: dPadFill, cornerRadius: 8),
+            .init(.left, label: "←", key: "LeftArrow", role: .movement, x: 0.07, y: 0.50, width: 0.64, height: 0.64, fill: dPadFill, cornerRadius: 8),
+            .init(.right, label: "→", key: "RightArrow", role: .movement, x: 0.25, y: 0.50, width: 0.64, height: 0.64, fill: dPadFill, cornerRadius: 8),
 
-            .init(.jump, label: "Jump", key: "Z", role: .primary, x: 0.82, y: 0.70, width: 1.26, height: 1.12),
-            .init(.attack, label: "Nail", key: "X", role: .primary, x: 0.70, y: 0.54, width: 1.18, height: 1.06),
-            .init(.dash, label: "Dash", key: "C", role: .primary, x: 0.91, y: 0.47, width: 1.05, height: 0.98),
-            .init(.focus, label: "Focus", key: "A", role: .secondary, x: 0.79, y: 0.29, width: 1.02, height: 0.96),
+            .init(.focus, label: "△ Focus", key: "A", role: .secondary, x: 0.84, y: 0.34, width: 0.66, height: 0.66, shape: .circle, fill: "#22C55E", shadowStrength: 1.25),
+            .init(.dash, label: "○ Dash", key: "C", role: .primary, x: 0.93, y: 0.52, width: 0.66, height: 0.66, shape: .circle, fill: "#EF4444", shadowStrength: 1.25),
+            .init(.jump, label: "× Jump", key: "Z", role: .primary, x: 0.84, y: 0.70, width: 0.66, height: 0.66, shape: .circle, fill: "#3B82F6", shadowStrength: 1.25),
+            .init(.attack, label: "□ Nail", key: "X", role: .primary, x: 0.75, y: 0.52, width: 0.66, height: 0.66, shape: .circle, fill: "#EC4899", shadowStrength: 1.25),
 
-            .init(.map, label: "Map", key: "Tab", role: .utility, x: 0.47, y: 0.18, width: 0.88, height: 0.96, shape: .capsule),
-            .init(.pause, label: "Pause", key: "Escape", role: .system, x: 0.61, y: 0.18, width: 0.82, height: 0.96, shape: .capsule),
+            .init(.map, label: "Map", key: "Tab", role: .utility, x: 0.43, y: 0.32, width: 0.62, height: 0.62, shape: .capsule, fill: utilityFill, shadowStrength: 0.75),
+            .init(.pause, label: "Pause", key: "Escape", role: .system, x: 0.57, y: 0.32, width: 0.62, height: 0.62, shape: .capsule, fill: utilityFill, shadowStrength: 0.75),
 
-            .init(.custom1, label: "Quick Cast", key: "F", role: .secondary, x: 0.66, y: 0.32, width: 0.92, height: 0.84),
-            .init(.custom2, label: "Dream Nail", key: "D", role: .secondary, x: 0.93, y: 0.25, width: 0.94, height: 0.84),
-            .init(.custom3, label: "Super Dash", key: "S", role: .utility, x: 0.60, y: 0.77, width: 0.96, height: 0.84),
-            .init(.custom4, label: "Inventory", key: "I", role: .utility, x: 0.48, y: 0.84, width: 0.88, height: 0.78, shape: .capsule)
+            .init(.custom5, label: "Quick Cast", key: "F", role: .secondary, x: 0.20, y: 0.10, width: 1.14, height: 0.62, shape: .capsule, fill: utilityFill),
+            .init(.custom6, label: "Dream Nail", key: "D", role: .secondary, x: 0.80, y: 0.10, width: 1.14, height: 0.62, shape: .capsule, fill: utilityFill),
+            .init(.custom7, label: "Super Dash", key: "S", role: .utility, x: 0.20, y: 0.21, width: 1.14, height: 0.62, shape: .capsule, fill: dPadFill),
+            .init(.custom8, label: "Inventory", key: "I", role: .utility, x: 0.80, y: 0.21, width: 1.14, height: 0.62, shape: .capsule, fill: dPadFill)
         ]
 
         return GeneratedProfileBuilder.build(
             requestedGameName: requestedGameName,
             resolvedGameName: "Hollow Knight",
             controls: controls,
-            source: "Built-in Hollow Knight default keyboard template",
+            source: "Built-in Hollow Knight default keyboard template, styled after PocketPad's PlayStation controller template",
             confidence: .high,
             notes: [
                 "Uses Hollow Knight's default keyboard bindings: Arrow keys for movement, Z jump, X attack, C dash, A focus/cast.",
-                "Includes extra custom buttons for Quick Cast, Dream Nail, Super Dash, and Inventory."
-            ]
+                "Styled like a controller preset with a larger compact D-pad, PlayStation-style face buttons, menu buttons, and shoulder actions for Quick Cast, Dream Nail, Super Dash, and Inventory."
+            ],
+            controlScale: .compact,
+            accentStyle: .purple
         )
     }
 }

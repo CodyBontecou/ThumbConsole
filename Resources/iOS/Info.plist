@@ -22,6 +22,10 @@
   <true/>
   <key>NSLocalNetworkUsageDescription</key>
   <string>PocketPad connects to your Mac helper over your local network.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_pocketpad._tcp</string>
+  </array>
   <key>NSCameraUsageDescription</key>
   <string>PocketPad uses the camera to scan the Mac helper QR code.</string>
   <key>UIApplicationSupportsIndirectInputEvents</key>
