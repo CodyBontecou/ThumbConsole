@@ -20,7 +20,7 @@ struct IOSContentView: View {
 
         ZStack {
             if isShowingControllerPad {
-                ControllerPadView(onExitOfflinePreview: {
+                ControllerPadView(onShowConnectionPage: {
                     prefersConnectionView = true
                 })
                 .ignoresSafeArea()
@@ -55,6 +55,21 @@ struct IOSContentView: View {
                 prefersConnectionView = false
             }
         }
+    }
+}
+
+private enum IOSKeypadSettings {
+    static let hapticsEnabledDefaultsKey = "PocketPad.iOS.keypadHapticsEnabled.v1"
+}
+
+private struct KeypadHapticsEnabledEnvironmentKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+private extension EnvironmentValues {
+    var keypadHapticsEnabled: Bool {
+        get { self[KeypadHapticsEnabledEnvironmentKey.self] }
+        set { self[KeypadHapticsEnabledEnvironmentKey.self] = newValue }
     }
 }
 
@@ -102,6 +117,7 @@ private struct ConnectionView: View {
     @Binding var macHost: String
     @Binding var macPort: String
     @Binding var pairingCode: String
+    @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
     let onShowSavedKeypad: () -> Void
 
     @State private var isShowingScanner = false
@@ -259,6 +275,9 @@ private struct ConnectionView: View {
             .geistButtonStyle(.primary, size: .medium)
             .disabled(macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
+            DividerLabel("iPhone Settings")
+
+            KeypadHapticsToggleRow(isEnabled: $isKeypadHapticsEnabled)
         }
         .geistPanel(padding: Geist.Spacing.s6, radius: Geist.Radius.sm)
     }
@@ -500,15 +519,68 @@ private struct LabeledInput<Content: View>: View {
     }
 }
 
+private struct KeypadHapticsToggleRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var isEnabled: Bool
+
+    var body: some View {
+        Toggle(isOn: $isEnabled) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                Text("Keypad Haptics")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                Text("Vibrate when you press keypad buttons.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .toggleStyle(.switch)
+        .tint(Geist.color(.blue700, scheme: colorScheme))
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .fill(Geist.color(.gray100, scheme: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+        .accessibilityHint("Controls whether keypad button presses vibrate.")
+    }
+}
+
+private struct KeypadSettingsMenu: View {
+    @Binding var isHapticFeedbackEnabled: Bool
+
+    var body: some View {
+        Menu {
+            Toggle(isOn: $isHapticFeedbackEnabled) {
+                Label("Haptic Feedback", systemImage: "waveform.path")
+            }
+        } label: {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 28)
+        }
+        .geistButtonStyle(.secondary, size: .small)
+        .accessibilityLabel("Keypad settings")
+        .accessibilityHint("Opens settings for keypad feedback.")
+    }
+}
+
 private struct ControllerPadView: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
     @State private var isTopBarVisible = false
 
-    let onExitOfflinePreview: (() -> Void)?
+    let onShowConnectionPage: (() -> Void)?
 
-    init(onExitOfflinePreview: (() -> Void)? = nil) {
-        self.onExitOfflinePreview = onExitOfflinePreview
+    init(onShowConnectionPage: (() -> Void)? = nil) {
+        self.onShowConnectionPage = onShowConnectionPage
     }
 
     var body: some View {
@@ -536,6 +608,7 @@ private struct ControllerPadView: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
+        .environment(\.keypadHapticsEnabled, isKeypadHapticsEnabled)
         .onAppear {
             if !client.isConnected {
                 isTopBarVisible = true
@@ -706,6 +779,8 @@ private struct ControllerPadView: View {
                 keypadProfileMenu
             }
 
+            keypadSettingsMenu
+
             Text(controllerStatusDetail)
                 .geistTypography(.label12Mono)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -714,6 +789,18 @@ private struct ControllerPadView: View {
 
             Spacer(minLength: Geist.Spacing.s2)
 
+            Button {
+                showConnectionPage()
+            } label: {
+                Image(systemName: "house.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 28)
+            }
+            .geistButtonStyle(.secondary, size: .small)
+            .disabled(onShowConnectionPage == nil)
+            .accessibilityLabel("Home")
+            .accessibilityHint("Returns to the connection page.")
+
             if client.isConnected {
                 Button("Disconnect iPhone") {
                     client.disconnect(sendReleaseAll: true)
@@ -721,15 +808,22 @@ private struct ControllerPadView: View {
                 .geistButtonStyle(.error, size: .small)
             } else {
                 Button("Connect Mac") {
-                    onExitOfflinePreview?()
+                    onShowConnectionPage?()
                 }
                 .geistButtonStyle(.secondary, size: .small)
-                .disabled(onExitOfflinePreview == nil)
+                .disabled(onShowConnectionPage == nil)
             }
         }
         .padding(Geist.Spacing.s2)
         .background(Geist.color(.background100, scheme: colorScheme), in: Capsule())
         .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
+    }
+
+    private func showConnectionPage() {
+        if client.isConnected {
+            client.disconnect(sendReleaseAll: true)
+        }
+        onShowConnectionPage?()
     }
 
     private var controllerStatusTitle: String {
@@ -776,6 +870,10 @@ private struct ControllerPadView: View {
         }
 
         return "Saved on this iPhone"
+    }
+
+    private var keypadSettingsMenu: some View {
+        KeypadSettingsMenu(isHapticFeedbackEnabled: $isKeypadHapticsEnabled)
     }
 
     private var keypadProfileMenu: some View {
@@ -1228,6 +1326,7 @@ private struct GamepadJoystick: View {
 private struct GamepadButton: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.keypadHapticsEnabled) private var isKeypadHapticsEnabled
     let button: GameButton
     let size: CGSize
     var shape: GamepadButtonShapeStyle = .roundedRectangle
@@ -1237,7 +1336,6 @@ private struct GamepadButton: View {
 
     @State private var isPressed = false
     @State private var haptic = UIImpactFeedbackGenerator(style: .light)
-    private static let hapticsEnabled = true
 
     private var title: String {
         labelOverride ?? customization.visualLabel(for: button)
@@ -1277,6 +1375,11 @@ private struct GamepadButton: View {
         .accessibilityLabel(button.displayName)
         .onAppear {
             prepareHapticIfNeeded()
+        }
+        .onChange(of: isKeypadHapticsEnabled) { _, isEnabled in
+            if isEnabled {
+                prepareHapticIfNeeded()
+            }
         }
         .onDisappear {
             isPressed = false
@@ -1356,13 +1459,13 @@ private struct GamepadButton: View {
     }
 
     private func playPressHaptic() {
-        guard Self.hapticsEnabled else { return }
+        guard isKeypadHapticsEnabled else { return }
         haptic.impactOccurred(intensity: 0.45)
         prepareHapticIfNeeded()
     }
 
     private func prepareHapticIfNeeded() {
-        guard Self.hapticsEnabled else { return }
+        guard isKeypadHapticsEnabled else { return }
         haptic.prepare()
     }
 }
