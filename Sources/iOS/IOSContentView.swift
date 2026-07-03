@@ -1037,6 +1037,11 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         .padding(.leading, leadingPadding)
         .padding(.trailing, trailingPadding)
         .frame(maxWidth: .infinity, alignment: .top)
+        .contentShape(Rectangle())
+        .highPriorityGesture(drawerDragGesture)
+        .background {
+            ControllerTopBarSwipeBridge(isVisible: $isVisible, animation: drawerAnimation)
+        }
         .animation(drawerAnimation, value: isVisible)
         .zIndex(10)
     }
@@ -1075,14 +1080,24 @@ private struct ControllerTopBarDrawer<Content: View>: View {
     }
 
     private var drawerDragGesture: some Gesture {
-        DragGesture(minimumDistance: 16, coordinateSpace: .local)
+        DragGesture(minimumDistance: 10, coordinateSpace: .global)
             .onEnded { value in
-                let verticalMovement = value.predictedEndTranslation.height
-                let horizontalMovement = abs(value.predictedEndTranslation.width)
-                guard abs(verticalMovement) > max(22, horizontalMovement * 0.65) else { return }
+                let verticalMovement = dominantMovement(
+                    current: value.translation.height,
+                    predicted: value.predictedEndTranslation.height
+                )
+                let horizontalMovement = max(
+                    abs(value.translation.width),
+                    abs(value.predictedEndTranslation.width)
+                )
+                guard abs(verticalMovement) > max(18, horizontalMovement * 0.65) else { return }
 
                 setVisible(verticalMovement > 0)
             }
+    }
+
+    private func dominantMovement(current: CGFloat, predicted: CGFloat) -> CGFloat {
+        abs(predicted) > abs(current) ? predicted : current
     }
 
     private var topPadding: CGFloat {
@@ -1138,6 +1153,146 @@ private struct ControllerTopBarDrawer<Content: View>: View {
     private func setVisible(_ visible: Bool) {
         withAnimation(drawerAnimation) {
             isVisible = visible
+        }
+    }
+}
+
+private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
+    @Binding var isVisible: Bool
+    let animation: Animation
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isVisible: $isVisible, animation: animation)
+    }
+
+    func makeUIView(context: Context) -> ActivationView {
+        let view = ActivationView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ uiView: ActivationView, context: Context) {
+        context.coordinator.isVisible = $isVisible
+        context.coordinator.animation = animation
+        uiView.updateActivationFrame()
+    }
+
+    final class ActivationView: UIView {
+        weak var coordinator: Coordinator?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .clear
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            coordinator?.attach(to: window)
+            updateActivationFrame()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            updateActivationFrame()
+        }
+
+        func updateActivationFrame() {
+            guard let window else {
+                coordinator?.activationFrame = .null
+                return
+            }
+
+            coordinator?.activationFrame = convert(bounds, to: window)
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var isVisible: Binding<Bool>
+        var animation: Animation
+        fileprivate var activationFrame = CGRect.null
+        private weak var window: UIWindow?
+        private lazy var panRecognizer: UIPanGestureRecognizer = {
+            let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            recognizer.maximumNumberOfTouches = 1
+            recognizer.delegate = self
+            return recognizer
+        }()
+
+        init(isVisible: Binding<Bool>, animation: Animation) {
+            self.isVisible = isVisible
+            self.animation = animation
+        }
+
+        deinit {
+            window?.removeGestureRecognizer(panRecognizer)
+        }
+
+        func attach(to newWindow: UIWindow?) {
+            guard window !== newWindow else { return }
+
+            window?.removeGestureRecognizer(panRecognizer)
+            window = newWindow
+            newWindow?.addGestureRecognizer(panRecognizer)
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard gestureRecognizer === panRecognizer,
+                  let window = gestureRecognizer.view
+            else { return false }
+
+            let paddedFrame = activationFrame.insetBy(dx: -18, dy: -18)
+            return !paddedFrame.isNull && paddedFrame.contains(touch.location(in: window))
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === panRecognizer,
+                  let window = gestureRecognizer.view
+            else { return false }
+
+            let translation = panRecognizer.translation(in: window)
+            let velocity = panRecognizer.velocity(in: window)
+            let verticalIntent = max(abs(translation.y), abs(velocity.y) * 0.05)
+            let horizontalIntent = max(abs(translation.x), abs(velocity.x) * 0.05)
+            return verticalIntent > max(8, horizontalIntent * 0.65)
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+
+        @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            guard recognizer.state == .ended,
+                  let window = recognizer.view
+            else { return }
+
+            let translation = recognizer.translation(in: window)
+            let velocity = recognizer.velocity(in: window)
+            let projectedTranslation = CGPoint(
+                x: translation.x + velocity.x * 0.12,
+                y: translation.y + velocity.y * 0.12
+            )
+            let verticalMovement = abs(projectedTranslation.y) > abs(translation.y) ? projectedTranslation.y : translation.y
+            let horizontalMovement = max(abs(translation.x), abs(projectedTranslation.x))
+            guard abs(verticalMovement) > max(18, horizontalMovement * 0.65) else { return }
+
+            setVisible(verticalMovement > 0)
+        }
+
+        private func setVisible(_ visible: Bool) {
+            withAnimation(animation) {
+                isVisible.wrappedValue = visible
+            }
         }
     }
 }
