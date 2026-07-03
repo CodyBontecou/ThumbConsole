@@ -2491,6 +2491,57 @@ private struct GeistCheckboxToggle: View {
     }
 }
 
+private enum GamepadEditorDeviceFrame: String, CaseIterable, Identifiable {
+    case iPhone17ProLandscape
+    case iPhone17ProPortrait
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .iPhone17ProLandscape: "iPhone 17 Pro Landscape"
+        case .iPhone17ProPortrait: "iPhone 17 Pro Portrait"
+        }
+    }
+
+    var shortName: String {
+        switch self {
+        case .iPhone17ProLandscape: "Landscape"
+        case .iPhone17ProPortrait: "Portrait"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .iPhone17ProLandscape: "iphone.landscape"
+        case .iPhone17ProPortrait: "iphone"
+        }
+    }
+
+    var assetName: String {
+        switch self {
+        case .iPhone17ProLandscape: "iPhone17ProSilverLandscape"
+        case .iPhone17ProPortrait: "iPhone17ProSilverPortrait"
+        }
+    }
+
+    /// Image and screen dimensions are expressed in logical points from the @3x bezel artwork.
+    var imageSize: CGSize {
+        switch self {
+        case .iPhone17ProLandscape: CGSize(width: 920, height: 450)
+        case .iPhone17ProPortrait: CGSize(width: 450, height: 920)
+        }
+    }
+
+    /// Display opening inside the iPhone frame. The editor lays out controls in this rect.
+    var screenRect: CGRect {
+        switch self {
+        case .iPhone17ProLandscape: CGRect(x: 23, y: 24, width: 874, height: 402)
+        case .iPhone17ProPortrait: CGRect(x: 24, y: 23, width: 402, height: 874)
+        }
+    }
+}
+
 struct GamepadCustomizationEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
@@ -2512,7 +2563,8 @@ struct GamepadCustomizationEditor: View {
     private static let minimumCanvasColumnWidth: CGFloat = 320
     private static let resizeHandleWidth: CGFloat = 10
     // Keep editor coordinates stable; viewport/sidebar changes scale the preview instead of re-laying out keys.
-    private static let designCanvasSize = CGSize(width: 640, height: 360)
+    // The canvas uses the iPhone 17 Pro display opening in points so Mac edits match the physical device.
+    private static let defaultDeviceFrame: GamepadEditorDeviceFrame = .iPhone17ProLandscape
     private static let canvasZoomMin: CGFloat = 0.5
     private static let canvasZoomMax: CGFloat = 2.25
 
@@ -2525,13 +2577,14 @@ struct GamepadCustomizationEditor: View {
     @State private var configurationSidebarDragStart: CGFloat?
     @State private var inspectorSidebarDragStart: CGFloat?
     @State private var canvasZoomGestureStart: CGFloat?
-    @State private var currentCanvasLayoutSize = CGSize(width: 640, height: 360)
+    @State private var currentCanvasLayoutSize = GamepadCustomizationEditor.defaultDeviceFrame.screenRect.size
     @State private var activeCanvasTool: GamepadCanvasTool = .select
     @State private var undoTarget = GamepadEditorUndoTarget()
     @FocusState private var isProfileNameFieldFocused: Bool
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
     @AppStorage("PocketPad.GamepadEditor.canvasZoom") private var canvasZoomValue: Double = 1.0
+    @AppStorage("PocketPad.GamepadEditor.deviceFrame") private var deviceFrameRawValue: String = GamepadCustomizationEditor.defaultDeviceFrame.rawValue
 
     init(
         customization: Binding<GamepadCustomization>,
@@ -2575,6 +2628,14 @@ struct GamepadCustomizationEditor: View {
         self._selectedProfileNameDraft = State(initialValue: loadedProfiles.activeProfile?.name ?? "Current Setup")
     }
 
+    private var activeDeviceFrame: GamepadEditorDeviceFrame {
+        GamepadEditorDeviceFrame(rawValue: deviceFrameRawValue) ?? Self.defaultDeviceFrame
+    }
+
+    private var activeDesignCanvasSize: CGSize {
+        activeDeviceFrame.screenRect.size
+    }
+
     var body: some View {
         Group {
             if showsPreview {
@@ -2600,6 +2661,9 @@ struct GamepadCustomizationEditor: View {
         }
         .onChange(of: externalDefaultProfileID) { _, _ in
             syncExternalProfileState()
+        }
+        .onChange(of: deviceFrameRawValue) { _, _ in
+            noteCanvasLayoutSize(width: activeDesignCanvasSize.width, height: activeDesignCanvasSize.height)
         }
         .onChange(of: isProfileNameFieldFocused) { _, isFocused in
             if !isFocused {
@@ -3143,25 +3207,25 @@ struct GamepadCustomizationEditor: View {
         GeometryReader { proxy in
             let viewportWidth = max(160, proxy.size.width)
             let viewportHeight = max(160, proxy.size.height)
+            let deviceFrame = activeDeviceFrame
             let canvasChrome = Geist.Spacing.s2 * 2
             let fitWidth = max(120, viewportWidth - canvasChrome)
             let fitHeight = max(120, viewportHeight - canvasChrome)
             let fitScale = max(
                 0.001,
                 min(
-                    fitWidth / Self.designCanvasSize.width,
-                    fitHeight / Self.designCanvasSize.height
+                    fitWidth / deviceFrame.imageSize.width,
+                    fitHeight / deviceFrame.imageSize.height
                 )
             )
             let displayScale = fitScale * effectiveCanvasZoom
-            let canvasWidth = Self.designCanvasSize.width * displayScale
-            let canvasHeight = Self.designCanvasSize.height * displayScale
+            let deviceWidth = deviceFrame.imageSize.width * displayScale
+            let deviceHeight = deviceFrame.imageSize.height * displayScale
 
             canvasViewport(
-                layoutCanvasWidth: Self.designCanvasSize.width,
-                layoutCanvasHeight: Self.designCanvasSize.height,
-                canvasWidth: canvasWidth,
-                canvasHeight: canvasHeight,
+                deviceFrame: deviceFrame,
+                deviceWidth: deviceWidth,
+                deviceHeight: deviceHeight,
                 displayScale: displayScale,
                 viewportWidth: viewportWidth,
                 viewportHeight: viewportHeight
@@ -3169,44 +3233,62 @@ struct GamepadCustomizationEditor: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Geist.color(.background100, scheme: colorScheme))
             .onAppear {
-                noteCanvasLayoutSize(width: Self.designCanvasSize.width, height: Self.designCanvasSize.height)
+                noteCanvasLayoutSize(width: deviceFrame.screenRect.width, height: deviceFrame.screenRect.height)
             }
         }
     }
 
     private func canvasViewport(
-        layoutCanvasWidth: CGFloat,
-        layoutCanvasHeight: CGFloat,
-        canvasWidth: CGFloat,
-        canvasHeight: CGFloat,
+        deviceFrame: GamepadEditorDeviceFrame,
+        deviceWidth: CGFloat,
+        deviceHeight: CGFloat,
         displayScale: CGFloat,
         viewportWidth: CGFloat,
         viewportHeight: CGFloat
     ) -> some View {
-        let outerWidth = canvasWidth + Geist.Spacing.s4
-        let outerHeight = canvasHeight + Geist.Spacing.s4
+        let screenRect = deviceFrame.screenRect
+        let screenDisplayRect = CGRect(
+            x: screenRect.minX * displayScale,
+            y: screenRect.minY * displayScale,
+            width: screenRect.width * displayScale,
+            height: screenRect.height * displayScale
+        )
+        let outerWidth = deviceWidth + Geist.Spacing.s4
+        let outerHeight = deviceHeight + Geist.Spacing.s4
 
         return ScrollView([.horizontal, .vertical], showsIndicators: true) {
             ZStack {
-                GamepadLayoutDesigner(
-                    customization: editorBinding,
-                    selectedControlID: $selectedControlID,
-                    activeTool: $activeCanvasTool,
-                    layoutSize: CGSize(width: layoutCanvasWidth, height: layoutCanvasHeight),
-                    displayScale: displayScale,
-                    defaultLabelProvider: defaultLabelProvider
+                ZStack(alignment: .topLeading) {
+                    GamepadLayoutDesigner(
+                        customization: editorBinding,
+                        selectedControlID: $selectedControlID,
+                        activeTool: $activeCanvasTool,
+                        layoutSize: screenRect.size,
+                        displayScale: displayScale,
+                        defaultLabelProvider: defaultLabelProvider
+                    )
+                    .frame(width: screenDisplayRect.width, height: screenDisplayRect.height)
+                    .offset(x: screenDisplayRect.minX, y: screenDisplayRect.minY)
+
+                    Image(deviceFrame.assetName)
+                        .resizable()
+                        .interpolation(.high)
+                        .antialiased(true)
+                        .frame(width: deviceWidth, height: deviceHeight)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .frame(width: deviceWidth, height: deviceHeight, alignment: .topLeading)
+                .padding(Geist.Spacing.s2)
+                .background(
+                    RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                        .fill(Geist.color(.gray100, scheme: colorScheme))
                 )
-                    .frame(width: canvasWidth, height: canvasHeight)
-                    .padding(Geist.Spacing.s2)
-                    .background(
-                        RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
-                            .fill(Geist.color(.gray100, scheme: colorScheme))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
-                            .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.04), radius: 2, x: 0, y: colorScheme == .dark ? 1 : 2)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                        .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.04), radius: 2, x: 0, y: colorScheme == .dark ? 1 : 2)
             }
             .frame(width: max(viewportWidth, outerWidth), height: max(viewportHeight, outerHeight))
         }
@@ -3239,6 +3321,17 @@ struct GamepadCustomizationEditor: View {
     private var canvasFloatingCreationToolbar: some View {
         HStack(spacing: Geist.Spacing.s2) {
             canvasToolButton(.select)
+
+            toolbarMenu(systemImage: activeDeviceFrame.systemImage, accessibilityLabel: "Device frame") {
+                ForEach(GamepadEditorDeviceFrame.allCases) { frame in
+                    Button {
+                        setDeviceFrame(frame)
+                    } label: {
+                        Label(frame.displayName, systemImage: frame == activeDeviceFrame ? "checkmark" : frame.systemImage)
+                    }
+                    .help("Use the \(frame.shortName.lowercased()) iPhone 17 Pro bezel and \(Int(frame.screenRect.width))×\(Int(frame.screenRect.height))pt display canvas.")
+                }
+            }
 
             toolbarMenu(systemImage: "square.grid.3x3", accessibilityLabel: "Layout tools") {
                 Button("Show Default Controls") {
@@ -4060,6 +4153,11 @@ struct GamepadCustomizationEditor: View {
 
     private func setCanvasZoom(_ zoom: CGFloat) {
         canvasZoomValue = Double(Self.clamp(zoom, lower: Self.canvasZoomMin, upper: Self.canvasZoomMax))
+    }
+
+    private func setDeviceFrame(_ frame: GamepadEditorDeviceFrame) {
+        deviceFrameRawValue = frame.rawValue
+        noteCanvasLayoutSize(width: frame.screenRect.width, height: frame.screenRect.height)
     }
 
     private func noteCanvasLayoutSize(width: CGFloat, height: CGFloat) {

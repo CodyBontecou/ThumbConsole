@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Vercel Geist tokens from https://vercel.com/design.md and
 /// https://vercel.com/design.dark.md. Keep app styling grounded in these values.
@@ -217,6 +220,7 @@ struct GeistButtonStyle: ButtonStyle {
                     .stroke(border, lineWidth: borderWidth)
             )
             .contentShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .geistButtonHapticFeedback(isPressed: configuration.isPressed)
     }
 
     private var foregroundColor: Color {
@@ -267,6 +271,40 @@ struct GeistButtonStyle: ButtonStyle {
         }
     }
 }
+
+#if os(iOS)
+private struct GeistButtonHapticFeedbackModifier: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+
+    let isPressed: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                prepareIfNeeded()
+            }
+            .onChange(of: isEnabled) { _, newValue in
+                if newValue {
+                    prepareIfNeeded()
+                }
+            }
+            .onChange(of: isPressed) { _, newValue in
+                guard isEnabled else { return }
+
+                if newValue {
+                    feedbackGenerator.impactOccurred(intensity: 0.35)
+                }
+                prepareIfNeeded()
+            }
+    }
+
+    private func prepareIfNeeded() {
+        guard isEnabled else { return }
+        feedbackGenerator.prepare()
+    }
+}
+#endif
 
 struct GeistInputModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
@@ -336,6 +374,17 @@ struct GeistScreenBackgroundModifier: ViewModifier {
         content
             .background(Geist.color(.background100, scheme: colorScheme).ignoresSafeArea())
             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func geistButtonHapticFeedback(isPressed: Bool) -> some View {
+        #if os(iOS)
+        modifier(GeistButtonHapticFeedbackModifier(isPressed: isPressed))
+        #else
+        self
+        #endif
     }
 }
 

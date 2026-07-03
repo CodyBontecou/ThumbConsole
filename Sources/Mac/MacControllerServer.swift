@@ -111,6 +111,7 @@ final class MacControllerServer: ObservableObject {
     private var ignoredButtonEdgeCount = 0
     private var recoveredButtonEdgeCount = 0
     private var externalDefaultsObserver: NSObjectProtocol?
+    private var cliCommandObserver: NSObjectProtocol?
 
     private struct ExternalStoredProfileState: Codable {
         var profiles: [GamepadConfigurationProfile]
@@ -163,6 +164,13 @@ final class MacControllerServer: ObservableObject {
         networkQueue.setSpecific(key: networkQueueKey, value: true)
         refreshAccessibilityStatus()
         localURLs = Self.localIPv4Addresses().map { "ws://\($0):\(port)" }
+        cliCommandObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name(PocketPadMacIPC.commandNotificationName),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleCLICommandNotification(notification)
+        }
         externalDefaultsObserver = DistributedNotificationCenter.default().addObserver(
             forName: Self.externalProfileStoreChangedNotificationName,
             object: nil,
@@ -173,9 +181,13 @@ final class MacControllerServer: ObservableObject {
                 self.reloadProfilesFromDefaults(source: "cli")
             }
         }
+        publishRuntimeStatus()
     }
 
     deinit {
+        if let cliCommandObserver {
+            DistributedNotificationCenter.default().removeObserver(cliCommandObserver)
+        }
         if let externalDefaultsObserver {
             DistributedNotificationCenter.default().removeObserver(externalDefaultsObserver)
         }
@@ -246,6 +258,7 @@ final class MacControllerServer: ObservableObject {
                 logDebug("server starting port=auto")
             }
             startHeartbeatTimer()
+            publishRuntimeStatus()
         } catch {
             guard fallbackIfBusy, isPreferredPortUnavailable(error) else {
                 let failureText = "Failed to start: \(error.localizedDescription)"
@@ -256,6 +269,7 @@ final class MacControllerServer: ObservableObject {
 
             statusText = "Port \(Self.preferredPort) is unavailable; trying an available port…"
             logDebug("preferred_port_unavailable port=\(Self.preferredPort) error=\(error.localizedDescription) retry=auto")
+            publishRuntimeStatus()
             startListening(on: nil, fallbackIfBusy: false)
         }
     }
@@ -294,6 +308,7 @@ final class MacControllerServer: ObservableObject {
         } else {
             logDebug("server stopped status=\(finalStatusText)")
         }
+        publishRuntimeStatus()
     }
 
     func cancelPairing() {
@@ -307,6 +322,7 @@ final class MacControllerServer: ObservableObject {
             injector.refreshAccessibilityStatus()
         }
         lastAccessibilityRefresh = Date()
+        publishRuntimeStatus()
     }
 
     func promptForAccessibility() {
@@ -316,6 +332,76 @@ final class MacControllerServer: ObservableObject {
 
     func openAccessibilitySettings() {
         injector.openAccessibilitySettings()
+    }
+
+    private func handleCLICommandNotification(_ notification: Notification) {
+        guard let commandData = Self.notificationData(
+            from: notification.userInfo,
+            key: PocketPadMacIPC.commandDataKey
+        ) else {
+            lastReceivedEvent = "Ignored CLI command: missing payload"
+            publishRuntimeStatus(synchronize: true)
+            logDebug("cli_command_ignored reason=missing_payload")
+            return
+        }
+
+        do {
+            let payload = try JSONDecoder().decode(PocketPadMacCLICommandPayload.self, from: commandData)
+            handleCLICommand(payload)
+        } catch {
+            lastReceivedEvent = "Ignored CLI command: invalid payload"
+            publishRuntimeStatus(synchronize: true)
+            logDebug("cli_command_ignored reason=invalid_payload error=\(error.localizedDescription)")
+        }
+    }
+
+    private func handleCLICommand(_ payload: PocketPadMacCLICommandPayload) {
+        defer { publishRuntimeStatus(synchronize: true) }
+
+        switch payload.command {
+        case .publishStatus:
+            break
+
+        case .start:
+            start()
+
+        case .stop:
+            stop()
+
+        case .restart:
+            restart()
+
+        case .cancelPairing:
+            cancelPairing()
+
+        case .refreshAccessibility:
+            refreshAccessibilityStatus()
+
+        case .promptAccessibility:
+            promptForAccessibility()
+
+        case .openAccessibilitySettings:
+            openAccessibilitySettings()
+
+        case .releaseAll:
+            releaseAll(reason: payload.reason?.nilIfEmpty ?? "CLI release all")
+
+        case .testDown:
+            guard let button = payload.button else {
+                lastReceivedEvent = "Ignored CLI test down: missing button"
+                break
+            }
+            sendTestDown(button)
+            lastReceivedEvent = "CLI test down: \(button.displayName)"
+
+        case .testUp:
+            guard let button = payload.button else {
+                lastReceivedEvent = "Ignored CLI test up: missing button"
+                break
+            }
+            sendTestUp(button)
+            lastReceivedEvent = "CLI test up: \(button.displayName)"
+        }
     }
 
     func keyLabel(for button: GameButton) -> String {
@@ -343,6 +429,7 @@ final class MacControllerServer: ObservableObject {
         saveProfileKeyBindings()
         lastReceivedEvent = "Mapped \(button.displayName) to \(binding.displayName)"
         logDebug("key_binding profile=\(activeGamepadProfileID.uuidString) button=\(button.rawValue) binding=\(binding.displayName) sequence=\(binding.isSequence)")
+        publishRuntimeStatus()
     }
 
     func setKeyBinding(_ keyCode: CGKeyCode, for button: GameButton) {
@@ -366,6 +453,7 @@ final class MacControllerServer: ObservableObject {
         saveProfileKeyBindings()
         lastReceivedEvent = "Reset all key bindings"
         logDebug("key_bindings_reset_all profile=\(activeGamepadProfileID.uuidString)")
+        publishRuntimeStatus()
     }
 
     func setGamepadCustomization(_ customization: GamepadCustomization) {
@@ -383,6 +471,7 @@ final class MacControllerServer: ObservableObject {
             self.sendGamepadCustomizationOnNetworkQueue(normalizedCustomization)
         }
         logDebug("gamepad_customization_updated source=mac")
+        publishRuntimeStatus()
     }
 
     func resetGamepadCustomization() {
@@ -433,6 +522,7 @@ final class MacControllerServer: ObservableObject {
             self.realtimeDefaultGamepadProfileID = state.defaultProfileID
             self.sendGamepadProfileStateOnNetworkQueue()
         }
+        publishRuntimeStatus()
     }
 
     func selectGamepadProfile(_ profileID: UUID, source: String = "mac") {
@@ -463,6 +553,7 @@ final class MacControllerServer: ObservableObject {
             self.sendGamepadCustomizationOnNetworkQueue(normalizedCustomization)
         }
         logDebug("gamepad_profile_selected source=\(source) profile=\(profile.id.uuidString)")
+        publishRuntimeStatus()
     }
 
     func setDefaultGamepadProfile(_ profileID: UUID, source: String = "mac") {
@@ -477,6 +568,7 @@ final class MacControllerServer: ObservableObject {
             self.sendGamepadProfileStateOnNetworkQueue()
         }
         logDebug("gamepad_default_profile_updated source=\(source) profile=\(profileID.uuidString)")
+        publishRuntimeStatus()
     }
 
     private func persistGamepadProfileState() {
@@ -554,6 +646,7 @@ final class MacControllerServer: ObservableObject {
             self.sendGamepadProfileStateOnNetworkQueue()
         }
         logDebug("gamepad_profiles_applied_from_notification source=\(source) profile=\(activeProfile.id.uuidString)")
+        publishRuntimeStatus()
         return true
     }
 
@@ -593,6 +686,7 @@ final class MacControllerServer: ObservableObject {
             self.sendGamepadProfileStateOnNetworkQueue()
         }
         logDebug("gamepad_profiles_reloaded source=\(source) profile=\(activeProfile.id.uuidString)")
+        publishRuntimeStatus()
     }
 
     func sendTestDown(_ button: GameButton) {
@@ -1674,10 +1768,12 @@ final class MacControllerServer: ObservableObject {
                 statusText = "Listening on port \(port)"
             }
             logDebug("listener ready port=\(port) urls=\(localURLs)")
+            publishRuntimeStatus()
         case .failed(let error):
             if fallbackIfBusy, isPreferredPortUnavailable(error) {
                 statusText = "Port \(Self.preferredPort) is unavailable; trying an available port…"
                 logDebug("preferred_port_unavailable port=\(Self.preferredPort) error=\(error.localizedDescription) retry=auto")
+                publishRuntimeStatus()
                 stateListener.cancel()
                 if listener === stateListener {
                     listener = nil
@@ -1692,6 +1788,7 @@ final class MacControllerServer: ObservableObject {
         case .cancelled:
             if !isRunning {
                 statusText = "Stopped"
+                publishRuntimeStatus()
             }
         default:
             break
@@ -1954,6 +2051,51 @@ final class MacControllerServer: ObservableObject {
             self.pendingLastReceivedEvent = nil
         }
         controllerDebugUpdateTask = nil
+        publishRuntimeStatus()
+    }
+
+    private func publishRuntimeStatus(synchronize: Bool = false) {
+        if Thread.isMainThread {
+            publishRuntimeStatusOnMain(synchronize: synchronize)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.publishRuntimeStatusOnMain(synchronize: synchronize)
+            }
+        }
+    }
+
+    private func publishRuntimeStatusOnMain(synchronize: Bool) {
+        let snapshot = runtimeStatusSnapshot()
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        UserDefaults.standard.set(data, forKey: PocketPadMacIPC.runtimeStatusDefaultsKey)
+        if synchronize {
+            UserDefaults.standard.synchronize()
+        }
+    }
+
+    private func runtimeStatusSnapshot() -> PocketPadMacRuntimeStatus {
+        PocketPadMacRuntimeStatus(
+            updatedAt: Date.currentMilliseconds,
+            statusText: statusText,
+            isRunning: isRunning,
+            isClientConnected: isClientConnected,
+            localURLs: localURLs,
+            pairingCode: pairingCode,
+            isPairingPending: isPairingPending,
+            pendingPairingClientName: pendingPairingClientName,
+            clientName: clientName,
+            lastHeartbeatMilliseconds: lastHeartbeat.map { Int64($0.timeIntervalSince1970 * 1000) },
+            lastReceivedEvent: lastReceivedEvent,
+            estimatedLatencyMS: estimatedLatencyMS,
+            pressedButtons: GameButton.allCases.filter { pressedButtons.contains($0) },
+            missedButtonFrames: missedButtonFrames,
+            ignoredButtonEdges: ignoredButtonEdges,
+            recoveredButtonEdges: recoveredButtonEdges,
+            accessibilityTrusted: accessibilityTrusted,
+            port: port,
+            activeGamepadProfileID: activeGamepadProfileID,
+            defaultGamepadProfileID: defaultGamepadProfileID
+        )
     }
 
     private func syncOnNetworkQueue<T>(_ work: () -> T) -> T {

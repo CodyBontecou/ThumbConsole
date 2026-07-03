@@ -65,6 +65,14 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
     public var widthScale: CGFloat?
     public var heightScale: CGFloat?
     public var shape: GamepadButtonShapeStyle?
+    public var accentStyle: GamepadAccentStyle?
+    public var fillColor: GamepadRGBAColor?
+    public var cornerRadius: CGFloat?
+    public var shadowStrength: CGFloat?
+    public var isHidden: Bool?
+    public var isLocationLocked: Bool?
+    public var controlKind: GamepadCustomControlKind?
+    public var joystickMapping: GamepadJoystickMapping?
 
     public init(
         id: String? = nil,
@@ -77,7 +85,15 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         centerY: CGFloat? = nil,
         widthScale: CGFloat? = nil,
         heightScale: CGFloat? = nil,
-        shape: GamepadButtonShapeStyle? = nil
+        shape: GamepadButtonShapeStyle? = nil,
+        accentStyle: GamepadAccentStyle? = nil,
+        fillColor: GamepadRGBAColor? = nil,
+        cornerRadius: CGFloat? = nil,
+        shadowStrength: CGFloat? = nil,
+        isHidden: Bool? = nil,
+        isLocationLocked: Bool? = nil,
+        controlKind: GamepadCustomControlKind? = nil,
+        joystickMapping: GamepadJoystickMapping? = nil
     ) {
         self.id = id
         self.button = button
@@ -90,6 +106,14 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         self.widthScale = widthScale
         self.heightScale = heightScale
         self.shape = shape
+        self.accentStyle = accentStyle
+        self.fillColor = fillColor
+        self.cornerRadius = cornerRadius
+        self.shadowStrength = shadowStrength
+        self.isHidden = isHidden
+        self.isLocationLocked = isLocationLocked
+        self.controlKind = controlKind
+        self.joystickMapping = joystickMapping
     }
 
     public init(from decoder: Decoder) throws {
@@ -115,6 +139,15 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         heightScale = try container.decodeIfPresent(CGFloat.self, forKey: .heightScale)
             ?? container.decodeIfPresent(CGFloat.self, forKey: .height)
         shape = try container.decodeIfPresent(GamepadButtonShapeStyle.self, forKey: .shape)
+        accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle)
+        fillColor = Self.decodeFillColor(from: container)
+        cornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
+        shadowStrength = try container.decodeIfPresent(CGFloat.self, forKey: .shadowStrength)
+        isHidden = try container.decodeIfPresent(Bool.self, forKey: .isHidden)
+        isLocationLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocationLocked)
+        controlKind = try container.decodeIfPresent(GamepadCustomControlKind.self, forKey: .controlKind)
+            ?? Self.decodeControlKindAlias(from: container, forKey: .kind)
+        joystickMapping = try Self.decodeJoystickMapping(from: container)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -130,6 +163,59 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         try container.encodeIfPresent(widthScale, forKey: .widthScale)
         try container.encodeIfPresent(heightScale, forKey: .heightScale)
         try container.encodeIfPresent(shape, forKey: .shape)
+        try container.encodeIfPresent(accentStyle, forKey: .accentStyle)
+        try container.encodeIfPresent(fillColor, forKey: .fillColor)
+        try container.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
+        try container.encodeIfPresent(shadowStrength, forKey: .shadowStrength)
+        try container.encodeIfPresent(isHidden, forKey: .isHidden)
+        try container.encodeIfPresent(isLocationLocked, forKey: .isLocationLocked)
+        try container.encodeIfPresent(controlKind, forKey: .controlKind)
+        try container.encodeIfPresent(joystickMapping, forKey: .joystickMapping)
+    }
+
+    private static func decodeFillColor(from container: KeyedDecodingContainer<CodingKeys>) -> GamepadRGBAColor? {
+        if let color = try? container.decodeIfPresent(GamepadRGBAColor.self, forKey: .fillColor) {
+            return color
+        }
+
+        for key in [CodingKeys.fillColor, .fill, .fillHex, .color] {
+            if let hexString = try? container.decodeIfPresent(String.self, forKey: key),
+               let color = GamepadRGBAColor(hexString: hexString) {
+                return color
+            }
+        }
+
+        return nil
+    }
+
+    private static func decodeControlKindAlias(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> GamepadCustomControlKind? {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        return GamepadCustomControlKind(rawValue: rawValue)
+    }
+
+    private static func decodeGameButtonAlias(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> GameButton? {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        return GameButton(rawValue: rawValue)
+    }
+
+    private static func decodeJoystickMapping(from container: KeyedDecodingContainer<CodingKeys>) throws -> GamepadJoystickMapping? {
+        let explicitMapping = try container.decodeIfPresent(GamepadJoystickMapping.self, forKey: .joystickMapping)
+        let up = decodeGameButtonAlias(from: container, forKey: .up)
+        let down = decodeGameButtonAlias(from: container, forKey: .down)
+        let left = decodeGameButtonAlias(from: container, forKey: .left)
+        let right = decodeGameButtonAlias(from: container, forKey: .right)
+
+        guard up != nil || down != nil || left != nil || right != nil else {
+            return explicitMapping
+        }
+
+        let baseMapping = explicitMapping ?? .movement
+        return GamepadJoystickMapping(
+            up: up ?? baseMapping.up,
+            down: down ?? baseMapping.down,
+            left: left ?? baseMapping.left,
+            right: right ?? baseMapping.right
+        )
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -148,6 +234,22 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         case width
         case height
         case shape
+        case accentStyle
+        case fillColor
+        case fill
+        case fillHex
+        case color
+        case cornerRadius
+        case shadowStrength
+        case isHidden
+        case isLocationLocked
+        case controlKind
+        case kind
+        case joystickMapping
+        case up
+        case down
+        case left
+        case right
     }
 }
 
@@ -277,6 +379,10 @@ private struct GeneratedControlDefinition {
     var accentStyle: GamepadAccentStyle?
     var cornerRadius: CGFloat?
     var shadowStrength: CGFloat?
+    var isHidden: Bool?
+    var isLocationLocked: Bool?
+    var controlKind: GamepadCustomControlKind?
+    var joystickMapping: GamepadJoystickMapping?
 
     init(
         _ button: GameButton,
@@ -290,9 +396,14 @@ private struct GeneratedControlDefinition {
         height: CGFloat = 1.0,
         shape: GamepadButtonShapeStyle = .roundedRectangle,
         fill: String? = nil,
+        fillColor: GamepadRGBAColor? = nil,
         accentStyle: GamepadAccentStyle? = nil,
         cornerRadius: CGFloat? = nil,
-        shadowStrength: CGFloat? = nil
+        shadowStrength: CGFloat? = nil,
+        isHidden: Bool? = nil,
+        isLocationLocked: Bool? = nil,
+        controlKind: GamepadCustomControlKind? = nil,
+        joystickMapping: GamepadJoystickMapping? = nil
     ) {
         self.button = button
         self.label = label
@@ -303,10 +414,14 @@ private struct GeneratedControlDefinition {
         self.widthScale = width
         self.heightScale = height
         self.shape = shape
-        self.fillColor = fill.flatMap { GamepadRGBAColor(hexString: $0) }
+        self.fillColor = fillColor ?? fill.flatMap { GamepadRGBAColor(hexString: $0) }
         self.accentStyle = accentStyle
         self.cornerRadius = cornerRadius
         self.shadowStrength = shadowStrength
+        self.isHidden = isHidden
+        self.isLocationLocked = isLocationLocked
+        self.controlKind = controlKind
+        self.joystickMapping = joystickMapping
     }
 }
 
@@ -341,19 +456,22 @@ private enum GeneratedProfileBuilder {
                 fillColor: control.fillColor ?? control.role.fillColor,
                 cornerRadius: control.cornerRadius ?? resolvedCornerRadius(for: control.shape),
                 shadowStrength: control.shadowStrength ?? (control.role == .primary ? 1.25 : 1.0),
-                isLocationLocked: false,
-                isHidden: false
+                isLocationLocked: control.isLocationLocked ?? false,
+                isHidden: control.isHidden ?? false
             )
 
             if GameButton.builtInControls.contains(control.button) {
                 customization.setButtonCustomization(layout, for: control.button)
                 customization.setLabel(control.label, for: control.button)
             } else {
+                let controlKind = control.controlKind ?? (control.joystickMapping == nil ? .button : .joystick)
                 customButtons.append(
                     GamepadCustomButton(
                         mappedButton: control.button,
                         label: control.label,
-                        layout: layout
+                        layout: layout,
+                        controlKind: controlKind,
+                        joystickMapping: controlKind == .joystick ? (control.joystickMapping ?? .movement) : control.joystickMapping
                     )
                 )
             }
@@ -427,7 +545,15 @@ private enum AgentSpecTemplate {
                     y: controlSpec.centerY ?? defaults.y,
                     width: controlSpec.widthScale ?? defaults.width,
                     height: controlSpec.heightScale ?? defaults.height,
-                    shape: controlSpec.shape ?? defaults.shape
+                    shape: controlSpec.shape ?? defaults.shape,
+                    fillColor: controlSpec.fillColor,
+                    accentStyle: controlSpec.accentStyle,
+                    cornerRadius: controlSpec.cornerRadius,
+                    shadowStrength: controlSpec.shadowStrength,
+                    isHidden: controlSpec.isHidden,
+                    isLocationLocked: controlSpec.isLocationLocked,
+                    controlKind: controlSpec.controlKind,
+                    joystickMapping: controlSpec.joystickMapping
                 )
             )
         }
@@ -451,6 +577,10 @@ private enum AgentSpecTemplate {
     private static func assignButton(for control: AgentKeypadControlSpec, usedButtons: Set<GameButton>) -> GameButton? {
         if let button = control.button, !usedButtons.contains(button) {
             return button
+        }
+
+        if control.controlKind == .joystick || control.joystickMapping != nil {
+            return GameButton.customSlots.first { !usedButtons.contains($0) }
         }
 
         let normalized = normalizedControlText(control)
@@ -478,6 +608,10 @@ private enum AgentSpecTemplate {
     private static func inferRole(for control: AgentKeypadControlSpec, button: GameButton) -> KeypadRole {
         if let role = control.role {
             return KeypadRole(role)
+        }
+
+        if control.controlKind == .joystick || control.joystickMapping != nil {
+            return .movement
         }
 
         switch button {

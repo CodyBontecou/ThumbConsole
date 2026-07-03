@@ -54,6 +54,110 @@ public enum GameButton: String, Codable, CaseIterable, Identifiable, Hashable, S
     }
 }
 
+public enum PocketPadMacIPC {
+    public static let appDefaultsDomain = "com.codybontecou.PocketPadMac"
+    public static let commandNotificationName = "com.codybontecou.PocketPadMac.cliCommand"
+    public static let commandDataKey = "commandData"
+    public static let runtimeStatusDefaultsKey = "PocketPadMac.runtimeStatus.v1"
+}
+
+public enum PocketPadMacCLICommand: String, Codable, Sendable {
+    case publishStatus
+    case start
+    case stop
+    case restart
+    case cancelPairing
+    case refreshAccessibility
+    case promptAccessibility
+    case openAccessibilitySettings
+    case releaseAll
+    case testDown
+    case testUp
+}
+
+public struct PocketPadMacCLICommandPayload: Codable, Sendable {
+    public var command: PocketPadMacCLICommand
+    public var button: GameButton?
+    public var reason: String?
+
+    public init(
+        command: PocketPadMacCLICommand,
+        button: GameButton? = nil,
+        reason: String? = nil
+    ) {
+        self.command = command
+        self.button = button
+        self.reason = reason
+    }
+}
+
+public struct PocketPadMacRuntimeStatus: Codable, Sendable {
+    public var updatedAt: Int64
+    public var statusText: String
+    public var isRunning: Bool
+    public var isClientConnected: Bool
+    public var localURLs: [String]
+    public var pairingCode: String
+    public var isPairingPending: Bool
+    public var pendingPairingClientName: String?
+    public var clientName: String
+    public var lastHeartbeatMilliseconds: Int64?
+    public var lastReceivedEvent: String
+    public var estimatedLatencyMS: Int?
+    public var pressedButtons: [GameButton]
+    public var missedButtonFrames: Int
+    public var ignoredButtonEdges: Int
+    public var recoveredButtonEdges: Int
+    public var accessibilityTrusted: Bool
+    public var port: UInt16
+    public var activeGamepadProfileID: UUID
+    public var defaultGamepadProfileID: UUID
+
+    public init(
+        updatedAt: Int64,
+        statusText: String,
+        isRunning: Bool,
+        isClientConnected: Bool,
+        localURLs: [String],
+        pairingCode: String,
+        isPairingPending: Bool,
+        pendingPairingClientName: String?,
+        clientName: String,
+        lastHeartbeatMilliseconds: Int64?,
+        lastReceivedEvent: String,
+        estimatedLatencyMS: Int?,
+        pressedButtons: [GameButton],
+        missedButtonFrames: Int,
+        ignoredButtonEdges: Int,
+        recoveredButtonEdges: Int,
+        accessibilityTrusted: Bool,
+        port: UInt16,
+        activeGamepadProfileID: UUID,
+        defaultGamepadProfileID: UUID
+    ) {
+        self.updatedAt = updatedAt
+        self.statusText = statusText
+        self.isRunning = isRunning
+        self.isClientConnected = isClientConnected
+        self.localURLs = localURLs
+        self.pairingCode = pairingCode
+        self.isPairingPending = isPairingPending
+        self.pendingPairingClientName = pendingPairingClientName
+        self.clientName = clientName
+        self.lastHeartbeatMilliseconds = lastHeartbeatMilliseconds
+        self.lastReceivedEvent = lastReceivedEvent
+        self.estimatedLatencyMS = estimatedLatencyMS
+        self.pressedButtons = pressedButtons
+        self.missedButtonFrames = missedButtonFrames
+        self.ignoredButtonEdges = ignoredButtonEdges
+        self.recoveredButtonEdges = recoveredButtonEdges
+        self.accessibilityTrusted = accessibilityTrusted
+        self.port = port
+        self.activeGamepadProfileID = activeGamepadProfileID
+        self.defaultGamepadProfileID = defaultGamepadProfileID
+    }
+}
+
 public enum ButtonPressState: String, Codable, Sendable {
     case down
     case up

@@ -1236,8 +1236,8 @@ private struct GamepadButton: View {
     let customization: GamepadCustomization
 
     @State private var isPressed = false
-    private static let hapticsEnabled = false
-    private let haptic = GamepadButton.hapticsEnabled ? UIImpactFeedbackGenerator(style: .light) : nil
+    @State private var haptic = UIImpactFeedbackGenerator(style: .light)
+    private static let hapticsEnabled = true
 
     private var title: String {
         labelOverride ?? customization.visualLabel(for: button)
@@ -1276,7 +1276,7 @@ private struct GamepadButton: View {
         .frame(width: hitSize.width, height: hitSize.height)
         .accessibilityLabel(button.displayName)
         .onAppear {
-            haptic?.prepare()
+            prepareHapticIfNeeded()
         }
         .onDisappear {
             isPressed = false
@@ -1351,8 +1351,18 @@ private struct GamepadButton: View {
         isPressed = isActive
 
         if pressed {
-            haptic?.impactOccurred(intensity: 0.45)
-            haptic?.prepare()
+            playPressHaptic()
         }
+    }
+
+    private func playPressHaptic() {
+        guard Self.hapticsEnabled else { return }
+        haptic.impactOccurred(intensity: 0.45)
+        prepareHapticIfNeeded()
+    }
+
+    private func prepareHapticIfNeeded() {
+        guard Self.hapticsEnabled else { return }
+        haptic.prepare()
     }
 }

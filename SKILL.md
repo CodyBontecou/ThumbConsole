@@ -117,6 +117,14 @@ Control fields:
 | `centerX`, `centerY` | optional | Normalized layout position from `0.0` to `1.0`. |
 | `widthScale`, `heightScale` | optional | Button size multiplier. |
 | `shape` | optional | Visual shape. |
+| `accentStyle` | optional | One of `monochrome`, `blue`, `green`, `purple`, `pink`, `amber`. |
+| `fill`, `fillHex`, `color` | optional | Hex fill color, e.g. `#7C3AED`. |
+| `cornerRadius` | optional | Rounded-rectangle corner radius. |
+| `shadowStrength` | optional | Shadow multiplier from `0` to `2`. |
+| `isHidden` | optional | Hide this control on the keypad. |
+| `isLocationLocked` | optional | Prevent drag repositioning in the Mac editor. |
+| `kind` / `controlKind` | optional | `button` or `joystick`. |
+| `joystickMapping` or `up`/`down`/`left`/`right` | optional | Map joystick directions to PocketPad button slots. |
 
 ## Roles
 
@@ -172,7 +180,11 @@ Useful variants:
 "$POCKETPAD_CLI" generate --spec /tmp/game-keypad.json --no-default
 "$POCKETPAD_CLI" generate --spec /tmp/game-keypad.json --no-select
 "$POCKETPAD_CLI" install-spec /tmp/game-keypad.json
-"$POCKETPAD_CLI" profile list
+"$POCKETPAD_CLI" profile list --ids
+"$POCKETPAD_CLI" template list
+"$POCKETPAD_CLI" template install snes --name "SNES"
+"$POCKETPAD_CLI" binding set focus --sequence 'Control+B,H'
+"$POCKETPAD_CLI" profile export --all -o pocketpad-profiles.json
 ```
 
 ## Quality checklist before installing

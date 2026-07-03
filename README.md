@@ -8,7 +8,7 @@ It is no longer game-specific: use it for terminal workflows, tmux prefixes, Cur
 
 - `PocketPadMac` — macOS 14+ SwiftUI helper, WebSocket pairing/control server plus UDP realtime listener preferring port `8765` with automatic fallback if unavailable, Bonjour Smart Connect advertising, CGEvent keyboard shortcut injection.
 - `PocketPadiOS` — iOS 17+ SwiftUI programmable keypad with multitouch controls and Smart Connect reconnects.
-- `PocketPadCLI` — macOS command-line generator that installs/selects game-specific keypad profiles for the Mac helper.
+- `PocketPadCLI` — macOS command-line configuration and control tool for generating, editing, importing/exporting, selecting, and testing keypad profiles for the Mac helper.
 
 ## Build
 
@@ -68,9 +68,37 @@ Example agent spec:
 }
 ```
 
+## CLI configuration parity
+
+The CLI can perform the same saved-configuration work as the macOS **Keypad** editor:
+
+```bash
+pocketpad profile list --ids
+pocketpad template list
+pocketpad template install snes --name "SNES Browser Controls" --default
+pocketpad profile export --all -o pocketpad-profiles.json
+pocketpad profile import pocketpad-profiles.json
+pocketpad binding set focus --sequence 'Control+B,H'
+pocketpad customization set --layout southpaw --scale large --accent blue --show-labels
+pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
+pocketpad element set jump --label A --fill '#7C3AED' --shape circle --width 1.2 --height 1.2
+```
+
+When PocketPad Mac is running, CLI profile/customization/binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone. Runtime commands are also available:
+
+```bash
+pocketpad app open
+pocketpad status --json
+pocketpad server restart
+pocketpad pairing payload
+pocketpad accessibility status
+pocketpad test tap jump
+pocketpad release-all
+```
+
 ## Keypad customization
 
-Customize keypad setups from the macOS helper's **Keypad** section. The iOS app receives the Mac's saved setups during pairing, can switch between them from the in-controller **Keypad setup** menu, and can mark the current setup as the default. The macOS helper can also mark any setup as default from the Keypad editor.
+Customize keypad setups from the macOS helper's **Keypad** section or with the CLI. The iOS app receives the Mac's saved setups during pairing, can switch between them from the in-controller **Keypad setup** menu, and can mark the current setup as the default. The macOS helper can also mark any setup as default from the Keypad editor.
 
 Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder.
 
@@ -95,7 +123,7 @@ Use **Default** for a single button or **Reset All** to restore the starter keyp
 - Only sends key events on state transitions.
 - Button frames use a compact 14-byte binary payload. After pairing, iOS sends those frames over authenticated UDP for lower latency and mirrors them over WebSocket so packet loss still recovers through the reliable path.
 - iOS and macOS WebSocket connections set TCP `noDelay` to avoid Nagle delays on small input packets.
-- iOS uses a keypad-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons and joysticks, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, and skips per-input send callbacks, live status publishes, and haptics during use.
+- iOS uses a keypad-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons and joysticks, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, emits lightweight press haptics, and skips per-input send callbacks and live status publishes during use.
 - macOS handles received button events on a user-interactive realtime queue, accepts the first authenticated UDP stream for the paired iPhone, silently drops stale mirrored frames, recovers transport-proven missing-up and missing-down edges, and posts key events before UI/debug updates.
 - macOS throttles input debug/status publishing so UI work does not compete with key injection.
 - During physical tap testing, the Mac debug panel shows missing transport frames, recovered duplicate-down edges, and ignored duplicate/orphan input edges separately.
