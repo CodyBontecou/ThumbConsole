@@ -102,6 +102,8 @@ struct PocketPadCLI {
             try element(arguments: rest)
         case "status", "diagnostics":
             try printRuntimeStatus(json: rest.contains("--json"))
+        case "latency":
+            try latency(arguments: rest)
         case "server":
             try server(arguments: rest)
         case "pairing":
@@ -924,6 +926,245 @@ struct PocketPadCLI {
         }
     }
 
+    private static func latency(arguments: [String]) throws {
+        if arguments.first == "verify" {
+            try verifyLatency(arguments: Array(arguments.dropFirst()))
+            return
+        }
+
+        let rest = arguments.first == "simulate" ? Array(arguments.dropFirst()) : arguments
+        let options = try parseLatencyOptions(rest)
+        let modes: [PocketPadLatencySimulationMode]
+        if let mode = options.mode {
+            modes = [mode]
+        } else {
+            modes = [.current, .legacyMainActor]
+        }
+        let reports = modes.map {
+            PocketPadInputLatencySimulator.run(pattern: options.pattern, mode: $0)
+        }
+
+        if let logPath = options.logPath {
+            try writeJSON(reports, to: logPath)
+        }
+
+        if options.printJSON {
+            try printJSON(reports)
+        } else {
+            printLatencyReports(reports, logPath: options.logPath)
+        }
+    }
+
+    private static func verifyLatency(arguments: [String]) throws {
+        let options = try parseLatencyVerificationOptions(arguments)
+        let report = PocketPadInputLatencySimulator.verifyCurrentPath(
+            maxAllowedMilliseconds: options.maxAllowedMilliseconds,
+            p95AllowedMilliseconds: options.p95AllowedMilliseconds
+        )
+
+        if let logPath = options.logPath {
+            try writeJSON(report, to: logPath)
+        }
+
+        if options.printJSON {
+            try printJSON(report)
+        } else {
+            printLatencyVerificationReport(report, logPath: options.logPath)
+        }
+
+        guard report.passed else {
+            throw CLIError.message("Latency verification failed")
+        }
+    }
+
+    private struct LatencyOptions {
+        var pattern: PocketPadLatencySimulationPattern = .hollowKnight
+        var mode: PocketPadLatencySimulationMode?
+        var printJSON = false
+        var logPath: String?
+    }
+
+    private struct LatencyVerificationOptions {
+        var maxAllowedMilliseconds = 4.0
+        var p95AllowedMilliseconds = 4.0
+        var printJSON = false
+        var logPath: String?
+    }
+
+    private static func parseLatencyOptions(_ arguments: [String]) throws -> LatencyOptions {
+        var options = LatencyOptions()
+        var index = 0
+
+        while index < arguments.count {
+            let argument = arguments[index]
+            switch argument {
+            case "--json":
+                options.printJSON = true
+
+            case "--pattern":
+                index += 1
+                guard index < arguments.count else { throw CLIError.message("Missing value for --pattern") }
+                guard let pattern = PocketPadLatencySimulationPattern(rawValue: arguments[index]) else {
+                    throw CLIError.message("Unsupported latency pattern: \(arguments[index])")
+                }
+                options.pattern = pattern
+
+            case "--mode":
+                index += 1
+                guard index < arguments.count else { throw CLIError.message("Missing value for --mode") }
+                let value = arguments[index]
+                if value == "compare" {
+                    options.mode = nil
+                } else if let mode = PocketPadLatencySimulationMode(rawValue: value) {
+                    options.mode = mode
+                } else {
+                    throw CLIError.message("Unsupported latency mode: \(value)")
+                }
+
+            case "--log":
+                index += 1
+                guard index < arguments.count else { throw CLIError.message("Missing value for --log") }
+                options.logPath = arguments[index]
+
+            case "--help", "-h", "help":
+                throw CLIError.message("Usage: pocketpad latency simulate [--pattern hollow-knight|same-button-burst|udp-recovery|udp-recovery-burst|held-direction-heartbeat-recovery] [--mode current|legacy-main-actor|compare] [--json] [--log file.json]")
+
+            default:
+                throw CLIError.message("Unknown latency option: \(argument)")
+            }
+
+            index += 1
+        }
+
+        return options
+    }
+
+    private static func parseLatencyVerificationOptions(_ arguments: [String]) throws -> LatencyVerificationOptions {
+        var options = LatencyVerificationOptions()
+        var index = 0
+
+        while index < arguments.count {
+            let argument = arguments[index]
+            switch argument {
+            case "--json":
+                options.printJSON = true
+
+            case "--max-ms":
+                index += 1
+                guard index < arguments.count,
+                      let value = Double(arguments[index])
+                else {
+                    throw CLIError.message("Missing numeric value for --max-ms")
+                }
+                options.maxAllowedMilliseconds = value
+
+            case "--p95-ms":
+                index += 1
+                guard index < arguments.count,
+                      let value = Double(arguments[index])
+                else {
+                    throw CLIError.message("Missing numeric value for --p95-ms")
+                }
+                options.p95AllowedMilliseconds = value
+
+            case "--log":
+                index += 1
+                guard index < arguments.count else { throw CLIError.message("Missing value for --log") }
+                options.logPath = arguments[index]
+
+            case "--help", "-h", "help":
+                throw CLIError.message("Usage: pocketpad latency verify [--max-ms 4] [--p95-ms 4] [--json] [--log file.json]")
+
+            default:
+                throw CLIError.message("Unknown latency verify option: \(argument)")
+            }
+
+            index += 1
+        }
+
+        return options
+    }
+
+    private static func printLatencyVerificationReport(
+        _ report: PocketPadLatencyVerificationReport,
+        logPath: String?
+    ) {
+        print(report.passed ? "Latency verification passed" : "Latency verification failed")
+        print("Budget: max <= \(formatMilliseconds(report.maxAllowedMilliseconds)) ms, p95 <= \(formatMilliseconds(report.p95AllowedMilliseconds)) ms")
+
+        for simulation in report.reports {
+            let summary = simulation.summary
+            print(
+                "- \(simulation.pattern.rawValue): p95 \(formatMilliseconds(summary.p95Milliseconds)) ms, " +
+                "max \(formatMilliseconds(summary.maxMilliseconds)) ms, over16 \(summary.overSixteenMilliseconds), " +
+                "heartbeat re-sync \(simulation.heartbeatResyncFrames)"
+            )
+        }
+
+        if !report.failures.isEmpty {
+            print("Failures:")
+            for failure in report.failures {
+                print("- \(failure)")
+            }
+        }
+
+        if let logPath {
+            print("Wrote detailed report: \(logPath)")
+        }
+    }
+
+    private static func printLatencyReports(
+        _ reports: [PocketPadLatencySimulationReport],
+        logPath: String?
+    ) {
+        guard let first = reports.first else { return }
+        print("Latency simulation: \(first.pattern.displayName)")
+        print("Pattern: \(first.pattern.rawValue)")
+
+        for report in reports {
+            let summary = report.summary
+            print("")
+            print(report.mode.displayName)
+            print("  p50: \(formatMilliseconds(summary.p50Milliseconds)) ms")
+            print("  p95: \(formatMilliseconds(summary.p95Milliseconds)) ms")
+            print("  max: \(formatMilliseconds(summary.maxMilliseconds)) ms")
+            print("  over 8 ms: \(summary.overEightMilliseconds)/\(summary.sampleCount)")
+            print("  over 16 ms: \(summary.overSixteenMilliseconds)/\(summary.sampleCount)")
+            print("  recovered by TCP mirror: \(report.recoveredByMirrorFrames)")
+            print("  buffered frames: \(report.bufferedFrames)")
+            print("  heartbeat re-sync frames: \(report.heartbeatResyncFrames)")
+
+            let worstSamples = report.samples
+                .filter { $0.latencyMilliseconds != nil }
+                .sorted { ($0.latencyMilliseconds ?? 0) > ($1.latencyMilliseconds ?? 0) }
+                .prefix(3)
+            for sample in worstSamples {
+                print(
+                    "  worst seq \(sample.sequenceNumber): \(sample.button.rawValue) \(sample.state.rawValue) " +
+                    "\(formatMilliseconds(sample.latencyMilliseconds ?? 0)) ms via \(sample.source ?? "unknown")"
+                )
+            }
+        }
+
+        if reports.count == 2,
+           let current = reports.first(where: { $0.mode == .current }),
+           let legacy = reports.first(where: { $0.mode == .legacyMainActor })
+        {
+            let delta = legacy.summary.p95Milliseconds - current.summary.p95Milliseconds
+            print("")
+            print("p95 improvement vs legacy model: \(formatMilliseconds(delta)) ms")
+        }
+
+        if let logPath {
+            print("")
+            print("Wrote detailed report: \(logPath)")
+        }
+    }
+
+    private static func formatMilliseconds(_ value: Double) -> String {
+        String(format: "%.2f", value)
+    }
+
     private static func app(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing app subcommand") }
         switch subcommand {
@@ -1492,6 +1733,8 @@ struct PocketPadCLI {
         Runtime:
           pocketpad app open|quit
           pocketpad status [--json]
+          pocketpad latency simulate [--pattern hollow-knight] [--mode compare] [--log report.json]
+          pocketpad latency verify [--max-ms 4] [--p95-ms 4] [--log report.json]
           pocketpad server start|stop|restart|addresses
           pocketpad pairing code|payload|cancel
           pocketpad accessibility status|prompt|open|refresh

@@ -55,7 +55,7 @@ final class MacControllerServer: ObservableObject {
     private static let inputEventLoggingEnabled = false
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
-    private static let buttonReorderDelayNanoseconds: UInt64 = 8_000_000
+    private static let buttonReorderDelayNanoseconds: UInt64 = 4_000_000
     private let serverID: String
     private var trustedClients: [String: TrustedClient]
     private var listener: NWListener?
@@ -1431,6 +1431,11 @@ final class MacControllerServer: ObservableObject {
             if inputPressedButtons.contains(button),
                sequenceInspection.missedFrameBeforeButton
             {
+                if hasIdentifiedPhysicalPressOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
+                    noteDuplicateButtonRefresh(button: button, pressIdentifier: pressIdentifier)
+                    return
+                }
+
                 noteRecoveredButtonEdge(button: button, state: state, reason: "missing_release_before_down")
                 resetPhysicalHoldsOnNetworkQueue(for: button, keeping: pressIdentifier)
                 handleButtonOnNetworkQueue(button, state: .up, source: source)
@@ -1558,6 +1563,14 @@ final class MacControllerServer: ObservableObject {
             || (anonymousPressCountsByButton[button] ?? 0) > 0
     }
 
+    private func hasIdentifiedPhysicalPressOnNetworkQueue(
+        _ button: GameButton,
+        pressIdentifier: UInt64?
+    ) -> Bool {
+        guard let pressIdentifier else { return false }
+        return activePressIdentifiersByButton[button]?.contains(pressIdentifier) == true
+    }
+
     private func resetPhysicalHoldsOnNetworkQueue(
         for button: GameButton,
         keeping pressIdentifier: UInt64?
@@ -1589,6 +1602,13 @@ final class MacControllerServer: ObservableObject {
         let event = "Ignored \(button.rawValue) \(state.rawValue) (\(reason)); total ignored \(totalIgnoredButtonEdges)"
         publishIgnoredButtonEdge(totalIgnoredButtonEdges: totalIgnoredButtonEdges, event: event)
         logDebug("ignored_button_edge reason=\(reason) button=\(button.rawValue) state=\(state.rawValue) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
+    }
+
+    private func noteDuplicateButtonRefresh(
+        button: GameButton,
+        pressIdentifier: UInt64?
+    ) {
+        logDebug("button_refresh_after_gap button=\(button.rawValue) pressIdentifier=\(pressIdentifier.map(String.init) ?? "nil") pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
     }
 
     private func noteRecoveredButtonEdge(

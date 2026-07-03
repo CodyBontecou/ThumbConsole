@@ -2263,6 +2263,7 @@ private final class GamepadEditorUndoTarget {}
 private struct GamepadEditorUndoSnapshot: Equatable {
     var customization: GamepadCustomization
     var selectedControlID: GamepadControlIdentity
+    var isControlSelectionActive: Bool
 }
 
 private struct GamepadEditorComponentItem: Identifiable, Hashable {
@@ -2569,6 +2570,7 @@ struct GamepadCustomizationEditor: View {
     private static let canvasZoomMax: CGFloat = 2.25
 
     @State private var selectedControlID: GamepadControlIdentity
+    @State private var isControlSelectionActive: Bool
     @State private var profiles: [GamepadConfigurationProfile]
     @State private var selectedProfileID: UUID
     @State private var defaultProfileID: UUID
@@ -2621,6 +2623,7 @@ struct GamepadCustomizationEditor: View {
         self.defaultLabelProvider = defaultLabelProvider
         self.selectedKeyBindingContent = selectedKeyBindingContent
         self._selectedControlID = State(initialValue: .builtin(.jump))
+        self._isControlSelectionActive = State(initialValue: true)
         self._profiles = State(initialValue: loadedProfiles.profiles)
         self._selectedProfileID = State(initialValue: loadedProfiles.activeProfileID)
         self._defaultProfileID = State(initialValue: loadedProfiles.defaultProfileID)
@@ -2986,7 +2989,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func componentRow(_ item: GamepadEditorComponentItem) -> some View {
-        let isSelected = selectedControlID == item.identity
+        let isSelected = isControlSelectionActive && selectedControlID == item.identity
         let primaryTextColor = item.isHidden
             ? Geist.color(.gray900, scheme: colorScheme).opacity(0.58)
             : Geist.color(.gray1000, scheme: colorScheme)
@@ -3208,9 +3211,8 @@ struct GamepadCustomizationEditor: View {
             let viewportWidth = max(160, proxy.size.width)
             let viewportHeight = max(160, proxy.size.height)
             let deviceFrame = activeDeviceFrame
-            let canvasChrome = Geist.Spacing.s2 * 2
-            let fitWidth = max(120, viewportWidth - canvasChrome)
-            let fitHeight = max(120, viewportHeight - canvasChrome)
+            let fitWidth = max(120, viewportWidth)
+            let fitHeight = max(120, viewportHeight)
             let fitScale = max(
                 0.001,
                 min(
@@ -3253,15 +3255,24 @@ struct GamepadCustomizationEditor: View {
             width: screenRect.width * displayScale,
             height: screenRect.height * displayScale
         )
-        let outerWidth = deviceWidth + Geist.Spacing.s4
-        let outerHeight = deviceHeight + Geist.Spacing.s4
+        let outerWidth = deviceWidth
+        let outerHeight = deviceHeight
 
         return ScrollView([.horizontal, .vertical], showsIndicators: true) {
             ZStack {
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard activeCanvasTool == .select else { return }
+                        isControlSelectionActive = false
+                    }
+
                 ZStack(alignment: .topLeading) {
                     GamepadLayoutDesigner(
                         customization: editorBinding,
                         selectedControlID: $selectedControlID,
+                        isControlSelectionActive: $isControlSelectionActive,
                         activeTool: $activeCanvasTool,
                         layoutSize: screenRect.size,
                         displayScale: displayScale,
@@ -3279,16 +3290,6 @@ struct GamepadCustomizationEditor: View {
                         .accessibilityHidden(true)
                 }
                 .frame(width: deviceWidth, height: deviceHeight, alignment: .topLeading)
-                .padding(Geist.Spacing.s2)
-                .background(
-                    RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
-                        .fill(Geist.color(.gray100, scheme: colorScheme))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
-                        .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.04), radius: 2, x: 0, y: colorScheme == .dark ? 1 : 2)
             }
             .frame(width: max(viewportWidth, outerWidth), height: max(viewportHeight, outerHeight))
         }
@@ -3560,11 +3561,13 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var emptySelectionInspector: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Blank setup")
+        let isBlankSetup = componentListItems.isEmpty
+
+        return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text(isBlankSetup ? "Blank setup" : "No component selected")
                 .geistTypography(.heading14)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-            Text("Draw a shape on the canvas, add a joystick, or choose Layout tools → Show Default Controls to add keypad components.")
+            Text(isBlankSetup ? "Draw a shape on the canvas, add a joystick, or choose Layout tools → Show Default Controls to add keypad components." : "Select a component on the canvas or from the components list to edit its properties.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
@@ -3872,7 +3875,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var selectedControlIsEditable: Bool {
-        controlSelectionOptions.contains(selectedControlID)
+        isControlSelectionActive && controlSelectionOptions.contains(selectedControlID)
     }
 
     private var controlSelectionOptions: [GamepadControlIdentity] {
@@ -4297,6 +4300,17 @@ struct GamepadCustomizationEditor: View {
 
     private func selectComponent(_ identity: GamepadControlIdentity) {
         selectedControlID = identity
+        isControlSelectionActive = true
+    }
+
+    private func selectPreferredComponent(for customization: GamepadCustomization) {
+        guard let preferredSelection = preferredControlSelection(for: customization) else {
+            selectedControlID = .builtin(.jump)
+            isControlSelectionActive = false
+            return
+        }
+
+        selectComponent(preferredSelection)
     }
 
     private func toggleComponentVisibility(_ identity: GamepadControlIdentity) {
@@ -4739,7 +4753,7 @@ struct GamepadCustomizationEditor: View {
 
     private func resetKeyLayout() {
         update { $0.resetButtonLayout() }
-        selectedControlID = .builtin(.jump)
+        selectComponent(.builtin(.jump))
     }
 
     private func setBuiltInControlsHidden(_ hidden: Bool) {
@@ -4751,7 +4765,7 @@ struct GamepadCustomizationEditor: View {
             }
         }
         if !hidden {
-            selectedControlID = .builtin(.jump)
+            selectComponent(.builtin(.jump))
         }
     }
 
@@ -4769,7 +4783,7 @@ struct GamepadCustomizationEditor: View {
         let normalizedCustomization = nextCustomization.normalized
         let resolvedSelection = nextSelectedControlID.map { validControlSelection($0, in: normalizedCustomization) }
         let shouldUpdateCustomization = customization.normalized != normalizedCustomization
-        let shouldUpdateSelection = resolvedSelection.map { $0 != selectedControlID } ?? false
+        let shouldUpdateSelection = resolvedSelection.map { $0 != selectedControlID || !isControlSelectionActive } ?? false
         guard shouldUpdateCustomization || shouldUpdateSelection else { return }
 
         if let undoActionName {
@@ -4778,7 +4792,7 @@ struct GamepadCustomizationEditor: View {
 
         customization = normalizedCustomization
         if let resolvedSelection {
-            selectedControlID = resolvedSelection
+            selectComponent(resolvedSelection)
         }
         syncSelectedProfile(with: normalizedCustomization)
     }
@@ -4787,7 +4801,8 @@ struct GamepadCustomizationEditor: View {
         guard let undoManager else { return }
         let snapshot = GamepadEditorUndoSnapshot(
             customization: customization.normalized,
-            selectedControlID: selectedControlID
+            selectedControlID: selectedControlID,
+            isControlSelectionActive: isControlSelectionActive
         )
         undoManager.registerUndo(withTarget: undoTarget) { _ in
             applyCustomization(
@@ -4795,6 +4810,7 @@ struct GamepadCustomizationEditor: View {
                 selecting: snapshot.selectedControlID,
                 undoActionName: actionName
             )
+            isControlSelectionActive = snapshot.isControlSelectionActive
         }
         undoManager.setActionName(actionName)
     }
@@ -4818,7 +4834,7 @@ struct GamepadCustomizationEditor: View {
         selectedProfileID = profile.id
         selectedProfileNameDraft = profile.name
         isSelectedProfileExpanded = true
-        selectedControlID = preferredControlSelection(for: profile.customization) ?? .builtin(.jump)
+        selectPreferredComponent(for: profile.customization)
         applyCustomization(profile.customization)
         persistProfiles()
     }
@@ -4849,6 +4865,8 @@ struct GamepadCustomizationEditor: View {
 
     @discardableResult
     private func deleteSelectedControl() -> Bool {
+        guard selectedControlIsEditable else { return false }
+
         switch selectedControlID {
         case .builtin(let button):
             return deleteBuiltInControl(button)
@@ -4955,7 +4973,7 @@ struct GamepadCustomizationEditor: View {
         selectedProfileNameDraft = duplicate.name
         isSelectedProfileExpanded = true
         if !isDuplicatingCurrentSelection {
-            selectedControlID = preferredControlSelection(for: duplicate.customization) ?? .builtin(.jump)
+            selectPreferredComponent(for: duplicate.customization)
         }
         applyCustomization(duplicate.customization)
         persistProfiles()
@@ -4981,7 +4999,7 @@ struct GamepadCustomizationEditor: View {
             selectedProfileID = nextProfile.id
             selectedProfileNameDraft = nextProfile.name
             isSelectedProfileExpanded = true
-            selectedControlID = preferredControlSelection(for: nextProfile.customization) ?? .builtin(.jump)
+            selectPreferredComponent(for: nextProfile.customization)
             if wasDefaultProfile {
                 defaultProfileID = nextProfile.id
             }
@@ -4999,7 +5017,7 @@ struct GamepadCustomizationEditor: View {
         selectedProfileID = nextProfile.id
         selectedProfileNameDraft = nextProfile.name
         isSelectedProfileExpanded = true
-        selectedControlID = preferredControlSelection(for: nextProfile.customization) ?? .builtin(.jump)
+        selectPreferredComponent(for: nextProfile.customization)
         applyCustomization(nextProfile.customization)
         persistProfiles()
     }
@@ -5028,7 +5046,7 @@ struct GamepadCustomizationEditor: View {
 
     private func resetActiveConfiguration() {
         applyCustomization(.defaultValue)
-        selectedControlID = .builtin(.jump)
+        selectComponent(.builtin(.jump))
         onReset?()
     }
 
@@ -5070,8 +5088,12 @@ struct GamepadCustomizationEditor: View {
         if didChangeSelectedProfile || !isProfileNameFieldFocused {
             syncSelectedProfileNameDraft()
         }
-        if !controlSelectionOptions.contains(selectedControlID) {
-            selectedControlID = preferredControlSelection(for: customization) ?? .builtin(.jump)
+        if didChangeSelectedProfile {
+            selectPreferredComponent(for: customization)
+        } else if !controlSelectionOptions.contains(selectedControlID) {
+            let preferredSelection = preferredControlSelection(for: customization)
+            selectedControlID = preferredSelection ?? .builtin(.jump)
+            isControlSelectionActive = isControlSelectionActive && preferredSelection != nil
         }
     }
 
@@ -5261,6 +5283,7 @@ private struct GamepadLayoutDesigner: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var customization: GamepadCustomization
     @Binding var selectedControlID: GamepadControlIdentity
+    @Binding var isControlSelectionActive: Bool
     @Binding var activeTool: GamepadCanvasTool
     var layoutSize: CGSize?
     var displayScale: CGFloat = 1
@@ -5286,10 +5309,15 @@ private struct GamepadLayoutDesigner: View {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
                     .fill(Geist.color(.gray100, scheme: colorScheme))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard activeTool == .select else { return }
+                        isControlSelectionActive = false
+                    }
                 layoutGrid
 
                 ForEach(controls) { control in
-                    let isSelected = selectedControlID == control.id
+                    let isSelected = isControlSelectionActive && selectedControlID == control.id
 
                     GamepadDesignerButton(
                         control: control,
@@ -5298,6 +5326,7 @@ private struct GamepadLayoutDesigner: View {
                         displayScale: resolvedDisplayScale,
                         onResizeChanged: { corner, value in
                             selectedControlID = control.id
+                            isControlSelectionActive = true
                             guard !control.isLocationLocked else { return }
                             updateResize(corner, value: value, control: control, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
                         },
@@ -5306,6 +5335,7 @@ private struct GamepadLayoutDesigner: View {
                         },
                         onRadiusChanged: { value in
                             selectedControlID = control.id
+                            isControlSelectionActive = true
                             updateRadius(value, control: control, displayScale: resolvedDisplayScale)
                         },
                         onRadiusEnded: {
@@ -5321,6 +5351,7 @@ private struct GamepadLayoutDesigner: View {
                         DragGesture(minimumDistance: 0, coordinateSpace: .named("gamepadLayoutDesigner"))
                             .onChanged { value in
                                 selectedControlID = control.id
+                                isControlSelectionActive = true
                                 guard !control.isLocationLocked else { return }
 
                                 if activeDrag?.identity != control.id {
@@ -5465,6 +5496,7 @@ private struct GamepadLayoutDesigner: View {
 
         customization = next.normalized
         selectedControlID = .custom(id)
+        isControlSelectionActive = true
         activeTool = .select
     }
 
@@ -6055,6 +6087,7 @@ private struct GamepadCustomizationPreview: View {
         GamepadLayoutDesigner(
             customization: .constant(customization),
             selectedControlID: .constant(.builtin(.jump)),
+            isControlSelectionActive: .constant(true),
             activeTool: .constant(.select)
         )
     }

@@ -440,12 +440,15 @@ private struct StatusPill: View {
     var body: some View {
         Label(title, systemImage: systemImage)
             .geistTypography(.label13)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
             .foregroundStyle(tone.foreground(scheme: colorScheme))
             .padding(.horizontal, Geist.Spacing.s3)
             .padding(.vertical, Geist.Spacing.s2)
             .background(tone.background(scheme: colorScheme), in: Capsule())
             .overlay(Capsule().stroke(tone.border(scheme: colorScheme), lineWidth: 1))
-            .fixedSize(horizontal: false, vertical: true)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
     }
 }
 
@@ -575,7 +578,7 @@ private struct ControllerPadView: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
-    @State private var isTopBarVisible = false
+    @State private var isTopBarVisible = true
 
     let onShowConnectionPage: (() -> Void)?
 
@@ -603,7 +606,7 @@ private struct ControllerPadView: View {
                     isLandscape: isLandscape,
                     collapsedTitle: ""
                 ) {
-                    topBar
+                    topBar(isLandscape: isLandscape)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -771,7 +774,16 @@ private struct ControllerPadView: View {
         }
     }
 
-    private var topBar: some View {
+    @ViewBuilder
+    private func topBar(isLandscape: Bool) -> some View {
+        if isLandscape {
+            landscapeTopBar
+        } else {
+            portraitTopBar
+        }
+    }
+
+    private var landscapeTopBar: some View {
         HStack(spacing: Geist.Spacing.s3) {
             StatusPill(title: controllerStatusTitle, systemImage: controllerStatusSystemImage, tone: controllerStatusTone)
 
@@ -780,43 +792,98 @@ private struct ControllerPadView: View {
             }
 
             keypadSettingsMenu
-
-            Text(controllerStatusDetail)
-                .geistTypography(.label12Mono)
-                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            statusDetailText
 
             Spacer(minLength: Geist.Spacing.s2)
 
-            Button {
-                showConnectionPage()
-            } label: {
-                Image(systemName: "house.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 28)
-            }
-            .geistButtonStyle(.secondary, size: .small)
-            .disabled(onShowConnectionPage == nil)
-            .accessibilityLabel("Home")
-            .accessibilityHint("Returns to the connection page.")
-
-            if client.isConnected {
-                Button("Disconnect iPhone") {
-                    client.disconnect(sendReleaseAll: true)
-                }
-                .geistButtonStyle(.error, size: .small)
-            } else {
-                Button("Connect Mac") {
-                    onShowConnectionPage?()
-                }
-                .geistButtonStyle(.secondary, size: .small)
-                .disabled(onShowConnectionPage == nil)
-            }
+            homeButton
+            connectionActionButton(isCompact: false)
         }
         .padding(Geist.Spacing.s2)
         .background(Geist.color(.background100, scheme: colorScheme), in: Capsule())
         .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
+    }
+
+    private var portraitTopBar: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            StatusPill(title: controllerStatusTitle, systemImage: controllerStatusSystemImage, tone: controllerStatusTone)
+
+            if !client.gamepadProfiles.isEmpty {
+                compactKeypadProfileMenu
+            }
+
+            Spacer(minLength: 0)
+
+            keypadSettingsMenu
+            homeButton
+            connectionActionButton(isCompact: true)
+        }
+        .padding(Geist.Spacing.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Geist.color(.background100, scheme: colorScheme),
+            in: RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+
+    private var statusDetailText: some View {
+        Text(controllerStatusDetail)
+            .geistTypography(.label12Mono)
+            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+
+    private var homeButton: some View {
+        Button {
+            showConnectionPage()
+        } label: {
+            Image(systemName: "house.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 28)
+        }
+        .geistButtonStyle(.secondary, size: .small)
+        .disabled(onShowConnectionPage == nil)
+        .accessibilityLabel("Home")
+        .accessibilityHint("Returns to the connection page.")
+    }
+
+    @ViewBuilder
+    private func connectionActionButton(isCompact: Bool) -> some View {
+        if client.isConnected {
+            Button {
+                client.disconnect(sendReleaseAll: true)
+            } label: {
+                if isCompact {
+                    Image(systemName: "wifi.slash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 28)
+                } else {
+                    Text("Disconnect iPhone")
+                }
+            }
+            .geistButtonStyle(.error, size: .small)
+            .accessibilityLabel("Disconnect iPhone")
+        } else {
+            Button {
+                onShowConnectionPage?()
+            } label: {
+                if isCompact {
+                    Image(systemName: "link")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 28)
+                } else {
+                    Text("Connect Mac")
+                }
+            }
+            .geistButtonStyle(.secondary, size: .small)
+            .disabled(onShowConnectionPage == nil)
+            .accessibilityLabel("Connect Mac")
+        }
     }
 
     private func showConnectionPage() {
@@ -878,28 +945,7 @@ private struct ControllerPadView: View {
 
     private var keypadProfileMenu: some View {
         Menu {
-            ForEach(client.gamepadProfiles) { profile in
-                Button {
-                    client.selectGamepadProfile(profile.id)
-                } label: {
-                    Label(
-                        profile.name,
-                        systemImage: profile.id == client.selectedGamepadProfileID ? "checkmark.circle.fill" : (profile.id == client.defaultGamepadProfileID ? "star.fill" : "rectangle.grid.2x2")
-                    )
-                }
-            }
-
-            Divider()
-
-            Button {
-                client.setDefaultGamepadProfile(client.selectedGamepadProfileID)
-            } label: {
-                Label(
-                    client.isSelectedGamepadProfileDefault ? "Current Is Default" : "Make Current Default",
-                    systemImage: client.isSelectedGamepadProfileDefault ? "star.fill" : "star"
-                )
-            }
-            .disabled(client.isSelectedGamepadProfileDefault)
+            keypadProfileMenuItems
         } label: {
             HStack(spacing: Geist.Spacing.s1) {
                 Image(systemName: client.isSelectedGamepadProfileDefault ? "star.fill" : "rectangle.grid.2x2")
@@ -912,6 +958,44 @@ private struct ControllerPadView: View {
         }
         .geistButtonStyle(.secondary, size: .small)
         .accessibilityLabel("Keypad setup")
+    }
+
+    private var compactKeypadProfileMenu: some View {
+        Menu {
+            keypadProfileMenuItems
+        } label: {
+            Image(systemName: client.isSelectedGamepadProfileDefault ? "star.fill" : "rectangle.grid.2x2")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 28)
+        }
+        .geistButtonStyle(.secondary, size: .small)
+        .accessibilityLabel("Keypad setup: \(client.selectedGamepadProfileName)")
+    }
+
+    @ViewBuilder
+    private var keypadProfileMenuItems: some View {
+        ForEach(client.gamepadProfiles) { profile in
+            Button {
+                client.selectGamepadProfile(profile.id)
+            } label: {
+                Label(
+                    profile.name,
+                    systemImage: profile.id == client.selectedGamepadProfileID ? "checkmark.circle.fill" : (profile.id == client.defaultGamepadProfileID ? "star.fill" : "rectangle.grid.2x2")
+                )
+            }
+        }
+
+        Divider()
+
+        Button {
+            client.setDefaultGamepadProfile(client.selectedGamepadProfileID)
+        } label: {
+            Label(
+                client.isSelectedGamepadProfileDefault ? "Current Is Default" : "Make Current Default",
+                systemImage: client.isSelectedGamepadProfileDefault ? "star.fill" : "star"
+            )
+        }
+        .disabled(client.isSelectedGamepadProfileDefault)
     }
 }
 
@@ -1002,16 +1086,50 @@ private struct ControllerTopBarDrawer<Content: View>: View {
     }
 
     private var topPadding: CGFloat {
-        max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s2, safeAreaInsets.top + Geist.Spacing.s2)
+        let topInset = max(effectiveSafeAreaInsets.top, minimumPortraitTopInset)
+        let extraPadding = isLandscape ? Geist.Spacing.s2 : 0
+        return max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s2, topInset + extraPadding)
     }
 
     private var leadingPadding: CGFloat {
-        max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s3)
+        max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, effectiveSafeAreaInsets.leading + Geist.Spacing.s3)
     }
 
     private var trailingPadding: CGFloat {
-        max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s3)
+        max(isLandscape ? Geist.Spacing.s6 : Geist.Spacing.s4, effectiveSafeAreaInsets.trailing + Geist.Spacing.s3)
     }
+
+    private var effectiveSafeAreaInsets: EdgeInsets {
+        #if os(iOS)
+        let windowInsets = Self.currentWindowSafeAreaInsets()
+        return EdgeInsets(
+            top: max(safeAreaInsets.top, windowInsets.top),
+            leading: max(safeAreaInsets.leading, windowInsets.left),
+            bottom: max(safeAreaInsets.bottom, windowInsets.bottom),
+            trailing: max(safeAreaInsets.trailing, windowInsets.right)
+        )
+        #else
+        return safeAreaInsets
+        #endif
+    }
+
+    private var minimumPortraitTopInset: CGFloat {
+        #if os(iOS)
+        return !isLandscape && UIDevice.current.userInterfaceIdiom == .phone ? 54 : 0
+        #else
+        return 0
+        #endif
+    }
+
+    #if os(iOS)
+    private static func currentWindowSafeAreaInsets() -> UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets ?? .zero
+    }
+    #endif
 
     private var drawerAnimation: Animation {
         .spring(response: 0.26, dampingFraction: 0.86)
@@ -1454,14 +1572,17 @@ private struct GamepadButton: View {
         isPressed = isActive
 
         if pressed {
-            playPressHaptic()
+            schedulePressHaptic()
         }
     }
 
-    private func playPressHaptic() {
+    private func schedulePressHaptic() {
         guard isKeypadHapticsEnabled else { return }
-        haptic.impactOccurred(intensity: 0.45)
-        prepareHapticIfNeeded()
+        let haptic = haptic
+        DispatchQueue.main.async {
+            haptic.impactOccurred(intensity: 0.45)
+            haptic.prepare()
+        }
     }
 
     private func prepareHapticIfNeeded() {

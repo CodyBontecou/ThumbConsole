@@ -2,6 +2,158 @@ import Foundation
 import Network
 import UIKit
 
+private final class ControllerInputTransport {
+    private struct ButtonSendSnapshot {
+        let sequenceNumber: UInt64
+        let reliableConnection: NWConnection
+        let datagramConnection: NWConnection?
+    }
+
+    private let networkQueue: DispatchQueue
+    private let lock = NSLock()
+    private var reliableConnection: NWConnection?
+    private var realtimeDatagramConnection: NWConnection?
+    private var isRealtimeDatagramReady = false
+    private var buttonSequenceNumber: UInt64 = 0
+    private let binaryMessageContext = NWConnection.ContentContext(
+        identifier: "PocketPadInputMessage",
+        metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
+    )
+
+    // Keep TCP close behind UDP so packet-loss recovery stays below a tight
+    // action-game frame budget while the UDP fast path still wins normal races.
+    private static let reliableMirrorDelayNanoseconds: Int = 500_000
+
+    init(networkQueue: DispatchQueue) {
+        self.networkQueue = networkQueue
+    }
+
+    func setReliableConnection(_ connection: NWConnection?, resetSequence: Bool) {
+        lock.lock()
+        reliableConnection = connection
+        if resetSequence {
+            buttonSequenceNumber = 0
+        }
+        lock.unlock()
+    }
+
+    func setRealtimeDatagramConnection(_ connection: NWConnection?, ready: Bool) {
+        lock.lock()
+        realtimeDatagramConnection = connection
+        isRealtimeDatagramReady = connection != nil && ready
+        lock.unlock()
+    }
+
+    func setRealtimeDatagramReady(_ ready: Bool, for connection: NWConnection) {
+        lock.lock()
+        if realtimeDatagramConnection === connection {
+            isRealtimeDatagramReady = ready
+        }
+        lock.unlock()
+    }
+
+    func clearRealtimeDatagramConnection(_ connection: NWConnection?) {
+        lock.lock()
+        if connection == nil || realtimeDatagramConnection === connection {
+            realtimeDatagramConnection = nil
+            isRealtimeDatagramReady = false
+        }
+        lock.unlock()
+    }
+
+    func disconnect() {
+        lock.lock()
+        reliableConnection = nil
+        realtimeDatagramConnection = nil
+        isRealtimeDatagramReady = false
+        buttonSequenceNumber = 0
+        lock.unlock()
+    }
+
+    @discardableResult
+    func sendButton(
+        _ button: GameButton,
+        state: ButtonPressState,
+        pressIdentifier: UInt64?
+    ) -> Bool {
+        guard let snapshot = makeButtonSendSnapshot() else { return false }
+
+        let messageContext = binaryMessageContext
+        let sendQueue = networkQueue
+        sendQueue.async {
+            let data = ControllerWireCodec.encodeButton(
+                button,
+                state: state,
+                sequenceNumber: snapshot.sequenceNumber,
+                pressIdentifier: pressIdentifier
+            )
+
+            if let datagramConnection = snapshot.datagramConnection {
+                datagramConnection.send(
+                    content: data,
+                    contentContext: .defaultMessage,
+                    isComplete: true,
+                    completion: .idempotent
+                )
+                Self.sendReliableMirror(
+                    data,
+                    on: snapshot.reliableConnection,
+                    context: messageContext,
+                    queue: sendQueue
+                )
+            } else {
+                snapshot.reliableConnection.send(
+                    content: data,
+                    contentContext: messageContext,
+                    isComplete: true,
+                    completion: .idempotent
+                )
+            }
+        }
+
+        return true
+    }
+
+    private func makeButtonSendSnapshot() -> ButtonSendSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let reliableConnection else { return nil }
+        let sequenceNumber = nextButtonSequenceNumber()
+        let datagramConnection = isRealtimeDatagramReady ? realtimeDatagramConnection : nil
+        return ButtonSendSnapshot(
+            sequenceNumber: sequenceNumber,
+            reliableConnection: reliableConnection,
+            datagramConnection: datagramConnection
+        )
+    }
+
+    private func nextButtonSequenceNumber() -> UInt64 {
+        if buttonSequenceNumber >= ControllerWireCodec.maximumButtonSequenceNumber {
+            buttonSequenceNumber = 1
+        } else {
+            buttonSequenceNumber += 1
+        }
+        return buttonSequenceNumber
+    }
+
+    private static func sendReliableMirror(
+        _ data: Data,
+        on connection: NWConnection,
+        context: NWConnection.ContentContext,
+        queue: DispatchQueue
+    ) {
+        queue.asyncAfter(deadline: .now() + .nanoseconds(reliableMirrorDelayNanoseconds)) {
+            connection.send(
+                content: data,
+                contentContext: context,
+                isComplete: true,
+                completion: .idempotent
+            )
+        }
+    }
+}
+
 @MainActor
 final class ControllerClient: ObservableObject {
     enum ConnectionState: Equatable {
@@ -33,6 +185,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var smartConnectStatus: String?
 
     private let networkQueue = DispatchQueue(label: "PocketPad.iOS.Network", qos: .userInteractive)
+    private let inputTransport: ControllerInputTransport
     private var connection: NWConnection?
     private var controlURL: URL?
     private var trustedMacCredential: TrustedMacCredential?
@@ -47,7 +200,7 @@ final class ControllerClient: ObservableObject {
     private var realtimeDatagramHandshakeTask: Task<Void, Never>?
     private var lastSentEventUpdateTask: Task<Void, Never>?
     private var pendingLastSentEvent = "None"
-    private var buttonSequenceNumber: UInt64 = 0
+    private var activeInputState = ControllerActiveInputState()
     private let binaryMessageContext = NWConnection.ContentContext(
         identifier: "PocketPadMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
@@ -88,6 +241,7 @@ final class ControllerClient: ObservableObject {
     }
 
     init() {
+        inputTransport = ControllerInputTransport(networkQueue: networkQueue)
         let savedCustomization = GamepadCustomizationPersistence.load()
         let loadedProfileState = GamepadConfigurationProfilePersistence.load(activeCustomization: savedCustomization)
         let savedTrustedMacCredential = Self.loadTrustedMacCredential()
@@ -198,7 +352,7 @@ final class ControllerClient: ObservableObject {
         controlURL = url
         currentAuthToken = authToken?.nilIfBlank
         currentExpectedServerID = expectedServerID?.nilIfBlank
-        buttonSequenceNumber = 0
+        inputTransport.setReliableConnection(nil, resetSequence: true)
 
         let deviceName = UIDevice.current.name
         let pairingCode = pairingCode.nilIfBlank
@@ -226,6 +380,8 @@ final class ControllerClient: ObservableObject {
         if sendReleaseAll {
             releaseAll()
         }
+        activeInputState.removeAll()
+        inputTransport.disconnect()
         heartbeatTask?.cancel()
         heartbeatTask = nil
         stopRealtimeDatagram()
@@ -252,10 +408,16 @@ final class ControllerClient: ObservableObject {
         guard isConnected else { return }
         // Send raw per-touch edges immediately. The Mac helper keeps physical
         // touch identity so the injected key state can change without timer delays.
-        sendButton(button, state: pressed ? .down : .up, pressIdentifier: pressIdentifier)
+        let state: ButtonPressState = pressed ? .down : .up
+        guard inputTransport.sendButton(button, state: state, pressIdentifier: pressIdentifier) else { return }
+        activeInputState.record(button: button, state: state, pressIdentifier: pressIdentifier)
+        if Self.liveInputStatusUpdatesEnabled {
+            updateLastSentEvent("\(button.rawValue) \(state.rawValue)")
+        }
     }
 
     func releaseAll() {
+        activeInputState.removeAll()
         guard connection != nil else { return }
         send(.init(type: .releaseAll, timestamp: 0), prefersRealtimeDatagram: true)
         updateLastSentEvent("release_all", immediately: true)
@@ -377,6 +539,8 @@ final class ControllerClient: ObservableObject {
 
         case .cancelled:
             guard connection === stateConnection else { return }
+            inputTransport.disconnect()
+            activeInputState.removeAll()
             heartbeatTask?.cancel()
             heartbeatTask = nil
             stopRealtimeDatagram()
@@ -396,33 +560,6 @@ final class ControllerClient: ObservableObject {
         default:
             break
         }
-    }
-
-    private func sendButton(
-        _ button: GameButton,
-        state: ButtonPressState,
-        pressIdentifier: UInt64?
-    ) {
-        let sequenceNumber = nextButtonSequenceNumber()
-        let data = ControllerWireCodec.encodeButton(
-            button,
-            state: state,
-            sequenceNumber: sequenceNumber,
-            pressIdentifier: pressIdentifier
-        )
-        sendRealtimeDataWithReliableMirror(data)
-        if Self.liveInputStatusUpdatesEnabled {
-            updateLastSentEvent("\(button.rawValue) \(state.rawValue)")
-        }
-    }
-
-    private func nextButtonSequenceNumber() -> UInt64 {
-        if buttonSequenceNumber >= ControllerWireCodec.maximumButtonSequenceNumber {
-            buttonSequenceNumber = 1
-        } else {
-            buttonSequenceNumber += 1
-        }
-        return buttonSequenceNumber
     }
 
     private func updateLastSentEvent(_ value: String, immediately: Bool = false) {
@@ -446,6 +583,19 @@ final class ControllerClient: ObservableObject {
 
     private func sendHeartbeat() {
         send(.init(type: .heartbeat))
+        resendActiveInputs()
+    }
+
+    private func resendActiveInputs() {
+        guard isConnected, !activeInputState.isEmpty else { return }
+
+        for activePress in activeInputState.activePresses {
+            _ = inputTransport.sendButton(
+                activePress.button,
+                state: .down,
+                pressIdentifier: activePress.pressIdentifier
+            )
+        }
     }
 
     private func send(_ message: ControllerMessage, prefersRealtimeDatagram: Bool = false) {
@@ -592,6 +742,7 @@ final class ControllerClient: ObservableObject {
         smartConnectStatus = nil
         lastSentEvent = message ?? "Pairing complete"
         UIApplication.shared.isIdleTimerDisabled = true
+        inputTransport.setReliableConnection(pairedConnection, resetSequence: true)
         startRealtimeDatagram(realtimeToken: realtimeToken)
         startHeartbeat()
     }
@@ -675,6 +826,8 @@ final class ControllerClient: ObservableObject {
 
     private func handleSocketError(_ error: Error, for failedConnection: NWConnection) {
         guard connection === failedConnection else { return }
+        inputTransport.disconnect()
+        activeInputState.removeAll()
         lastError = error.localizedDescription
         heartbeatTask?.cancel()
         heartbeatTask = nil
@@ -711,6 +864,7 @@ final class ControllerClient: ObservableObject {
         )
         realtimeDatagramConnection = datagramConnection
         isRealtimeDatagramReady = false
+        inputTransport.setRealtimeDatagramConnection(datagramConnection, ready: false)
 
         datagramConnection.stateUpdateHandler = { [weak self, weak datagramConnection] state in
             guard let datagramConnection else { return }
@@ -736,12 +890,14 @@ final class ControllerClient: ObservableObject {
         switch state {
         case .ready:
             isRealtimeDatagramReady = true
+            inputTransport.setRealtimeDatagramReady(true, for: stateConnection)
             startRealtimeDatagramHandshake(realtimeToken: realtimeToken)
 
         case .failed, .cancelled:
             if realtimeDatagramConnection === stateConnection {
                 realtimeDatagramConnection = nil
                 isRealtimeDatagramReady = false
+                inputTransport.clearRealtimeDatagramConnection(stateConnection)
             }
             realtimeDatagramHandshakeTask?.cancel()
             realtimeDatagramHandshakeTask = nil
@@ -782,6 +938,7 @@ final class ControllerClient: ObservableObject {
     private func stopRealtimeDatagram() {
         realtimeDatagramHandshakeTask?.cancel()
         realtimeDatagramHandshakeTask = nil
+        inputTransport.clearRealtimeDatagramConnection(realtimeDatagramConnection)
         realtimeDatagramConnection?.cancel()
         realtimeDatagramConnection = nil
         isRealtimeDatagramReady = false

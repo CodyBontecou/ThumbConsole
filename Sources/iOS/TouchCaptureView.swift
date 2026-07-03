@@ -148,7 +148,13 @@ fileprivate enum ControllerPressIdentifierAllocator {
 }
 
 final class TouchCaptureUIView: UIView {
-    var hitShape: GamepadButtonShapeStyle = .roundedRectangle
+    var hitShape: GamepadButtonShapeStyle = .roundedRectangle {
+        didSet {
+            guard oldValue != hitShape else { return }
+            cachedHitPath = nil
+            cachedHitPathShape = nil
+        }
+    }
     var onPressEdge: ((_ pressed: Bool, _ isActive: Bool, _ pressIdentifier: UInt64) -> Void)?
 
     private struct WeakTouchOwner {
@@ -161,6 +167,9 @@ final class TouchCaptureUIView: UIView {
 
     private var activeTouches: Set<UITouch> = []
     private var activeTouchIdentifiers: [UITouch: UInt64] = [:]
+    private var cachedHitPath: UIBezierPath?
+    private var cachedHitPathBounds = CGRect.null
+    private var cachedHitPathShape: GamepadButtonShapeStyle?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -370,7 +379,7 @@ final class TouchCaptureUIView: UIView {
         case .roundedRectangle, .rectangle:
             return true
         case .capsule:
-            return UIBezierPath(roundedRect: hitBounds, cornerRadius: min(hitBounds.width, hitBounds.height) / 2).contains(point)
+            return hitPath(for: .capsule, in: hitBounds).contains(point)
         case .circle, .ellipse:
             let radiusX = max(hitBounds.width / 2, 0.001)
             let radiusY = max(hitBounds.height / 2, 0.001)
@@ -378,10 +387,36 @@ final class TouchCaptureUIView: UIView {
             let normalizedY = (point.y - hitBounds.midY) / radiusY
             return (normalizedX * normalizedX) + (normalizedY * normalizedY) <= 1
         case .polygon:
-            return regularPolygonPath(sides: 3, in: hitBounds).contains(point)
+            return hitPath(for: .polygon, in: hitBounds).contains(point)
         case .star:
-            return starPath(points: 5, innerRadiusRatio: 0.45, in: hitBounds).contains(point)
+            return hitPath(for: .star, in: hitBounds).contains(point)
         }
+    }
+
+    private func hitPath(for shape: GamepadButtonShapeStyle, in rect: CGRect) -> UIBezierPath {
+        if cachedHitPathShape == shape,
+           cachedHitPathBounds == rect,
+           let cachedHitPath
+        {
+            return cachedHitPath
+        }
+
+        let path: UIBezierPath
+        switch shape {
+        case .capsule:
+            path = UIBezierPath(roundedRect: rect, cornerRadius: min(rect.width, rect.height) / 2)
+        case .polygon:
+            path = regularPolygonPath(sides: 3, in: rect)
+        case .star:
+            path = starPath(points: 5, innerRadiusRatio: 0.45, in: rect)
+        case .roundedRectangle, .rectangle, .circle, .ellipse:
+            path = UIBezierPath(rect: rect)
+        }
+
+        cachedHitPath = path
+        cachedHitPathBounds = rect
+        cachedHitPathShape = shape
+        return path
     }
 
     private func regularPolygonPath(sides: Int, in rect: CGRect) -> UIBezierPath {

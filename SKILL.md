@@ -246,11 +246,15 @@ PocketPad Mac must be running for most runtime commands. `app open` launches it 
 "$POCKETPAD_CLI" accessibility status
 "$POCKETPAD_CLI" accessibility prompt
 "$POCKETPAD_CLI" accessibility open
+"$POCKETPAD_CLI" latency simulate --pattern hollow-knight --mode compare --log /tmp/pocketpad-latency.json
+"$POCKETPAD_CLI" latency verify --max-ms 4 --p95-ms 4 --log /tmp/pocketpad-latency-verify.json
 "$POCKETPAD_CLI" test tap jump
 "$POCKETPAD_CLI" test down left
 "$POCKETPAD_CLI" test up left
 "$POCKETPAD_CLI" release-all
 ```
+
+Use `latency simulate` before UI automation when investigating controller lag. It is headless and emits per-edge touch-to-injection timings; supported patterns are `hollow-knight`, `same-button-burst`, `udp-recovery`, and `udp-recovery-burst`, with modes `current`, `legacy-main-actor`, or `compare`. Use `latency verify` as the pass/fail gate for whether the current input path is below the configured lag budget.
 
 ## Quality checklist before installing a game spec
 

@@ -92,9 +92,13 @@ pocketpad status --json
 pocketpad server restart
 pocketpad pairing payload
 pocketpad accessibility status
+pocketpad latency simulate --pattern hollow-knight --mode compare --log /tmp/pocketpad-latency.json
+pocketpad latency verify --max-ms 4 --p95-ms 4 --log /tmp/pocketpad-latency-verify.json
 pocketpad test tap jump
 pocketpad release-all
 ```
+
+`pocketpad latency simulate` is a headless replay harness for agent debugging. It runs Hollow-Knight-style bursts, same-button mash bursts, UDP recovery, or UDP recovery-burst cases through the compact button wire format and Mac sequence buffering model, then prints touch-to-injection latency and can write a per-edge JSON report. `pocketpad latency verify` runs every current-path pattern and exits nonzero if the configured max or p95 latency budget is exceeded.
 
 ## Keypad customization
 
