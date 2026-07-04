@@ -499,39 +499,90 @@ function plistStringValue(plist: string, key: string): string | undefined {
 
 function detectBrandColors(brandConfig: BrandConfig): BrandColors {
   const detected: BrandColors["detected"] = [];
+  const seen = new Set<string>();
+  const addColor = (name: string, value: string, source: string) => {
+    const normalized = normalizeHex(value);
+    const key = `${name}:${normalized}:${source}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    detected.push({ name, value: normalized, source });
+  };
 
-  const css = readTextIfExists(path.join(repoRoot, "Website/styles.css"));
-  if (css) {
+  for (const file of discoverDesignFiles()) {
+    const text = readTextIfExists(file);
+    if (!text) continue;
+    const source = relativePath(file);
+
     const cssVariableRegex = /--([a-zA-Z0-9-]+):\s*(#[0-9a-fA-F]{3,8})\b/g;
-    for (const match of css.matchAll(cssVariableRegex)) {
-      detected.push({ name: match[1], value: normalizeHex(match[2]), source: "Website/styles.css" });
+    for (const match of text.matchAll(cssVariableRegex)) {
+      addColor(match[1], match[2], source);
     }
-  }
 
-  const geist = readTextIfExists(path.join(repoRoot, "Sources/Shared/GeistDesign.swift"));
-  if (geist) {
-    const tokenRegex = /\.([a-zA-Z0-9]+):\s*"(#[0-9a-fA-F]{6,8})"/g;
-    const seen = new Set(detected.map((color) => `${color.name}:${color.value}`));
-    for (const match of geist.matchAll(tokenRegex)) {
-      const entry = { name: `geist.${match[1]}`, value: normalizeHex(match[2]), source: "Sources/Shared/GeistDesign.swift" };
-      const key = `${entry.name}:${entry.value}`;
-      if (!seen.has(key)) {
-        detected.push(entry);
-        seen.add(key);
+    const namedTokenRegex = /(?:\.|\b)([a-zA-Z][a-zA-Z0-9_-]{1,40})\s*[:=]\s*"(#[0-9a-fA-F]{6,8})"/g;
+    for (const match of text.matchAll(namedTokenRegex)) {
+      addColor(match[1], match[2], source);
+    }
+
+    if (detected.length < 80) {
+      const looseHexRegex = /#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\b/g;
+      for (const match of text.matchAll(looseHexRegex)) {
+        addColor(`detected-${detected.length + 1}`, match[0], source);
+        if (detected.length >= 80) break;
       }
     }
   }
 
-  const find = (name: string) => detected.find((color) => color.name === name)?.value;
-  const findPrefix = (prefix: string) => detected.find((color) => color.name.startsWith(prefix))?.value;
+  const pick = (patterns: RegExp[], fallback?: string) => {
+    for (const pattern of patterns) {
+      const exact = detected.find((color) => pattern.test(color.name.toLowerCase()));
+      if (exact) return exact.value;
+    }
+    return fallback;
+  };
+
+  const primaryColor = brandConfig.primaryColor ?? pick([/^(primary|ink|text|foreground|fg)$/, /primary/, /ink/, /foreground/, /text/], "#111111");
+  const secondaryColor = brandConfig.secondaryColor ?? pick([/^(secondary|paper|background|bg|surface)$/, /paper/, /background/, /surface/], "#ffffff");
+  const accentColor = brandConfig.accentColor ?? pick([/^(accent|brand|orange|blue|purple|pink|teal|green)$/, /accent/, /brand/, /orange/, /blue/, /purple/], "#4F46E5");
+  const backgroundColor = pick([/^(background|bg|paper|surface)$/, /background/, /paper/, /surface/], secondaryColor);
 
   return {
-    primaryColor: brandConfig.primaryColor ?? find("ink") ?? find("geist.primary") ?? "#111111",
-    secondaryColor: brandConfig.secondaryColor ?? find("paper") ?? find("geist.background100") ?? "#ffffff",
-    accentColor: brandConfig.accentColor ?? find("orange") ?? find("geist.blue700") ?? "#4F46E5",
-    backgroundColor: find("paper") ?? brandConfig.secondaryColor ?? findPrefix("geist.background") ?? "#ffffff",
-    detected,
+    primaryColor,
+    secondaryColor,
+    accentColor,
+    backgroundColor,
+    detected: detected.slice(0, 80),
   };
+}
+
+function discoverDesignFiles(): string[] {
+  const commonPaths = [
+    "Website/styles.css",
+    "website/styles.css",
+    "src/styles.css",
+    "src/index.css",
+    "src/globals.css",
+    "app/globals.css",
+    "styles/globals.css",
+    "tailwind.config.js",
+    "tailwind.config.ts",
+    "theme.json",
+    "tokens.json",
+  ].map((file) => path.join(repoRoot, file));
+
+  const discovered = walkFiles(repoRoot, 5).filter(isDesignCandidateFile);
+  return Array.from(new Set([...commonPaths.filter((file) => fs.existsSync(file)), ...discovered])).slice(0, 50);
+}
+
+function isDesignCandidateFile(file: string): boolean {
+  const relative = relativePath(file).toLowerCase();
+  const basename = path.basename(relative);
+  const extension = path.extname(relative);
+  if (relative.includes("node_modules/") || relative.includes("app-store-output/") || relative.includes("build/")) return false;
+  if ([".css", ".scss", ".sass", ".less"].includes(extension)) return true;
+  if ([".html", ".swift", ".tsx", ".jsx", ".ts", ".js", ".json"].includes(extension)) {
+    return /theme|design|token|color|style|brand|tailwind|globals|index\.html|asset|font/.test(relative) && !basename.includes("package-lock");
+  }
+  return false;
 }
 
 function normalizeHex(value: string): string {
@@ -545,12 +596,15 @@ function detectTypographyHints(brandConfig: BrandConfig): string[] {
   const hints = new Set<string>();
   if (brandConfig.fontFamily) hints.add(`brand.json fontFamily: ${brandConfig.fontFamily}`);
 
-  const geist = readTextIfExists(path.join(repoRoot, "Sources/Shared/GeistDesign.swift"));
-  if (geist?.includes("Geist Sans")) hints.add("SwiftUI uses Geist Sans and Geist Mono tokens");
+  const designText = discoverDesignFiles()
+    .map((file) => readTextIfExists(file) ?? "")
+    .join("\n")
+    .slice(0, 500_000);
 
-  const css = readTextIfExists(path.join(repoRoot, "Website/styles.css"));
-  if (css?.includes("SF Pro Display")) hints.add("Website headlines use SF Pro Display / system sans");
-  if (css?.includes("ui-monospace")) hints.add("Website body copy uses system monospace for a retro utility feel");
+  if (/Geist Sans/i.test(designText)) hints.add("Geist Sans / Geist Mono tokens detected");
+  if (/SF Pro|San Francisco|-apple-system|BlinkMacSystemFont/i.test(designText)) hints.add("Apple system typography detected");
+  if (/ui-monospace|font-mono|monospace|SFMono/i.test(designText)) hints.add("monospace typography hints detected");
+  if (/Inter\b/i.test(designText)) hints.add("Inter typography detected");
 
   if (hints.size === 0) hints.add("system font stack");
   return Array.from(hints);
@@ -558,17 +612,18 @@ function detectTypographyHints(brandConfig: BrandConfig): string[] {
 
 function detectDesignLanguage(): string[] {
   const language = new Set<string>();
-  const geist = readTextIfExists(path.join(repoRoot, "Sources/Shared/GeistDesign.swift"));
-  if (geist) language.add("Vercel Geist-inspired SwiftUI tokens, neutral panels, rounded controls, and precise spacing");
+  const designText = discoverDesignFiles()
+    .map((file) => readTextIfExists(file) ?? "")
+    .join("\n")
+    .slice(0, 500_000)
+    .toLowerCase();
 
-  const css = readTextIfExists(path.join(repoRoot, "Website/styles.css"));
-  const index = readTextIfExists(path.join(repoRoot, "Website/index.html"));
-  if (css?.includes("--orange") || index?.includes("pixel-art")) {
-    language.add("paper-and-ink marketing site with orange accents, pixel/retro controller cues, and grid texture");
-  }
-  if (index?.includes("controller-diagram")) {
-    language.add("visual language includes simple phone/controller diagrams and tactile shortcut labels");
-  }
+  if (/geist/.test(designText)) language.add("Geist-inspired tokens, neutral panels, rounded controls, and precise spacing");
+  if (/paper|ink/.test(designText)) language.add("paper-and-ink palette with editorial contrast");
+  if (/pixel|8bit|retro/.test(designText)) language.add("retro or pixel-inspired visual cues");
+  if (/gradient/.test(designText)) language.add("gradient-backed marketing treatments");
+  if (/rounded|radius|corner/.test(designText)) language.add("rounded cards, panels, or controls");
+  if (/mockup|phone-frame|device|product-card/.test(designText)) language.add("device or product mockup composition cues");
 
   return Array.from(language);
 }
@@ -577,58 +632,95 @@ function detectFeatures(): DetectedFeature[] {
   const features: DetectedFeature[] = [];
   const seen = new Set<string>();
   const add = (title: string, description: string, source: string) => {
-    const cleanTitle = stripHtml(title).trim();
-    const cleanDescription = stripHtml(description).replace(/\s+/g, " ").trim();
+    const cleanTitle = stripMarkdown(stripHtml(title)).replace(/\s+/g, " ").trim();
+    const cleanDescription = stripMarkdown(stripHtml(description)).replace(/\s+/g, " ").trim();
     const key = cleanTitle.toLowerCase();
-    if (!cleanTitle || seen.has(key)) return;
+    if (!cleanTitle || !cleanDescription || seen.has(key)) return;
     seen.add(key);
     features.push({ title: cleanTitle, description: cleanDescription, source });
   };
 
-  const readme = readTextIfExists(path.join(repoRoot, "README.md"));
-  if (readme) {
-    const firstParagraph = readme
-      .split(/\n\s*\n/)
-      .find((block) => block.trim() && !block.trim().startsWith("#"));
-    if (firstParagraph) add("Programmable shortcut keypad", firstParagraph, "README.md");
+  const marketingFiles = discoverMarketingTextFiles();
+  const marketingTextChunks: string[] = [];
 
-    if (/Smart Connect/i.test(readme)) {
-      add("Smart Connect", "Remembers a trusted Mac, discovers it over Bonjour, and reconnects automatically.", "README.md");
+  for (const file of marketingFiles) {
+    const text = readTextIfExists(file);
+    if (!text) continue;
+    const source = relativePath(file);
+    marketingTextChunks.push(stripMarkdown(stripHtml(text)));
+
+    const firstParagraph = firstMeaningfulParagraph(text);
+    if (firstParagraph) add("Core value proposition", firstParagraph, source);
+
+    const metaDescription = text.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i)?.[1];
+    if (metaDescription) add("Product description", metaDescription, source);
+
+    const articleRegex = /<article[\s\S]*?<h[23][^>]*>([\s\S]*?)<\/h[23]>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>[\s\S]*?<\/article>/g;
+    for (const match of text.matchAll(articleRegex)) {
+      add(match[1], match[2], source);
     }
-    if (/QR code/i.test(readme)) {
-      add("QR pairing", "Scan the Mac helper QR code or enter a secure pairing code.", "README.md");
-    }
-    if (/joystick/i.test(readme)) {
-      add("Custom layouts", "Build keypad setups with buttons, joysticks, device frames, and per-control shortcuts.", "README.md");
-    }
-    if (/UDP/i.test(readme) && /WebSocket/i.test(readme)) {
-      add("Realtime transport", "Authenticated UDP carries compact input frames with WebSocket mirroring as fallback.", "README.md");
-    }
-    if (/CLI/i.test(readme)) {
-      add("CLI included", "Generate, import, export, select, and test profiles from the terminal.", "README.md");
+
+    const markdownSectionRegex = /^#{2,3}\s+(.+)\n+([^#\n][\s\S]{40,500}?)(?=\n#{1,3}\s+|\n\n#{1,3}\s+|$)/gm;
+    for (const match of text.matchAll(markdownSectionRegex)) {
+      add(match[1], firstSentence(match[2]) ?? match[2], source);
+      if (features.length >= 12) break;
     }
   }
 
-  const website = readTextIfExists(path.join(repoRoot, "Website/index.html"));
-  if (website) {
-    const articleRegex = /<article>[\s\S]*?<h3>([\s\S]*?)<\/h3>[\s\S]*?<p>([\s\S]*?)<\/p>[\s\S]*?<\/article>/g;
-    for (const match of website.matchAll(articleRegex)) {
-      add(match[1], match[2], "Website/index.html");
-    }
+  const combinedMarketingText = marketingTextChunks.join(" ");
+  const keywordHints: Array<{ title: string; pattern: RegExp }> = [
+    { title: "Fast setup", pattern: /\b(set ?up|onboard|pair|connect|sign in|scan|start)\b/i },
+    { title: "Customization", pattern: /\b(custom|customize|profile|template|theme|layout|settings|personalize)\b/i },
+    { title: "Sync and sharing", pattern: /\b(sync|share|export|import|backup|collaborate)\b/i },
+    { title: "Automation", pattern: /\b(cli|api|automation|workflow|shortcut|script|integrat)\b/i },
+    { title: "Privacy-minded", pattern: /\b(private|privacy|local|offline|secure|encrypted|auth)\b/i },
+    { title: "Insights", pattern: /\b(analytics|insight|track|history|report|dashboard|metric)\b/i },
+    { title: "Creative tools", pattern: /\b(create|edit|generate|capture|record|media|video|photo|image)\b/i },
+  ];
+
+  for (const hint of keywordHints) {
+    const sentence = firstSentenceMatching(combinedMarketingText, hint.pattern);
+    if (sentence) add(hint.title, sentence, "repo marketing text keyword scan");
+    if (features.length >= 12) break;
   }
 
   return features.slice(0, 12);
 }
 
+function discoverMarketingTextFiles(): string[] {
+  const commonPaths = [
+    "README.md",
+    "readme.md",
+    "Website/index.html",
+    "website/index.html",
+    "public/index.html",
+    "docs/README.md",
+  ].map((file) => path.join(repoRoot, file));
+
+  const discovered = walkFiles(repoRoot, 4).filter((file) => {
+    const relative = relativePath(file).toLowerCase();
+    const basename = path.basename(relative);
+    const extension = path.extname(relative);
+    if (relative.includes("node_modules/") || relative.includes("build/") || relative.includes("app-store-output/")) return false;
+    if (basename.startsWith("readme") && extension === ".md") return true;
+    if (basename === "index.html" || basename.endsWith(".strings")) return true;
+    return (relative.includes("docs/") || relative.includes("website/") || relative.includes("marketing/")) && [".md", ".html", ".mdx"].includes(extension);
+  });
+
+  return Array.from(new Set([...commonPaths.filter((file) => fs.existsSync(file)), ...discovered])).slice(0, 30);
+}
+
 function inferCategory(features: DetectedFeature[]): string {
   const allText = features.map((feature) => `${feature.title} ${feature.description}`).join(" ").toLowerCase();
-  if (allText.includes("game") || allText.includes("controller")) {
-    return "Mac game controller and programmable shortcut keypad";
-  }
-  if (allText.includes("shortcut") || allText.includes("workflow")) {
-    return "productivity shortcut keypad";
-  }
-  return "iOS companion utility";
+  if (/health|medical|wellness|fitness/.test(allText)) return "health and wellness";
+  if (/finance|invoice|budget|receipt|payment/.test(allText)) return "finance";
+  if (/photo|video|camera|media|record|edit/.test(allText)) return "photo and video";
+  if (/learn|course|education|language|study/.test(allText)) return "education";
+  if (/game|controller|play/.test(allText)) return "games and entertainment utility";
+  if (/developer|code|cli|api|terminal/.test(allText)) return "developer tool";
+  if (/task|todo|note|calendar|schedule|workflow|shortcut|productivity/.test(allText)) return "productivity";
+  if (/social|community|chat|message/.test(allText)) return "social networking";
+  return "iOS app";
 }
 
 function discoverScreenshots(inputScreenshots: string): { files: string[]; searchPaths: string[] } {
