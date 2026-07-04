@@ -5915,6 +5915,302 @@ private enum GamepadMeasurementGeometry {
     }
 }
 
+private enum GamepadAlignmentLineOrientation: Equatable {
+    case vertical
+    case horizontal
+}
+
+private struct GamepadAlignmentLine: Identifiable, Equatable {
+    let id: String
+    let orientation: GamepadAlignmentLineOrientation
+    let coordinate: CGFloat
+    let targetFrame: CGRect
+}
+
+private struct GamepadAlignmentGuide: Equatable {
+    let selectedFrame: CGRect
+    let primaryTargetFrame: CGRect
+    let lines: [GamepadAlignmentLine]
+}
+
+private struct GamepadAlignmentGuideOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let guide: GamepadAlignmentGuide
+    let canvasSize: CGSize
+    let displayScale: CGFloat
+
+    private var safeDisplayScale: CGFloat {
+        max(displayScale, 0.001)
+    }
+
+    var body: some View {
+        let guideColor = Geist.color(.red700, scheme: colorScheme)
+
+        Canvas { context, _ in
+            var path = Path()
+            for line in guide.lines {
+                append(line, to: &path)
+            }
+
+            context.stroke(
+                path,
+                with: .color(guideColor),
+                style: StrokeStyle(lineWidth: 1.25, lineCap: .square, lineJoin: .miter)
+            )
+        }
+    }
+
+    private func append(_ line: GamepadAlignmentLine, to path: inout Path) {
+        let margin: CGFloat = 8
+
+        switch line.orientation {
+        case .vertical:
+            let x = line.coordinate * safeDisplayScale
+            let startY = Self.clamp(
+                min(guide.selectedFrame.minY, line.targetFrame.minY) - margin,
+                lower: 0,
+                upper: canvasSize.height
+            ) * safeDisplayScale
+            let endY = Self.clamp(
+                max(guide.selectedFrame.maxY, line.targetFrame.maxY) + margin,
+                lower: 0,
+                upper: canvasSize.height
+            ) * safeDisplayScale
+            path.move(to: CGPoint(x: x, y: startY))
+            path.addLine(to: CGPoint(x: x, y: endY))
+
+        case .horizontal:
+            let y = line.coordinate * safeDisplayScale
+            let startX = Self.clamp(
+                min(guide.selectedFrame.minX, line.targetFrame.minX) - margin,
+                lower: 0,
+                upper: canvasSize.width
+            ) * safeDisplayScale
+            let endX = Self.clamp(
+                max(guide.selectedFrame.maxX, line.targetFrame.maxX) + margin,
+                lower: 0,
+                upper: canvasSize.width
+            ) * safeDisplayScale
+            path.move(to: CGPoint(x: startX, y: y))
+            path.addLine(to: CGPoint(x: endX, y: y))
+        }
+    }
+
+    private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        min(max(value, lower), max(lower, upper))
+    }
+}
+
+private struct GamepadAlignmentSnapResult {
+    let frame: CGRect
+    let guide: GamepadAlignmentGuide?
+}
+
+private enum GamepadAlignmentSnapSolver {
+    private static let snapToleranceInScreenPoints: CGFloat = 7
+    private static let alignmentEpsilon: CGFloat = 0.5
+
+    static func snappedFrame(
+        for frame: CGRect,
+        targetFrames: [CGRect],
+        canvasSize: CGSize,
+        displayScale: CGFloat
+    ) -> GamepadAlignmentSnapResult {
+        let initialFrame = clampedFrame(frame.standardized, canvasSize: canvasSize)
+        guard !targetFrames.isEmpty else {
+            return GamepadAlignmentSnapResult(frame: initialFrame, guide: nil)
+        }
+
+        let tolerance = max(2, snapToleranceInScreenPoints / max(displayScale, 0.001))
+        let xCandidate = bestCandidate(for: initialFrame, axis: .x, targetFrames: targetFrames, tolerance: tolerance)
+        let yCandidate = bestCandidate(for: initialFrame, axis: .y, targetFrames: targetFrames, tolerance: tolerance)
+
+        var snappedFrame = initialFrame
+        if let xCandidate {
+            snappedFrame = snappedFrame.offsetBy(dx: xCandidate.delta, dy: 0)
+        }
+        if let yCandidate {
+            snappedFrame = snappedFrame.offsetBy(dx: 0, dy: yCandidate.delta)
+        }
+        snappedFrame = clampedFrame(snappedFrame, canvasSize: canvasSize)
+
+        return GamepadAlignmentSnapResult(
+            frame: snappedFrame,
+            guide: guide(for: snappedFrame, xCandidate: xCandidate, yCandidate: yCandidate)
+        )
+    }
+
+    static func framesAreEquivalent(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat = alignmentEpsilon) -> Bool {
+        abs(lhs.minX - rhs.minX) <= tolerance
+            && abs(lhs.minY - rhs.minY) <= tolerance
+            && abs(lhs.width - rhs.width) <= tolerance
+            && abs(lhs.height - rhs.height) <= tolerance
+    }
+
+    private static func bestCandidate(
+        for frame: CGRect,
+        axis: GamepadAlignmentSnapAxis,
+        targetFrames: [CGRect],
+        tolerance: CGFloat
+    ) -> GamepadAlignmentSnapCandidate? {
+        var bestCandidate: GamepadAlignmentSnapCandidate?
+
+        for movingAnchor in GamepadAlignmentAnchor.allCases {
+            let movingValue = movingAnchor.value(in: frame, axis: axis)
+            for targetFrame in targetFrames {
+                for targetAnchor in GamepadAlignmentAnchor.allCases {
+                    let targetValue = targetAnchor.value(in: targetFrame, axis: axis)
+                    let delta = targetValue - movingValue
+                    guard abs(delta) <= tolerance else { continue }
+
+                    let candidate = GamepadAlignmentSnapCandidate(
+                        axis: axis,
+                        movingAnchor: movingAnchor,
+                        targetAnchor: targetAnchor,
+                        targetFrame: targetFrame,
+                        targetCoordinate: targetValue,
+                        delta: delta
+                    )
+                    if candidate.isBetter(than: bestCandidate) {
+                        bestCandidate = candidate
+                    }
+                }
+            }
+        }
+
+        return bestCandidate
+    }
+
+    private static func guide(
+        for selectedFrame: CGRect,
+        xCandidate: GamepadAlignmentSnapCandidate?,
+        yCandidate: GamepadAlignmentSnapCandidate?
+    ) -> GamepadAlignmentGuide? {
+        let candidates = [xCandidate, yCandidate]
+            .compactMap { $0 }
+            .sorted { lhs, rhs in
+                if abs(lhs.score - rhs.score) > 0.001 {
+                    return lhs.score < rhs.score
+                }
+                return lhs.axis.sortOrder < rhs.axis.sortOrder
+            }
+        var lines: [GamepadAlignmentLine] = []
+
+        for candidate in candidates {
+            let alignedValue = candidate.movingAnchor.value(in: selectedFrame, axis: candidate.axis)
+            guard abs(alignedValue - candidate.targetCoordinate) <= alignmentEpsilon else { continue }
+            lines.append(
+                GamepadAlignmentLine(
+                    id: "\(candidate.axis.id)-\(candidate.movingAnchor.id)-\(candidate.targetAnchor.id)-\(lines.count)",
+                    orientation: candidate.axis.lineOrientation,
+                    coordinate: candidate.targetCoordinate,
+                    targetFrame: candidate.targetFrame
+                )
+            )
+        }
+
+        guard let primaryTargetFrame = lines.first?.targetFrame else { return nil }
+        return GamepadAlignmentGuide(
+            selectedFrame: selectedFrame,
+            primaryTargetFrame: primaryTargetFrame,
+            lines: lines
+        )
+    }
+
+    private static func clampedFrame(_ frame: CGRect, canvasSize: CGSize) -> CGRect {
+        CGRect(
+            x: clampedOrigin(frame.minX, length: frame.width, canvasLength: canvasSize.width),
+            y: clampedOrigin(frame.minY, length: frame.height, canvasLength: canvasSize.height),
+            width: frame.width,
+            height: frame.height
+        )
+    }
+
+    private static func clampedOrigin(_ origin: CGFloat, length: CGFloat, canvasLength: CGFloat) -> CGFloat {
+        guard length < canvasLength else { return (canvasLength - length) / 2 }
+        return min(max(origin, 0), max(0, canvasLength - length))
+    }
+}
+
+private enum GamepadAlignmentSnapAxis {
+    case x
+    case y
+
+    var id: String {
+        switch self {
+        case .x: "x"
+        case .y: "y"
+        }
+    }
+
+    var sortOrder: Int {
+        switch self {
+        case .x: 0
+        case .y: 1
+        }
+    }
+
+    var lineOrientation: GamepadAlignmentLineOrientation {
+        switch self {
+        case .x: .vertical
+        case .y: .horizontal
+        }
+    }
+}
+
+private enum GamepadAlignmentAnchor: CaseIterable {
+    case minimum
+    case center
+    case maximum
+
+    var id: String {
+        switch self {
+        case .minimum: "minimum"
+        case .center: "center"
+        case .maximum: "maximum"
+        }
+    }
+
+    func value(in rect: CGRect, axis: GamepadAlignmentSnapAxis) -> CGFloat {
+        switch (self, axis) {
+        case (.minimum, .x): rect.minX
+        case (.center, .x): rect.midX
+        case (.maximum, .x): rect.maxX
+        case (.minimum, .y): rect.minY
+        case (.center, .y): rect.midY
+        case (.maximum, .y): rect.maxY
+        }
+    }
+}
+
+private struct GamepadAlignmentSnapCandidate {
+    let axis: GamepadAlignmentSnapAxis
+    let movingAnchor: GamepadAlignmentAnchor
+    let targetAnchor: GamepadAlignmentAnchor
+    let targetFrame: CGRect
+    let targetCoordinate: CGFloat
+    let delta: CGFloat
+
+    var score: CGFloat {
+        abs(delta) + (movingAnchor == targetAnchor ? 0 : 0.15)
+    }
+
+    func isBetter(than other: GamepadAlignmentSnapCandidate?) -> Bool {
+        guard let other else { return true }
+        if abs(score - other.score) > 0.001 {
+            return score < other.score
+        }
+        if movingAnchor == targetAnchor, other.movingAnchor != other.targetAnchor {
+            return true
+        }
+        if axis.sortOrder != other.axis.sortOrder {
+            return axis.sortOrder < other.axis.sortOrder
+        }
+        return false
+    }
+}
+
 private struct GamepadLayoutDesigner: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var customization: GamepadCustomization
@@ -5932,6 +6228,7 @@ private struct GamepadLayoutDesigner: View {
     @State private var activeRadiusDrag: GamepadControlRadiusDragState?
     @State private var activeDraw: GamepadShapeDrawState?
     @State private var hoveredControlID: GamepadControlIdentity?
+    @State private var activeAlignmentGuide: GamepadAlignmentGuide?
     @State private var isOptionKeyPressed = false
     @State private var isShiftKeyPressed = false
 
@@ -5996,17 +6293,24 @@ private struct GamepadLayoutDesigner: View {
                                 let interactionSelectionIDs: Set<GamepadControlIdentity>
                                 if activeDrag?.identity != control.id {
                                     interactionSelectionIDs = selectForPointerDown(control.id, additive: isShiftKeyPressed)
+                                    activeAlignmentGuide = nil
                                 } else {
                                     interactionSelectionIDs = selectedControlIDs
                                 }
 
-                                guard !control.isLocationLocked else { return }
+                                guard !control.isLocationLocked else {
+                                    activeAlignmentGuide = nil
+                                    return
+                                }
 
                                 if activeDrag?.identity != control.id {
                                     beginDrag(for: control.id, selectionIDs: interactionSelectionIDs, controls: controls)
                                 }
 
-                                guard Self.isExplicitDrag(value.translation), var dragState = activeDrag else { return }
+                                guard Self.isExplicitDrag(value.translation), var dragState = activeDrag else {
+                                    activeAlignmentGuide = nil
+                                    return
+                                }
 
                                 dragState.didMove = true
                                 activeDrag = dragState
@@ -6022,13 +6326,26 @@ private struct GamepadLayoutDesigner: View {
                                         x: snapshot.startCenter.x + translation.width,
                                         y: snapshot.startCenter.y + translation.height
                                     )
-                                    updatePosition(proposedCenter, control: control, canvasSize: resolvedLayoutSize)
+                                    updatePosition(
+                                        proposedCenter,
+                                        control: control,
+                                        controls: controls,
+                                        canvasSize: resolvedLayoutSize,
+                                        displayScale: resolvedDisplayScale
+                                    )
                                 } else {
-                                    updateGroupPosition(translation, dragState: dragState, canvasSize: resolvedLayoutSize)
+                                    updateGroupPosition(
+                                        translation,
+                                        dragState: dragState,
+                                        controls: controls,
+                                        canvasSize: resolvedLayoutSize,
+                                        displayScale: resolvedDisplayScale
+                                    )
                                 }
                             }
                             .onEnded { _ in
                                 activeDrag = nil
+                                activeAlignmentGuide = nil
                             }
                     )
                     .allowsHitTesting(activeTool == .select)
@@ -6046,6 +6363,35 @@ private struct GamepadLayoutDesigner: View {
                     )
                     .frame(width: selectionFrame.width * resolvedDisplayScale, height: selectionFrame.height * resolvedDisplayScale)
                     .position(x: selectionFrame.midX * resolvedDisplayScale, y: selectionFrame.midY * resolvedDisplayScale)
+                }
+
+                if let activeAlignmentGuide {
+                    GamepadMeasurementOverlay(
+                        selectedFrame: activeAlignmentGuide.selectedFrame,
+                        hoveredFrame: activeAlignmentGuide.primaryTargetFrame,
+                        canvasSize: resolvedLayoutSize,
+                        displayScale: resolvedDisplayScale
+                    )
+                    .frame(
+                        width: resolvedLayoutSize.width * resolvedDisplayScale,
+                        height: resolvedLayoutSize.height * resolvedDisplayScale,
+                        alignment: .topLeading
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
+                    GamepadAlignmentGuideOverlay(
+                        guide: activeAlignmentGuide,
+                        canvasSize: resolvedLayoutSize,
+                        displayScale: resolvedDisplayScale
+                    )
+                    .frame(
+                        width: resolvedLayoutSize.width * resolvedDisplayScale,
+                        height: resolvedLayoutSize.height * resolvedDisplayScale,
+                        alignment: .topLeading
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
 
                 if shouldShowMeasurementOverlay,
@@ -6090,10 +6436,12 @@ private struct GamepadLayoutDesigner: View {
             .onChange(of: activeTool) { _, newTool in
                 if newTool != .select {
                     hoveredControlID = nil
+                    activeAlignmentGuide = nil
                 }
             }
             .onDisappear {
                 hoveredControlID = nil
+                activeAlignmentGuide = nil
                 isOptionKeyPressed = false
                 isShiftKeyPressed = false
                 activeGroupResize = nil
@@ -6401,7 +6749,19 @@ private struct GamepadLayoutDesigner: View {
         min(max(value, lower), upper)
     }
 
-    private func updatePosition(_ point: CGPoint, control: GamepadResolvedControl, canvasSize: CGSize) {
+    private func alignmentTargetFrames(excluding identities: Set<GamepadControlIdentity>, in controls: [GamepadResolvedControl]) -> [CGRect] {
+        controls.compactMap { control in
+            identities.contains(control.id) ? nil : control.frame
+        }
+    }
+
+    private func updatePosition(
+        _ point: CGPoint,
+        control: GamepadResolvedControl,
+        controls: [GamepadResolvedControl],
+        canvasSize: CGSize,
+        displayScale: CGFloat
+    ) {
         let normalizedPosition = GamepadLayoutResolver.normalizedPosition(for: point, visualSize: control.size, in: canvasSize)
         let clampedCenter = CGPoint(
             x: normalizedPosition.x * canvasSize.width,
@@ -6413,21 +6773,36 @@ private struct GamepadLayoutDesigner: View {
             width: control.size.width,
             height: control.size.height
         )
-        let adjustedFrame = nonOverlappingFrame(for: preferredFrame, excluding: control.id, canvasSize: canvasSize) ?? control.frame
+        let snapResult = GamepadAlignmentSnapSolver.snappedFrame(
+            for: preferredFrame,
+            targetFrames: alignmentTargetFrames(excluding: selectedControlIDs, in: controls),
+            canvasSize: canvasSize,
+            displayScale: displayScale
+        )
+        let adjustedFrame = nonOverlappingFrame(for: snapResult.frame, excluding: control.id, canvasSize: canvasSize) ?? control.frame
+        activeAlignmentGuide = GamepadAlignmentSnapSolver.framesAreEquivalent(adjustedFrame, snapResult.frame) ? snapResult.guide : nil
         let adjustedPosition = CGPoint(x: adjustedFrame.midX / max(canvasSize.width, 1), y: adjustedFrame.midY / max(canvasSize.height, 1))
         var next = customization
         next.setPosition(adjustedPosition, for: control.id)
         customization = next.normalized
     }
 
-    private func updateGroupPosition(_ translation: CGSize, dragState: GamepadControlDragState, canvasSize: CGSize) {
+    private func updateGroupPosition(
+        _ translation: CGSize,
+        dragState: GamepadControlDragState,
+        controls: [GamepadResolvedControl],
+        canvasSize: CGSize,
+        displayScale: CGFloat
+    ) {
         guard !dragState.snapshots.isEmpty else { return }
         let selectedIDs = Set(dragState.snapshots.map(\.identity))
         let adjustedTranslation = adjustedGroupTranslation(
             translation,
             snapshots: dragState.snapshots,
             selectedIDs: selectedIDs,
-            canvasSize: canvasSize
+            controls: controls,
+            canvasSize: canvasSize,
+            displayScale: displayScale
         )
         var next = customization
         for snapshot in dragState.snapshots {
@@ -6449,12 +6824,37 @@ private struct GamepadLayoutDesigner: View {
         _ translation: CGSize,
         snapshots: [GamepadControlDragSnapshot],
         selectedIDs: Set<GamepadControlIdentity>,
-        canvasSize: CGSize
+        controls: [GamepadResolvedControl],
+        canvasSize: CGSize,
+        displayScale: CGFloat
     ) -> CGSize {
         let clampedTranslation = clampedGroupTranslation(translation, snapshots: snapshots, canvasSize: canvasSize)
+        guard var startBounds = snapshots.first?.startFrame else {
+            activeAlignmentGuide = nil
+            return .zero
+        }
+        for snapshot in snapshots.dropFirst() {
+            startBounds = startBounds.union(snapshot.startFrame)
+        }
+
+        let proposedBounds = startBounds.offsetBy(dx: clampedTranslation.width, dy: clampedTranslation.height)
+        let snapResult = GamepadAlignmentSnapSolver.snappedFrame(
+            for: proposedBounds,
+            targetFrames: alignmentTargetFrames(excluding: selectedIDs, in: controls),
+            canvasSize: canvasSize,
+            displayScale: displayScale
+        )
+        let snappedTranslation = clampedGroupTranslation(
+            CGSize(width: snapResult.frame.minX - startBounds.minX, height: snapResult.frame.minY - startBounds.minY),
+            snapshots: snapshots,
+            canvasSize: canvasSize
+        )
+        let snappedBounds = startBounds.offsetBy(dx: snappedTranslation.width, dy: snappedTranslation.height)
+        let snapGuide = GamepadAlignmentSnapSolver.framesAreEquivalent(snappedBounds, snapResult.frame) ? snapResult.guide : nil
         let existingFrames = existingControlFrames(excluding: selectedIDs, canvasSize: canvasSize)
-        guard groupFrames(snapshots, offsetBy: clampedTranslation).contains(where: { GamepadLayoutResolver.frameOverlapsAny($0, avoiding: existingFrames) }) else {
-            return clampedTranslation
+        guard groupFrames(snapshots, offsetBy: snappedTranslation).contains(where: { GamepadLayoutResolver.frameOverlapsAny($0, avoiding: existingFrames) }) else {
+            activeAlignmentGuide = snapGuide
+            return snappedTranslation
         }
 
         var lowerBound: CGFloat = 0
@@ -6462,7 +6862,7 @@ private struct GamepadLayoutDesigner: View {
         var bestTranslation = CGSize.zero
         for _ in 0..<12 {
             let fraction = (lowerBound + upperBound) / 2
-            let candidate = CGSize(width: clampedTranslation.width * fraction, height: clampedTranslation.height * fraction)
+            let candidate = CGSize(width: snappedTranslation.width * fraction, height: snappedTranslation.height * fraction)
             let overlaps = groupFrames(snapshots, offsetBy: candidate).contains { frame in
                 GamepadLayoutResolver.frameOverlapsAny(frame, avoiding: existingFrames)
             }
@@ -6473,6 +6873,7 @@ private struct GamepadLayoutDesigner: View {
                 lowerBound = fraction
             }
         }
+        activeAlignmentGuide = nil
         return bestTranslation
     }
 
