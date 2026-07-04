@@ -210,7 +210,7 @@ Setup-level customization:
 
 ```bash
 "$POCKETPAD_CLI" customization show --profile active
-"$POCKETPAD_CLI" customization set --layout southpaw --scale large --accent blue --show-labels
+"$POCKETPAD_CLI" customization set --layout southpaw --scale large --appearance dark --accent blue --show-labels
 "$POCKETPAD_CLI" customization export -o customization.json
 "$POCKETPAD_CLI" customization import customization.json
 "$POCKETPAD_CLI" customization reset
@@ -220,14 +220,20 @@ Element-level controls:
 
 ```bash
 "$POCKETPAD_CLI" element list
-"$POCKETPAD_CLI" element add button --label Fire --maps-to custom1 --x 0.50 --y 0.80 --fill '#F59E0B'
+"$POCKETPAD_CLI" element add button --label Fire --maps-to custom1 --x 0.50 --y 0.80 --light-fill '#F59E0B' --dark-fill '#78350F'
 "$POCKETPAD_CLI" element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
-"$POCKETPAD_CLI" element set jump --label A --fill '#7C3AED' --shape circle --width 1.2 --height 1.2
+"$POCKETPAD_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
 "$POCKETPAD_CLI" element set jump --lock
 "$POCKETPAD_CLI" element set pause --hide
 "$POCKETPAD_CLI" element reset jump
 "$POCKETPAD_CLI" element delete custom1
 ```
+
+Appearance flags:
+
+- `customization set --appearance system|light|dark` saves the selected setup's runtime appearance preference.
+- `element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'` saves separate button fills for both palettes.
+- `--fill '#RRGGBB'` remains the shared/legacy fill for both palettes; `--clear-light-fill`, `--clear-dark-fill`, and `--clear-fill` remove custom colors.
 
 ## Runtime Mac helper commands
 

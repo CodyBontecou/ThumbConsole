@@ -2496,6 +2496,32 @@ private struct GamepadShapeDrawState {
     var currentPoint: CGPoint
 }
 
+private enum GamepadEditorColorScheme: String, CaseIterable, Hashable {
+    case light
+    case dark
+
+    var displayName: String {
+        switch self {
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var colorScheme: ColorScheme {
+        switch self {
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .light: "sun.max.fill"
+        case .dark: "moon.fill"
+        }
+    }
+}
+
 private struct GeistSegmentedPicker<Option: Hashable>: View {
     @Environment(\.colorScheme) private var colorScheme
     let title: String
@@ -2819,6 +2845,7 @@ struct GamepadCustomizationEditor: View {
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
     @AppStorage("PocketPad.GamepadEditor.canvasZoom") private var canvasZoomValue: Double = 1.0
     @AppStorage("PocketPad.GamepadEditor.deviceFrame") private var deviceFrameRawValue: String = GamepadCustomizationEditor.defaultDeviceFrame.rawValue
+    @AppStorage("PocketPad.GamepadEditor.editingColorScheme") private var editingColorSchemeRawValue: String = GamepadEditorColorScheme.light.rawValue
 
     init(
         customization: Binding<GamepadCustomization>,
@@ -2872,8 +2899,19 @@ struct GamepadCustomizationEditor: View {
         activeDeviceFrame.screenRect.size
     }
 
+    private var editorColorScheme: GamepadEditorColorScheme {
+        GamepadEditorColorScheme(rawValue: editingColorSchemeRawValue) ?? .light
+    }
+
     private var activeKeypadColorScheme: ColorScheme {
-        customization.resolvedColorScheme(system: colorScheme)
+        editorColorScheme.colorScheme
+    }
+
+    private var editorColorSchemeBinding: Binding<GamepadEditorColorScheme> {
+        Binding(
+            get: { editorColorScheme },
+            set: { editingColorSchemeRawValue = $0.rawValue }
+        )
     }
 
     var body: some View {
@@ -3400,13 +3438,26 @@ struct GamepadCustomizationEditor: View {
             }
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Appearance")
+                Text("Saved Appearance")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                GeistSegmentedPicker(title: "Appearance", options: GamepadColorSchemePreference.allCases, selection: binding(\.colorSchemePreference)) { preference in
+                GeistSegmentedPicker(title: "Saved Appearance", options: GamepadColorSchemePreference.allCases, selection: binding(\.colorSchemePreference)) { preference in
                     preference.displayName
                 }
-                Text(customization.colorSchemePreference.description)
+                Text("\(customization.colorSchemePreference.description) This preference is saved with the selected setup.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Preview & Edit")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                GeistSegmentedPicker(title: "Preview & Edit", options: GamepadEditorColorScheme.allCases, selection: editorColorSchemeBinding) { scheme in
+                    scheme.displayName
+                }
+                Text("The canvas and color inspector are editing the \(editorColorScheme.displayName.lowercased()) palette. Light and dark fills are saved separately in this setup.")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -3554,6 +3605,10 @@ struct GamepadCustomizationEditor: View {
             canvasFloatingCreationToolbar
                 .padding(.bottom, Geist.Spacing.s4)
         }
+        .overlay(alignment: .topTrailing) {
+            canvasAppearanceBadge
+                .padding(Geist.Spacing.s4)
+        }
         .background(Geist.color(.background200, scheme: colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
         .overlay(
@@ -3573,6 +3628,24 @@ struct GamepadCustomizationEditor: View {
                     canvasZoomGestureStart = nil
                 }
         )
+    }
+
+    private var canvasAppearanceBadge: some View {
+        Label("Editing \(editorColorScheme.displayName)", systemImage: editorColorScheme.systemImage)
+            .geistTypography(.label13)
+            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+            .background(
+                Capsule()
+                    .fill(Geist.color(.background100, scheme: colorScheme).opacity(0.92))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08), radius: 8, x: 0, y: 3)
+            .accessibilityLabel("Editing \(editorColorScheme.displayName) keypad appearance")
     }
 
     private var canvasFloatingCreationToolbar: some View {
@@ -3912,7 +3985,16 @@ struct GamepadCustomizationEditor: View {
                 .geistTypography(.heading14)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
 
-            Text("Editing the \(schemeName.lowercased()) keypad palette. Light and dark fills are saved separately, so switch Appearance above to preview and tune the other mode.")
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Editing Palette")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                GeistSegmentedPicker(title: "Editing Palette", options: GamepadEditorColorScheme.allCases, selection: editorColorSchemeBinding) { scheme in
+                    scheme.displayName
+                }
+            }
+
+            Text("Editing the \(schemeName.lowercased()) keypad palette for this setup. Light and dark fills are saved separately, so switch palettes to preview and tune the other mode.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)

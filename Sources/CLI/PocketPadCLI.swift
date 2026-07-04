@@ -649,6 +649,7 @@ struct PocketPadCLI {
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
                 if let layout = optionValue("--layout", in: rest) { customization.layoutMode = try parseLayoutMode(layout) }
                 if let scale = optionValue("--scale", in: rest) ?? optionValue("--control-scale", in: rest) { customization.controlScale = try parseControlScale(scale) }
+                if let appearance = optionValue("--appearance", in: rest) ?? optionValue("--color-scheme", in: rest) ?? optionValue("--scheme", in: rest) { customization.colorSchemePreference = try parseColorSchemePreference(appearance) }
                 if let accent = optionValue("--accent", in: rest) ?? optionValue("--color", in: rest) { customization.accentStyle = try parseAccentStyle(accent) }
                 if rest.contains("--show-labels") { customization.showsButtonLabels = true }
                 if rest.contains("--hide-labels") { customization.showsButtonLabels = false }
@@ -721,7 +722,7 @@ struct PocketPadCLI {
                 controlKind: kind,
                 joystickMapping: kind == .joystick ? try joystickMapping(from: arguments) : nil
             )
-            applyLayoutOptions(arguments, to: &customButton.layout)
+            try applyLayoutOptions(arguments, to: &customButton.layout)
             if kind == .joystick {
                 customButton.layout.shape = .circle
                 customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 1.35 : customButton.layout.widthScale
@@ -741,7 +742,7 @@ struct PocketPadCLI {
             case .builtin(let button):
                 if let label = optionValue("--label", in: arguments) { customization.setLabel(label, for: button) }
                 var layout = customization.buttonCustomization(for: button)
-                applyLayoutOptions(arguments, to: &layout)
+                try applyLayoutOptions(arguments, to: &layout)
                 customization.setButtonCustomization(layout, for: button)
             case .custom(let id):
                 guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { throw CLIError.message("Custom element not found") }
@@ -753,7 +754,7 @@ struct PocketPadCLI {
                     customization.customButtons[index].joystickMapping = try joystickMapping(from: arguments, fallback: customization.customButtons[index].joystickMapping ?? .movement)
                     customization.customButtons[index].layout.shape = .circle
                 }
-                applyLayoutOptions(arguments, to: &customization.customButtons[index].layout)
+                try applyLayoutOptions(arguments, to: &customization.customButtons[index].layout)
             }
         }
         print("Updated element \"\(targetText)\".")
@@ -800,7 +801,7 @@ struct PocketPadCLI {
         print("Reset element \"\(targetText)\".")
     }
 
-    private static func applyLayoutOptions(_ arguments: [String], to layout: inout GamepadButtonCustomization) {
+    private static func applyLayoutOptions(_ arguments: [String], to layout: inout GamepadButtonCustomization) throws {
         if let value = optionValue("--x", in: arguments) ?? optionValue("--center-x", in: arguments), let number = Double(value) { layout.centerX = CGFloat(number) }
         if let value = optionValue("--y", in: arguments) ?? optionValue("--center-y", in: arguments), let number = Double(value) { layout.centerY = CGFloat(number) }
         if let value = optionValue("--width", in: arguments) ?? optionValue("--width-scale", in: arguments), let number = Double(value) { layout.widthScale = CGFloat(number) }
@@ -812,15 +813,42 @@ struct PocketPadCLI {
             layout.lightFillColor = nil
             layout.darkFillColor = nil
         }
-        if let value = optionValue("--fill", in: arguments) ?? optionValue("--color", in: arguments), let color = GamepadRGBAColor(hexString: value) {
-            layout.fillColor = color
+        if let value = optionValue("--fill", in: arguments) ?? optionValue("--color", in: arguments) {
+            layout.fillColor = try parseRGBAColor(value)
             layout.lightFillColor = nil
             layout.darkFillColor = nil
+        }
+        if arguments.contains("--clear-fill") || arguments.contains("--clear-color") {
+            layout.fillColor = nil
+            layout.lightFillColor = nil
+            layout.darkFillColor = nil
+        }
+        if let value = optionValue("--light-fill", in: arguments) ?? optionValue("--fill-light", in: arguments) ?? optionValue("--light-color", in: arguments) {
+            setLayoutFillColor(try parseRGBAColor(value), isDark: false, in: &layout)
+        }
+        if let value = optionValue("--dark-fill", in: arguments) ?? optionValue("--fill-dark", in: arguments) ?? optionValue("--dark-color", in: arguments) {
+            setLayoutFillColor(try parseRGBAColor(value), isDark: true, in: &layout)
+        }
+        if arguments.contains("--clear-light-fill") || arguments.contains("--clear-light-color") {
+            clearLayoutFillColor(isDark: false, in: &layout)
+        }
+        if arguments.contains("--clear-dark-fill") || arguments.contains("--clear-dark-color") {
+            clearLayoutFillColor(isDark: true, in: &layout)
         }
         if let value = optionValue("--opacity", in: arguments), let opacity = parseOpacityIfPresent(value) {
             var color = layout.fillColor ?? .defaultValue
             color.alpha = opacity
             layout.fillColor = color
+        }
+        if let value = optionValue("--light-opacity", in: arguments), let opacity = parseOpacityIfPresent(value) {
+            var color = layoutFillColor(isDark: false, in: layout) ?? .defaultValue
+            color.alpha = opacity
+            setLayoutFillColor(color, isDark: false, in: &layout)
+        }
+        if let value = optionValue("--dark-opacity", in: arguments), let opacity = parseOpacityIfPresent(value) {
+            var color = layoutFillColor(isDark: true, in: layout) ?? .defaultValue
+            color.alpha = opacity
+            setLayoutFillColor(color, isDark: true, in: &layout)
         }
         if let value = optionValue("--corner", in: arguments) ?? optionValue("--radius", in: arguments), let radius = Double(value) {
             layout.shape = .roundedRectangle
@@ -845,6 +873,45 @@ struct PocketPadCLI {
         if arguments.contains("--show") || arguments.contains("--visible") { layout.isHidden = false }
         if arguments.contains("--lock") || arguments.contains("--locked") { layout.isLocationLocked = true }
         if arguments.contains("--unlock") || arguments.contains("--unlocked") { layout.isLocationLocked = false }
+    }
+
+    private static func layoutFillColor(isDark: Bool, in layout: GamepadButtonCustomization) -> GamepadRGBAColor? {
+        isDark ? (layout.darkFillColor ?? layout.fillColor) : (layout.lightFillColor ?? layout.fillColor)
+    }
+
+    private static func setLayoutFillColor(_ color: GamepadRGBAColor, isDark: Bool, in layout: inout GamepadButtonCustomization) {
+        if let legacyFillColor = layout.fillColor?.normalized {
+            if layout.lightFillColor == nil {
+                layout.lightFillColor = legacyFillColor
+            }
+            if layout.darkFillColor == nil {
+                layout.darkFillColor = legacyFillColor
+            }
+        }
+        layout.fillColor = nil
+        if isDark {
+            layout.darkFillColor = color.normalized
+        } else {
+            layout.lightFillColor = color.normalized
+        }
+    }
+
+    private static func clearLayoutFillColor(isDark: Bool, in layout: inout GamepadButtonCustomization) {
+        if let legacyFillColor = layout.fillColor?.normalized {
+            if isDark {
+                if layout.lightFillColor == nil {
+                    layout.lightFillColor = legacyFillColor
+                }
+            } else if layout.darkFillColor == nil {
+                layout.darkFillColor = legacyFillColor
+            }
+        }
+        layout.fillColor = nil
+        if isDark {
+            layout.darkFillColor = nil
+        } else {
+            layout.lightFillColor = nil
+        }
     }
 
     // MARK: - Runtime commands
@@ -1463,6 +1530,20 @@ struct PocketPadCLI {
         throw CLIError.message("Unknown control scale: \(text)")
     }
 
+    private static func parseColorSchemePreference(_ text: String) throws -> GamepadColorSchemePreference {
+        if let value = GamepadColorSchemePreference(rawValue: text.lowercased()) { return value }
+        switch normalizedLookup(text) {
+        case "system", "auto", "device", "followdevice", "followsdevice", "followssystem":
+            return .system
+        case "light", "lightmode", "alwayslight":
+            return .light
+        case "dark", "darkmode", "alwaysdark":
+            return .dark
+        default:
+            throw CLIError.message("Unknown appearance: \(text)")
+        }
+    }
+
     private static func parseAccentStyle(_ text: String) throws -> GamepadAccentStyle {
         if let value = parseAccentStyleIfPresent(text) { return value }
         throw CLIError.message("Unknown accent style: \(text)")
@@ -1470,6 +1551,13 @@ struct PocketPadCLI {
 
     private static func parseAccentStyleIfPresent(_ text: String) -> GamepadAccentStyle? {
         GamepadAccentStyle(rawValue: text) ?? GamepadAccentStyle.allCases.first { normalizedLookup($0.displayName) == normalizedLookup(text) }
+    }
+
+    private static func parseRGBAColor(_ text: String) throws -> GamepadRGBAColor {
+        guard let color = GamepadRGBAColor(hexString: text) else {
+            throw CLIError.message("Invalid color: \(text). Use #RRGGBB or #RRGGBBAA.")
+        }
+        return color
     }
 
     private static func parseShapeStyleIfPresent(_ text: String) -> GamepadButtonShapeStyle? {
@@ -1602,8 +1690,9 @@ struct PocketPadCLI {
         let optionsWithValues: Set<String> = [
             "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from",
             "--sequence", "--key", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
-            "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
-            "--width", "--width-scale", "--height", "--height-scale", "--shape", "--fill", "--opacity",
+            "--appearance", "--color-scheme", "--scheme", "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
+            "--width", "--width-scale", "--height", "--height-scale", "--shape", "--fill", "--light-fill", "--fill-light",
+            "--light-color", "--dark-fill", "--fill-dark", "--dark-color", "--opacity", "--light-opacity", "--dark-opacity",
             "--corner", "--radius", "--corner-tl", "--corner-tr", "--corner-br", "--corner-bl", "--shadow",
             "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--hold-ms"
         ]
@@ -1733,12 +1822,12 @@ struct PocketPadCLI {
           pocketpad binding reset-all
 
         Customization:
-          pocketpad customization set --layout standard --scale large --accent blue --show-labels
+          pocketpad customization set --layout standard --scale large --appearance dark --accent blue --show-labels
           pocketpad customization export -o customization.json
           pocketpad element list
-          pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8
+          pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#F59E0B' --dark-fill '#78350F'
           pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
-          pocketpad element set jump --label A --fill '#7C3AED' --shape circle --width 1.2 --height 1.2
+          pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
 
         Runtime:
           pocketpad app open|quit

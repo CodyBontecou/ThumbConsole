@@ -79,9 +79,9 @@ pocketpad template install snes --name "SNES Browser Controls" --default
 pocketpad profile export --all -o pocketpad-profiles.json
 pocketpad profile import pocketpad-profiles.json
 pocketpad binding set focus --sequence 'Control+B,H'
-pocketpad customization set --layout southpaw --scale large --accent blue --show-labels
+pocketpad customization set --layout southpaw --scale large --appearance dark --accent blue --show-labels
 pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
-pocketpad element set jump --label A --fill '#7C3AED' --shape circle --width 1.2 --height 1.2
+pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
 ```
 
 When PocketPad Mac is running, CLI profile/customization/binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone. Runtime commands are also available:
@@ -103,6 +103,8 @@ pocketpad release-all
 ## Keypad customization
 
 Customize keypad setups from the macOS helper's **Keypad** section or with the CLI. The iOS app receives the Mac's saved setups during pairing, can switch between them from the in-controller **Keypad setup** menu, and can mark the current setup as the default. The macOS helper can also mark any setup as default from the Keypad editor.
+
+Each setup stores its own appearance preference. In the Keypad editor, use **Saved Appearance** to choose whether that setup follows the device, always uses light mode, or always uses dark mode. Use **Preview & Edit** to swap the canvas and color inspector between the light and dark palettes; per-button light and dark fill colors are saved separately with the setup. The same settings are scriptable with `pocketpad customization set --appearance light|dark|system` and `pocketpad element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'`.
 
 Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder.
 
