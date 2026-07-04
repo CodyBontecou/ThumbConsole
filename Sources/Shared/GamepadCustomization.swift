@@ -2263,6 +2263,7 @@ private final class GamepadEditorUndoTarget {}
 private struct GamepadEditorUndoSnapshot: Equatable {
     var customization: GamepadCustomization
     var selectedControlID: GamepadControlIdentity
+    var selectedControlIDs: Set<GamepadControlIdentity>
     var isControlSelectionActive: Bool
 }
 
@@ -2656,6 +2657,7 @@ struct GamepadCustomizationEditor: View {
     private static let canvasZoomMax: CGFloat = 2.25
 
     @State private var selectedControlID: GamepadControlIdentity
+    @State private var selectedControlIDs: Set<GamepadControlIdentity>
     @State private var isControlSelectionActive: Bool
     @State private var profiles: [GamepadConfigurationProfile]
     @State private var selectedProfileID: UUID
@@ -2709,6 +2711,7 @@ struct GamepadCustomizationEditor: View {
         self.defaultLabelProvider = defaultLabelProvider
         self.selectedKeyBindingContent = selectedKeyBindingContent
         self._selectedControlID = State(initialValue: .builtin(.jump))
+        self._selectedControlIDs = State(initialValue: [.builtin(.jump)])
         self._isControlSelectionActive = State(initialValue: true)
         self._profiles = State(initialValue: loadedProfiles.profiles)
         self._selectedProfileID = State(initialValue: loadedProfiles.activeProfileID)
@@ -2736,7 +2739,7 @@ struct GamepadCustomizationEditor: View {
                     }
                 }
             } else {
-                ScrollView {
+                ScrollView(.vertical, showsIndicators: false) {
                     inspectorCompactSection
                         .padding(Geist.Spacing.s4)
                 }
@@ -2809,7 +2812,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var compactEditor: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Geist.Spacing.s4) {
                 configurationCompactSection
                 canvasStage
@@ -2852,7 +2855,7 @@ struct GamepadCustomizationEditor: View {
 
             Divider()
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: Geist.Spacing.s2) {
                     ForEach(profiles) { profile in
                         profileRow(profile)
@@ -3075,7 +3078,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func componentRow(_ item: GamepadEditorComponentItem) -> some View {
-        let isSelected = isControlSelectionActive && selectedControlID == item.identity
+        let isSelected = isControlSelectionActive && selectedControlIDs.contains(item.identity)
         let primaryTextColor = item.isHidden
             ? Geist.color(.gray900, scheme: colorScheme).opacity(0.58)
             : Geist.color(.gray1000, scheme: colorScheme)
@@ -3344,7 +3347,7 @@ struct GamepadCustomizationEditor: View {
         let outerWidth = deviceWidth
         let outerHeight = deviceHeight
 
-        return ScrollView([.horizontal, .vertical], showsIndicators: true) {
+        return ScrollView([.horizontal, .vertical], showsIndicators: false) {
             ZStack {
                 Rectangle()
                     .fill(Color.clear)
@@ -3352,17 +3355,22 @@ struct GamepadCustomizationEditor: View {
                     .onTapGesture {
                         guard activeCanvasTool == .select else { return }
                         isControlSelectionActive = false
+                        selectedControlIDs.removeAll()
                     }
 
                 ZStack(alignment: .topLeading) {
                     GamepadLayoutDesigner(
                         customization: editorBinding,
                         selectedControlID: $selectedControlID,
+                        selectedControlIDs: $selectedControlIDs,
                         isControlSelectionActive: $isControlSelectionActive,
                         activeTool: $activeCanvasTool,
                         layoutSize: screenRect.size,
                         displayScale: displayScale,
-                        defaultLabelProvider: defaultLabelProvider
+                        defaultLabelProvider: defaultLabelProvider,
+                        onBeginUndoableChange: { actionName in
+                            registerUndoSnapshot(actionName: actionName)
+                        }
                     )
                     .frame(width: screenDisplayRect.width, height: screenDisplayRect.height)
                     .offset(x: screenDisplayRect.minX, y: screenDisplayRect.minY)
@@ -3576,7 +3584,7 @@ struct GamepadCustomizationEditor: View {
 
             Divider()
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 inspectorContent
                     .padding(Geist.Spacing.s4)
             }
@@ -3944,7 +3952,9 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var selectedControlIsEditable: Bool {
-        isControlSelectionActive && controlSelectionOptions.contains(selectedControlID)
+        isControlSelectionActive
+            && selectedControlIDs.contains(selectedControlID)
+            && controlSelectionOptions.contains(selectedControlID)
     }
 
     private var controlSelectionOptions: [GamepadControlIdentity] {
@@ -4245,7 +4255,11 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var selectedInspectorTitle: String {
-        selectedControlIsEditable ? selectedControlTitle : "No component selected"
+        if selectedControlIsEditable, selectedControlIDs.count > 1 {
+            return "\(selectedControlIDs.count) components selected"
+        }
+
+        return selectedControlIsEditable ? selectedControlTitle : "No component selected"
     }
 
     private var selectedControlTitle: String {
@@ -4369,6 +4383,7 @@ struct GamepadCustomizationEditor: View {
 
     private func selectComponent(_ identity: GamepadControlIdentity) {
         selectedControlID = identity
+        selectedControlIDs = [identity]
         isControlSelectionActive = true
     }
 
@@ -4875,12 +4890,45 @@ struct GamepadCustomizationEditor: View {
     private func applyCustomization(
         _ nextCustomization: GamepadCustomization,
         selecting nextSelectedControlID: GamepadControlIdentity? = nil,
+        selectionSet nextSelectedControlIDs: Set<GamepadControlIdentity>? = nil,
         undoActionName: String? = nil
     ) {
         let normalizedCustomization = nextCustomization.normalized
-        let resolvedSelection = nextSelectedControlID.map { validControlSelection($0, in: normalizedCustomization) }
+        let options = controlSelectionOptions(for: normalizedCustomization)
+        let optionSet = Set(options)
+        let resolvedPrimarySelection = nextSelectedControlID.map { validControlSelection($0, in: normalizedCustomization) }
+        let selectionWasExplicit = nextSelectedControlID != nil || nextSelectedControlIDs != nil
+
+        var resolvedSelectionIDs: Set<GamepadControlIdentity>
+        if let nextSelectedControlIDs {
+            resolvedSelectionIDs = Set(nextSelectedControlIDs.filter { optionSet.contains($0) })
+            if let resolvedPrimarySelection {
+                resolvedSelectionIDs.insert(resolvedPrimarySelection)
+            }
+        } else if let resolvedPrimarySelection {
+            resolvedSelectionIDs = [resolvedPrimarySelection]
+        } else {
+            resolvedSelectionIDs = Set(selectedControlIDs.filter { optionSet.contains($0) })
+        }
+
+        let nextPrimaryControlID: GamepadControlIdentity
+        if let resolvedPrimarySelection, resolvedSelectionIDs.contains(resolvedPrimarySelection) {
+            nextPrimaryControlID = resolvedPrimarySelection
+        } else if resolvedSelectionIDs.contains(selectedControlID) {
+            nextPrimaryControlID = selectedControlID
+        } else if let firstSelectedControlID = options.first(where: { resolvedSelectionIDs.contains($0) }) {
+            nextPrimaryControlID = firstSelectedControlID
+        } else {
+            nextPrimaryControlID = preferredControlSelection(for: normalizedCustomization) ?? .builtin(.jump)
+        }
+
+        let nextIsControlSelectionActive = selectionWasExplicit
+            ? !resolvedSelectionIDs.isEmpty
+            : (isControlSelectionActive && !resolvedSelectionIDs.isEmpty)
         let shouldUpdateCustomization = customization.normalized != normalizedCustomization
-        let shouldUpdateSelection = resolvedSelection.map { $0 != selectedControlID || !isControlSelectionActive } ?? false
+        let shouldUpdateSelection = nextPrimaryControlID != selectedControlID
+            || resolvedSelectionIDs != selectedControlIDs
+            || nextIsControlSelectionActive != isControlSelectionActive
         guard shouldUpdateCustomization || shouldUpdateSelection else { return }
 
         if let undoActionName {
@@ -4888,9 +4936,9 @@ struct GamepadCustomizationEditor: View {
         }
 
         customization = normalizedCustomization
-        if let resolvedSelection {
-            selectComponent(resolvedSelection)
-        }
+        selectedControlID = nextPrimaryControlID
+        selectedControlIDs = resolvedSelectionIDs
+        isControlSelectionActive = nextIsControlSelectionActive
         syncSelectedProfile(with: normalizedCustomization)
     }
 
@@ -4899,15 +4947,17 @@ struct GamepadCustomizationEditor: View {
         let snapshot = GamepadEditorUndoSnapshot(
             customization: customization.normalized,
             selectedControlID: selectedControlID,
+            selectedControlIDs: selectedControlIDs,
             isControlSelectionActive: isControlSelectionActive
         )
         undoManager.registerUndo(withTarget: undoTarget) { _ in
             applyCustomization(
                 snapshot.customization,
                 selecting: snapshot.selectedControlID,
+                selectionSet: snapshot.selectedControlIDs,
                 undoActionName: actionName
             )
-            isControlSelectionActive = snapshot.isControlSelectionActive
+            isControlSelectionActive = snapshot.isControlSelectionActive && !selectedControlIDs.isEmpty
         }
         undoManager.setActionName(actionName)
     }
@@ -5007,6 +5057,19 @@ struct GamepadCustomizationEditor: View {
     private func validControlSelection(_ selection: GamepadControlIdentity, in customization: GamepadCustomization) -> GamepadControlIdentity {
         let options = controlSelectionOptions(for: customization)
         return options.contains(selection) ? selection : preferredControlSelection(for: customization) ?? .builtin(.jump)
+    }
+
+    private func reconcileSelection(in customization: GamepadCustomization) {
+        let options = controlSelectionOptions(for: customization)
+        let optionSet = Set(options)
+        let validSelectionIDs = Set(selectedControlIDs.filter { optionSet.contains($0) })
+        selectedControlIDs = validSelectionIDs
+        if !validSelectionIDs.contains(selectedControlID) {
+            selectedControlID = options.first(where: { validSelectionIDs.contains($0) })
+                ?? preferredControlSelection(for: customization)
+                ?? .builtin(.jump)
+        }
+        isControlSelectionActive = isControlSelectionActive && !validSelectionIDs.isEmpty
     }
 
     private func beginRenamingSelectedProfile() {
@@ -5187,10 +5250,8 @@ struct GamepadCustomizationEditor: View {
         }
         if didChangeSelectedProfile {
             selectPreferredComponent(for: customization)
-        } else if !controlSelectionOptions.contains(selectedControlID) {
-            let preferredSelection = preferredControlSelection(for: customization)
-            selectedControlID = preferredSelection ?? .builtin(.jump)
-            isControlSelectionActive = isControlSelectionActive && preferredSelection != nil
+        } else {
+            reconcileSelection(in: customization)
         }
     }
 
@@ -5451,19 +5512,428 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
     }
 }
 
+private struct GamepadModifierKeyMonitor: NSViewRepresentable {
+    @Binding var isOptionPressed: Bool
+    @Binding var isShiftPressed: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isOptionPressed: $isOptionPressed, isShiftPressed: $isShiftPressed)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.start()
+        context.coordinator.publish(NSEvent.modifierFlags)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.updateBindings(isOptionPressed: $isOptionPressed, isShiftPressed: $isShiftPressed)
+        context.coordinator.publish(NSEvent.modifierFlags)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    final class Coordinator {
+        private var isOptionPressed: Binding<Bool>
+        private var isShiftPressed: Binding<Bool>
+        private var localMonitor: Any?
+
+        init(isOptionPressed: Binding<Bool>, isShiftPressed: Binding<Bool>) {
+            self.isOptionPressed = isOptionPressed
+            self.isShiftPressed = isShiftPressed
+        }
+
+        deinit {
+            stop()
+        }
+
+        func updateBindings(isOptionPressed: Binding<Bool>, isShiftPressed: Binding<Bool>) {
+            self.isOptionPressed = isOptionPressed
+            self.isShiftPressed = isShiftPressed
+        }
+
+        func start() {
+            guard localMonitor == nil else { return }
+            localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                self?.publish(event.modifierFlags)
+                return event
+            }
+        }
+
+        func stop() {
+            if let localMonitor {
+                NSEvent.removeMonitor(localMonitor)
+                self.localMonitor = nil
+            }
+        }
+
+        func publish(_ flags: NSEvent.ModifierFlags) {
+            let deviceFlags = flags.intersection(.deviceIndependentFlagsMask)
+            let nextOptionPressed = deviceFlags.contains(.option)
+            let nextShiftPressed = deviceFlags.contains(.shift)
+
+            let assign = { [weak self] in
+                guard let self else { return }
+                if self.isOptionPressed.wrappedValue != nextOptionPressed {
+                    self.isOptionPressed.wrappedValue = nextOptionPressed
+                }
+                if self.isShiftPressed.wrappedValue != nextShiftPressed {
+                    self.isShiftPressed.wrappedValue = nextShiftPressed
+                }
+            }
+
+            if Thread.isMainThread {
+                assign()
+            } else {
+                DispatchQueue.main.async(execute: assign)
+            }
+        }
+    }
+}
+
+private struct GamepadMeasurementOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let selectedFrame: CGRect
+    let hoveredFrame: CGRect
+    let canvasSize: CGSize
+    let displayScale: CGFloat
+
+    private var safeDisplayScale: CGFloat {
+        max(displayScale, 0.001)
+    }
+
+    private var displaySize: CGSize {
+        CGSize(width: canvasSize.width * safeDisplayScale, height: canvasSize.height * safeDisplayScale)
+    }
+
+    private var measurementSegments: [GamepadMeasurementSegment] {
+        GamepadMeasurementGeometry.segments(
+            selectedFrame: selectedFrame,
+            hoveredFrame: hoveredFrame,
+            canvasSize: canvasSize
+        )
+        .map { $0.scaled(by: safeDisplayScale) }
+    }
+
+    var body: some View {
+        let selectedDisplayFrame = scaledRect(selectedFrame)
+        let hoveredDisplayFrame = scaledRect(hoveredFrame)
+        let segments = measurementSegments
+        let measurementColor = Geist.color(.red700, scheme: colorScheme)
+
+        ZStack(alignment: .topLeading) {
+            Canvas { context, _ in
+                var path = Path()
+                path.addRect(selectedDisplayFrame.insetBy(dx: -0.5, dy: -0.5))
+                path.addRect(hoveredDisplayFrame.insetBy(dx: -0.5, dy: -0.5))
+
+                for segment in segments {
+                    append(segment, to: &path)
+                }
+
+                context.stroke(
+                    path,
+                    with: .color(measurementColor),
+                    style: StrokeStyle(lineWidth: 1.25, lineCap: .square, lineJoin: .miter)
+                )
+            }
+
+            ForEach(segments) { segment in
+                measurementLabel(segment)
+                    .position(labelPosition(for: segment))
+            }
+        }
+    }
+
+    private func measurementLabel(_ segment: GamepadMeasurementSegment) -> some View {
+        Text(segment.labelText)
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Geist.color(.red700, scheme: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .stroke(Geist.color(.red800, scheme: colorScheme), lineWidth: 0.75)
+            )
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.32 : 0.12), radius: 2, y: 1)
+    }
+
+    private func append(_ segment: GamepadMeasurementSegment, to path: inout Path) {
+        let capLength: CGFloat = 5
+        path.move(to: segment.start)
+        path.addLine(to: segment.end)
+
+        switch segment.orientation {
+        case .horizontal:
+            path.move(to: CGPoint(x: segment.start.x, y: segment.start.y - capLength))
+            path.addLine(to: CGPoint(x: segment.start.x, y: segment.start.y + capLength))
+            path.move(to: CGPoint(x: segment.end.x, y: segment.end.y - capLength))
+            path.addLine(to: CGPoint(x: segment.end.x, y: segment.end.y + capLength))
+        case .vertical:
+            path.move(to: CGPoint(x: segment.start.x - capLength, y: segment.start.y))
+            path.addLine(to: CGPoint(x: segment.start.x + capLength, y: segment.start.y))
+            path.move(to: CGPoint(x: segment.end.x - capLength, y: segment.end.y))
+            path.addLine(to: CGPoint(x: segment.end.x + capLength, y: segment.end.y))
+        }
+    }
+
+    private func labelPosition(for segment: GamepadMeasurementSegment) -> CGPoint {
+        let midpoint = CGPoint(
+            x: (segment.start.x + segment.end.x) / 2,
+            y: (segment.start.y + segment.end.y) / 2
+        )
+        return CGPoint(
+            x: Self.clamp(midpoint.x, lower: 18, upper: max(18, displaySize.width - 18)),
+            y: Self.clamp(midpoint.y, lower: 10, upper: max(10, displaySize.height - 10))
+        )
+    }
+
+    private func scaledRect(_ rect: CGRect) -> CGRect {
+        CGRect(
+            x: rect.minX * safeDisplayScale,
+            y: rect.minY * safeDisplayScale,
+            width: rect.width * safeDisplayScale,
+            height: rect.height * safeDisplayScale
+        )
+    }
+
+    private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        min(max(value, lower), upper)
+    }
+}
+
+private enum GamepadMeasurementOrientation {
+    case horizontal
+    case vertical
+}
+
+private struct GamepadMeasurementSegment: Identifiable {
+    let id: String
+    let orientation: GamepadMeasurementOrientation
+    let start: CGPoint
+    let end: CGPoint
+    let distance: CGFloat
+
+    var labelText: String {
+        Self.formatted(distance)
+    }
+
+    func scaled(by scale: CGFloat) -> GamepadMeasurementSegment {
+        GamepadMeasurementSegment(
+            id: id,
+            orientation: orientation,
+            start: CGPoint(x: start.x * scale, y: start.y * scale),
+            end: CGPoint(x: end.x * scale, y: end.y * scale),
+            distance: distance
+        )
+    }
+
+    private static func formatted(_ value: CGFloat) -> String {
+        let rounded = value.rounded()
+        if abs(value - rounded) < 0.05 {
+            return String(Int(rounded))
+        }
+        return String(format: "%.1f", Double(value))
+    }
+}
+
+private enum GamepadMeasurementGeometry {
+    static func segments(selectedFrame: CGRect, hoveredFrame: CGRect, canvasSize: CGSize) -> [GamepadMeasurementSegment] {
+        let selected = selectedFrame.standardized
+        let hovered = hoveredFrame.standardized
+        guard selected.width > 0,
+              selected.height > 0,
+              hovered.width > 0,
+              hovered.height > 0,
+              canvasSize.width > 1,
+              canvasSize.height > 1
+        else {
+            return []
+        }
+
+        var segments: [GamepadMeasurementSegment] = []
+        if let verticalGap = verticalGapSegment(selected: selected, hovered: hovered, canvasSize: canvasSize) {
+            segments.append(verticalGap)
+        } else {
+            segments.append(contentsOf: verticalEdgeOffsetSegments(selected: selected, hovered: hovered, canvasSize: canvasSize))
+        }
+
+        if let horizontalGap = horizontalGapSegment(selected: selected, hovered: hovered, canvasSize: canvasSize) {
+            segments.append(horizontalGap)
+        } else {
+            segments.append(contentsOf: horizontalEdgeOffsetSegments(selected: selected, hovered: hovered, canvasSize: canvasSize))
+        }
+
+        return segments.filter { $0.distance >= 0.5 }
+    }
+
+    private static func verticalGapSegment(selected: CGRect, hovered: CGRect, canvasSize: CGSize) -> GamepadMeasurementSegment? {
+        let upper: CGRect
+        let lower: CGRect
+        let id: String
+
+        if selected.maxY <= hovered.minY {
+            upper = selected
+            lower = hovered
+            id = "vertical-gap-selected-above"
+        } else if hovered.maxY <= selected.minY {
+            upper = hovered
+            lower = selected
+            id = "vertical-gap-hovered-above"
+        } else {
+            return nil
+        }
+
+        let x = clamped(
+            overlapMidpoint(firstMin: selected.minX, firstMax: selected.maxX, secondMin: hovered.minX, secondMax: hovered.maxX),
+            lower: 6,
+            upper: canvasSize.width - 6
+        )
+        return GamepadMeasurementSegment(
+            id: id,
+            orientation: .vertical,
+            start: CGPoint(x: x, y: upper.maxY),
+            end: CGPoint(x: x, y: lower.minY),
+            distance: lower.minY - upper.maxY
+        )
+    }
+
+    private static func horizontalGapSegment(selected: CGRect, hovered: CGRect, canvasSize: CGSize) -> GamepadMeasurementSegment? {
+        let left: CGRect
+        let right: CGRect
+        let id: String
+
+        if selected.maxX <= hovered.minX {
+            left = selected
+            right = hovered
+            id = "horizontal-gap-selected-left"
+        } else if hovered.maxX <= selected.minX {
+            left = hovered
+            right = selected
+            id = "horizontal-gap-hovered-left"
+        } else {
+            return nil
+        }
+
+        let y = clamped(
+            overlapMidpoint(firstMin: selected.minY, firstMax: selected.maxY, secondMin: hovered.minY, secondMax: hovered.maxY),
+            lower: 6,
+            upper: canvasSize.height - 6
+        )
+        return GamepadMeasurementSegment(
+            id: id,
+            orientation: .horizontal,
+            start: CGPoint(x: left.maxX, y: y),
+            end: CGPoint(x: right.minX, y: y),
+            distance: right.minX - left.maxX
+        )
+    }
+
+    private static func horizontalEdgeOffsetSegments(selected: CGRect, hovered: CGRect, canvasSize: CGSize) -> [GamepadMeasurementSegment] {
+        let topY = clamped(min(selected.minY, hovered.minY) - 14, lower: 8, upper: canvasSize.height - 8)
+        let bottomY = clamped(max(selected.maxY, hovered.maxY) + 14, lower: 8, upper: canvasSize.height - 8)
+        var segments: [GamepadMeasurementSegment] = []
+
+        if abs(selected.minX - hovered.minX) >= 0.5 {
+            segments.append(
+                GamepadMeasurementSegment(
+                    id: "horizontal-leading-offset",
+                    orientation: .horizontal,
+                    start: CGPoint(x: selected.minX, y: topY),
+                    end: CGPoint(x: hovered.minX, y: topY),
+                    distance: abs(selected.minX - hovered.minX)
+                )
+            )
+        }
+
+        if abs(selected.maxX - hovered.maxX) >= 0.5 {
+            segments.append(
+                GamepadMeasurementSegment(
+                    id: "horizontal-trailing-offset",
+                    orientation: .horizontal,
+                    start: CGPoint(x: selected.maxX, y: bottomY),
+                    end: CGPoint(x: hovered.maxX, y: bottomY),
+                    distance: abs(selected.maxX - hovered.maxX)
+                )
+            )
+        }
+
+        return segments
+    }
+
+    private static func verticalEdgeOffsetSegments(selected: CGRect, hovered: CGRect, canvasSize: CGSize) -> [GamepadMeasurementSegment] {
+        let leftX = clamped(min(selected.minX, hovered.minX) - 14, lower: 8, upper: canvasSize.width - 8)
+        let rightX = clamped(max(selected.maxX, hovered.maxX) + 14, lower: 8, upper: canvasSize.width - 8)
+        var segments: [GamepadMeasurementSegment] = []
+
+        if abs(selected.minY - hovered.minY) >= 0.5 {
+            segments.append(
+                GamepadMeasurementSegment(
+                    id: "vertical-top-offset",
+                    orientation: .vertical,
+                    start: CGPoint(x: leftX, y: selected.minY),
+                    end: CGPoint(x: leftX, y: hovered.minY),
+                    distance: abs(selected.minY - hovered.minY)
+                )
+            )
+        }
+
+        if abs(selected.maxY - hovered.maxY) >= 0.5 {
+            segments.append(
+                GamepadMeasurementSegment(
+                    id: "vertical-bottom-offset",
+                    orientation: .vertical,
+                    start: CGPoint(x: rightX, y: selected.maxY),
+                    end: CGPoint(x: rightX, y: hovered.maxY),
+                    distance: abs(selected.maxY - hovered.maxY)
+                )
+            )
+        }
+
+        return segments
+    }
+
+    private static func overlapMidpoint(firstMin: CGFloat, firstMax: CGFloat, secondMin: CGFloat, secondMax: CGFloat) -> CGFloat {
+        let overlapMin = max(firstMin, secondMin)
+        let overlapMax = min(firstMax, secondMax)
+        if overlapMin <= overlapMax {
+            return (overlapMin + overlapMax) / 2
+        }
+        return ((firstMin + firstMax) / 2 + (secondMin + secondMax) / 2) / 2
+    }
+
+    private static func clamped(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        min(max(value, lower), max(lower, upper))
+    }
+}
+
 private struct GamepadLayoutDesigner: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var customization: GamepadCustomization
     @Binding var selectedControlID: GamepadControlIdentity
+    @Binding var selectedControlIDs: Set<GamepadControlIdentity>
     @Binding var isControlSelectionActive: Bool
     @Binding var activeTool: GamepadCanvasTool
     var layoutSize: CGSize?
     var displayScale: CGFloat = 1
     var defaultLabelProvider: ((GameButton) -> String?)? = nil
+    var onBeginUndoableChange: (String) -> Void = { _ in }
     @State private var activeDrag: GamepadControlDragState?
     @State private var activeResize: GamepadControlResizeState?
+    @State private var activeGroupResize: GamepadGroupResizeState?
     @State private var activeRadiusDrag: GamepadControlRadiusDragState?
     @State private var activeDraw: GamepadShapeDrawState?
+    @State private var hoveredControlID: GamepadControlIdentity?
+    @State private var isOptionKeyPressed = false
+    @State private var isShiftKeyPressed = false
 
     private static let dragActivationDistance: CGFloat = 4
     private static let minimumDrawnButtonSize: CGFloat = 44
@@ -5477,6 +5947,8 @@ private struct GamepadLayoutDesigner: View {
                 in: resolvedLayoutSize,
                 defaultLabelProvider: defaultLabelProvider
             )
+            let selectedDesignerControls = currentSelectedControls(in: controls)
+            let isMultiSelection = selectedDesignerControls.count > 1
 
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
@@ -5484,21 +5956,21 @@ private struct GamepadLayoutDesigner: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         guard activeTool == .select else { return }
-                        isControlSelectionActive = false
+                        clearSelection()
                     }
                 layoutGrid
 
                 ForEach(controls) { control in
-                    let isSelected = isControlSelectionActive && selectedControlID == control.id
+                    let isSelected = isControlSelectionActive && selectedControlIDs.contains(control.id)
 
                     GamepadDesignerButton(
                         control: control,
                         customization: customization,
                         isSelected: isSelected,
+                        showsSelectionHandles: !isMultiSelection,
                         displayScale: resolvedDisplayScale,
                         onResizeChanged: { corner, value in
-                            selectedControlID = control.id
-                            isControlSelectionActive = true
+                            selectOnly(control.id)
                             guard !control.isLocationLocked else { return }
                             updateResize(corner, value: value, control: control, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
                         },
@@ -5506,8 +5978,7 @@ private struct GamepadLayoutDesigner: View {
                             activeResize = nil
                         },
                         onRadiusChanged: { value in
-                            selectedControlID = control.id
-                            isControlSelectionActive = true
+                            selectOnly(control.id)
                             updateRadius(value, control: control, displayScale: resolvedDisplayScale)
                         },
                         onRadiusEnded: {
@@ -5522,28 +5993,76 @@ private struct GamepadLayoutDesigner: View {
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .named("gamepadLayoutDesigner"))
                             .onChanged { value in
-                                selectedControlID = control.id
-                                isControlSelectionActive = true
+                                let interactionSelectionIDs: Set<GamepadControlIdentity>
+                                if activeDrag?.identity != control.id {
+                                    interactionSelectionIDs = selectForPointerDown(control.id, additive: isShiftKeyPressed)
+                                } else {
+                                    interactionSelectionIDs = selectedControlIDs
+                                }
+
                                 guard !control.isLocationLocked else { return }
 
                                 if activeDrag?.identity != control.id {
-                                    activeDrag = GamepadControlDragState(identity: control.id, startCenter: control.center)
+                                    beginDrag(for: control.id, selectionIDs: interactionSelectionIDs, controls: controls)
                                 }
 
-                                guard Self.isExplicitDrag(value.translation) else { return }
+                                guard Self.isExplicitDrag(value.translation), var dragState = activeDrag else { return }
 
-                                let startCenter = activeDrag?.startCenter ?? control.center
-                                let proposedCenter = CGPoint(
-                                    x: startCenter.x + value.translation.width / resolvedDisplayScale,
-                                    y: startCenter.y + value.translation.height / resolvedDisplayScale
+                                dragState.didMove = true
+                                activeDrag = dragState
+
+                                let translation = CGSize(
+                                    width: value.translation.width / resolvedDisplayScale,
+                                    height: value.translation.height / resolvedDisplayScale
                                 )
-                                updatePosition(proposedCenter, control: control, canvasSize: resolvedLayoutSize)
+
+                                if dragState.snapshots.count <= 1,
+                                   let snapshot = dragState.snapshots.first {
+                                    let proposedCenter = CGPoint(
+                                        x: snapshot.startCenter.x + translation.width,
+                                        y: snapshot.startCenter.y + translation.height
+                                    )
+                                    updatePosition(proposedCenter, control: control, canvasSize: resolvedLayoutSize)
+                                } else {
+                                    updateGroupPosition(translation, dragState: dragState, canvasSize: resolvedLayoutSize)
+                                }
                             }
                             .onEnded { _ in
                                 activeDrag = nil
                             }
                     )
                     .allowsHitTesting(activeTool == .select)
+                }
+
+                if isMultiSelection,
+                   let selectionFrame = selectionBounds(for: selectedDesignerControls) {
+                    GamepadGroupSelectionOverlay(
+                        onResizeChanged: { corner, value in
+                            updateGroupResize(corner, value: value, selectedControls: selectedDesignerControls, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
+                        },
+                        onResizeEnded: {
+                            activeGroupResize = nil
+                        }
+                    )
+                    .frame(width: selectionFrame.width * resolvedDisplayScale, height: selectionFrame.height * resolvedDisplayScale)
+                    .position(x: selectionFrame.midX * resolvedDisplayScale, y: selectionFrame.midY * resolvedDisplayScale)
+                }
+
+                if shouldShowMeasurementOverlay,
+                   let measurementPair = measurementControlPair(in: controls) {
+                    GamepadMeasurementOverlay(
+                        selectedFrame: measurementPair.selected.frame,
+                        hoveredFrame: measurementPair.hovered.frame,
+                        canvasSize: resolvedLayoutSize,
+                        displayScale: resolvedDisplayScale
+                    )
+                    .frame(
+                        width: resolvedLayoutSize.width * resolvedDisplayScale,
+                        height: resolvedLayoutSize.height * resolvedDisplayScale,
+                        alignment: .topLeading
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
 
                 if let activeDraw {
@@ -5564,8 +6083,132 @@ private struct GamepadLayoutDesigner: View {
                 RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
                     .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
             )
+            .background {
+                GamepadModifierKeyMonitor(isOptionPressed: $isOptionKeyPressed, isShiftPressed: $isShiftKeyPressed)
+                    .frame(width: 0, height: 0)
+            }
+            .onChange(of: activeTool) { _, newTool in
+                if newTool != .select {
+                    hoveredControlID = nil
+                }
+            }
+            .onDisappear {
+                hoveredControlID = nil
+                isOptionKeyPressed = false
+                isShiftKeyPressed = false
+                activeGroupResize = nil
+            }
             .coordinateSpace(name: "gamepadLayoutDesigner")
+            .onContinuousHover(coordinateSpace: .named("gamepadLayoutDesigner")) { phase in
+                switch phase {
+                case .active(let location):
+                    hoveredControlID = controlIDUnderPointer(
+                        at: location,
+                        in: controls,
+                        canvasSize: resolvedLayoutSize,
+                        displayScale: resolvedDisplayScale
+                    )
+                case .ended:
+                    hoveredControlID = nil
+                }
+            }
         }
+    }
+
+    private var shouldShowMeasurementOverlay: Bool {
+        activeTool == .select
+            && isOptionKeyPressed
+            && isControlSelectionActive
+            && activeDrag == nil
+            && activeResize == nil
+            && activeGroupResize == nil
+            && activeRadiusDrag == nil
+            && activeDraw == nil
+    }
+
+    private func measurementControlPair(in controls: [GamepadResolvedControl]) -> (selected: GamepadResolvedControl, hovered: GamepadResolvedControl)? {
+        guard let hoveredControlID,
+              !selectedControlIDs.contains(hoveredControlID),
+              let selected = controls.first(where: { $0.id == selectedControlID }),
+              let hovered = controls.first(where: { $0.id == hoveredControlID })
+        else {
+            return nil
+        }
+
+        return (selected, hovered)
+    }
+
+    private func controlIDUnderPointer(
+        at displayPoint: CGPoint,
+        in controls: [GamepadResolvedControl],
+        canvasSize: CGSize,
+        displayScale: CGFloat
+    ) -> GamepadControlIdentity? {
+        let scale = max(displayScale, 0.001)
+        let logicalPoint = CGPoint(x: displayPoint.x / scale, y: displayPoint.y / scale)
+        guard CGRect(origin: .zero, size: canvasSize).contains(logicalPoint) else { return nil }
+
+        let hitSlop = 4 / scale
+        return controls.reversed().first { control in
+            !selectedControlIDs.contains(control.id)
+                && control.frame.insetBy(dx: -hitSlop, dy: -hitSlop).contains(logicalPoint)
+        }?.id
+    }
+
+    private func currentSelectedControls(in controls: [GamepadResolvedControl]) -> [GamepadResolvedControl] {
+        guard isControlSelectionActive else { return [] }
+        return controls.filter { selectedControlIDs.contains($0.id) }
+    }
+
+    private func selectionBounds(for controls: [GamepadResolvedControl]) -> CGRect? {
+        guard var bounds = controls.first?.frame else { return nil }
+        for control in controls.dropFirst() {
+            bounds = bounds.union(control.frame)
+        }
+        return bounds.standardized
+    }
+
+    private func clearSelection() {
+        isControlSelectionActive = false
+        selectedControlIDs.removeAll()
+    }
+
+    private func selectOnly(_ identity: GamepadControlIdentity) {
+        selectedControlID = identity
+        selectedControlIDs = [identity]
+        isControlSelectionActive = true
+    }
+
+    @discardableResult
+    private func selectForPointerDown(_ identity: GamepadControlIdentity, additive: Bool) -> Set<GamepadControlIdentity> {
+        let nextSelectionIDs: Set<GamepadControlIdentity>
+        if additive {
+            var additiveSelection = isControlSelectionActive ? selectedControlIDs : []
+            additiveSelection.insert(identity)
+            nextSelectionIDs = additiveSelection
+        } else if isControlSelectionActive,
+                  selectedControlIDs.count > 1,
+                  selectedControlIDs.contains(identity) {
+            nextSelectionIDs = selectedControlIDs
+        } else {
+            nextSelectionIDs = [identity]
+        }
+
+        selectedControlID = identity
+        selectedControlIDs = nextSelectionIDs
+        isControlSelectionActive = true
+        return nextSelectionIDs
+    }
+
+    private func beginDrag(
+        for identity: GamepadControlIdentity,
+        selectionIDs: Set<GamepadControlIdentity>,
+        controls: [GamepadResolvedControl]
+    ) {
+        let snapshots = controls
+            .filter { selectionIDs.contains($0.id) && !$0.isLocationLocked }
+            .map { GamepadControlDragSnapshot(control: $0) }
+        activeDrag = snapshots.isEmpty ? nil : GamepadControlDragState(identity: identity, snapshots: snapshots)
     }
 
     private var drawingToolHint: some View {
@@ -5668,6 +6311,7 @@ private struct GamepadLayoutDesigner: View {
 
         customization = next.normalized
         selectedControlID = .custom(id)
+        selectedControlIDs = [.custom(id)]
         isControlSelectionActive = true
         activeTool = .select
     }
@@ -5776,9 +6420,88 @@ private struct GamepadLayoutDesigner: View {
         customization = next.normalized
     }
 
+    private func updateGroupPosition(_ translation: CGSize, dragState: GamepadControlDragState, canvasSize: CGSize) {
+        guard !dragState.snapshots.isEmpty else { return }
+        let selectedIDs = Set(dragState.snapshots.map(\.identity))
+        let adjustedTranslation = adjustedGroupTranslation(
+            translation,
+            snapshots: dragState.snapshots,
+            selectedIDs: selectedIDs,
+            canvasSize: canvasSize
+        )
+        var next = customization
+        for snapshot in dragState.snapshots {
+            let proposedCenter = CGPoint(
+                x: snapshot.startCenter.x + adjustedTranslation.width,
+                y: snapshot.startCenter.y + adjustedTranslation.height
+            )
+            let normalizedPosition = GamepadLayoutResolver.normalizedPosition(
+                for: proposedCenter,
+                visualSize: snapshot.size,
+                in: canvasSize
+            )
+            next.setPosition(normalizedPosition, for: snapshot.identity)
+        }
+        customization = next.normalized
+    }
+
+    private func adjustedGroupTranslation(
+        _ translation: CGSize,
+        snapshots: [GamepadControlDragSnapshot],
+        selectedIDs: Set<GamepadControlIdentity>,
+        canvasSize: CGSize
+    ) -> CGSize {
+        let clampedTranslation = clampedGroupTranslation(translation, snapshots: snapshots, canvasSize: canvasSize)
+        let existingFrames = existingControlFrames(excluding: selectedIDs, canvasSize: canvasSize)
+        guard groupFrames(snapshots, offsetBy: clampedTranslation).contains(where: { GamepadLayoutResolver.frameOverlapsAny($0, avoiding: existingFrames) }) else {
+            return clampedTranslation
+        }
+
+        var lowerBound: CGFloat = 0
+        var upperBound: CGFloat = 1
+        var bestTranslation = CGSize.zero
+        for _ in 0..<12 {
+            let fraction = (lowerBound + upperBound) / 2
+            let candidate = CGSize(width: clampedTranslation.width * fraction, height: clampedTranslation.height * fraction)
+            let overlaps = groupFrames(snapshots, offsetBy: candidate).contains { frame in
+                GamepadLayoutResolver.frameOverlapsAny(frame, avoiding: existingFrames)
+            }
+            if overlaps {
+                upperBound = fraction
+            } else {
+                bestTranslation = candidate
+                lowerBound = fraction
+            }
+        }
+        return bestTranslation
+    }
+
+    private func clampedGroupTranslation(_ translation: CGSize, snapshots: [GamepadControlDragSnapshot], canvasSize: CGSize) -> CGSize {
+        guard !snapshots.isEmpty else { return .zero }
+        let frames = snapshots.map(\.startFrame)
+        let minXOffset = frames.map { -$0.minX }.max() ?? 0
+        let maxXOffset = frames.map { canvasSize.width - $0.maxX }.min() ?? 0
+        let minYOffset = frames.map { -$0.minY }.max() ?? 0
+        let maxYOffset = frames.map { canvasSize.height - $0.maxY }.min() ?? 0
+        return CGSize(
+            width: Self.clamp(translation.width, lower: minXOffset, upper: maxXOffset),
+            height: Self.clamp(translation.height, lower: minYOffset, upper: maxYOffset)
+        )
+    }
+
+    private func groupFrames(_ snapshots: [GamepadControlDragSnapshot], offsetBy translation: CGSize) -> [CGRect] {
+        snapshots.map { snapshot in
+            snapshot.startFrame.offsetBy(dx: translation.width, dy: translation.height)
+        }
+    }
+
     private func existingControlFrames(excluding identity: GamepadControlIdentity, canvasSize: CGSize) -> [CGRect] {
+        existingControlFrames(excluding: [identity], canvasSize: canvasSize)
+    }
+
+    private func existingControlFrames(excluding identities: Set<GamepadControlIdentity>, canvasSize: CGSize) -> [CGRect] {
         customization.resolvedControls(in: canvasSize).compactMap { control in
-            control.id == identity ? nil : control.frame
+            identities.contains(control.id) ? nil : control.frame
         }
     }
 
@@ -5788,6 +6511,13 @@ private struct GamepadLayoutDesigner: View {
             avoiding: existingControlFrames(excluding: identity, canvasSize: canvasSize),
             in: canvasSize
         )
+    }
+
+    private func rectDidChange(from original: CGRect, to updated: CGRect) -> Bool {
+        abs(original.minX - updated.minX) > 0.1
+            || abs(original.minY - updated.minY) > 0.1
+            || abs(original.width - updated.width) > 0.1
+            || abs(original.height - updated.height) > 0.1
     }
 
     private func updateResize(
@@ -5809,10 +6539,10 @@ private struct GamepadLayoutDesigner: View {
             )
         }
 
-        guard let activeResize else { return }
+        guard var resizeState = activeResize else { return }
 
-        let baseWidth = max(1, activeResize.startSize.width / max(activeResize.startWidthScale, 0.001))
-        let baseHeight = max(1, activeResize.startSize.height / max(activeResize.startHeightScale, 0.001))
+        let baseWidth = max(1, resizeState.startSize.width / max(resizeState.startWidthScale, 0.001))
+        let baseHeight = max(1, resizeState.startSize.height / max(resizeState.startHeightScale, 0.001))
         let minWidth = baseWidth * GamepadButtonCustomization.minimumScale
         let minHeight = baseHeight * GamepadButtonCustomization.minimumScale
         let maxWidth = min(canvasSize.width, baseWidth * GamepadButtonCustomization.maximumScale)
@@ -5822,10 +6552,10 @@ private struct GamepadLayoutDesigner: View {
             height: value.translation.height / max(displayScale, 0.001)
         )
         let startRect = CGRect(
-            x: activeResize.startCenter.x - activeResize.startSize.width / 2,
-            y: activeResize.startCenter.y - activeResize.startSize.height / 2,
-            width: activeResize.startSize.width,
-            height: activeResize.startSize.height
+            x: resizeState.startCenter.x - resizeState.startSize.width / 2,
+            y: resizeState.startCenter.y - resizeState.startSize.height / 2,
+            width: resizeState.startSize.width,
+            height: resizeState.startSize.height
         )
         let minSize = CGSize(width: minWidth, height: minHeight)
         let maxSize = CGSize(width: maxWidth, height: maxHeight)
@@ -5839,13 +6569,19 @@ private struct GamepadLayoutDesigner: View {
             avoiding: existingControlFrames(excluding: control.id, canvasSize: canvasSize)
         )
         let newSize: CGSize
-        if activeResize.shape == .circle {
+        if resizeState.shape == .circle {
             let side = min(resizedRect.width, resizedRect.height)
             newSize = CGSize(width: side, height: side)
         } else {
             newSize = resizedRect.size
         }
         let newCenter = CGPoint(x: resizedRect.midX, y: resizedRect.midY)
+        guard rectDidChange(from: startRect, to: CGRect(x: newCenter.x - newSize.width / 2, y: newCenter.y - newSize.height / 2, width: newSize.width, height: newSize.height)) else { return }
+        if !resizeState.didRegisterUndo {
+            onBeginUndoableChange("Resize Key")
+            resizeState.didRegisterUndo = true
+            activeResize = resizeState
+        }
 
         updateLayoutCustomization(for: control.id) { layout in
             layout.widthScale = newSize.width / baseWidth
@@ -5853,6 +6589,199 @@ private struct GamepadLayoutDesigner: View {
             layout.centerX = newCenter.x / max(canvasSize.width, 1)
             layout.centerY = newCenter.y / max(canvasSize.height, 1)
         }
+    }
+
+    private func updateGroupResize(
+        _ corner: GamepadResizeHandleCorner,
+        value: DragGesture.Value,
+        selectedControls: [GamepadResolvedControl],
+        canvasSize: CGSize,
+        displayScale: CGFloat
+    ) {
+        let selectedIDs = Set(selectedControls.map(\.id))
+        if activeGroupResize?.selectionIDs != selectedIDs || activeGroupResize?.corner != corner {
+            activeGroupResize = makeGroupResizeState(corner: corner, selectedControls: selectedControls, canvasSize: canvasSize)
+        }
+
+        guard var groupResizeState = activeGroupResize else { return }
+        let translation = CGSize(
+            width: value.translation.width / max(displayScale, 0.001),
+            height: value.translation.height / max(displayScale, 0.001)
+        )
+        let resizedBounds = resizedGroupFrameAvoidingOverlaps(
+            state: groupResizeState,
+            translation: translation,
+            canvasSize: canvasSize
+        )
+        guard rectDidChange(from: groupResizeState.startBounds, to: resizedBounds) else { return }
+        if !groupResizeState.didRegisterUndo {
+            onBeginUndoableChange("Resize Selection")
+            groupResizeState.didRegisterUndo = true
+            activeGroupResize = groupResizeState
+        }
+        applyGroupResize(state: groupResizeState, resizedBounds: resizedBounds, canvasSize: canvasSize)
+    }
+
+    private func makeGroupResizeState(
+        corner: GamepadResizeHandleCorner,
+        selectedControls: [GamepadResolvedControl],
+        canvasSize: CGSize
+    ) -> GamepadGroupResizeState? {
+        guard selectedControls.count > 1,
+              selectedControls.allSatisfy({ !$0.isLocationLocked }),
+              let startBounds = selectionBounds(for: selectedControls)
+        else { return nil }
+
+        let controlStates = selectedControls.map { control -> GamepadGroupResizeControlState in
+            let currentLayout = layoutCustomization(for: control.id)
+            let baseWidth = max(1, control.size.width / max(currentLayout.widthScale, 0.001))
+            let baseHeight = max(1, control.size.height / max(currentLayout.heightScale, 0.001))
+            let minSize = CGSize(
+                width: baseWidth * GamepadButtonCustomization.minimumScale,
+                height: baseHeight * GamepadButtonCustomization.minimumScale
+            )
+            let maxSize = CGSize(
+                width: min(canvasSize.width, baseWidth * GamepadButtonCustomization.maximumScale),
+                height: min(canvasSize.height, baseHeight * GamepadButtonCustomization.maximumScale)
+            )
+            return GamepadGroupResizeControlState(
+                identity: control.id,
+                startFrame: control.frame,
+                baseSize: CGSize(width: baseWidth, height: baseHeight),
+                minSize: minSize,
+                maxSize: maxSize,
+                shape: control.shape
+            )
+        }
+
+        return GamepadGroupResizeState(
+            selectionIDs: Set(selectedControls.map(\.id)),
+            corner: corner,
+            startBounds: startBounds,
+            controls: controlStates
+        )
+    }
+
+    private func resizedGroupFrameAvoidingOverlaps(
+        state: GamepadGroupResizeState,
+        translation: CGSize,
+        canvasSize: CGSize
+    ) -> CGRect {
+        let limits = groupResizeLimits(for: state, canvasSize: canvasSize)
+        let desiredBounds = resizedFrame(
+            from: state.startBounds,
+            corner: state.corner,
+            translation: translation,
+            minSize: limits.minSize,
+            maxSize: limits.maxSize,
+            canvasSize: canvasSize
+        )
+        let existingFrames = existingControlFrames(excluding: state.selectionIDs, canvasSize: canvasSize)
+        guard !groupResizeFrames(state: state, resizedBounds: desiredBounds).contains(where: { GamepadLayoutResolver.frameOverlapsAny($0, avoiding: existingFrames) }) else {
+            var lowerBound: CGFloat = 0
+            var upperBound: CGFloat = 1
+            var bestBounds = state.startBounds
+            for _ in 0..<12 {
+                let fraction = (lowerBound + upperBound) / 2
+                let candidateTranslation = CGSize(width: translation.width * fraction, height: translation.height * fraction)
+                let candidateBounds = resizedFrame(
+                    from: state.startBounds,
+                    corner: state.corner,
+                    translation: candidateTranslation,
+                    minSize: limits.minSize,
+                    maxSize: limits.maxSize,
+                    canvasSize: canvasSize
+                )
+                let overlaps = groupResizeFrames(state: state, resizedBounds: candidateBounds).contains { frame in
+                    GamepadLayoutResolver.frameOverlapsAny(frame, avoiding: existingFrames)
+                }
+                if overlaps {
+                    upperBound = fraction
+                } else {
+                    bestBounds = candidateBounds
+                    lowerBound = fraction
+                }
+            }
+            return bestBounds
+        }
+
+        return desiredBounds
+    }
+
+    private func groupResizeLimits(for state: GamepadGroupResizeState, canvasSize: CGSize) -> (minSize: CGSize, maxSize: CGSize) {
+        let startWidth = max(state.startBounds.width, 1)
+        let startHeight = max(state.startBounds.height, 1)
+        var minimumScaleX: CGFloat = 0.001
+        var minimumScaleY: CGFloat = 0.001
+        var maximumScaleX: CGFloat = CGFloat.greatestFiniteMagnitude
+        var maximumScaleY: CGFloat = CGFloat.greatestFiniteMagnitude
+
+        for control in state.controls {
+            minimumScaleX = max(minimumScaleX, control.minSize.width / max(control.startFrame.width, 1))
+            minimumScaleY = max(minimumScaleY, control.minSize.height / max(control.startFrame.height, 1))
+            maximumScaleX = min(maximumScaleX, control.maxSize.width / max(control.startFrame.width, 1))
+            maximumScaleY = min(maximumScaleY, control.maxSize.height / max(control.startFrame.height, 1))
+        }
+
+        let minWidth = min(canvasSize.width, startWidth * minimumScaleX)
+        let minHeight = min(canvasSize.height, startHeight * minimumScaleY)
+        let maxWidth = max(minWidth, min(canvasSize.width, startWidth * maximumScaleX))
+        let maxHeight = max(minHeight, min(canvasSize.height, startHeight * maximumScaleY))
+        return (CGSize(width: minWidth, height: minHeight), CGSize(width: maxWidth, height: maxHeight))
+    }
+
+    private func groupResizeFrames(state: GamepadGroupResizeState, resizedBounds: CGRect) -> [CGRect] {
+        state.controls.map { transformedFrame(for: $0, from: state.startBounds, to: resizedBounds) }
+    }
+
+    private func transformedFrame(
+        for control: GamepadGroupResizeControlState,
+        from startBounds: CGRect,
+        to resizedBounds: CGRect
+    ) -> CGRect {
+        let scaleX = resizedBounds.width / max(startBounds.width, 1)
+        let scaleY = resizedBounds.height / max(startBounds.height, 1)
+        let transformedCenter = CGPoint(
+            x: resizedBounds.minX + (control.startFrame.midX - startBounds.minX) * scaleX,
+            y: resizedBounds.minY + (control.startFrame.midY - startBounds.minY) * scaleY
+        )
+        var newSize = CGSize(width: control.startFrame.width * scaleX, height: control.startFrame.height * scaleY)
+        if control.shape == .circle {
+            let side = min(newSize.width, newSize.height)
+            newSize = CGSize(width: side, height: side)
+        }
+        newSize.width = Self.clamp(newSize.width, lower: control.minSize.width, upper: control.maxSize.width)
+        newSize.height = Self.clamp(newSize.height, lower: control.minSize.height, upper: control.maxSize.height)
+        return CGRect(
+            x: transformedCenter.x - newSize.width / 2,
+            y: transformedCenter.y - newSize.height / 2,
+            width: newSize.width,
+            height: newSize.height
+        )
+    }
+
+    private func applyGroupResize(state: GamepadGroupResizeState, resizedBounds: CGRect, canvasSize: CGSize) {
+        var next = customization
+        for control in state.controls {
+            let frame = transformedFrame(for: control, from: state.startBounds, to: resizedBounds)
+            let center = CGPoint(x: frame.midX, y: frame.midY)
+            switch control.identity {
+            case .builtin(let button):
+                var layout = next.buttonCustomization(for: button)
+                layout.widthScale = frame.width / control.baseSize.width
+                layout.heightScale = frame.height / control.baseSize.height
+                layout.centerX = center.x / max(canvasSize.width, 1)
+                layout.centerY = center.y / max(canvasSize.height, 1)
+                next.setButtonCustomization(layout, for: button)
+            case .custom(let id):
+                guard let index = next.customButtons.firstIndex(where: { $0.id == id }) else { continue }
+                next.customButtons[index].layout.widthScale = frame.width / control.baseSize.width
+                next.customButtons[index].layout.heightScale = frame.height / control.baseSize.height
+                next.customButtons[index].layout.centerX = center.x / max(canvasSize.width, 1)
+                next.customButtons[index].layout.centerY = center.y / max(canvasSize.height, 1)
+            }
+        }
+        customization = next.normalized
     }
 
     private func resizedFrame(
@@ -6039,9 +6968,31 @@ private enum GamepadResizeHandleCorner: CaseIterable, Identifiable {
     }
 }
 
-private struct GamepadControlDragState {
+private struct GamepadControlDragSnapshot {
     let identity: GamepadControlIdentity
     let startCenter: CGPoint
+    let size: CGSize
+
+    init(control: GamepadResolvedControl) {
+        self.identity = control.id
+        self.startCenter = control.center
+        self.size = control.size
+    }
+
+    var startFrame: CGRect {
+        CGRect(
+            x: startCenter.x - size.width / 2,
+            y: startCenter.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+}
+
+private struct GamepadControlDragState {
+    let identity: GamepadControlIdentity
+    let snapshots: [GamepadControlDragSnapshot]
+    var didMove = false
 }
 
 private struct GamepadControlResizeState {
@@ -6051,6 +7002,7 @@ private struct GamepadControlResizeState {
     let startWidthScale: CGFloat
     let startHeightScale: CGFloat
     let shape: GamepadButtonShapeStyle
+    var didRegisterUndo = false
 }
 
 private struct GamepadControlRadiusDragState {
@@ -6058,11 +7010,83 @@ private struct GamepadControlRadiusDragState {
     let startRadius: CGFloat
 }
 
+private struct GamepadGroupResizeControlState {
+    let identity: GamepadControlIdentity
+    let startFrame: CGRect
+    let baseSize: CGSize
+    let minSize: CGSize
+    let maxSize: CGSize
+    let shape: GamepadButtonShapeStyle
+}
+
+private struct GamepadGroupResizeState {
+    let selectionIDs: Set<GamepadControlIdentity>
+    let corner: GamepadResizeHandleCorner
+    let startBounds: CGRect
+    let controls: [GamepadGroupResizeControlState]
+    var didRegisterUndo = false
+}
+
+private struct GamepadGroupSelectionOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let onResizeChanged: (GamepadResizeHandleCorner, DragGesture.Value) -> Void
+    let onResizeEnded: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .stroke(Geist.color(.blue700, scheme: colorScheme), lineWidth: 2)
+                    .allowsHitTesting(false)
+
+                ForEach(GamepadResizeHandleCorner.allCases) { corner in
+                    resizeHandle(corner)
+                        .position(handlePosition(for: corner, in: proxy.size))
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Selected component group"))
+    }
+
+    private func resizeHandle(_ corner: GamepadResizeHandleCorner) -> some View {
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(Geist.color(.background100, scheme: colorScheme))
+            .overlay(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .stroke(Geist.color(.blue700, scheme: colorScheme), lineWidth: 1.5)
+            )
+            .frame(width: 11, height: 11)
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("gamepadLayoutDesigner"))
+                    .onChanged { value in onResizeChanged(corner, value) }
+                    .onEnded { _ in onResizeEnded() }
+            )
+            .accessibilityLabel(Text(corner.accessibilityLabel))
+            .accessibilityHint(Text("Drag to resize all selected components"))
+    }
+
+    private func handlePosition(for corner: GamepadResizeHandleCorner, in size: CGSize) -> CGPoint {
+        switch corner {
+        case .topLeading:
+            CGPoint(x: 0, y: 0)
+        case .topTrailing:
+            CGPoint(x: size.width, y: 0)
+        case .bottomTrailing:
+            CGPoint(x: size.width, y: size.height)
+        case .bottomLeading:
+            CGPoint(x: 0, y: size.height)
+        }
+    }
+}
+
 private struct GamepadDesignerButton: View {
     @Environment(\.colorScheme) private var colorScheme
     let control: GamepadResolvedControl
     let customization: GamepadCustomization
     let isSelected: Bool
+    let showsSelectionHandles: Bool
     let displayScale: CGFloat
     let onResizeChanged: (GamepadResizeHandleCorner, DragGesture.Value) -> Void
     let onResizeEnded: () -> Void
@@ -6092,7 +7116,7 @@ private struct GamepadDesignerButton: View {
             }
         }
         .overlay {
-            if isSelected {
+            if isSelected && showsSelectionHandles {
                 selectionHandles
             }
         }
@@ -6259,6 +7283,7 @@ private struct GamepadCustomizationPreview: View {
         GamepadLayoutDesigner(
             customization: .constant(customization),
             selectedControlID: .constant(.builtin(.jump)),
+            selectedControlIDs: .constant([.builtin(.jump)]),
             isControlSelectionActive: .constant(true),
             activeTool: .constant(.select)
         )

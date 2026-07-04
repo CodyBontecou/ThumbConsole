@@ -778,7 +778,7 @@ struct MacContentView: View {
     }
 
     private func contentScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
                 content()
             }
