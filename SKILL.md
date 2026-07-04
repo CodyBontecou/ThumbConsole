@@ -210,7 +210,8 @@ Setup-level customization:
 
 ```bash
 "$POCKETPAD_CLI" customization show --profile active
-"$POCKETPAD_CLI" customization set --layout southpaw --scale large --appearance dark --accent blue --show-labels
+"$POCKETPAD_CLI" customization set --appearance dark --device iphone-17-pro --background '#101014'
+"$POCKETPAD_CLI" customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
 "$POCKETPAD_CLI" customization export -o customization.json
 "$POCKETPAD_CLI" customization import customization.json
 "$POCKETPAD_CLI" customization reset

@@ -75,6 +75,63 @@ public enum PocketPadMacCLICommand: String, Codable, Sendable {
     case testUp
 }
 
+public struct ControllerClientDeviceInsets: Codable, Equatable, Sendable {
+    public var top: Double
+    public var leading: Double
+    public var bottom: Double
+    public var trailing: Double
+
+    public init(top: Double, leading: Double, bottom: Double, trailing: Double) {
+        self.top = top
+        self.leading = leading
+        self.bottom = bottom
+        self.trailing = trailing
+    }
+}
+
+public struct ControllerClientDeviceInfo: Codable, Equatable, Sendable {
+    public var deviceName: String
+    public var modelIdentifier: String?
+    public var systemName: String
+    public var systemVersion: String
+    public var screenBoundsWidth: Double
+    public var screenBoundsHeight: Double
+    public var nativeBoundsWidth: Double
+    public var nativeBoundsHeight: Double
+    public var scale: Double
+    public var nativeScale: Double
+    public var safeAreaInsets: ControllerClientDeviceInsets?
+    public var interfaceOrientation: String?
+
+    public init(
+        deviceName: String,
+        modelIdentifier: String?,
+        systemName: String,
+        systemVersion: String,
+        screenBoundsWidth: Double,
+        screenBoundsHeight: Double,
+        nativeBoundsWidth: Double,
+        nativeBoundsHeight: Double,
+        scale: Double,
+        nativeScale: Double,
+        safeAreaInsets: ControllerClientDeviceInsets? = nil,
+        interfaceOrientation: String? = nil
+    ) {
+        self.deviceName = deviceName
+        self.modelIdentifier = modelIdentifier
+        self.systemName = systemName
+        self.systemVersion = systemVersion
+        self.screenBoundsWidth = screenBoundsWidth
+        self.screenBoundsHeight = screenBoundsHeight
+        self.nativeBoundsWidth = nativeBoundsWidth
+        self.nativeBoundsHeight = nativeBoundsHeight
+        self.scale = scale
+        self.nativeScale = nativeScale
+        self.safeAreaInsets = safeAreaInsets
+        self.interfaceOrientation = interfaceOrientation
+    }
+}
+
 public struct PocketPadMacCLICommandPayload: Codable, Sendable {
     public var command: PocketPadMacCLICommand
     public var button: GameButton?
@@ -112,6 +169,7 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
     public var port: UInt16
     public var activeGamepadProfileID: UUID
     public var defaultGamepadProfileID: UUID
+    public var clientDeviceInfo: ControllerClientDeviceInfo?
 
     public init(
         updatedAt: Int64,
@@ -133,7 +191,8 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         accessibilityTrusted: Bool,
         port: UInt16,
         activeGamepadProfileID: UUID,
-        defaultGamepadProfileID: UUID
+        defaultGamepadProfileID: UUID,
+        clientDeviceInfo: ControllerClientDeviceInfo? = nil
     ) {
         self.updatedAt = updatedAt
         self.statusText = statusText
@@ -155,6 +214,7 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         self.port = port
         self.activeGamepadProfileID = activeGamepadProfileID
         self.defaultGamepadProfileID = defaultGamepadProfileID
+        self.clientDeviceInfo = clientDeviceInfo
     }
 }
 
@@ -195,6 +255,7 @@ public struct ControllerMessage: Codable, Sendable {
     public var gamepadProfiles: [GamepadConfigurationProfile]?
     public var gamepadProfileID: UUID?
     public var defaultGamepadProfileID: UUID?
+    public var clientDeviceInfo: ControllerClientDeviceInfo?
 
     public init(
         type: ControllerMessageType,
@@ -210,7 +271,8 @@ public struct ControllerMessage: Codable, Sendable {
         gamepadCustomization: GamepadCustomization? = nil,
         gamepadProfiles: [GamepadConfigurationProfile]? = nil,
         gamepadProfileID: UUID? = nil,
-        defaultGamepadProfileID: UUID? = nil
+        defaultGamepadProfileID: UUID? = nil,
+        clientDeviceInfo: ControllerClientDeviceInfo? = nil
     ) {
         self.type = type
         self.button = button
@@ -226,6 +288,7 @@ public struct ControllerMessage: Codable, Sendable {
         self.gamepadProfiles = gamepadProfiles
         self.gamepadProfileID = gamepadProfileID
         self.defaultGamepadProfileID = defaultGamepadProfileID
+        self.clientDeviceInfo = clientDeviceInfo
     }
 }
 

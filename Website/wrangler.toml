@@ -1,0 +1,12 @@
+name = "pocketpad-site"
+compatibility_date = "2026-07-04"
+pages_build_output_dir = "."
+
+# 1. Create the database:
+#      wrangler d1 create pocketpad-waitlist
+# 2. Replace the placeholder database_id below with Cloudflare's returned ID.
+# 3. Apply Website/schema.sql before deploying.
+[[d1_databases]]
+binding = "DB"
+database_name = "pocketpad-waitlist"
+database_id = "018ff4bd-ae0e-4a12-847f-263e97e4f8cd"

@@ -12,6 +12,7 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var isPairingPending = false
     @Published private(set) var pendingPairingClientName: String?
     @Published private(set) var clientName: String = "No client"
+    @Published private(set) var clientDeviceInfo: ControllerClientDeviceInfo?
     @Published private(set) var lastHeartbeat: Date?
     @Published private(set) var lastReceivedEvent: String = "None"
     @Published private(set) var estimatedLatencyMS: Int?
@@ -310,6 +311,7 @@ final class MacControllerServer: ObservableObject {
         pendingPairingClientName = nil
         statusText = finalStatusText
         clientName = "No client"
+        clientDeviceInfo = nil
         if finalStatusText == "Stopped" {
             logDebug("server stopped")
         } else {
@@ -1019,7 +1021,8 @@ final class MacControllerServer: ObservableObject {
                     message.clientName,
                     from: connection,
                     authToken: authToken,
-                    isTrustedReconnect: true
+                    isTrustedReconnect: true,
+                    clientDeviceInfo: message.clientDeviceInfo
                 )
                 return
             }
@@ -1032,7 +1035,7 @@ final class MacControllerServer: ObservableObject {
                 rejectPairingOnNetworkQueue(connection, reason: "Wrong pairing code")
                 return
             }
-            acceptPairedClientOnNetworkQueue(message.clientName, from: connection)
+            acceptPairedClientOnNetworkQueue(message.clientName, from: connection, clientDeviceInfo: message.clientDeviceInfo)
 
         case .button:
             guard isPairedConnection else {
@@ -1132,6 +1135,7 @@ final class MacControllerServer: ObservableObject {
             self.pendingPairingClientName = requestClientName
             self.isClientConnected = false
             self.clientName = requestClientName
+            self.clientDeviceInfo = message.clientDeviceInfo
             self.lastHeartbeat = nil
             self.statusText = "Waiting for \(requestClientName) to enter pairing code"
             self.lastReceivedEvent = "Pairing request from \(requestClientName)"
@@ -1144,7 +1148,8 @@ final class MacControllerServer: ObservableObject {
         _ incomingClientName: String?,
         from connection: NWConnection,
         authToken existingAuthToken: String? = nil,
-        isTrustedReconnect: Bool = false
+        isTrustedReconnect: Bool = false,
+        clientDeviceInfo: ControllerClientDeviceInfo? = nil
     ) {
         guard realtimeConnection === connection else { return }
 
@@ -1171,7 +1176,7 @@ final class MacControllerServer: ObservableObject {
             ),
             on: connection
         )
-        publishHello(incomingClientName, from: connection)
+        publishHello(incomingClientName, clientDeviceInfo: clientDeviceInfo, from: connection)
 
         DispatchQueue.main.async { [weak self, weak connection] in
             guard let self,
@@ -1235,6 +1240,7 @@ final class MacControllerServer: ObservableObject {
             self.pendingPairingClientName = nil
             if !self.isClientConnected {
                 self.clientName = "No client"
+                self.clientDeviceInfo = nil
                 self.statusText = self.isRunning ? "Listening on port \(self.port)" : "Stopped"
             }
         }
@@ -2008,6 +2014,7 @@ final class MacControllerServer: ObservableObject {
         isPairingPending = false
         pendingPairingClientName = nil
         clientName = "No client"
+        clientDeviceInfo = nil
         lastHeartbeat = nil
         if reason == "Client disconnected" {
             statusText = isRunning ? "Listening on port \(port)" : "Stopped"
@@ -2098,7 +2105,11 @@ final class MacControllerServer: ObservableObject {
         publishControllerDebug(event: event, pressedButtons: inputPressedButtons)
     }
 
-    private func publishHello(_ incomingClientName: String?, from helloConnection: NWConnection) {
+    private func publishHello(
+        _ incomingClientName: String?,
+        clientDeviceInfo: ControllerClientDeviceInfo?,
+        from helloConnection: NWConnection
+    ) {
         DispatchQueue.main.async { [weak self, weak helloConnection] in
             guard let self,
                   let helloConnection,
@@ -2107,9 +2118,15 @@ final class MacControllerServer: ObservableObject {
 
             let resolvedClientName = incomingClientName ?? "Connected iPhone"
             self.clientName = resolvedClientName
+            self.clientDeviceInfo = clientDeviceInfo
             self.isClientConnected = true
             self.lastHeartbeat = Date()
-            self.lastReceivedEvent = "Hello from \(resolvedClientName)"
+            if let clientDeviceInfo,
+               let suggestedFrame = GamepadEditorDeviceCatalog.suggestedFrame(for: clientDeviceInfo) {
+                self.lastReceivedEvent = "Hello from \(resolvedClientName) (\(suggestedFrame.spec.displayName))"
+            } else {
+                self.lastReceivedEvent = "Hello from \(resolvedClientName)"
+            }
         }
     }
 
@@ -2248,7 +2265,8 @@ final class MacControllerServer: ObservableObject {
             accessibilityTrusted: accessibilityTrusted,
             port: port,
             activeGamepadProfileID: activeGamepadProfileID,
-            defaultGamepadProfileID: defaultGamepadProfileID
+            defaultGamepadProfileID: defaultGamepadProfileID,
+            clientDeviceInfo: clientDeviceInfo
         )
     }
 

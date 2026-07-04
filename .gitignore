@@ -1,0 +1,9 @@
+# App Store draft image output
+app-store-output/
+
+# Local AI/API keys
+.env
+.env.local
+
+# Node dependencies for the self-contained App Store image tool
+scripts/app-store-images/node_modules/

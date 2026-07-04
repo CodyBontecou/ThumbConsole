@@ -1,3 +1,5 @@
+import CoreGraphics
+import SwiftUI
 import XCTest
 
 final class PocketPadCLISmokeTestSuite: XCTestCase {
@@ -45,6 +47,76 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         }
         """
         XCTAssertThrowsError(try JSONDecoder().decode(PocketPadKeypadConfigurationExport.self, from: Data(json.utf8)))
+    }
+
+    func testCornerRadiiPreserveValuesBeyondRenderedBounds() {
+        let largeRadius: CGFloat = 999
+        let uniform = GamepadButtonCustomization(
+            shape: .roundedRectangle,
+            cornerRadius: largeRadius
+        ).normalized
+        XCTAssertEqual(uniform.cornerRadius, Optional(largeRadius))
+
+        let uneven = GamepadButtonCustomization(
+            shape: .roundedRectangle,
+            cornerRadii: GamepadCornerRadii(
+                topLeading: largeRadius,
+                topTrailing: 320,
+                bottomTrailing: 128,
+                bottomLeading: 512
+            )
+        ).normalized
+        XCTAssertEqual(uneven.cornerRadii?.topLeading, Optional(largeRadius))
+        XCTAssertEqual(uneven.cornerRadii?.topTrailing, Optional(CGFloat(320)))
+        XCTAssertEqual(uneven.cornerRadii?.bottomTrailing, Optional(CGFloat(128)))
+        XCTAssertEqual(uneven.cornerRadii?.bottomLeading, Optional(CGFloat(512)))
+    }
+
+    func testCornerRadiiStillClampNegativeAndNonFiniteValues() {
+        let negative = GamepadButtonCustomization(
+            shape: .roundedRectangle,
+            cornerRadius: -20
+        ).normalized
+        XCTAssertEqual(negative.cornerRadius, Optional(CGFloat(0)))
+
+        let invalid = GamepadButtonCustomization(
+            shape: .roundedRectangle,
+            cornerRadii: GamepadCornerRadii(
+                topLeading: .nan,
+                topTrailing: .infinity,
+                bottomTrailing: -.infinity,
+                bottomLeading: -4
+            )
+        ).normalized
+        XCTAssertEqual(invalid.cornerRadii?.topLeading, Optional(CGFloat(0)))
+        XCTAssertEqual(invalid.cornerRadii?.topTrailing, Optional(CGFloat(0)))
+        XCTAssertEqual(invalid.cornerRadii?.bottomTrailing, Optional(CGFloat(0)))
+        XCTAssertEqual(invalid.cornerRadii?.bottomLeading, Optional(CGFloat(0)))
+    }
+
+    func testBackgroundFillStyleRoundTripsAndSupportsSchemeOverrides() throws {
+        let base = GamepadRGBAColor(red: 0.06, green: 0.07, blue: 0.12, alpha: 1)
+        let gradient = GamepadFillStyle.gradient(GamepadGradientFill.defaultValue(baseColor: base).normalized)
+        var customization = GamepadCustomization.defaultValue
+        customization.backgroundFillStyle = gradient
+
+        XCTAssertEqual(customization.keypadBackgroundFillStyle(scheme: .light), gradient.normalized)
+        XCTAssertEqual(customization.keypadBackgroundFillStyle(scheme: .dark), gradient.normalized)
+        XCTAssertTrue(customization.hasCustomBackgroundFill(for: .light))
+        XCTAssertTrue(customization.hasCustomBackgroundFill(for: .dark))
+
+        let lightColor = GamepadRGBAColor(red: 1, green: 0.9, blue: 0.7, alpha: 0.5)
+        customization.setBackgroundColor(lightColor, for: .light)
+
+        XCTAssertNil(customization.backgroundFillStyle)
+        XCTAssertEqual(customization.backgroundLightColor, lightColor.normalized)
+        XCTAssertEqual(customization.backgroundDarkFillStyle, gradient.normalized)
+        XCTAssertEqual(customization.keypadBackgroundFillStyle(scheme: .light), .solid(lightColor.normalized))
+        XCTAssertEqual(customization.keypadBackgroundFillStyle(scheme: .dark), gradient.normalized)
+
+        let data = try JSONEncoder().encode(customization.normalized)
+        let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data).normalized
+        XCTAssertTrue(decoded.hasSamePresentation(as: customization.normalized))
     }
 
     func testButtonPulseSequencerSmokeSuite() {

@@ -1,0 +1,22 @@
+{
+  "name": "pocketpad-app-store-images",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Repo-aware draft App Store image generator for PocketPad.",
+  "scripts": {
+    "plan": "tsx generate.ts --dry-run",
+    "generate": "tsx generate.ts --generate --max-images 3",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ai": "^5.0.0",
+    "dotenv": "^16.4.7",
+    "sharp": "^0.34.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}

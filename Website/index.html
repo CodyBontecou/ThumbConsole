@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PocketPad — iPhone game controller for Mac</title>
+  <meta name="description" content="PocketPad turns your iPhone into a programmable, low-latency game controller for Mac. Join the launch list.">
+  <meta name="theme-color" content="#f4efe5">
+  <meta property="og:title" content="PocketPad — iPhone game controller for Mac">
+  <meta property="og:description" content="A programmable iPhone controller for Mac games, shortcuts, and custom layouts.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="/assets/app-icon.png">
+  <link rel="icon" href="/assets/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/app-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="PocketPad home">
+      <span class="brand-mark">PP</span>
+      <span>PocketPad</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#screens">Screens</a>
+      <a href="#details">Details</a>
+      <a href="#waitlist">Waitlist</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero section-shell">
+      <div class="hero-copy">
+        <p class="eyebrow">coming soon / macOS + iOS</p>
+        <h1>turn your iPhone into a Mac game controller.</h1>
+        <p class="lede">PocketPad pairs your iPhone with a Mac helper so you can play desktop games with custom touch controls: buttons, joysticks, profiles, and quick keyboard moves.</p>
+
+        <form id="waitlist" class="waitlist-form signup" action="/api/subscribe" method="post" data-source="hero">
+          <input type="hidden" name="source" value="hero">
+          <label for="hero-email">launch list</label>
+          <div class="form-row">
+            <input id="hero-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="email address" required>
+            <button type="submit">join</button>
+          </div>
+          <label class="consent-row">
+            <input name="consent" type="checkbox" required>
+            <span>Send me PocketPad launch updates. No spam, unsubscribe anytime.</span>
+          </label>
+          <label class="bot-field" aria-hidden="true">Company <input name="company" tabindex="-1" autocomplete="off"></label>
+          <p class="form-status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+
+      <div class="product-card" aria-label="PocketPad controller preview">
+        <div class="product-topline">
+          <span>pocketpad / 01</span>
+          <span>local network play</span>
+        </div>
+        <div class="iphone-frame-stage hero-device">
+          <img class="iphone-screen-shot" src="/assets/screenshots/controller-landscape.png" alt="PocketPad iPhone controller in landscape mode with D-pad, shoulder buttons, and ABXY controls">
+          <img class="iphone-frame-art" src="/assets/iphone-17-pro-landscape.png" alt="" aria-hidden="true">
+        </div>
+        <div class="product-caption">
+          <img class="product-icon" src="/assets/app-icon.png" alt="" width="54" height="54">
+          <p>super nintendo profile shown / edit any layout</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="spec-strip section-shell" aria-label="PocketPad summary">
+      <div><span>transport</span><strong>UDP + WebSocket</strong></div>
+      <div><span>pairing</span><strong>QR + code</strong></div>
+      <div><span>profiles</span><strong>custom JSON</strong></div>
+      <div><span>built for</span><strong>Mac games</strong></div>
+    </section>
+
+    <section id="screens" class="screens section-shell">
+      <div class="section-heading">
+        <p class="eyebrow">screens</p>
+        <h2>play with a layout that feels built for the game.</h2>
+      </div>
+
+      <div class="screen-gallery">
+        <figure class="screen-card wide device-frame-card">
+          <div class="iphone-frame-stage">
+            <img class="iphone-screen-shot" src="/assets/screenshots/controller-landscape.png" alt="PocketPad landscape iPhone controller with D-pad, shoulder buttons, Select, Start, and colorful action buttons" loading="lazy">
+            <img class="iphone-frame-art" src="/assets/iphone-17-pro-landscape.png" alt="" aria-hidden="true" loading="lazy">
+          </div>
+          <figcaption><span>01</span> landscape controller</figcaption>
+        </figure>
+        <figure class="screen-card portrait">
+          <img src="/assets/screenshots/controller-portrait.png" alt="PocketPad portrait controller showing the same Super Nintendo profile on iPhone" loading="lazy">
+          <figcaption><span>02</span> portrait fallback</figcaption>
+        </figure>
+        <figure class="screen-card editor">
+          <img src="/assets/screenshots/keypad-editor.png" alt="PocketPad macOS keypad editor with component list, iPhone canvas, and inspector controls" loading="lazy">
+          <figcaption><span>03</span> macOS keypad editor</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="details" class="details section-shell">
+      <div class="section-heading">
+        <p class="eyebrow">details</p>
+        <h2>custom touch controls for whatever you play.</h2>
+      </div>
+
+      <div class="feature-list">
+        <article>
+          <span>01</span>
+          <h3>macOS helper</h3>
+          <p>Runs the local server, shows pairing, edits controller layouts, and sends keyboard events to the game in focus.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>iOS controller</h3>
+          <p>Multi-touch landscape controls with a D-pad, action buttons, joysticks, haptics, synced profiles, and Smart Connect.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>low latency</h3>
+          <p>Authenticated UDP carries compact button frames. WebSocket mirroring keeps input recoverable if packets drop.</p>
+        </article>
+        <article>
+          <span>04</span>
+          <h3>CLI included</h3>
+          <p>Generate, import, export, select, and test game profiles from the terminal with the same capabilities as the Mac app.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="workflow section-shell" aria-label="How PocketPad works">
+      <div class="workflow-line">
+        <div><strong>scan</strong><span>read the Mac QR code</span></div>
+        <div><strong>pair</strong><span>authenticate once</span></div>
+        <div><strong>select</strong><span>choose a controller profile</span></div>
+        <div><strong>press</strong><span>control the focused app</span></div>
+      </div>
+    </section>
+
+    <section class="use-cases section-shell">
+      <p class="eyebrow">made for</p>
+      <div class="tags" aria-label="Example PocketPad uses">
+        <span>Hollow Knight</span>
+        <span>Celeste</span>
+        <span>emulators</span>
+        <span>platformers</span>
+        <span>indies</span>
+        <span>keyboard games</span>
+        <span>custom layouts</span>
+      </div>
+    </section>
+
+    <section class="final-cta section-shell">
+      <div>
+        <p class="eyebrow">launch list</p>
+        <h2>get the first build.</h2>
+      </div>
+      <form class="waitlist-form signup compact" action="/api/subscribe" method="post" data-source="footer">
+        <input type="hidden" name="source" value="footer">
+        <label for="footer-email">email</label>
+        <div class="form-row">
+          <input id="footer-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="email address" required>
+          <button type="submit">notify me</button>
+        </div>
+        <label class="consent-row">
+          <input name="consent" type="checkbox" required>
+          <span>I agree to receive PocketPad launch updates.</span>
+        </label>
+        <label class="bot-field" aria-hidden="true">Company <input name="company" tabindex="-1" autocomplete="off"></label>
+        <p class="form-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+  </main>
+
+  <footer class="site-footer section-shell">
+    <span>© <span id="year">2026</span> PocketPad</span>
+    <a href="/privacy.html">privacy</a>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="/script.js" defer></script>
+</body>
+</html>

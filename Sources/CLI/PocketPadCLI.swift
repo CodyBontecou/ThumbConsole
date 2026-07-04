@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 
 @main
 struct PocketPadCLI {
@@ -11,8 +12,8 @@ struct PocketPadCLI {
     private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
     private static let notificationKeyBindingsDataKey = "keyBindingsData"
     private static let notificationProfileKeyBindingsDataKey = "profileKeyBindingsData"
-    private static let defaultEditorCanvasSize = CGSize(width: 874, height: 402)
-    private static let portraitEditorCanvasSize = CGSize(width: 402, height: 874)
+    private static let defaultEditorCanvasSize = GamepadEditorDeviceCatalog.defaultFrame.screenRect.size
+    private static let portraitEditorCanvasSize = GamepadEditorDeviceFrame(spec: GamepadEditorDeviceCatalog.specs[0], orientation: .portrait).screenRect.size
 
     private struct StoredProfileState: Codable {
         var profiles: [GamepadConfigurationProfile]
@@ -120,6 +121,18 @@ struct PocketPadCLI {
         var joystickMapping: GamepadJoystickMapping?
     }
 
+    private struct DeviceFrameSummary: Codable {
+        var id: String
+        var device: String
+        var orientation: String
+        var screenPoints: String
+        var nativePixels: String
+        var scale: Double
+        var nativeScale: Double
+        var frameStyle: String
+        var modelIdentifiers: [String]
+    }
+
     private enum ElementTarget: Equatable {
         case builtin(GameButton)
         case custom(UUID)
@@ -159,6 +172,8 @@ struct PocketPadCLI {
             try binding(arguments: rest)
         case "customization", "customize", "layout":
             try customization(arguments: rest)
+        case "device", "devices", "frame", "frames":
+            try device(arguments: rest)
         case "element", "control", "controls":
             try element(arguments: rest)
         case "status", "diagnostics":
@@ -711,6 +726,53 @@ struct PocketPadCLI {
                 if let layout = optionValue("--layout", in: rest) { customization.layoutMode = try parseLayoutMode(layout) }
                 if let scale = optionValue("--scale", in: rest) ?? optionValue("--control-scale", in: rest) { customization.controlScale = try parseControlScale(scale) }
                 if let appearance = optionValue("--appearance", in: rest) ?? optionValue("--color-scheme", in: rest) ?? optionValue("--scheme", in: rest) { customization.colorSchemePreference = try parseColorSchemePreference(appearance) }
+                if let device = optionValue("--device", in: rest) ?? optionValue("--frame", in: rest) ?? optionValue("--canvas", in: rest) {
+                    let orientation = try (optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)).map(parseDeviceOrientation)
+                    customization.deviceCanvas = GamepadDeviceCanvas(frameID: try resolveDeviceFrameTarget(device, arguments: rest, preferredOrientation: orientation).id)
+                }
+                if let deviceSize = optionValue("--device-size", in: rest) ?? optionValue("--size", in: rest) {
+                    let orientation = try (optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)).map(parseDeviceOrientation)
+                    customization.deviceCanvas = GamepadDeviceCanvas(frameID: try resolveCustomDeviceFrame(sizeText: deviceSize, preferredOrientation: orientation).id)
+                }
+                if let background = optionValue("--background", in: rest) ?? optionValue("--bg", in: rest) {
+                    setBackgroundFillColor(try parseRGBAColor(background), in: &customization)
+                }
+                if let lightBackground = optionValue("--light-background", in: rest) ?? optionValue("--background-light", in: rest) {
+                    setBackgroundFillColor(try parseRGBAColor(lightBackground), isDark: false, in: &customization)
+                }
+                if let darkBackground = optionValue("--dark-background", in: rest) ?? optionValue("--background-dark", in: rest) {
+                    setBackgroundFillColor(try parseRGBAColor(darkBackground), isDark: true, in: &customization)
+                }
+                if let value = optionValue("--background-gradient", in: rest) ?? optionValue("--bg-gradient", in: rest) {
+                    setBackgroundFillStyle(try parseGradientFill(value, arguments: rest), in: &customization)
+                }
+                if let value = optionValue("--background-tile", in: rest) ?? optionValue("--bg-tile", in: rest) {
+                    setBackgroundFillStyle(try parseTileFill(value, arguments: rest), in: &customization)
+                }
+                if let value = optionValue("--background-image", in: rest) ?? optionValue("--bg-image", in: rest) {
+                    setBackgroundFillStyle(try parseImageFill(value, arguments: rest), in: &customization)
+                }
+                if let value = optionValue("--light-background-gradient", in: rest) ?? optionValue("--background-light-gradient", in: rest) {
+                    setBackgroundFillStyle(try parseGradientFill(value, arguments: rest), isDark: false, in: &customization)
+                }
+                if let value = optionValue("--dark-background-gradient", in: rest) ?? optionValue("--background-dark-gradient", in: rest) {
+                    setBackgroundFillStyle(try parseGradientFill(value, arguments: rest), isDark: true, in: &customization)
+                }
+                if let value = optionValue("--light-background-tile", in: rest) ?? optionValue("--background-light-tile", in: rest) {
+                    setBackgroundFillStyle(try parseTileFill(value, arguments: rest), isDark: false, in: &customization)
+                }
+                if let value = optionValue("--dark-background-tile", in: rest) ?? optionValue("--background-dark-tile", in: rest) {
+                    setBackgroundFillStyle(try parseTileFill(value, arguments: rest), isDark: true, in: &customization)
+                }
+                if let value = optionValue("--light-background-image", in: rest) ?? optionValue("--background-light-image", in: rest) {
+                    setBackgroundFillStyle(try parseImageFill(value, arguments: rest), isDark: false, in: &customization)
+                }
+                if let value = optionValue("--dark-background-image", in: rest) ?? optionValue("--background-dark-image", in: rest) {
+                    setBackgroundFillStyle(try parseImageFill(value, arguments: rest), isDark: true, in: &customization)
+                }
+                if rest.contains("--reset-background") {
+                    clearBackgroundFill(in: &customization)
+                }
                 if let accent = optionValue("--accent", in: rest) ?? optionValue("--color", in: rest) { customization.accentStyle = try parseAccentStyle(accent) }
                 if rest.contains("--show-labels") { customization.showsButtonLabels = true }
                 if rest.contains("--hide-labels") { customization.showsButtonLabels = false }
@@ -733,6 +795,130 @@ struct PocketPadCLI {
         store.profiles[index].customization = customization.normalized
         store.profiles[index].updatedAt = Date.currentMilliseconds
         try persistStore(store)
+    }
+
+    // MARK: - Device frames
+
+    private static func device(arguments: [String]) throws {
+        let subcommand = arguments.first?.hasPrefix("-") == true ? "list" : (arguments.first ?? "list")
+        let rest = subcommand == "list" && arguments.first?.hasPrefix("-") == true ? arguments : Array(arguments.dropFirst())
+        switch subcommand {
+        case "list", "ls":
+            let summaries = GamepadEditorDeviceCatalog.frames.map(deviceFrameSummary)
+            if arguments.contains("--json") || rest.contains("--json") {
+                try printJSON(summaries)
+            } else {
+                for summary in summaries {
+                    print("\(summary.id)\t\(summary.device)\t\(summary.orientation)\t\(summary.screenPoints)pt\t\(summary.frameStyle)")
+                }
+            }
+        case "show", "current":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            let frame = profile.customization.deviceCanvas.editorDeviceFrame
+            if rest.contains("--json") {
+                try printJSON(deviceFrameSummary(frame))
+            } else {
+                print("Profile: \(profile.name)")
+                print("Device frame: \(frame.displayName)")
+                print("ID: \(frame.id)")
+                print("Screen: \(formatSize(frame.screenRect.size)) pt")
+                print("Native: \(formatSize(frame.spec.nativePixels)) px @\(formatScale(frame.spec.nativeScale))")
+                print("Frame style: \(frame.frameStyle.displayName)")
+            }
+        case "set", "select", "use":
+            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad device set <device-or-frame-id|custom|WIDTHxHEIGHT> [--orientation landscape|portrait] [--profile PROFILE]") }
+            let orientationText = optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)
+            let orientation = try orientationText.map(parseDeviceOrientation)
+            let frame = try resolveDeviceFrameTarget(target, arguments: rest, preferredOrientation: orientation)
+            try saveEditorDeviceFrame(frame, profileTarget: optionValue("--profile", in: rest))
+            print("Selected device frame for profile: \(frame.displayName) (\(formatSize(frame.screenRect.size)) pt)")
+        default:
+            let orientationText = optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)
+            let orientation = try orientationText.map(parseDeviceOrientation)
+            if let frame = GamepadEditorDeviceCatalog.frame(matching: subcommand, preferredOrientation: orientation) {
+                try saveEditorDeviceFrame(frame, profileTarget: optionValue("--profile", in: rest))
+                print("Selected device frame for profile: \(frame.displayName) (\(formatSize(frame.screenRect.size)) pt)")
+            } else {
+                throw CLIError.message("Unknown device subcommand: \(subcommand)")
+            }
+        }
+    }
+
+    private static func saveEditorDeviceFrame(_ frame: GamepadEditorDeviceFrame, profileTarget: String?) throws {
+        try mutateCustomization(profileTarget: profileTarget) { customization in
+            customization.deviceCanvas = GamepadDeviceCanvas(frameID: frame.id)
+        }
+
+        var domain = loadAppDomain()
+        domain[GamepadEditorDeviceCatalog.selectedFrameDefaultsKey] = frame.id
+        domain[GamepadEditorDeviceCatalog.didChooseFrameDefaultsKey] = true
+        UserDefaults.standard.setPersistentDomain(domain, forName: appDefaultsDomain)
+        UserDefaults.standard.synchronize()
+    }
+
+    private static func resolveDeviceFrame(_ target: String, preferredOrientation: GamepadEditorDeviceOrientation?) throws -> GamepadEditorDeviceFrame {
+        guard let frame = GamepadEditorDeviceCatalog.frame(matching: target, preferredOrientation: preferredOrientation) else {
+            throw CLIError.message("Unknown iPhone device frame: \(target). Run `pocketpad device list` to see supported frames or use WIDTHxHEIGHT for a custom canvas.")
+        }
+        return frame
+    }
+
+    private static func resolveDeviceFrameTarget(_ target: String, arguments: [String], preferredOrientation: GamepadEditorDeviceOrientation?) throws -> GamepadEditorDeviceFrame {
+        if normalizedLookup(target) == "custom" {
+            if let sizeText = optionValue("--size", in: arguments) ?? optionValue("--device-size", in: arguments) {
+                return try resolveCustomDeviceFrame(sizeText: sizeText, preferredOrientation: preferredOrientation)
+            }
+            let widthText = optionValue("--width", in: arguments) ?? optionValue("--device-width", in: arguments)
+            let heightText = optionValue("--height", in: arguments) ?? optionValue("--device-height", in: arguments)
+            guard let widthText, let heightText else {
+                throw CLIError.message("Custom device frames need --size WIDTHxHEIGHT or --width W --height H.")
+            }
+            guard let frame = GamepadEditorDeviceCatalog.customFrame(width: try parsePixels(widthText), height: try parsePixels(heightText), preferredOrientation: preferredOrientation) else {
+                throw CLIError.message("Invalid custom device size.")
+            }
+            return frame
+        }
+
+        if let sizeText = optionValue("--size", in: arguments) ?? optionValue("--device-size", in: arguments) {
+            return try resolveCustomDeviceFrame(sizeText: sizeText, preferredOrientation: preferredOrientation)
+        }
+
+        return try resolveDeviceFrame(target, preferredOrientation: preferredOrientation)
+    }
+
+    private static func resolveCustomDeviceFrame(sizeText: String, preferredOrientation: GamepadEditorDeviceOrientation?) throws -> GamepadEditorDeviceFrame {
+        guard let size = parseCanvasSizeLiteral(sizeText),
+              let frame = GamepadEditorDeviceCatalog.customFrame(width: size.width, height: size.height, preferredOrientation: preferredOrientation)
+        else {
+            throw CLIError.message("Invalid custom device size: \(sizeText). Use WIDTHxHEIGHT, such as 844x390.")
+        }
+        return frame
+    }
+
+    private static func parseDeviceOrientation(_ text: String) throws -> GamepadEditorDeviceOrientation {
+        switch normalizedLookup(text) {
+        case "landscape", "horizontal":
+            return .landscape
+        case "portrait", "vertical":
+            return .portrait
+        default:
+            throw CLIError.message("Unknown device orientation: \(text). Use landscape or portrait.")
+        }
+    }
+
+    private static func deviceFrameSummary(_ frame: GamepadEditorDeviceFrame) -> DeviceFrameSummary {
+        DeviceFrameSummary(
+            id: frame.id,
+            device: frame.spec.displayName,
+            orientation: frame.orientation.rawValue,
+            screenPoints: formatSize(frame.screenRect.size),
+            nativePixels: formatSize(frame.spec.nativePixels),
+            scale: Double(frame.spec.scale),
+            nativeScale: Double(frame.spec.nativeScale),
+            frameStyle: frame.frameStyle.rawValue,
+            modelIdentifiers: frame.spec.modelIdentifiers
+        )
     }
 
     // MARK: - Elements / controls
@@ -903,22 +1089,57 @@ struct PocketPadCLI {
             layout.fillColor = nil
             layout.lightFillColor = nil
             layout.darkFillColor = nil
+            layout.fillStyle = nil
+            layout.lightFillStyle = nil
+            layout.darkFillStyle = nil
         }
         if let value = optionValue("--fill", in: arguments) ?? optionValue("--color", in: arguments) {
             layout.fillColor = try parseRGBAColor(value)
             layout.lightFillColor = nil
             layout.darkFillColor = nil
+            layout.fillStyle = nil
+            layout.lightFillStyle = nil
+            layout.darkFillStyle = nil
         }
         if arguments.contains("--clear-fill") || arguments.contains("--clear-color") {
             layout.fillColor = nil
             layout.lightFillColor = nil
             layout.darkFillColor = nil
+            layout.fillStyle = nil
+            layout.lightFillStyle = nil
+            layout.darkFillStyle = nil
+        }
+        if let value = optionValue("--fill-gradient", in: arguments) ?? optionValue("--gradient", in: arguments) {
+            setLayoutFillStyle(try parseGradientFill(value, arguments: arguments), in: &layout)
+        }
+        if let value = optionValue("--fill-tile", in: arguments) ?? optionValue("--tile", in: arguments) {
+            setLayoutFillStyle(try parseTileFill(value, arguments: arguments), in: &layout)
+        }
+        if let value = optionValue("--fill-image", in: arguments) ?? optionValue("--image", in: arguments) {
+            setLayoutFillStyle(try parseImageFill(value, arguments: arguments), in: &layout)
+        }
+        if arguments.contains("--clear-fill-style") {
+            layout.fillStyle = nil
+            layout.lightFillStyle = nil
+            layout.darkFillStyle = nil
         }
         if let value = optionValue("--light-fill", in: arguments) ?? optionValue("--fill-light", in: arguments) ?? optionValue("--light-color", in: arguments) {
             setLayoutFillColor(try parseRGBAColor(value), isDark: false, in: &layout)
         }
         if let value = optionValue("--dark-fill", in: arguments) ?? optionValue("--fill-dark", in: arguments) ?? optionValue("--dark-color", in: arguments) {
             setLayoutFillColor(try parseRGBAColor(value), isDark: true, in: &layout)
+        }
+        if let value = optionValue("--light-fill-gradient", in: arguments) ?? optionValue("--gradient-light", in: arguments) {
+            setLayoutFillStyle(try parseGradientFill(value, arguments: arguments), isDark: false, in: &layout)
+        }
+        if let value = optionValue("--dark-fill-gradient", in: arguments) ?? optionValue("--gradient-dark", in: arguments) {
+            setLayoutFillStyle(try parseGradientFill(value, arguments: arguments), isDark: true, in: &layout)
+        }
+        if let value = optionValue("--light-fill-tile", in: arguments) ?? optionValue("--tile-light", in: arguments) {
+            setLayoutFillStyle(try parseTileFill(value, arguments: arguments), isDark: false, in: &layout)
+        }
+        if let value = optionValue("--dark-fill-tile", in: arguments) ?? optionValue("--tile-dark", in: arguments) {
+            setLayoutFillStyle(try parseTileFill(value, arguments: arguments), isDark: true, in: &layout)
         }
         if arguments.contains("--clear-light-fill") || arguments.contains("--clear-light-color") {
             clearLayoutFillColor(isDark: false, in: &layout)
@@ -971,6 +1192,48 @@ struct PocketPadCLI {
     }
 
     private static func setLayoutFillColor(_ color: GamepadRGBAColor, isDark: Bool, in layout: inout GamepadButtonCustomization) {
+        prepareSchemeSpecificFillStorage(in: &layout)
+        if isDark {
+            layout.darkFillColor = color.normalized
+            layout.darkFillStyle = nil
+        } else {
+            layout.lightFillColor = color.normalized
+            layout.lightFillStyle = nil
+        }
+    }
+
+    private static func setLayoutFillStyle(_ style: GamepadFillStyle, in layout: inout GamepadButtonCustomization) {
+        layout.fillStyle = style.normalized
+        layout.fillColor = nil
+        layout.lightFillColor = nil
+        layout.darkFillColor = nil
+        layout.lightFillStyle = nil
+        layout.darkFillStyle = nil
+    }
+
+    private static func setLayoutFillStyle(_ style: GamepadFillStyle, isDark: Bool, in layout: inout GamepadButtonCustomization) {
+        prepareSchemeSpecificFillStorage(in: &layout)
+        if isDark {
+            layout.darkFillStyle = style.normalized
+            layout.darkFillColor = nil
+        } else {
+            layout.lightFillStyle = style.normalized
+            layout.lightFillColor = nil
+        }
+    }
+
+    private static func clearLayoutFillColor(isDark: Bool, in layout: inout GamepadButtonCustomization) {
+        prepareSchemeSpecificFillStorage(in: &layout)
+        if isDark {
+            layout.darkFillColor = nil
+            layout.darkFillStyle = nil
+        } else {
+            layout.lightFillColor = nil
+            layout.lightFillStyle = nil
+        }
+    }
+
+    private static func prepareSchemeSpecificFillStorage(in layout: inout GamepadButtonCustomization) {
         if let legacyFillColor = layout.fillColor?.normalized {
             if layout.lightFillColor == nil {
                 layout.lightFillColor = legacyFillColor
@@ -979,30 +1242,62 @@ struct PocketPadCLI {
                 layout.darkFillColor = legacyFillColor
             }
         }
-        layout.fillColor = nil
-        if isDark {
-            layout.darkFillColor = color.normalized
-        } else {
-            layout.lightFillColor = color.normalized
-        }
-    }
-
-    private static func clearLayoutFillColor(isDark: Bool, in layout: inout GamepadButtonCustomization) {
-        if let legacyFillColor = layout.fillColor?.normalized {
-            if isDark {
-                if layout.lightFillColor == nil {
-                    layout.lightFillColor = legacyFillColor
-                }
-            } else if layout.darkFillColor == nil {
-                layout.darkFillColor = legacyFillColor
+        if let legacyFillStyle = layout.fillStyle?.normalized {
+            if layout.lightFillStyle == nil {
+                layout.lightFillStyle = legacyFillStyle
+            }
+            if layout.darkFillStyle == nil {
+                layout.darkFillStyle = legacyFillStyle
             }
         }
         layout.fillColor = nil
+        layout.fillStyle = nil
+    }
+
+    private static func setBackgroundFillColor(_ color: GamepadRGBAColor, in customization: inout GamepadCustomization) {
+        customization.backgroundLightColor = color.normalized
+        customization.backgroundDarkColor = color.normalized
+        customization.backgroundFillStyle = nil
+        customization.backgroundLightFillStyle = nil
+        customization.backgroundDarkFillStyle = nil
+    }
+
+    private static func setBackgroundFillColor(_ color: GamepadRGBAColor, isDark: Bool, in customization: inout GamepadCustomization) {
+        customization.prepareSchemeSpecificBackgroundFillStorage()
         if isDark {
-            layout.darkFillColor = nil
+            customization.backgroundDarkColor = color.normalized
+            customization.backgroundDarkFillStyle = nil
         } else {
-            layout.lightFillColor = nil
+            customization.backgroundLightColor = color.normalized
+            customization.backgroundLightFillStyle = nil
         }
+    }
+
+    private static func setBackgroundFillStyle(_ style: GamepadFillStyle, in customization: inout GamepadCustomization) {
+        customization.backgroundFillStyle = style.normalized
+        customization.backgroundLightColor = nil
+        customization.backgroundDarkColor = nil
+        customization.backgroundLightFillStyle = nil
+        customization.backgroundDarkFillStyle = nil
+    }
+
+    private static func setBackgroundFillStyle(_ style: GamepadFillStyle, isDark: Bool, in customization: inout GamepadCustomization) {
+        customization.prepareSchemeSpecificBackgroundFillStorage()
+        if isDark {
+            customization.backgroundDarkFillStyle = style.normalized
+            customization.backgroundDarkColor = nil
+        } else {
+            customization.backgroundLightFillStyle = style.normalized
+            customization.backgroundLightColor = nil
+        }
+    }
+
+    private static func clearBackgroundFill(in customization: inout GamepadCustomization) {
+        customization.backgroundLightColor = nil
+        customization.backgroundDarkColor = nil
+        customization.backgroundFillStyle = nil
+        customization.backgroundLightFillStyle = nil
+        customization.backgroundDarkFillStyle = nil
     }
 
     // MARK: - Runtime commands
@@ -1376,6 +1671,14 @@ struct PocketPadCLI {
             print("Status: \(status.statusText)")
             print("Running: \(status.isRunning ? "yes" : "no")")
             print("Client: \(status.clientName)\(status.isClientConnected ? " (connected)" : "")")
+            if let clientDeviceInfo = status.clientDeviceInfo {
+                if let frame = GamepadEditorDeviceCatalog.suggestedFrame(for: clientDeviceInfo) {
+                    print("Client Device: \(frame.spec.displayName) (\(formatSize(frame.screenRect.size)) pt \(frame.orientation.rawValue))")
+                } else {
+                    let model = clientDeviceInfo.modelIdentifier.map { " \($0)" } ?? ""
+                    print("Client Device: \(clientDeviceInfo.deviceName)\(model)")
+                }
+            }
             print("Port: \(status.port)")
             print("Pairing Code: \(status.pairingCode)")
             print("Accessibility: \(status.accessibilityTrusted ? "granted" : "required")")
@@ -1651,6 +1954,61 @@ struct PocketPadCLI {
         return color
     }
 
+    private static func parseGradientFill(_ text: String, arguments: [String]) throws -> GamepadFillStyle {
+        let colors = text
+            .split { $0 == "," || $0 == ";" || $0 == " " }
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        guard colors.count >= 2 else {
+            throw CLIError.message("Gradient fill expects at least two colors, e.g. --fill-gradient '#FF0000,#0000FF'")
+        }
+        let stops = try colors.enumerated().map { index, colorText in
+            let denominator = max(colors.count - 1, 1)
+            return GamepadGradientStop(offset: CGFloat(index) / CGFloat(denominator), color: try parseRGBAColor(colorText))
+        }
+        let type = try optionValue("--gradient-type", in: arguments).map(parseGradientType) ?? .linear
+        let angle = optionValue("--gradient-angle", in: arguments).flatMap(Double.init).map { CGFloat($0) } ?? 0
+        return .gradient(GamepadGradientFill(type: type, angleDegrees: angle, stops: stops).normalized)
+    }
+
+    private static func parseGradientType(_ text: String) throws -> GamepadGradientType {
+        if let type = GamepadGradientType(rawValue: text.lowercased()) { return type }
+        throw CLIError.message("Unknown gradient type: \(text). Use linear or radial.")
+    }
+
+    private static func parseTileFill(_ text: String, arguments: [String]) throws -> GamepadFillStyle {
+        let pattern = try parseTilePattern(text)
+        let foreground = try optionValue("--tile-foreground", in: arguments).map(parseRGBAColor) ?? GamepadRGBAColor(red: 1, green: 1, blue: 1, alpha: 0.78)
+        let background = try optionValue("--tile-background", in: arguments).map(parseRGBAColor) ?? .defaultValue
+        let scale = optionValue("--tile-scale", in: arguments).flatMap(Double.init).map { CGFloat($0) } ?? 1
+        let spacingX = optionValue("--tile-spacing-x", in: arguments).flatMap(Double.init).map { CGFloat($0) } ?? 0
+        let spacingY = optionValue("--tile-spacing-y", in: arguments).flatMap(Double.init).map { CGFloat($0) } ?? 0
+        let tile = GamepadTileFill(pattern: pattern, foregroundColor: foreground, backgroundColor: background, scale: scale, spacingX: spacingX, spacingY: spacingY)
+        return .tile(tile.normalized)
+    }
+
+    private static func parseTilePattern(_ text: String) throws -> GamepadTilePattern {
+        if let pattern = GamepadTilePattern(rawValue: text.lowercased()) { return pattern }
+        let normalized = normalizedLookup(text)
+        if let pattern = GamepadTilePattern.allCases.first(where: { normalizedLookup($0.displayName) == normalized }) { return pattern }
+        throw CLIError.message("Unknown tile pattern: \(text). Use dots, grid, checker, or diagonal.")
+    }
+
+    private static func parseImageFill(_ path: String, arguments: [String]) throws -> GamepadFillStyle {
+        let url = URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+        let data = try Data(contentsOf: url)
+        guard data.count <= GamepadImageFill.maximumStoredBytes else {
+            throw CLIError.message("Image fill must be under 2.5 MB")
+        }
+        let mode = try optionValue("--image-mode", in: arguments).map(parseImageContentMode) ?? .fill
+        return .image(GamepadImageFill(data: data, fileName: url.lastPathComponent, contentMode: mode).normalized)
+    }
+
+    private static func parseImageContentMode(_ text: String) throws -> GamepadImageContentMode {
+        if let mode = GamepadImageContentMode(rawValue: text.lowercased()) { return mode }
+        throw CLIError.message("Unknown image mode: \(text). Use fill, fit, or tile.")
+    }
+
     private static func parseShapeStyleIfPresent(_ text: String) -> GamepadButtonShapeStyle? {
         GamepadButtonShapeStyle(rawValue: text) ?? GamepadButtonShapeStyle.allCases.first { normalizedLookup($0.displayName) == normalizedLookup(text) }
     }
@@ -1718,14 +2076,16 @@ struct PocketPadCLI {
         var canvasSize = defaultEditorCanvasSize
         if let canvas = optionValue("--canvas", in: arguments) {
             let normalized = normalizedLookup(canvas)
-            if normalized == "landscape" || normalized == "iphone17prolandscape" {
+            if normalized == "landscape" {
                 canvasSize = defaultEditorCanvasSize
-            } else if normalized == "portrait" || normalized == "iphone17proportrait" {
+            } else if normalized == "portrait" {
                 canvasSize = portraitEditorCanvasSize
+            } else if let frame = GamepadEditorDeviceCatalog.frame(matching: canvas, preferredOrientation: nil) {
+                canvasSize = frame.screenRect.size
             } else if let parsed = parseCanvasSizeLiteral(canvas) {
                 canvasSize = parsed
             } else {
-                throw CLIError.message("Invalid canvas size: \(canvas). Use landscape, portrait, or WIDTHxHEIGHT.")
+                throw CLIError.message("Invalid canvas size: \(canvas). Use landscape, portrait, a device frame id, or WIDTHxHEIGHT.")
             }
         }
 
@@ -1760,6 +2120,18 @@ struct PocketPadCLI {
     }
 
     private static func formatPixels(_ value: CGFloat) -> String {
+        let doubleValue = Double(value)
+        if doubleValue.rounded() == doubleValue {
+            return String(Int(doubleValue))
+        }
+        return String(format: "%.2f", doubleValue)
+    }
+
+    private static func formatSize(_ size: CGSize) -> String {
+        "\(formatPixels(size.width))×\(formatPixels(size.height))"
+    }
+
+    private static func formatScale(_ value: CGFloat) -> String {
         let doubleValue = Double(value)
         if doubleValue.rounded() == doubleValue {
             return String(Int(doubleValue))
@@ -1871,11 +2243,20 @@ struct PocketPadCLI {
             "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from",
             "--sequence", "--key", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
             "--appearance", "--color-scheme", "--scheme", "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
-            "--width", "--width-scale", "--height", "--height-scale", "--shape", "--fill", "--light-fill", "--fill-light",
+            "--background", "--bg", "--light-background", "--background-light", "--dark-background", "--background-dark",
+            "--background-gradient", "--bg-gradient", "--background-tile", "--bg-tile", "--background-image", "--bg-image",
+            "--light-background-gradient", "--background-light-gradient", "--dark-background-gradient", "--background-dark-gradient",
+            "--light-background-tile", "--background-light-tile", "--dark-background-tile", "--background-dark-tile",
+            "--light-background-image", "--background-light-image", "--dark-background-image", "--background-dark-image",
+            "--width", "--width-scale", "--device-width", "--height", "--height-scale", "--device-height", "--shape", "--fill", "--light-fill", "--fill-light",
             "--light-color", "--dark-fill", "--fill-dark", "--dark-color", "--opacity", "--light-opacity", "--dark-opacity",
+            "--fill-gradient", "--gradient", "--gradient-type", "--gradient-angle", "--light-fill-gradient", "--dark-fill-gradient", "--gradient-light", "--gradient-dark",
+            "--fill-tile", "--tile", "--tile-foreground", "--tile-background", "--tile-scale", "--tile-spacing-x", "--tile-spacing-y", "--light-fill-tile", "--dark-fill-tile", "--tile-light", "--tile-dark",
+            "--fill-image", "--image", "--image-mode",
             "--corner", "--radius", "--corner-tl", "--corner-tr", "--corner-br", "--corner-bl", "--shadow",
             "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--hold-ms",
-            "--step", "--pixels", "--by", "--dx", "--dy", "--canvas", "--canvas-width", "--canvas-height"
+            "--step", "--pixels", "--by", "--dx", "--dy", "--canvas", "--canvas-width", "--canvas-height",
+            "--device", "--frame", "--size", "--device-size", "--orientation", "--device-orientation"
         ]
         for argument in arguments {
             if skipNext {
@@ -1901,7 +2282,12 @@ struct PocketPadCLI {
         print("Default: \(profile.id == store.defaultProfileID ? "yes" : "no")")
         print("Layout: \(profile.customization.layoutMode.rawValue)")
         print("Scale: \(profile.customization.controlScale.rawValue)")
+        let deviceFrame = profile.customization.deviceCanvas.editorDeviceFrame
         print("Appearance: \(profile.customization.colorSchemePreference.rawValue)")
+        print("Device: \(deviceFrame.displayName) (\(formatSize(deviceFrame.screenRect.size)) pt)")
+        let lightBackground = profile.customization.keypadBackgroundFillStyle(scheme: .light)
+        let darkBackground = profile.customization.keypadBackgroundFillStyle(scheme: .dark)
+        print("Background: light \(lightBackground.displayName) \(lightBackground.representativeColor.hexString), dark \(darkBackground.displayName) \(darkBackground.representativeColor.hexString)")
         print("Accent: \(profile.customization.accentStyle.rawValue)")
         print("Labels: \(profile.customization.showsButtonLabels ? "shown" : "hidden")")
         print("Custom elements: \(profile.customization.customButtons.count)")
@@ -2003,13 +2389,21 @@ struct PocketPadCLI {
           pocketpad binding reset-all
 
         Customization:
-          pocketpad customization set --layout standard --scale large --appearance dark --accent blue --show-labels
+          pocketpad customization set --appearance dark --device iphone-17-pro --background '#101014'
+          pocketpad customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
+          pocketpad customization set --device iphone-17-pro --orientation landscape
           pocketpad customization export -o customization.json
+          pocketpad device list
+          pocketpad device set iphone-17-pro --orientation landscape
+          pocketpad device set custom --size 844x390
           pocketpad element list
           pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#F59E0B' --dark-fill '#78350F'
           pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
           pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
-          pocketpad element nudge jump right --step 10
+          pocketpad element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
+          pocketpad element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
+          pocketpad element set jump --fill-image ./button-texture.png --image-mode fill
+          pocketpad element nudge jump right --step 10 --canvas iphone-17-pro-landscape
 
         Runtime:
           pocketpad app open|quit

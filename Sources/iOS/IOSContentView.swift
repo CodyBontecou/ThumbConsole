@@ -677,7 +677,13 @@ private struct ControllerPadView: View {
                     topBar(isLandscape: isLandscape)
                 }
             }
-            .background(Geist.color(.background100, scheme: keypadColorScheme).ignoresSafeArea())
+            .background {
+                GamepadFillShapeLayer(
+                    shape: Rectangle(),
+                    fillStyle: client.gamepadCustomization.keypadBackgroundFillStyle(scheme: keypadColorScheme)
+                )
+                .ignoresSafeArea()
+            }
             .environment(\.colorScheme, keypadColorScheme)
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
@@ -1652,14 +1658,13 @@ private struct GamepadJoystick: View {
 
     private var joystickBase: some View {
         let accentStyle = elementCustomization.accentStyle ?? customization.accentStyle
-        let fillColor = elementCustomization.buttonFill(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
+        let fillStyle = elementCustomization.buttonFillStyle(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
         let strokeColor = elementCustomization.buttonStroke(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
         let foregroundColor = elementCustomization.buttonForeground(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
         let knobOffset = CGSize(width: normalizedOffset.width * knobTravelRadius, height: normalizedOffset.height * knobTravelRadius)
 
         return ZStack {
-            Circle()
-                .fill(fillColor)
+            GamepadFillShapeLayer(shape: Circle(), fillStyle: fillStyle)
                 .overlay(Circle().stroke(strokeColor, lineWidth: activeDirections.isEmpty ? 1 : 2))
                 .shadow(
                     color: Color.black.opacity((activeDirections.isEmpty ? 0.05 : 0.16) * elementCustomization.shadowStrength),
@@ -1804,23 +1809,23 @@ private struct GamepadButton: View {
 
     @ViewBuilder
     private var buttonBackground: some View {
-        let fillColor = resolvedButtonCustomization.buttonFill(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme)
+        let fillStyle = resolvedButtonCustomization.buttonFillStyle(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme)
         let strokeColor = resolvedButtonCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme)
         let lineWidth: CGFloat = isPressed ? 2 : 1
 
         switch resolvedShape {
         case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
-            UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
-                .fill(fillColor)
-                .overlay(UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
+            let shape = UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
+            GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
+                .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
         case .polygon:
-            GamepadRegularPolygonButtonShape(sides: 3)
-                .fill(fillColor)
-                .overlay(GamepadRegularPolygonButtonShape(sides: 3).stroke(strokeColor, lineWidth: lineWidth))
+            let shape = GamepadRegularPolygonButtonShape(sides: 3)
+            GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
+                .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
         case .star:
-            GamepadStarButtonShape(points: 5)
-                .fill(fillColor)
-                .overlay(GamepadStarButtonShape(points: 5).stroke(strokeColor, lineWidth: lineWidth))
+            let shape = GamepadStarButtonShape(points: 5)
+            GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
+                .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
         }
     }
 

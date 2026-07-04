@@ -821,7 +821,8 @@ struct MacContentView: View {
                     MacGamepadSelectedKeyBindingInspector(button: button)
                         .environmentObject(server)
                 )
-            }
+            },
+            connectedDeviceInfo: server.clientDeviceInfo
         )
         .geistScreenBackground()
     }
@@ -1123,7 +1124,8 @@ struct MacContentView: View {
                 onReset: { server.resetGamepadCustomization() },
                 defaultLabelProvider: { button in
                     server.recordedShortcutLabel(for: button)
-                }
+                },
+                connectedDeviceInfo: server.clientDeviceInfo
             )
             .frame(maxWidth: 720, alignment: .leading)
         }
@@ -1434,7 +1436,9 @@ private struct MacKeypadMiniPreview: View {
     let customization: GamepadCustomization
     var defaultLabelProvider: ((GameButton) -> String?)? = nil
 
-    private let designSize = CGSize(width: 874, height: 402)
+    private var designSize: CGSize {
+        customization.deviceCanvas.editorDeviceFrame.screenRect.size
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -1452,8 +1456,10 @@ private struct MacKeypadMiniPreview: View {
                     .shadow(color: Color.black.opacity(previewColorScheme == .dark ? 0.24 : 0.10), radius: 18 * scale, x: 0, y: 10 * scale)
 
                 ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 22 * scale, style: .continuous)
-                        .fill(Geist.color(.background100, scheme: previewColorScheme))
+                    GamepadFillShapeLayer(
+                        shape: RoundedRectangle(cornerRadius: 22 * scale, style: .continuous),
+                        fillStyle: customization.keypadBackgroundFillStyle(scheme: previewColorScheme)
+                    )
 
                     ForEach(controls) { control in
                         MacKeypadPreviewControl(

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Network
 import UIKit
@@ -401,7 +402,7 @@ final class ControllerClient: ObservableObject {
 
         lastError = nil
         updateLastSentEvent("pairing code sent", immediately: true)
-        send(.init(type: .hello, timestamp: 0, pairingCode: normalizedCode, clientName: UIDevice.current.name))
+        send(.init(type: .hello, timestamp: 0, pairingCode: normalizedCode, clientName: UIDevice.current.name, clientDeviceInfo: Self.currentDeviceInfo()))
     }
 
     func setButton(_ button: GameButton, pressed: Bool, pressIdentifier: UInt64? = nil) {
@@ -541,11 +542,11 @@ final class ControllerClient: ObservableObject {
             receiveNext(on: stateConnection)
 
             if let authToken {
-                send(.init(type: .hello, timestamp: 0, clientName: clientName, authToken: authToken, serverID: expectedServerID))
+                send(.init(type: .hello, timestamp: 0, clientName: clientName, authToken: authToken, serverID: expectedServerID, clientDeviceInfo: Self.currentDeviceInfo()))
             } else if let pairingCode {
-                send(.init(type: .hello, timestamp: 0, pairingCode: pairingCode, clientName: clientName))
+                send(.init(type: .hello, timestamp: 0, pairingCode: pairingCode, clientName: clientName, clientDeviceInfo: Self.currentDeviceInfo()))
             } else {
-                send(.init(type: .pairingRequest, timestamp: 0, clientName: clientName))
+                send(.init(type: .pairingRequest, timestamp: 0, clientName: clientName, clientDeviceInfo: Self.currentDeviceInfo()))
             }
 
         case .waiting(let error):
@@ -613,6 +614,59 @@ final class ControllerClient: ObservableObject {
                 pressIdentifier: activePress.pressIdentifier
             )
         }
+    }
+
+    private static func currentDeviceInfo() -> ControllerClientDeviceInfo {
+        let screen = UIScreen.main
+        let bounds = screen.bounds
+        let nativeBounds = screen.nativeBounds
+        let window = activeWindow
+        let insets = window?.safeAreaInsets
+
+        return ControllerClientDeviceInfo(
+            deviceName: UIDevice.current.name,
+            modelIdentifier: hardwareModelIdentifier(),
+            systemName: UIDevice.current.systemName,
+            systemVersion: UIDevice.current.systemVersion,
+            screenBoundsWidth: Double(bounds.width),
+            screenBoundsHeight: Double(bounds.height),
+            nativeBoundsWidth: Double(nativeBounds.width),
+            nativeBoundsHeight: Double(nativeBounds.height),
+            scale: Double(screen.scale),
+            nativeScale: Double(screen.nativeScale),
+            safeAreaInsets: insets.map {
+                ControllerClientDeviceInsets(
+                    top: Double($0.top),
+                    leading: Double($0.left),
+                    bottom: Double($0.bottom),
+                    trailing: Double($0.right)
+                )
+            },
+            interfaceOrientation: window?.windowScene?.interfaceOrientation.deviceInfoName
+        )
+    }
+
+    private static var activeWindow: UIWindow? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .sorted { lhs, rhs in
+                if lhs.activationState == rhs.activationState { return false }
+                return lhs.activationState == .foregroundActive
+            }
+            .compactMap { scene in scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first }
+            .first
+    }
+
+    private static func hardwareModelIdentifier() -> String? {
+        var systemInfo = utsname()
+        guard uname(&systemInfo) == 0 else { return nil }
+        let machineCapacity = MemoryLayout.size(ofValue: systemInfo.machine)
+        return withUnsafePointer(to: &systemInfo.machine) { pointer in
+            pointer.withMemoryRebound(to: CChar.self, capacity: machineCapacity) {
+                String(cString: $0)
+            }
+        }
+        .nilIfBlank
     }
 
     private func send(_ message: ControllerMessage, prefersRealtimeDatagram: Bool = false) {
@@ -942,7 +996,8 @@ final class ControllerClient: ObservableObject {
                 type: .hello,
                 timestamp: 0,
                 clientName: UIDevice.current.name,
-                realtimeToken: realtimeToken
+                realtimeToken: realtimeToken,
+                clientDeviceInfo: Self.currentDeviceInfo()
             ),
             using: encoder
         ) else {
@@ -1100,6 +1155,19 @@ private final class SmartMacDiscovery: NSObject, NetServiceBrowserDelegate, NetS
         let record = NetService.dictionary(fromTXTRecord: txtRecordData)
         guard let data = record["name"] else { return nil }
         return String(data: data, encoding: .utf8)?.nilIfBlank
+    }
+}
+
+private extension UIInterfaceOrientation {
+    var deviceInfoName: String {
+        switch self {
+        case .portrait: "portrait"
+        case .portraitUpsideDown: "portraitUpsideDown"
+        case .landscapeLeft: "landscapeLeft"
+        case .landscapeRight: "landscapeRight"
+        case .unknown: "unknown"
+        @unknown default: "unknown"
+        }
     }
 }
 
