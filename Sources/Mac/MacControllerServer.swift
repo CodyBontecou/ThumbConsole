@@ -56,6 +56,11 @@ final class MacControllerServer: ObservableObject {
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let buttonReorderDelayNanoseconds: UInt64 = 4_000_000
+    // The iPhone re-sends every active touch on each heartbeat (500 ms). If a
+    // button-up packet is the one packet we lose, client heartbeats continue but
+    // that button stops being refreshed. Expire only that stale hold instead of
+    // waiting for a full connection heartbeat timeout.
+    private static let physicalHoldRefreshTimeoutNanoseconds: UInt64 = 1_600_000_000
     private let serverID: String
     private var trustedClients: [String: TrustedClient]
     private var listener: NWListener?
@@ -103,7 +108,9 @@ final class MacControllerServer: ObservableObject {
     }
 
     private var activePressIdentifiersByButton: [GameButton: Set<UInt64>] = [:]
+    private var activePressLastSeenByButton: [GameButton: [UInt64: UInt64]] = [:]
     private var anonymousPressCountsByButton: [GameButton: Int] = [:]
+    private var anonymousPressLastSeenByButton: [GameButton: UInt64] = [:]
     private var buttonSequenceTracker = ButtonSequenceTracker()
     private var pendingButtonMessagesBySequence: [UInt64: PendingButtonMessage] = [:]
     private var buttonReorderFlushWorkItem: DispatchWorkItem?
@@ -1431,7 +1438,10 @@ final class MacControllerServer: ObservableObject {
             if inputPressedButtons.contains(button),
                sequenceInspection.missedFrameBeforeButton
             {
-                if hasIdentifiedPhysicalPressOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
+                if hasIdentifiedPhysicalPressOnNetworkQueue(button, pressIdentifier: pressIdentifier)
+                    || (pressIdentifier == nil && (anonymousPressCountsByButton[button] ?? 0) > 0)
+                {
+                    refreshPhysicalPressSeenOnNetworkQueue(button, pressIdentifier: pressIdentifier)
                     noteDuplicateButtonRefresh(button: button, pressIdentifier: pressIdentifier)
                     return
                 }
@@ -1507,7 +1517,9 @@ final class MacControllerServer: ObservableObject {
 
     private func resetPhysicalInputTrackingOnNetworkQueue() {
         activePressIdentifiersByButton.removeAll()
+        activePressLastSeenByButton.removeAll()
         anonymousPressCountsByButton.removeAll()
+        anonymousPressLastSeenByButton.removeAll()
     }
 
     private func recordPhysicalPressBeganOnNetworkQueue(
@@ -1515,15 +1527,26 @@ final class MacControllerServer: ObservableObject {
         pressIdentifier: UInt64?
     ) -> Bool {
         let wasPhysicallyPressed = hasPhysicalPressOnNetworkQueue(button)
+        let now = DispatchTime.now().uptimeNanoseconds
 
         if let pressIdentifier {
+            activePressLastSeenByButton[button, default: [:]][pressIdentifier] = now
             var identifiers = activePressIdentifiersByButton[button, default: []]
             let inserted = identifiers.insert(pressIdentifier).inserted
             activePressIdentifiersByButton[button] = identifiers
             return inserted && !wasPhysicallyPressed
         }
 
-        anonymousPressCountsByButton[button, default: 0] += 1
+        anonymousPressLastSeenByButton[button] = now
+        if (anonymousPressCountsByButton[button] ?? 0) > 0 {
+            return false
+        }
+
+        // Without a touch identifier we cannot safely distinguish duplicate
+        // heartbeat refreshes from multiple same-button touches. Treat anonymous
+        // input as one physical hold so an old/no-ID client cannot build up a
+        // count that requires several button-up packets to release.
+        anonymousPressCountsByButton[button] = 1
         return !wasPhysicallyPressed
     }
 
@@ -1541,6 +1564,7 @@ final class MacControllerServer: ObservableObject {
             }
 
             activePressIdentifiersByButton[button] = identifiers.isEmpty ? nil : identifiers
+            removeLastSeenOnNetworkQueue(button, pressIdentifier: pressIdentifier)
         } else {
             guard let count = anonymousPressCountsByButton[button],
                   count > 0
@@ -1550,6 +1574,7 @@ final class MacControllerServer: ObservableObject {
 
             if count == 1 {
                 anonymousPressCountsByButton[button] = nil
+                anonymousPressLastSeenByButton[button] = nil
             } else {
                 anonymousPressCountsByButton[button] = count - 1
             }
@@ -1571,22 +1596,106 @@ final class MacControllerServer: ObservableObject {
         return activePressIdentifiersByButton[button]?.contains(pressIdentifier) == true
     }
 
+    private func refreshPhysicalPressSeenOnNetworkQueue(
+        _ button: GameButton,
+        pressIdentifier: UInt64?
+    ) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if let pressIdentifier,
+           activePressIdentifiersByButton[button]?.contains(pressIdentifier) == true
+        {
+            activePressLastSeenByButton[button, default: [:]][pressIdentifier] = now
+        } else if pressIdentifier == nil,
+                  (anonymousPressCountsByButton[button] ?? 0) > 0
+        {
+            anonymousPressLastSeenByButton[button] = now
+        }
+    }
+
     private func resetPhysicalHoldsOnNetworkQueue(
         for button: GameButton,
         keeping pressIdentifier: UInt64?
     ) {
+        let now = DispatchTime.now().uptimeNanoseconds
         if let pressIdentifier {
             activePressIdentifiersByButton[button] = [pressIdentifier]
+            activePressLastSeenByButton[button] = [pressIdentifier: now]
             anonymousPressCountsByButton[button] = nil
+            anonymousPressLastSeenByButton[button] = nil
         } else {
             activePressIdentifiersByButton[button] = nil
+            activePressLastSeenByButton[button] = nil
             anonymousPressCountsByButton[button] = 1
+            anonymousPressLastSeenByButton[button] = now
         }
     }
 
     private func clearPhysicalHoldsOnNetworkQueue(for button: GameButton) {
         activePressIdentifiersByButton[button] = nil
+        activePressLastSeenByButton[button] = nil
         anonymousPressCountsByButton[button] = nil
+        anonymousPressLastSeenByButton[button] = nil
+    }
+
+    private func removeLastSeenOnNetworkQueue(_ button: GameButton, pressIdentifier: UInt64) {
+        guard var lastSeenByIdentifier = activePressLastSeenByButton[button] else { return }
+        lastSeenByIdentifier[pressIdentifier] = nil
+        activePressLastSeenByButton[button] = lastSeenByIdentifier.isEmpty ? nil : lastSeenByIdentifier
+    }
+
+    private func expireStalePhysicalHoldsOnNetworkQueue() {
+        guard pairedConnection != nil else { return }
+
+        let now = DispatchTime.now().uptimeNanoseconds
+        var buttonsNeedingRelease: [GameButton] = []
+
+        for button in GameButton.allCases {
+            var didExpireHold = false
+
+            if var identifiers = activePressIdentifiersByButton[button],
+               let lastSeenByIdentifier = activePressLastSeenByButton[button]
+            {
+                let expiredIdentifiers = identifiers.filter { identifier in
+                    guard let lastSeen = lastSeenByIdentifier[identifier], now >= lastSeen else { return false }
+                    return now - lastSeen > Self.physicalHoldRefreshTimeoutNanoseconds
+                }
+
+                if !expiredIdentifiers.isEmpty {
+                    didExpireHold = true
+                    var nextLastSeenByIdentifier = lastSeenByIdentifier
+                    for identifier in expiredIdentifiers {
+                        identifiers.remove(identifier)
+                        nextLastSeenByIdentifier[identifier] = nil
+                    }
+
+                    activePressIdentifiersByButton[button] = identifiers.isEmpty ? nil : identifiers
+                    nextLastSeenByIdentifier = nextLastSeenByIdentifier.filter { identifiers.contains($0.key) }
+                    activePressLastSeenByButton[button] = nextLastSeenByIdentifier.isEmpty ? nil : nextLastSeenByIdentifier
+                }
+            }
+
+            if let lastSeen = anonymousPressLastSeenByButton[button],
+               now >= lastSeen,
+               now - lastSeen > Self.physicalHoldRefreshTimeoutNanoseconds,
+               (anonymousPressCountsByButton[button] ?? 0) > 0
+            {
+                didExpireHold = true
+                anonymousPressCountsByButton[button] = nil
+                anonymousPressLastSeenByButton[button] = nil
+            }
+
+            if didExpireHold,
+               !hasPhysicalPressOnNetworkQueue(button),
+               inputPressedButtons.contains(button)
+            {
+                buttonsNeedingRelease.append(button)
+            }
+        }
+
+        for button in buttonsNeedingRelease {
+            noteRecoveredButtonEdge(button: button, state: .up, reason: "stale_hold_timeout")
+            handleButtonOnNetworkQueue(button, state: .up, source: "Stale hold timeout")
+        }
     }
 
     private func noteIgnoredButtonEdge(
@@ -1893,6 +2002,7 @@ final class MacControllerServer: ObservableObject {
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.checkHeartbeatTimeout()
+            self.checkStalePhysicalHoldTimeouts()
             if Date().timeIntervalSince(self.lastAccessibilityRefresh) > 2 {
                 self.refreshAccessibilityStatus()
             }
@@ -1922,6 +2032,12 @@ final class MacControllerServer: ObservableObject {
             releaseAll(reason: "Heartbeat timeout - released all keys")
             statusText = "Waiting for iPhone heartbeat"
             logDebug("heartbeat_timeout released_keys connection_kept")
+        }
+    }
+
+    private func checkStalePhysicalHoldTimeouts() {
+        asyncOnNetworkQueue { [weak self] in
+            self?.expireStalePhysicalHoldsOnNetworkQueue()
         }
     }
 

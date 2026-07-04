@@ -557,11 +557,20 @@ private struct KeypadHapticsToggleRow: View {
 
 private struct KeypadSettingsMenu: View {
     @Binding var isHapticFeedbackEnabled: Bool
+    let onReleaseAllInputs: () -> Void
 
     var body: some View {
         Menu {
             Toggle(isOn: $isHapticFeedbackEnabled) {
                 Label("Haptic Feedback", systemImage: "waveform.path")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                onReleaseAllInputs()
+            } label: {
+                Label("Release All Keys", systemImage: "keyboard.chevron.compact.down")
             }
         } label: {
             Image(systemName: "gearshape.fill")
@@ -940,7 +949,10 @@ private struct ControllerPadView: View {
     }
 
     private var keypadSettingsMenu: some View {
-        KeypadSettingsMenu(isHapticFeedbackEnabled: $isKeypadHapticsEnabled)
+        KeypadSettingsMenu(isHapticFeedbackEnabled: $isKeypadHapticsEnabled) {
+            TouchCaptureUIView.deactivateAllRegisteredTouches()
+            client.releaseAll()
+        }
     }
 
     private var keypadProfileMenu: some View {
