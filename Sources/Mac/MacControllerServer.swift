@@ -469,12 +469,19 @@ final class MacControllerServer: ObservableObject {
         normalizedCustomization = normalizedCustomization.stampedForLocalUpdate
 
         gamepadCustomization = normalizedCustomization
+        if let activeProfileIndex = gamepadProfiles.firstIndex(where: { $0.id == activeGamepadProfileID }) {
+            gamepadProfiles[activeProfileIndex].customization = normalizedCustomization
+            gamepadProfiles[activeProfileIndex].updatedAt = Date.currentMilliseconds
+            persistGamepadProfileState()
+        }
         GamepadCustomizationPersistence.save(normalizedCustomization)
+        let updatedProfiles = gamepadProfiles
         lastReceivedEvent = "Updated iPhone keypad layout"
 
         asyncOnNetworkQueue { [weak self] in
             guard let self else { return }
             self.realtimeGamepadCustomization = normalizedCustomization
+            self.realtimeGamepadProfiles = updatedProfiles
             self.sendGamepadCustomizationOnNetworkQueue(normalizedCustomization)
         }
         logDebug("gamepad_customization_updated source=mac")
@@ -1056,9 +1063,20 @@ final class MacControllerServer: ObservableObject {
 
         case .gamepadCustomization:
             guard isPairedConnection else { return }
-            sendGamepadCustomizationOnNetworkQueue(realtimeGamepadCustomization)
-            publishControllerDebug(event: "Customize keypad in PocketPad Mac", immediately: true)
-            logDebug("ignored_gamepad_customization source=iphone reason=mac_only")
+            guard let clientCustomization = message.gamepadCustomization else {
+                sendGamepadCustomizationOnNetworkQueue(realtimeGamepadCustomization)
+                return
+            }
+            let preference = clientCustomization.colorSchemePreference
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                var nextCustomization = self.gamepadCustomization
+                nextCustomization.colorSchemePreference = preference
+                self.setGamepadCustomization(nextCustomization)
+                self.lastReceivedEvent = "Updated keypad appearance from iPhone"
+                self.publishRuntimeStatus()
+            }
+            logDebug("gamepad_appearance_updated source=iphone preference=\(preference.rawValue)")
 
         case .gamepadProfileSelection:
             guard isPairedConnection, let profileID = message.gamepadProfileID else { return }

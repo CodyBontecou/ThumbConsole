@@ -42,6 +42,22 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 67KC823C9A
         MACOSX_DEPLOYMENT_TARGET: "14.0"
+  PocketPadCLITests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/Shared
+      - path: Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadCLITests
+        PRODUCT_NAME: PocketPadCLITests
+        GENERATE_INFOPLIST_FILE: YES
+        OTHER_SWIFT_FLAGS: "$(inherited) -D XCODEBUILD_TEST"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 67KC823C9A
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
   PocketPadiOS:
     type: application
     platform: iOS
@@ -59,3 +75,12 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 67KC823C9A
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+schemes:
+  PocketPadCLI:
+    build:
+      targets:
+        PocketPadCLI: all
+        PocketPadCLITests: [test]
+    test:
+      targets:
+        - PocketPadCLITests

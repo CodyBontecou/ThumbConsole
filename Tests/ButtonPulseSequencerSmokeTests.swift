@@ -1,6 +1,8 @@
 import Foundation
 
+#if !XCODEBUILD_TEST
 @main
+#endif
 struct ButtonPulseSequencerSmokeTests {
     private static let minTap: UInt64 = 35_000_000
     private static let minGap: UInt64 = 20_000_000

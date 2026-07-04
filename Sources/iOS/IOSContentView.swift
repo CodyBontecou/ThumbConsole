@@ -124,6 +124,13 @@ private struct ConnectionView: View {
     @State private var qrScanError: String?
     @State private var pendingPairingCode = ""
 
+    private var keypadColorSchemePreferenceBinding: Binding<GamepadColorSchemePreference> {
+        Binding(
+            get: { client.gamepadCustomization.colorSchemePreference },
+            set: { client.setKeypadColorSchemePreference($0) }
+        )
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let isWide = proxy.size.width > proxy.size.height && proxy.size.width >= 760
@@ -277,6 +284,7 @@ private struct ConnectionView: View {
 
             DividerLabel("iPhone Settings")
 
+            KeypadAppearancePickerRow(selection: keypadColorSchemePreferenceBinding)
             KeypadHapticsToggleRow(isEnabled: $isKeypadHapticsEnabled)
         }
         .geistPanel(padding: Geist.Spacing.s6, radius: Geist.Radius.sm)
@@ -522,6 +530,44 @@ private struct LabeledInput<Content: View>: View {
     }
 }
 
+private struct KeypadAppearancePickerRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var selection: GamepadColorSchemePreference
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                Text("Keypad Appearance")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                Text("Choose whether the keypad uses light mode, dark mode, or follows iOS.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Picker("Keypad Appearance", selection: $selection) {
+                ForEach(GamepadColorSchemePreference.allCases) { preference in
+                    Text(preference.displayName).tag(preference)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .fill(Geist.color(.gray100, scheme: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+        .accessibilityHint("Controls whether the keypad follows iOS appearance or is forced light or dark.")
+    }
+}
+
 private struct KeypadHapticsToggleRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var isEnabled: Bool
@@ -557,10 +603,19 @@ private struct KeypadHapticsToggleRow: View {
 
 private struct KeypadSettingsMenu: View {
     @Binding var isHapticFeedbackEnabled: Bool
+    @Binding var colorSchemePreference: GamepadColorSchemePreference
     let onReleaseAllInputs: () -> Void
 
     var body: some View {
         Menu {
+            Picker(selection: $colorSchemePreference) {
+                ForEach(GamepadColorSchemePreference.allCases) { preference in
+                    Text(preference.displayName).tag(preference)
+                }
+            } label: {
+                Label("Appearance", systemImage: "circle.lefthalf.filled")
+            }
+
             Toggle(isOn: $isHapticFeedbackEnabled) {
                 Label("Haptic Feedback", systemImage: "waveform.path")
             }
@@ -579,7 +634,7 @@ private struct KeypadSettingsMenu: View {
         }
         .geistButtonStyle(.secondary, size: .small)
         .accessibilityLabel("Keypad settings")
-        .accessibilityHint("Opens settings for keypad feedback.")
+        .accessibilityHint("Opens settings for keypad appearance, feedback, and input reset.")
     }
 }
 
@@ -598,6 +653,7 @@ private struct ControllerPadView: View {
     var body: some View {
         GeometryReader { proxy in
             let isLandscape = proxy.size.width >= proxy.size.height
+            let keypadColorScheme = client.gamepadCustomization.resolvedColorScheme(system: colorScheme)
 
             ZStack(alignment: .top) {
                 Group {
@@ -618,6 +674,8 @@ private struct ControllerPadView: View {
                     topBar(isLandscape: isLandscape)
                 }
             }
+            .background(Geist.color(.background100, scheme: keypadColorScheme).ignoresSafeArea())
+            .environment(\.colorScheme, keypadColorScheme)
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .environment(\.keypadHapticsEnabled, isKeypadHapticsEnabled)
@@ -949,10 +1007,20 @@ private struct ControllerPadView: View {
     }
 
     private var keypadSettingsMenu: some View {
-        KeypadSettingsMenu(isHapticFeedbackEnabled: $isKeypadHapticsEnabled) {
+        KeypadSettingsMenu(
+            isHapticFeedbackEnabled: $isKeypadHapticsEnabled,
+            colorSchemePreference: keypadColorSchemePreferenceBinding
+        ) {
             TouchCaptureUIView.deactivateAllRegisteredTouches()
             client.releaseAll()
         }
+    }
+
+    private var keypadColorSchemePreferenceBinding: Binding<GamepadColorSchemePreference> {
+        Binding(
+            get: { client.gamepadCustomization.colorSchemePreference },
+            set: { client.setKeypadColorSchemePreference($0) }
+        )
     }
 
     private var keypadProfileMenu: some View {
@@ -1419,6 +1487,7 @@ private struct GamepadFreeformControllerCanvas: View {
                             elementCustomization: control.layoutCustomization,
                             customization: customization
                         )
+                        .rotationEffect(.degrees(control.rotationDegrees))
                         .position(control.center)
                     } else {
                         GamepadButton(
@@ -1429,6 +1498,7 @@ private struct GamepadFreeformControllerCanvas: View {
                             elementCustomization: control.layoutCustomization,
                             customization: customization
                         )
+                        .rotationEffect(.degrees(control.rotationDegrees))
                         .position(control.center)
                     }
                 }
@@ -1684,7 +1754,7 @@ private struct GamepadButton: View {
     }
 
     private var resolvedCornerRadii: GamepadCornerRadii {
-        resolvedButtonCustomization.resolvedCornerRadii()
+        resolvedButtonCustomization.resolvedCornerRadii(defaultRadius: resolvedShape.defaultEditableCornerRadius(in: size))
     }
 
     private var resolvedShadowStrength: CGFloat {
@@ -1698,26 +1768,10 @@ private struct GamepadButton: View {
         let lineWidth: CGFloat = isPressed ? 2 : 1
 
         switch resolvedShape {
-        case .roundedRectangle:
+        case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
             UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
                 .fill(fillColor)
                 .overlay(UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous).stroke(strokeColor, lineWidth: lineWidth))
-        case .rectangle:
-            Rectangle()
-                .fill(fillColor)
-                .overlay(Rectangle().stroke(strokeColor, lineWidth: lineWidth))
-        case .capsule:
-            Capsule()
-                .fill(fillColor)
-                .overlay(Capsule().stroke(strokeColor, lineWidth: lineWidth))
-        case .circle:
-            Circle()
-                .fill(fillColor)
-                .overlay(Circle().stroke(strokeColor, lineWidth: lineWidth))
-        case .ellipse:
-            Ellipse()
-                .fill(fillColor)
-                .overlay(Ellipse().stroke(strokeColor, lineWidth: lineWidth))
         case .polygon:
             GamepadRegularPolygonButtonShape(sides: 3)
                 .fill(fillColor)

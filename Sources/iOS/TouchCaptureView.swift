@@ -376,16 +376,8 @@ final class TouchCaptureUIView: UIView {
         guard hitBounds.contains(point) else { return false }
 
         switch hitShape {
-        case .roundedRectangle, .rectangle:
+        case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
             return true
-        case .capsule:
-            return hitPath(for: .capsule, in: hitBounds).contains(point)
-        case .circle, .ellipse:
-            let radiusX = max(hitBounds.width / 2, 0.001)
-            let radiusY = max(hitBounds.height / 2, 0.001)
-            let normalizedX = (point.x - hitBounds.midX) / radiusX
-            let normalizedY = (point.y - hitBounds.midY) / radiusY
-            return (normalizedX * normalizedX) + (normalizedY * normalizedY) <= 1
         case .polygon:
             return hitPath(for: .polygon, in: hitBounds).contains(point)
         case .star:
@@ -403,13 +395,11 @@ final class TouchCaptureUIView: UIView {
 
         let path: UIBezierPath
         switch shape {
-        case .capsule:
-            path = UIBezierPath(roundedRect: rect, cornerRadius: min(rect.width, rect.height) / 2)
         case .polygon:
             path = regularPolygonPath(sides: 3, in: rect)
         case .star:
             path = starPath(points: 5, innerRadiusRatio: 0.45, in: rect)
-        case .roundedRectangle, .rectangle, .circle, .ellipse:
+        case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
             path = UIBezierPath(rect: rect)
         }
 

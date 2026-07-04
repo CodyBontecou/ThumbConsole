@@ -40,6 +40,7 @@ struct MacContentView: View {
                     subtitle: "Diagnostics and advanced configuration for the Mac keypad helper.",
                     systemImage: "gearshape.fill"
                 )
+                keypadAppearanceSettingsPanel
                 debugPanel
                 advancedConfigurationPanel
             }
@@ -354,6 +355,11 @@ struct MacContentView: View {
                     title: "Default setup",
                     value: defaultProfileName,
                     systemImage: "star.fill"
+                )
+                homeMetricRow(
+                    title: "Appearance",
+                    value: (activeGamepadProfile?.customization ?? server.gamepadCustomization).colorSchemePreference.displayName,
+                    systemImage: "circle.lefthalf.filled"
                 )
                 homeMetricRow(
                     title: "Last event",
@@ -1163,6 +1169,40 @@ struct MacContentView: View {
         .geistPanel()
     }
 
+    private var keypadAppearanceSettingsPanel: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            SectionHeader(
+                title: "Keypad Appearance",
+                subtitle: "Choose whether the synced iPhone keypad follows the device appearance or is always rendered in light or dark mode."
+            )
+
+            Picker("Keypad Appearance", selection: keypadColorSchemePreferenceBinding) {
+                ForEach(GamepadColorSchemePreference.allCases) { preference in
+                    Text(preference.displayName).tag(preference)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 420)
+
+            Text(server.gamepadCustomization.colorSchemePreference.description)
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .geistPanel()
+    }
+
+    private var keypadColorSchemePreferenceBinding: Binding<GamepadColorSchemePreference> {
+        Binding(
+            get: { server.gamepadCustomization.colorSchemePreference },
+            set: { preference in
+                var customization = server.gamepadCustomization
+                customization.colorSchemePreference = preference
+                server.setGamepadCustomization(customization)
+            }
+        )
+    }
+
     private var debugPanel: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
             SectionHeader(
@@ -1403,16 +1443,17 @@ private struct MacKeypadMiniPreview: View {
             let scale = max(0.001, min(availableWidth / designSize.width, availableHeight / designSize.height))
             let displaySize = CGSize(width: designSize.width * scale, height: designSize.height * scale)
             let controls = customization.resolvedControls(in: designSize, defaultLabelProvider: defaultLabelProvider)
+            let previewColorScheme = customization.resolvedColorScheme(system: colorScheme)
 
             ZStack {
                 RoundedRectangle(cornerRadius: 30 * scale, style: .continuous)
-                    .fill(Geist.color(.gray1000, scheme: colorScheme))
+                    .fill(Geist.color(.gray1000, scheme: previewColorScheme))
                     .frame(width: displaySize.width + 24 * scale, height: displaySize.height + 24 * scale)
-                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.24 : 0.10), radius: 18 * scale, x: 0, y: 10 * scale)
+                    .shadow(color: Color.black.opacity(previewColorScheme == .dark ? 0.24 : 0.10), radius: 18 * scale, x: 0, y: 10 * scale)
 
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 22 * scale, style: .continuous)
-                        .fill(Geist.color(.background100, scheme: colorScheme))
+                        .fill(Geist.color(.background100, scheme: previewColorScheme))
 
                     ForEach(controls) { control in
                         MacKeypadPreviewControl(
@@ -1420,6 +1461,8 @@ private struct MacKeypadMiniPreview: View {
                             customization: customization,
                             scale: scale
                         )
+                        .environment(\.colorScheme, previewColorScheme)
+                        .rotationEffect(.degrees(control.rotationDegrees))
                         .position(x: control.center.x * scale, y: control.center.y * scale)
                     }
                 }
@@ -1427,7 +1470,7 @@ private struct MacKeypadMiniPreview: View {
                 .clipShape(RoundedRectangle(cornerRadius: 22 * scale, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 22 * scale, style: .continuous)
-                        .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                        .stroke(Geist.color(.grayAlpha400, scheme: previewColorScheme), lineWidth: 1)
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1448,17 +1491,17 @@ private struct MacKeypadPreviewControl: View {
 
             if control.isJoystick {
                 Circle()
-                    .stroke(control.layoutCustomization.buttonStroke(accentStyle: customization.accentStyle, isPressed: false, scheme: colorScheme).opacity(0.58), lineWidth: max(1, 3 * scale))
+                    .stroke(control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.58), lineWidth: max(1, 3 * scale))
                     .padding(max(3, 10 * scale))
                 Circle()
-                    .fill(control.layoutCustomization.buttonStroke(accentStyle: customization.accentStyle, isPressed: false, scheme: colorScheme).opacity(0.42))
+                    .fill(control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.42))
                     .frame(width: max(8, 22 * scale), height: max(8, 22 * scale))
             }
 
             if customization.showsButtonLabels {
                 Text(control.label)
                     .geistTypography(.label12)
-                    .foregroundStyle(control.layoutCustomization.buttonForeground(accentStyle: customization.accentStyle, isPressed: false, scheme: colorScheme))
+                    .foregroundStyle(control.layoutCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme))
                     .lineLimit(1)
                     .minimumScaleFactor(0.45)
                     .padding(.horizontal, max(2, 4 * scale))
@@ -1473,36 +1516,34 @@ private struct MacKeypadPreviewControl: View {
         )
     }
 
+    private var resolvedAccentStyle: GamepadAccentStyle {
+        control.layoutCustomization.accentStyle ?? customization.accentStyle
+    }
+
+    private var resolvedCornerRadii: GamepadCornerRadii {
+        control.layoutCustomization.resolvedCornerRadii(defaultRadius: control.shape.defaultEditableCornerRadius(in: control.size))
+    }
+
+    private var scaledRectangleCornerRadii: RectangleCornerRadii {
+        RectangleCornerRadii(
+            topLeading: resolvedCornerRadii.topLeading * scale,
+            bottomLeading: resolvedCornerRadii.bottomLeading * scale,
+            bottomTrailing: resolvedCornerRadii.bottomTrailing * scale,
+            topTrailing: resolvedCornerRadii.topTrailing * scale
+        )
+    }
+
     @ViewBuilder
     private var controlShape: some View {
-        let fill = control.layoutCustomization.buttonFill(accentStyle: customization.accentStyle, isPressed: false, scheme: colorScheme)
-        let stroke = control.layoutCustomization.buttonStroke(accentStyle: customization.accentStyle, isPressed: false, scheme: colorScheme)
+        let fill = control.layoutCustomization.buttonFill(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+        let stroke = control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
         let lineWidth = max(0.75, 1 * scale)
 
         switch control.shape {
-        case .roundedRectangle:
-            RoundedRectangle(cornerRadius: max(2, control.layoutCustomization.resolvedCornerRadii().averageRadius * scale), style: .continuous)
+        case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
+            UnevenRoundedRectangle(cornerRadii: scaledRectangleCornerRadii, style: .continuous)
                 .fill(fill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: max(2, control.layoutCustomization.resolvedCornerRadii().averageRadius * scale), style: .continuous)
-                        .stroke(stroke, lineWidth: lineWidth)
-                )
-        case .rectangle:
-            Rectangle()
-                .fill(fill)
-                .overlay(Rectangle().stroke(stroke, lineWidth: lineWidth))
-        case .capsule:
-            Capsule()
-                .fill(fill)
-                .overlay(Capsule().stroke(stroke, lineWidth: lineWidth))
-        case .circle:
-            Circle()
-                .fill(fill)
-                .overlay(Circle().stroke(stroke, lineWidth: lineWidth))
-        case .ellipse:
-            Ellipse()
-                .fill(fill)
-                .overlay(Ellipse().stroke(stroke, lineWidth: lineWidth))
+                .overlay(UnevenRoundedRectangle(cornerRadii: scaledRectangleCornerRadii, style: .continuous).stroke(stroke, lineWidth: lineWidth))
         case .polygon:
             GamepadRegularPolygonButtonShape(sides: 3)
                 .fill(fill)

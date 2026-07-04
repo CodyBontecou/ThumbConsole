@@ -806,8 +806,17 @@ struct PocketPadCLI {
         if let value = optionValue("--width", in: arguments) ?? optionValue("--width-scale", in: arguments), let number = Double(value) { layout.widthScale = CGFloat(number) }
         if let value = optionValue("--height", in: arguments) ?? optionValue("--height-scale", in: arguments), let number = Double(value) { layout.heightScale = CGFloat(number) }
         if let value = optionValue("--shape", in: arguments), let shape = parseShapeStyleIfPresent(value) { layout.shape = shape }
-        if let value = optionValue("--accent", in: arguments), let accent = parseAccentStyleIfPresent(value) { layout.accentStyle = accent; layout.fillColor = nil }
-        if let value = optionValue("--fill", in: arguments) ?? optionValue("--color", in: arguments), let color = GamepadRGBAColor(hexString: value) { layout.fillColor = color }
+        if let value = optionValue("--accent", in: arguments), let accent = parseAccentStyleIfPresent(value) {
+            layout.accentStyle = accent
+            layout.fillColor = nil
+            layout.lightFillColor = nil
+            layout.darkFillColor = nil
+        }
+        if let value = optionValue("--fill", in: arguments) ?? optionValue("--color", in: arguments), let color = GamepadRGBAColor(hexString: value) {
+            layout.fillColor = color
+            layout.lightFillColor = nil
+            layout.darkFillColor = nil
+        }
         if let value = optionValue("--opacity", in: arguments), let opacity = parseOpacityIfPresent(value) {
             var color = layout.fillColor ?? .defaultValue
             color.alpha = opacity
@@ -1622,6 +1631,7 @@ struct PocketPadCLI {
         print("Default: \(profile.id == store.defaultProfileID ? "yes" : "no")")
         print("Layout: \(profile.customization.layoutMode.rawValue)")
         print("Scale: \(profile.customization.controlScale.rawValue)")
+        print("Appearance: \(profile.customization.colorSchemePreference.rawValue)")
         print("Accent: \(profile.customization.accentStyle.rawValue)")
         print("Labels: \(profile.customization.showsButtonLabels ? "shown" : "hidden")")
         print("Custom elements: \(profile.customization.customButtons.count)")

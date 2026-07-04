@@ -448,6 +448,23 @@ final class ControllerClient: ObservableObject {
         updateLastSentEvent("default keypad saved", immediately: true)
     }
 
+    func setKeypadColorSchemePreference(_ preference: GamepadColorSchemePreference) {
+        var nextCustomization = gamepadCustomization
+        guard nextCustomization.colorSchemePreference != preference else { return }
+        nextCustomization.colorSchemePreference = preference
+        let stampedCustomization = nextCustomization.stampedForLocalUpdate
+
+        if let index = gamepadProfiles.firstIndex(where: { $0.id == selectedGamepadProfileID }) {
+            gamepadProfiles[index].customization = stampedCustomization
+            gamepadProfiles[index].updatedAt = Date.currentMilliseconds
+        }
+
+        applyLocalGamepadCustomization(stampedCustomization)
+        persistGamepadProfiles()
+        send(.init(type: .gamepadCustomization, timestamp: 0, gamepadCustomization: stampedCustomization))
+        updateLastSentEvent("keypad appearance: \(preference.displayName)", immediately: true)
+    }
+
     private func applyLocalGamepadCustomization(_ customization: GamepadCustomization) {
         let normalizedCustomization = customization.normalized
         guard normalizedCustomization != gamepadCustomization else { return }

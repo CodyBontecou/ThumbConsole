@@ -1,6 +1,8 @@
 import Foundation
 
+#if !XCODEBUILD_TEST
 @main
+#endif
 struct InputLatencySimulationSmokeTests {
     static func main() {
         let current = PocketPadInputLatencySimulator.run(

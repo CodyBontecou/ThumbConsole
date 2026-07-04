@@ -1,6 +1,8 @@
 import Foundation
 
+#if !XCODEBUILD_TEST
 @main
+#endif
 struct ControllerActiveInputStateSmokeTests {
     static func main() {
         testHeldMovementIsAvailableForHeartbeatResync()
