@@ -10,6 +10,9 @@ struct GamepadLayoutResolverSmokeTests {
         testNudgeMovesMultipleControlsTogether()
         testNudgeSkipsLockedControls()
         testNudgePreventsOverlaps()
+        testLayoutQualityPassesDefaultController()
+        testLayoutQualityDetectsBadOverlaps()
+        testLayoutQualityDetectsUnderusedBottomSpace()
         print("GamepadLayoutResolver smoke tests passed")
     }
 
@@ -129,6 +132,61 @@ struct GamepadLayoutResolverSmokeTests {
         expect(!customization.nudgeControls([.custom(leftID)], by: CGSize(width: 1, height: 0), in: canvasSize), "nudge should not move into an overlapping frame")
         let after = controlsByID(customization.resolvedControls(in: canvasSize))
         expectAlmostEqual(after[.custom(leftID)]?.center.x ?? -1, before[.custom(leftID)]?.center.x ?? 0, "blocked nudge should keep x position")
+    }
+
+    private static func testLayoutQualityPassesDefaultController() {
+        let report = GamepadCustomization.defaultValue.layoutQualityReport(
+            profileName: "Default",
+            canvasSize: CGSize(width: 874, height: 402)
+        )
+        expect(!report.hasErrors, "default controller layout should not have blocking layout errors")
+    }
+
+    private static func testLayoutQualityDetectsBadOverlaps() {
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000601")!
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000602")!
+        var customization = GamepadCustomization.blankCanvas
+        let badLayout = GamepadButtonCustomization(
+            centerX: 0.5,
+            centerY: 0.5,
+            widthScale: 2.4,
+            heightScale: 2.4,
+            shape: .circle
+        )
+        customization.customButtons = [
+            GamepadCustomButton(id: firstID, mappedButton: .custom1, label: "One", layout: badLayout),
+            GamepadCustomButton(id: secondID, mappedButton: .custom2, label: "Two", layout: badLayout)
+        ]
+
+        let report = customization.layoutQualityReport(
+            profileName: "Bad",
+            canvasSize: CGSize(width: 874, height: 402)
+        )
+        expect(report.hasErrors, "overlapping oversized controls should fail layout quality validation")
+        expect(report.issues.contains { $0.code == "requested-overlap" || $0.code == "resolved-overlap" }, "bad layout should report overlap issues")
+    }
+
+    private static func testLayoutQualityDetectsUnderusedBottomSpace() {
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = GameButton.customSlots.enumerated().map { index, button in
+            let row = index / 4
+            let column = index % 4
+            let id = UUID(uuidString: String(format: "00000000-0000-0000-0000-%012X", 0x700 + index))!
+            let layout = GamepadButtonCustomization(
+                centerX: 0.18 + CGFloat(column) * 0.21,
+                centerY: row == 0 ? 0.14 : 0.34,
+                widthScale: 0.55,
+                heightScale: 0.55,
+                shape: .roundedRectangle
+            )
+            return GamepadCustomButton(id: id, mappedButton: button, label: "Button \(index + 1)", layout: layout)
+        }
+
+        let report = customization.layoutQualityReport(
+            profileName: "Top Heavy",
+            canvasSize: CGSize(width: 874, height: 402)
+        )
+        expect(report.issues.contains { $0.code == "underused-bottom-space" }, "top-heavy layouts should warn about unused bottom space")
     }
 
     private static func customButton(id: UUID, center: CGPoint) -> GamepadCustomButton {

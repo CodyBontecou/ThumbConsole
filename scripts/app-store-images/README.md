@@ -1,8 +1,8 @@
 # App Store image draft generator
 
-This is a small, repo-aware first draft for generating App Store marketing images for PocketPad.
+This is a small, repo-aware first draft for generating App Store marketing images for the app in the current repository.
 
-It inspects this repo for the app name, product copy, brand colors, typography hints, feature names, and existing screenshots. AI is used only for abstract backgrounds and visual treatments. Real app UI screenshots are composited into a phone frame when available; if no screenshots are found, the final images are marked draft-only with placeholders.
+It inspects the repo for an app name, product copy, brand colors, typography hints, feature names, and existing screenshots. AI is used only for abstract backgrounds and visual treatments. Real app UI screenshots are composited into a phone frame when available; if no screenshots are found, the final images are marked draft-only with placeholders.
 
 ## Setup
 
@@ -64,7 +64,7 @@ Put real app screenshots here:
 app-store-input/screenshots/
 ```
 
-PNG, JPG, JPEG, and WEBP files are supported. The tool also looks in common repo folders such as `screenshots/`, `fastlane/screenshots/`, `metadata/`, `docs/`, `app-store/`, and `marketing/`.
+PNG, JPG, JPEG, and WEBP files are supported. The tool also looks in common repo folders such as `screenshots/`, `Screenshots/`, `fastlane/screenshots/`, `metadata/`, `docs/`, `app-store/`, and `marketing/`.
 
 If no screenshots exist, the generated final images use a neutral frame that says “Add app screenshot here” and the manifest sets `draftOnly: true`.
 
@@ -115,6 +115,15 @@ Useful flags:
 --seed 123                # passed through if the model supports it
 --force                   # overwrite previous PNG outputs
 ```
+
+## What repo inspection looks for
+
+The detector is intentionally generic and conservative. It checks common sources such as:
+
+- iOS `Info.plist`, XcodeGen `project.yml`, Xcode project files, `package.json`, and README titles for the app name
+- CSS/theme/token files, Swift design files, Tailwind config, and marketing HTML for colors and typography hints
+- README/docs/website copy, HTML article cards, headings, and localization-like strings for feature ideas
+- common screenshot/marketing folders for real UI screenshots
 
 ## Notes
 

@@ -461,7 +461,7 @@ function productNameFromXcodeGen(projectYml: string): string | undefined {
 
     if (!inTargets) continue;
 
-    if (/^  [^:\n]+:\s*$/.test(line)) {
+    if (/^  \S[^:\n]*:\s*$/.test(line)) {
       const productName = insideTarget ? finishTarget() : undefined;
       if (productName) return productName;
       insideTarget = true;
@@ -532,7 +532,7 @@ function detectBrandColors(brandConfig: BrandConfig): BrandColors {
     }
   }
 
-  const pick = (patterns: RegExp[], fallback?: string) => {
+  const pick = (patterns: RegExp[], fallback: string): string => {
     for (const pattern of patterns) {
       const exact = detected.find((color) => pattern.test(color.name.toLowerCase()));
       if (exact) return exact.value;
@@ -628,6 +628,12 @@ function detectDesignLanguage(): string[] {
   return Array.from(language);
 }
 
+function isIgnoredFeatureTitle(title: string): boolean {
+  return /^(build|use|usage|targets?|install|installation|requirements?|development|tests?|testing|license|contributing|changelog|release|setup)$/i.test(
+    title.trim(),
+  );
+}
+
 function detectFeatures(): DetectedFeature[] {
   const features: DetectedFeature[] = [];
   const seen = new Set<string>();
@@ -636,6 +642,8 @@ function detectFeatures(): DetectedFeature[] {
     const cleanDescription = stripMarkdown(stripHtml(description)).replace(/\s+/g, " ").trim();
     const key = cleanTitle.toLowerCase();
     if (!cleanTitle || !cleanDescription || seen.has(key)) return;
+    if (isIgnoredFeatureTitle(cleanTitle)) return;
+    if (/```|xcodebuild|npm install|yarn install|pnpm install|swift build/i.test(cleanDescription)) return;
     seen.add(key);
     features.push({ title: cleanTitle, description: cleanDescription, source });
   };
@@ -712,11 +720,11 @@ function discoverMarketingTextFiles(): string[] {
 
 function inferCategory(features: DetectedFeature[]): string {
   const allText = features.map((feature) => `${feature.title} ${feature.description}`).join(" ").toLowerCase();
+  if (/\b(game|gaming|controller|play)\b/.test(allText)) return "games and entertainment utility";
   if (/health|medical|wellness|fitness/.test(allText)) return "health and wellness";
   if (/finance|invoice|budget|receipt|payment/.test(allText)) return "finance";
-  if (/photo|video|camera|media|record|edit/.test(allText)) return "photo and video";
+  if (/photo|video|camera|media|recording|screen capture/.test(allText)) return "photo and video";
   if (/learn|course|education|language|study/.test(allText)) return "education";
-  if (/game|controller|play/.test(allText)) return "games and entertainment utility";
   if (/developer|code|cli|api|terminal/.test(allText)) return "developer tool";
   if (/task|todo|note|calendar|schedule|workflow|shortcut|productivity/.test(allText)) return "productivity";
   if (/social|community|chat|message/.test(allText)) return "social networking";
@@ -799,39 +807,46 @@ function walkFiles(root: string, maxDepth: number): string[] {
 }
 
 function buildScreenshotPlan(insights: RepoInsights, options: CliOptions): ScreenPlan[] {
-  const screens = [
+  const selectedFeatures = selectPlanFeatures(insights);
+  const screenSeeds = [
     {
       kind: "hero" as const,
       title: "Hero / core value proposition",
-      feature: "Programmable shortcut keypad",
-      headline: `Turn iPhone into a Mac shortcut pad`,
-      subheadline: "Pair with your Mac and send custom controls from your phone.",
-      mood: "premium, tactile, focused, modern",
+      feature: selectedFeatures[0],
+      mood: "premium, clear, product-focused, modern",
     },
     {
       kind: "feature" as const,
-      title: "Key feature 1 / Smart Connect pairing",
-      feature: "Smart Connect and QR pairing",
-      headline: "Pair once. Reconnect fast.",
-      subheadline: "Scan the Mac QR code, then let Smart Connect find your helper.",
-      mood: "calm setup flow, secure local connection, clear depth",
+      title: `Key feature 1 / ${selectedFeatures[1].title}`,
+      feature: selectedFeatures[1],
+      mood: "focused, polished, legible, modern",
     },
     {
       kind: "feature" as const,
-      title: "Key feature 2 / Custom layouts",
-      feature: "Custom keypad profiles",
-      headline: "Build controls for any workflow.",
-      subheadline: "Buttons, joysticks, haptics, profiles, and shortcut sequences.",
-      mood: "creative control surface, energetic but clean, tactile",
+      title: `Key feature 2 / ${selectedFeatures[2].title}`,
+      feature: selectedFeatures[2],
+      mood: "confident, energetic, clean, modern",
     },
   ];
 
-  return screens.map((screen, index) => {
+  return screenSeeds.map((screen, index) => {
     const screenshotPath = insights.screenshots.length > 0 ? insights.screenshots[index % insights.screenshots.length] : null;
+    const copy = buildScreenCopy(screen.feature, insights, screen.kind, index);
     const slug = slugify(`${index + 1}-${screen.title}`);
-    const prompt = buildBackgroundPrompt(screen, insights);
+    const prompt = buildBackgroundPrompt(
+      {
+        feature: screen.feature.title,
+        mood: screen.mood,
+      },
+      insights,
+    );
     return {
-      ...screen,
+      kind: screen.kind,
+      title: screen.title,
+      feature: screen.feature.title,
+      headline: copy.headline,
+      subheadline: copy.subheadline,
+      mood: screen.mood,
       index: index + 1,
       slug,
       prompt,
@@ -843,6 +858,85 @@ function buildScreenshotPlan(insights: RepoInsights, options: CliOptions): Scree
       draftOnly: screenshotPath === null,
     };
   });
+}
+
+function selectPlanFeatures(insights: RepoInsights): DetectedFeature[] {
+  const fallbacks: DetectedFeature[] = [
+    {
+      title: insights.appName,
+      description: `Draft marketing image for ${insights.appName}. Add product copy to README.md, docs, or app-store-input/brand.json for a more specific plan.`,
+      source: "fallback",
+    },
+    {
+      title: "Key feature",
+      description: "Highlight one concrete feature from the app with a real UI screenshot.",
+      source: "fallback",
+    },
+    {
+      title: "Designed for iPhone",
+      description: "Show the app experience using real screenshots and short App Store-safe copy.",
+      source: "fallback",
+    },
+  ];
+
+  const usable = insights.features.length > 0 ? insights.features : fallbacks;
+  const hero = usable[0] ?? fallbacks[0];
+  const featureCandidates = usable
+    .slice(1)
+    .filter((feature) => !/^(core value proposition|product description|overview)$/i.test(feature.title))
+    .filter((feature) => !isIgnoredFeatureTitle(feature.title))
+    .filter((feature) => !/```|xcodebuild|npm install|swift build|deriveddata/i.test(feature.description))
+    .sort((left, right) => featurePlanScore(right) - featurePlanScore(left));
+
+  return [
+    hero,
+    featureCandidates[0] ?? usable[1] ?? hero ?? fallbacks[1],
+    featureCandidates[1] ?? usable[2] ?? featureCandidates[0] ?? hero ?? fallbacks[2],
+  ];
+}
+
+function featurePlanScore(feature: DetectedFeature): number {
+  const text = `${feature.title} ${feature.description}`.toLowerCase();
+  let score = 0;
+  if (/website|marketing|app-store/.test(feature.source.toLowerCase())) score += 3;
+  if (/keyword scan/.test(feature.source.toLowerCase())) score += 1;
+  if (/custom|personal|profile|template|theme|layout|sync|share|export|import|connect|pair|secure|private|offline|automation|workflow|shortcut|dashboard|insight|fast|realtime|low latency|controller/.test(text)) score += 4;
+  if (/\bios\b|iphone|mobile|app/.test(text)) score += 2;
+  if (/macos|desktop|helper/.test(text)) score -= 1;
+  if (/core value proposition|product description/.test(feature.title.toLowerCase())) score += 2;
+  if (feature.description.length > 220) score -= 1;
+  return score;
+}
+
+function buildScreenCopy(
+  feature: DetectedFeature,
+  insights: RepoInsights,
+  kind: ScreenPlan["kind"],
+  index: number,
+): { headline: string; subheadline: string } {
+  const descriptionSentence = firstSentence(feature.description) ?? feature.description;
+  const genericTitle = /^(core value proposition|product description|overview)$/i.test(feature.title);
+  const headlineSource = genericTitle ? headlineFromSentence(descriptionSentence, insights.appName) : feature.title;
+  const fallbackHeadline = kind === "hero" ? `${insights.appName}, ready to share.` : `Feature ${index + 1}`;
+
+  return {
+    headline: sentenceCase(trimCopy(headlineSource, 64) || fallbackHeadline),
+    subheadline: trimCopy(descriptionSentence, 104) || `Add a short, concrete benefit for ${insights.appName}.`,
+  };
+}
+
+function headlineFromSentence(sentence: string, appName: string): string {
+  const turnsMatch = sentence.match(new RegExp(`^${escapeRegExp(appName)}\\s+turns\\s+(.+?)\\s+into\\s+(.+?)(?:[.!?]|$)`, "i"));
+  if (turnsMatch?.[1] && turnsMatch?.[2]) {
+    return `Turn ${turnsMatch[1]} into ${turnsMatch[2]}`;
+  }
+
+  const withoutAppName = sentence
+    .replace(new RegExp(`^${escapeRegExp(appName)}\\s+(is|helps|lets|gives|brings|makes)?\\s*`, "i"), "")
+    .trim();
+  const cleaned = withoutAppName || sentence;
+  const beforeComma = cleaned.split(/[,.;:]/)[0]?.trim() ?? cleaned;
+  return beforeComma;
 }
 
 function buildBackgroundPrompt(
@@ -875,8 +969,8 @@ function printPlan(
   options: CliOptions,
   plannedImageGenerations: number,
 ): void {
-  console.log("PocketPad App Store image plan");
-  console.log("================================");
+  console.log("Repo-aware App Store image plan");
+  console.log("=================================");
   console.log(`Mode: ${options.dryRun ? "dry-run (no paid AI calls)" : "generate (paid AI calls enabled)"}`);
   console.log(`App: ${insights.appName} (${insights.appNameSource})`);
   console.log(`Category: ${insights.category}`);
@@ -1198,7 +1292,7 @@ function buildManifest(
   const noScreenshots = insights.screenshots.length === 0;
   const assumptions = [
     "AI is used only for abstract backgrounds and visual treatments; app UI is either a real screenshot or a draft placeholder.",
-    "Marketing copy was derived from README.md, Website/index.html, and visible SwiftUI strings, and avoids unverifiable ranking claims.",
+    "Marketing copy was derived from repo product copy and feature names where available, and avoids unverifiable ranking claims.",
   ];
   if (noScreenshots) {
     assumptions.push("No real app screenshots were found, so final images are draft-only placeholders and should not be submitted as-is.");
@@ -1281,10 +1375,27 @@ function ensureBrandExample(): void {
 
 function readTextIfExists(filePath: string): string | undefined {
   try {
-    return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : undefined;
+    if (!fs.existsSync(filePath)) return undefined;
+    const stat = fs.statSync(filePath);
+    if (stat.size > 1_500_000) return undefined;
+    return fs.readFileSync(filePath, "utf8");
   } catch {
     return undefined;
   }
+}
+
+function readJsonIfExists<T>(filePath: string): T | undefined {
+  const text = readTextIfExists(filePath);
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function discoverFilesByName(name: string, maxDepth: number): string[] {
+  return walkFiles(repoRoot, maxDepth).filter((file) => path.basename(file) === name);
 }
 
 function relativePath(filePath: string): string {
@@ -1318,8 +1429,57 @@ function wrapWords(text: string, maxChars: number): string[] {
   return lines.length > 0 ? lines : [text];
 }
 
+function firstMeaningfulParagraph(text: string): string | undefined {
+  return text
+    .split(/\n\s*\n/)
+    .map((block) => stripMarkdown(stripHtml(block)).replace(/\s+/g, " ").trim())
+    .find((block) => block.length > 35 && !/^#+\s/.test(block));
+}
+
+function firstSentence(text: string): string | undefined {
+  const clean = stripMarkdown(stripHtml(text)).replace(/\s+/g, " ").trim();
+  const match = clean.match(/^(.{20,220}?[.!?])(?:\s|$)/);
+  return (match?.[1] ?? clean.slice(0, 220)).trim() || undefined;
+}
+
+function firstSentenceMatching(text: string, pattern: RegExp): string | undefined {
+  const clean = stripMarkdown(stripHtml(text)).replace(/\s+/g, " ").trim();
+  const sentences = clean.match(/[^.!?]{20,220}[.!?]/g) ?? [];
+  return sentences.find((sentence) => pattern.test(sentence));
+}
+
+function trimCopy(value: string, maxChars: number): string {
+  const clean = value.replace(/\s+/g, " ").trim().replace(/[.!?:;,]+$/g, "");
+  if (clean.length <= maxChars) return clean;
+  const truncated = clean.slice(0, maxChars - 1);
+  return `${truncated.slice(0, Math.max(0, truncated.lastIndexOf(" "))).trim()}…`;
+}
+
+function sentenceCase(value: string): string {
+  const clean = value.trim();
+  if (!clean) return clean;
+  if (clean.length > 1 && /[A-Z]/.test(clean[1])) return clean;
+  if (/^[a-z]+[A-Z]/.test(clean.split(/\s+/)[0] ?? "")) return clean;
+  if (/[a-z]/.test(clean.slice(1))) return `${clean[0].toUpperCase()}${clean.slice(1)}`;
+  return clean;
+}
+
+function stripMarkdown(value: string): string {
+  return value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[>*_~]/g, " ");
+}
+
 function stripHtml(value: string): string {
-  return value.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
+  return value.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function escapeXml(value: string): string {

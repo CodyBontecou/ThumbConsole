@@ -1919,10 +1919,25 @@ private enum GamepadControlNudgeSolver {
     }
 }
 
-private enum GamepadLayoutResolver {
+enum GamepadLayoutResolver {
     private static let minimumControlSpacing: CGFloat = 0
 
     static func resolvedControls(
+        for customization: GamepadCustomization,
+        in canvasSize: CGSize,
+        defaultLabelProvider: ((GameButton) -> String?)? = nil
+    ) -> [GamepadResolvedControl] {
+        controlsByAvoidingOverlaps(
+            preferredControls(
+                for: customization,
+                in: canvasSize,
+                defaultLabelProvider: defaultLabelProvider
+            ),
+            in: canvasSize
+        )
+    }
+
+    static func preferredControls(
         for customization: GamepadCustomization,
         in canvasSize: CGSize,
         defaultLabelProvider: ((GameButton) -> String?)? = nil
@@ -2011,7 +2026,7 @@ private enum GamepadLayoutResolver {
             )
         }
 
-        return controlsByAvoidingOverlaps(builtinControls + customControls, in: canvasSize)
+        return builtinControls + customControls
     }
 
     static func defaultShape(for button: GameButton) -> GamepadButtonShapeStyle {

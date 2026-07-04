@@ -734,23 +734,23 @@ private enum HollowKnightTemplate {
         let utilityFill = "#374151"
 
         let controls: [GeneratedControlDefinition] = [
-            .init(.up, label: "↑", key: "UpArrow", role: .movement, x: 0.16, y: 0.33, width: 0.64, height: 0.64, fill: dPadFill, cornerRadius: 8),
-            .init(.down, label: "↓", key: "DownArrow", role: .movement, x: 0.16, y: 0.67, width: 0.64, height: 0.64, fill: dPadFill, cornerRadius: 8),
-            .init(.left, label: "←", key: "LeftArrow", role: .movement, x: 0.07, y: 0.50, width: 0.64, height: 0.64, fill: dPadFill, cornerRadius: 8),
-            .init(.right, label: "→", key: "RightArrow", role: .movement, x: 0.25, y: 0.50, width: 0.64, height: 0.64, fill: dPadFill, cornerRadius: 8),
+            .init(.up, label: "↑", key: "UpArrow", role: .movement, x: 0.16, y: 0.48, width: 0.98, height: 0.98, fill: dPadFill, cornerRadius: 8),
+            .init(.down, label: "↓", key: "DownArrow", role: .movement, x: 0.16, y: 0.88, width: 0.98, height: 0.98, fill: dPadFill, cornerRadius: 8),
+            .init(.left, label: "←", key: "LeftArrow", role: .movement, x: 0.07, y: 0.68, width: 0.98, height: 0.98, fill: dPadFill, cornerRadius: 8),
+            .init(.right, label: "→", key: "RightArrow", role: .movement, x: 0.25, y: 0.68, width: 0.98, height: 0.98, fill: dPadFill, cornerRadius: 8),
 
-            .init(.focus, label: "△ Focus", key: "A", role: .secondary, x: 0.84, y: 0.34, width: 0.66, height: 0.66, shape: .circle, fill: "#22C55E", shadowStrength: 1.25),
-            .init(.dash, label: "○ Dash", key: "C", role: .primary, x: 0.93, y: 0.52, width: 0.66, height: 0.66, shape: .circle, fill: "#EF4444", shadowStrength: 1.25),
-            .init(.jump, label: "× Jump", key: "Z", role: .primary, x: 0.84, y: 0.70, width: 0.66, height: 0.66, shape: .circle, fill: "#3B82F6", shadowStrength: 1.25),
-            .init(.attack, label: "□ Nail", key: "X", role: .primary, x: 0.75, y: 0.52, width: 0.66, height: 0.66, shape: .circle, fill: "#EC4899", shadowStrength: 1.25),
+            .init(.focus, label: "△ Focus", key: "A", role: .secondary, x: 0.84, y: 0.48, width: 0.98, height: 0.98, shape: .circle, fill: "#22C55E", shadowStrength: 1.25),
+            .init(.dash, label: "○ Dash", key: "C", role: .primary, x: 0.93, y: 0.68, width: 0.98, height: 0.98, shape: .circle, fill: "#EF4444", shadowStrength: 1.25),
+            .init(.jump, label: "× Jump", key: "Z", role: .primary, x: 0.84, y: 0.88, width: 0.98, height: 0.98, shape: .circle, fill: "#3B82F6", shadowStrength: 1.25),
+            .init(.attack, label: "□ Nail", key: "X", role: .primary, x: 0.75, y: 0.68, width: 0.98, height: 0.98, shape: .circle, fill: "#EC4899", shadowStrength: 1.25),
 
-            .init(.map, label: "Map", key: "Tab", role: .utility, x: 0.43, y: 0.32, width: 0.62, height: 0.62, shape: .capsule, fill: utilityFill, shadowStrength: 0.75),
-            .init(.pause, label: "Pause", key: "Escape", role: .system, x: 0.57, y: 0.32, width: 0.62, height: 0.62, shape: .capsule, fill: utilityFill, shadowStrength: 0.75),
+            .init(.map, label: "Map", key: "Tab", role: .utility, x: 0.43, y: 0.88, width: 0.76, height: 0.90, shape: .capsule, fill: utilityFill, shadowStrength: 0.75),
+            .init(.pause, label: "Pause", key: "Escape", role: .system, x: 0.57, y: 0.88, width: 0.76, height: 0.90, shape: .capsule, fill: utilityFill, shadowStrength: 0.75),
 
-            .init(.custom5, label: "Quick Cast", key: "F", role: .secondary, x: 0.20, y: 0.10, width: 1.14, height: 0.62, shape: .capsule, fill: utilityFill),
-            .init(.custom6, label: "Dream Nail", key: "D", role: .secondary, x: 0.80, y: 0.10, width: 1.14, height: 0.62, shape: .capsule, fill: utilityFill),
-            .init(.custom7, label: "Super Dash", key: "S", role: .utility, x: 0.20, y: 0.21, width: 1.14, height: 0.62, shape: .capsule, fill: dPadFill),
-            .init(.custom8, label: "Inventory", key: "I", role: .utility, x: 0.80, y: 0.21, width: 1.14, height: 0.62, shape: .capsule, fill: dPadFill)
+            .init(.custom5, label: "Quick Cast", key: "F", role: .secondary, x: 0.20, y: 0.07, width: 1.14, height: 0.62, shape: .capsule, fill: utilityFill),
+            .init(.custom6, label: "Dream Nail", key: "D", role: .secondary, x: 0.80, y: 0.07, width: 1.14, height: 0.62, shape: .capsule, fill: utilityFill),
+            .init(.custom7, label: "Super Dash", key: "S", role: .utility, x: 0.20, y: 0.185, width: 1.14, height: 0.62, shape: .capsule, fill: dPadFill),
+            .init(.custom8, label: "Inventory", key: "I", role: .utility, x: 0.80, y: 0.185, width: 1.14, height: 0.62, shape: .capsule, fill: dPadFill)
         ]
 
         return GeneratedProfileBuilder.build(

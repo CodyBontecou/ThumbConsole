@@ -35,6 +35,9 @@ struct PocketPadCLI {
         var select = true
         var makeDefault = true
         var printJSON = false
+        var validateLayout = true
+        var strictLayoutValidation = false
+        var previewOutputPath: String?
     }
 
     private struct InstallOptions {
@@ -143,6 +146,9 @@ struct PocketPadCLI {
             try run(arguments: Array(CommandLine.arguments.dropFirst()))
         } catch CLIError.helpRequested {
             printHelp()
+        } catch CLIError.validationFailed(let message) {
+            fputs("pocketpad: \(message)\n", stderr)
+            exit(1)
         } catch {
             fputs("pocketpad: \(error.localizedDescription)\n", stderr)
             fputs("Run `pocketpad --help` for usage.\n", stderr)
@@ -214,6 +220,22 @@ struct PocketPadCLI {
             throw CLIError.message("Missing game name or --spec <file>")
         }
         let macBindings = try resolvedMacBindings(for: generated)
+        let layoutReport = generated.profile.customization.layoutQualityReport(profileName: generated.resolvedGameName)
+        if options.validateLayout {
+            try enforceLayoutQuality(layoutReport, strict: options.strictLayoutValidation, quiet: options.printJSON)
+        }
+        if let previewOutputPath = options.previewOutputPath {
+#if os(macOS)
+            try GamepadLayoutPreviewRenderer.writePNG(
+                customization: generated.profile.customization,
+                profileName: generated.resolvedGameName,
+                outputURL: URL(fileURLWithPath: previewOutputPath)
+            )
+            if !options.printJSON {
+                print("Wrote layout preview to \(previewOutputPath).")
+            }
+#endif
+        }
 
         if options.printJSON {
             try printJSON(generated)
@@ -254,6 +276,14 @@ struct PocketPadCLI {
                 options.makeDefault = false
             case "--json":
                 options.printJSON = true
+            case "--skip-layout-validation", "--no-layout-validation":
+                options.validateLayout = false
+            case "--strict-layout", "--strict-layout-validation":
+                options.strictLayoutValidation = true
+            case "--layout-preview", "--preview-output":
+                index += 1
+                guard index < arguments.count else { throw CLIError.message("Missing path after \(argument)") }
+                options.previewOutputPath = arguments[index]
             case "--help", "-h":
                 throw CLIError.helpRequested
             default:
@@ -721,6 +751,10 @@ struct PocketPadCLI {
             let customization = try JSONDecoder().decode(GamepadCustomization.self, from: data)
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { $0 = customization }
             print("Imported customization.")
+        case "validate", "check", "lint":
+            try validateLayout(arguments: rest)
+        case "preview", "render":
+            try previewLayout(arguments: rest)
         case "set":
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
                 if let layout = optionValue("--layout", in: rest) { customization.layoutMode = try parseLayoutMode(layout) }
@@ -784,6 +818,134 @@ struct PocketPadCLI {
             print("Reset customization.")
         default:
             throw CLIError.message("Unknown customization subcommand: \(subcommand)")
+        }
+    }
+
+    private static func validateLayout(arguments: [String]) throws {
+        let store = loadStore()
+        let profile = try resolveProfile(layoutProfileTarget(in: arguments), in: store)
+        let canvasSize = try parseLayoutCanvasSize(arguments, fallback: profile.customization.deviceCanvas.editorDeviceFrame.screenRect.size)
+        let report = profile.customization.layoutQualityReport(profileName: profile.name, canvasSize: canvasSize)
+
+        if arguments.contains("--json") {
+            try printJSON(report)
+        } else {
+            printLayoutReport(report)
+        }
+
+        try enforceLayoutQuality(
+            report,
+            strict: arguments.contains("--strict"),
+            quiet: true
+        )
+    }
+
+    private static func previewLayout(arguments: [String]) throws {
+        let store = loadStore()
+        let profile = try resolveProfile(layoutProfileTarget(in: arguments), in: store)
+        let canvasSize = try parseLayoutCanvasSize(arguments, fallback: profile.customization.deviceCanvas.editorDeviceFrame.screenRect.size)
+        let outputPath = optionValue("--output", in: arguments) ?? optionValue("-o", in: arguments) ?? optionValue("--path", in: arguments) ?? "pocketpad-layout-preview.png"
+        let scale = try parsePreviewScale(arguments)
+
+#if os(macOS)
+        try GamepadLayoutPreviewRenderer.writePNG(
+            customization: profile.customization,
+            profileName: profile.name,
+            canvasSize: canvasSize,
+            outputURL: URL(fileURLWithPath: outputPath),
+            scale: scale,
+            annotateIssues: !arguments.contains("--no-annotations")
+        )
+        let report = profile.customization.layoutQualityReport(profileName: profile.name, canvasSize: canvasSize)
+        if arguments.contains("--json") {
+            try printJSON(report)
+        } else {
+            print("Wrote layout preview to \(outputPath).")
+            print("Layout quality: \(report.statusText) (\(report.summary.errorCount) errors, \(report.summary.warningCount) warnings).")
+        }
+#else
+        throw CLIError.message("Layout preview rendering is only available on macOS.")
+#endif
+    }
+
+    private static func layoutProfileTarget(in arguments: [String]) -> String? {
+        optionValue("--profile", in: arguments) ?? firstPositional(in: arguments)
+    }
+
+    private static func parseLayoutCanvasSize(_ arguments: [String], fallback: CGSize) throws -> CGSize {
+        var canvasSize = fallback
+        if let canvas = optionValue("--canvas", in: arguments) ?? optionValue("--device", in: arguments) ?? optionValue("--frame", in: arguments) {
+            let normalized = normalizedLookup(canvas)
+            if normalized == "landscape" {
+                canvasSize = defaultEditorCanvasSize
+            } else if normalized == "portrait" {
+                canvasSize = portraitEditorCanvasSize
+            } else if let parsed = parseCanvasSizeLiteral(canvas) {
+                canvasSize = parsed
+            } else {
+                canvasSize = try resolveDeviceFrame(canvas, preferredOrientation: nil).screenRect.size
+            }
+        }
+        if let size = optionValue("--size", in: arguments) ?? optionValue("--device-size", in: arguments) {
+            guard let parsed = parseCanvasSizeLiteral(size) else { throw CLIError.message("Invalid canvas size: \(size). Use WIDTHxHEIGHT.") }
+            canvasSize = parsed
+        }
+        let explicitWidth = optionValue("--canvas-width", in: arguments)
+        let explicitHeight = optionValue("--canvas-height", in: arguments)
+        if explicitWidth != nil || explicitHeight != nil {
+            guard let explicitWidth, let explicitHeight else { throw CLIError.message("Use --canvas-width and --canvas-height together") }
+            canvasSize = CGSize(width: try parsePixels(explicitWidth), height: try parsePixels(explicitHeight))
+        }
+        guard canvasSize.width > 1, canvasSize.height > 1 else { throw CLIError.message("Canvas size must be greater than 1×1") }
+        return canvasSize
+    }
+
+    private static func parsePreviewScale(_ arguments: [String]) throws -> CGFloat {
+        guard let value = optionValue("--image-scale", in: arguments) ?? optionValue("--render-scale", in: arguments) ?? optionValue("--scale", in: arguments) else {
+            return 2
+        }
+        let parsed = try parsePixels(value)
+        guard parsed > 0 else { throw CLIError.message("Preview scale must be greater than zero") }
+        return parsed
+    }
+
+    private static func printLayoutReport(_ report: GamepadLayoutQualityReport) {
+        let profileName = report.profileName ?? "active"
+        print("Layout validation for \"\(profileName)\": \(report.statusText)")
+        print("Canvas: \(formatPixels(CGFloat(report.canvas.width)))×\(formatPixels(CGFloat(report.canvas.height))) pt")
+        print("Controls: \(report.summary.controlCount), errors: \(report.summary.errorCount), warnings: \(report.summary.warningCount)")
+        print("Usage: width \(formatPercentage(report.summary.layoutWidthCoverage)), height \(formatPercentage(report.summary.layoutHeightCoverage)), bottom unused \(formatPercentage(report.summary.bottomUnusedRatio))")
+        if report.issues.isEmpty {
+            print("No layout issues found.")
+            return
+        }
+        for issue in report.issues {
+            let prefix = switch issue.severity {
+            case .info: "info"
+            case .warning: "warning"
+            case .error: "error"
+            }
+            print("- \(prefix) [\(issue.code)]: \(issue.message)")
+        }
+    }
+
+    private static func enforceLayoutQuality(_ report: GamepadLayoutQualityReport, strict: Bool, quiet: Bool) throws {
+        let shouldFail = report.hasErrors || (strict && report.hasWarnings)
+        if !quiet {
+            if report.issues.isEmpty {
+                print("Layout quality: passed.")
+            } else {
+                print("Layout quality: \(report.statusText) (\(report.summary.errorCount) errors, \(report.summary.warningCount) warnings).")
+                for issue in report.issues.prefix(6) {
+                    print("- \(issue.severity.rawValue) [\(issue.code)]: \(issue.message)")
+                }
+                if report.issues.count > 6 {
+                    print("- …and \(report.issues.count - 6) more layout issues")
+                }
+            }
+        }
+        guard !shouldFail else {
+            throw CLIError.validationFailed("Layout validation failed for \"\(report.profileName ?? "profile")\". Run `pocketpad layout validate --profile \"\(report.profileName ?? "active")\"` or `pocketpad layout preview -o preview.png` for details.")
         }
     }
 
@@ -2131,6 +2293,10 @@ struct PocketPadCLI {
         "\(formatPixels(size.width))×\(formatPixels(size.height))"
     }
 
+    private static func formatPercentage(_ value: Double) -> String {
+        "\(Int((value * 100).rounded()))%"
+    }
+
     private static func formatScale(_ value: CGFloat) -> String {
         let doubleValue = Double(value)
         if doubleValue.rounded() == doubleValue {
@@ -2241,6 +2407,7 @@ struct PocketPadCLI {
         var skipNext = false
         let optionsWithValues: Set<String> = [
             "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from",
+            "--layout-preview", "--preview-output", "--path", "--image-scale", "--render-scale",
             "--sequence", "--key", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
             "--appearance", "--color-scheme", "--scheme", "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
             "--background", "--bg", "--light-background", "--background-light", "--dark-background", "--background-dark",
@@ -2361,7 +2528,7 @@ struct PocketPadCLI {
 
         Generation:
           pocketpad generate "Hollow Knight" [--json] [--dry-run]
-          pocketpad generate --spec agent-keypad.json
+          pocketpad generate --spec agent-keypad.json [--layout-preview preview.png]
           pocketpad install-spec agent-keypad.json
 
         Profiles:
@@ -2393,6 +2560,8 @@ struct PocketPadCLI {
           pocketpad customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
           pocketpad customization set --device iphone-17-pro --orientation landscape
           pocketpad customization export -o customization.json
+          pocketpad layout validate [PROFILE|--profile PROFILE] [--json|--strict]
+          pocketpad layout preview [PROFILE|--profile PROFILE] -o preview.png [--canvas iphone-17-pro-landscape]
           pocketpad device list
           pocketpad device set iphone-17-pro --orientation landscape
           pocketpad device set custom --size 844x390
@@ -2422,12 +2591,13 @@ struct PocketPadCLI {
 private enum CLIError: LocalizedError {
     case helpRequested
     case message(String)
+    case validationFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .helpRequested:
             "Help requested"
-        case .message(let message):
+        case .message(let message), .validationFailed(let message):
             message
         }
     }
