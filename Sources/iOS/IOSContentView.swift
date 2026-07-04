@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct IOSContentView: View {
     @EnvironmentObject private var client: ControllerClient
@@ -643,6 +644,8 @@ private struct ControllerPadView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
     @State private var isTopBarVisible = true
+    @State private var isExportingKeypadConfiguration = false
+    @State private var keypadExportStatus: String?
 
     let onShowConnectionPage: (() -> Void)?
 
@@ -690,6 +693,19 @@ private struct ControllerPadView: View {
         .onChange(of: client.gamepadCustomization) { _, _ in
             TouchCaptureUIView.deactivateAllRegisteredTouches()
             client.releaseAll()
+        }
+        .fileExporter(
+            isPresented: $isExportingKeypadConfiguration,
+            document: keypadExportDocument,
+            contentType: .json,
+            defaultFilename: keypadExportFilename
+        ) { result in
+            switch result {
+            case .success:
+                keypadExportStatus = "Keypad JSON saved"
+            case .failure(let error):
+                keypadExportStatus = "Export failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -987,6 +1003,10 @@ private struct ControllerPadView: View {
     }
 
     private var controllerStatusDetail: String {
+        if let keypadExportStatus {
+            return keypadExportStatus
+        }
+
         if client.isConnected {
             return client.lastSentEvent
         }
@@ -1004,6 +1024,20 @@ private struct ControllerPadView: View {
         }
 
         return "Saved on this iPhone"
+    }
+
+    private var keypadExportDocument: PocketPadKeypadConfigurationJSONDocument {
+        PocketPadKeypadConfigurationJSONDocument(
+            export: PocketPadKeypadConfigurationExport(
+                profiles: client.gamepadProfiles,
+                activeProfileID: client.selectedGamepadProfileID,
+                defaultProfileID: client.defaultGamepadProfileID
+            )
+        )
+    }
+
+    private var keypadExportFilename: String {
+        PocketPadKeypadConfigurationExport.suggestedFilename(activeProfileName: client.selectedGamepadProfileName)
     }
 
     private var keypadSettingsMenu: some View {
@@ -1076,6 +1110,13 @@ private struct ControllerPadView: View {
             )
         }
         .disabled(client.isSelectedGamepadProfileDefault)
+
+        Button {
+            keypadExportStatus = "Choose where to save keypad JSON"
+            isExportingKeypadConfiguration = true
+        } label: {
+            Label("Export Keypads as JSON", systemImage: "square.and.arrow.up")
+        }
     }
 }
 

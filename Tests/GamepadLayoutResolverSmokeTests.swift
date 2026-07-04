@@ -6,6 +6,10 @@ import Foundation
 struct GamepadLayoutResolverSmokeTests {
     static func main() {
         testAdjacentControlsCanTouchWithoutBeingSeparated()
+        testNudgeMovesSingleControlByPixels()
+        testNudgeMovesMultipleControlsTogether()
+        testNudgeSkipsLockedControls()
+        testNudgePreventsOverlaps()
         print("GamepadLayoutResolver smoke tests passed")
     }
 
@@ -53,6 +57,97 @@ struct GamepadLayoutResolverSmokeTests {
             !framesOverlap(left.frame, right.frame),
             "touching controls should not overlap"
         )
+    }
+
+    private static func testNudgeMovesSingleControlByPixels() {
+        let canvasSize = CGSize(width: 400, height: 200)
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000201")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = [customButton(id: id, center: CGPoint(x: 0.5, y: 0.5))]
+
+        guard let before = customization.resolvedControls(in: canvasSize).first(where: { $0.id == .custom(id) }) else {
+            fail("could not resolve control before single nudge")
+        }
+        expect(customization.nudgeControls([.custom(id)], by: CGSize(width: 1, height: 0), in: canvasSize), "single nudge should move")
+        guard let after = customization.resolvedControls(in: canvasSize).first(where: { $0.id == .custom(id) }) else {
+            fail("could not resolve control after single nudge")
+        }
+
+        expectAlmostEqual(after.center.x, before.center.x + 1, "single nudge should move right by one pixel")
+        expectAlmostEqual(after.center.y, before.center.y, "single nudge should not change y")
+    }
+
+    private static func testNudgeMovesMultipleControlsTogether() {
+        let canvasSize = CGSize(width: 400, height: 200)
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000301")!
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000302")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = [
+            customButton(id: firstID, center: CGPoint(x: 0.30, y: 0.55)),
+            customButton(id: secondID, center: CGPoint(x: 0.70, y: 0.55))
+        ]
+
+        let before = controlsByID(customization.resolvedControls(in: canvasSize))
+        expect(customization.nudgeControls([.custom(firstID), .custom(secondID)], by: CGSize(width: 0, height: -10), in: canvasSize), "group nudge should move")
+        let after = controlsByID(customization.resolvedControls(in: canvasSize))
+
+        expectAlmostEqual(after[.custom(firstID)]?.center.y ?? -1, (before[.custom(firstID)]?.center.y ?? 0) - 10, "first control should move up by ten pixels")
+        expectAlmostEqual(after[.custom(secondID)]?.center.y ?? -1, (before[.custom(secondID)]?.center.y ?? 0) - 10, "second control should move up by ten pixels")
+    }
+
+    private static func testNudgeSkipsLockedControls() {
+        let canvasSize = CGSize(width: 400, height: 200)
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000401")!
+        var locked = customButton(id: id, center: CGPoint(x: 0.5, y: 0.5))
+        locked.layout.isLocationLocked = true
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = [locked]
+
+        expect(!customization.nudgeControls([.custom(id)], by: CGSize(width: 10, height: 0), in: canvasSize), "locked nudge should not move")
+    }
+
+    private static func testNudgePreventsOverlaps() {
+        let canvasSize = CGSize(width: 400, height: 200)
+        let leftID = UUID(uuidString: "00000000-0000-0000-0000-000000000501")!
+        let rightID = UUID(uuidString: "00000000-0000-0000-0000-000000000502")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = [
+            customButton(id: leftID, center: CGPoint(x: 0.5, y: 0.5)),
+            customButton(id: rightID, center: CGPoint(x: 0.5, y: 0.5))
+        ]
+
+        let preliminaryControls = customization.resolvedControls(in: canvasSize)
+        guard let preliminaryLeft = preliminaryControls.first(where: { $0.id == .custom(leftID) }) else {
+            fail("could not resolve preliminary left control for nudge overlap test")
+        }
+        let buttonWidth = preliminaryLeft.frame.width
+        let joinX = canvasSize.width / 2
+        customization.customButtons[0].layout.centerX = (joinX - buttonWidth / 2) / canvasSize.width
+        customization.customButtons[1].layout.centerX = (joinX + buttonWidth / 2) / canvasSize.width
+
+        let before = controlsByID(customization.resolvedControls(in: canvasSize))
+        expect(!customization.nudgeControls([.custom(leftID)], by: CGSize(width: 1, height: 0), in: canvasSize), "nudge should not move into an overlapping frame")
+        let after = controlsByID(customization.resolvedControls(in: canvasSize))
+        expectAlmostEqual(after[.custom(leftID)]?.center.x ?? -1, before[.custom(leftID)]?.center.x ?? 0, "blocked nudge should keep x position")
+    }
+
+    private static func customButton(id: UUID, center: CGPoint) -> GamepadCustomButton {
+        GamepadCustomButton(
+            id: id,
+            mappedButton: .custom1,
+            label: "Key",
+            layout: GamepadButtonCustomization(
+                centerX: center.x,
+                centerY: center.y,
+                widthScale: 1.0,
+                heightScale: 1.0,
+                shape: .rectangle
+            )
+        )
+    }
+
+    private static func controlsByID(_ controls: [GamepadResolvedControl]) -> [GamepadControlIdentity: GamepadResolvedControl] {
+        Dictionary(uniqueKeysWithValues: controls.map { ($0.id, $0) })
     }
 
     private static func framesOverlap(_ lhs: CGRect, _ rhs: CGRect) -> Bool {

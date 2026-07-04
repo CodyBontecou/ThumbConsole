@@ -1209,6 +1209,151 @@ extension GamepadCustomization {
             defaultLabelProvider: defaultLabelProvider
         )
     }
+
+    func nudgedControls(
+        _ identities: Set<GamepadControlIdentity>,
+        by translation: CGSize,
+        in canvasSize: CGSize
+    ) -> GamepadCustomization? {
+        guard !identities.isEmpty,
+              canvasSize.width > 1,
+              canvasSize.height > 1,
+              abs(translation.width) > 0.001 || abs(translation.height) > 0.001
+        else {
+            return nil
+        }
+
+        let controls = resolvedControls(in: canvasSize)
+        let snapshots = controls
+            .filter { identities.contains($0.id) && !$0.isLocationLocked }
+            .map { GamepadControlNudgeSnapshot(control: $0) }
+        guard !snapshots.isEmpty else { return nil }
+
+        let movingIDs = Set(snapshots.map(\.identity))
+        let adjustedTranslation = GamepadControlNudgeSolver.adjustedTranslation(
+            translation,
+            snapshots: snapshots,
+            movingIDs: movingIDs,
+            controls: controls,
+            canvasSize: canvasSize
+        )
+        guard abs(adjustedTranslation.width) > 0.001 || abs(adjustedTranslation.height) > 0.001 else { return nil }
+
+        var next = self
+        for snapshot in snapshots {
+            let proposedCenter = CGPoint(
+                x: snapshot.startCenter.x + adjustedTranslation.width,
+                y: snapshot.startCenter.y + adjustedTranslation.height
+            )
+            let normalizedPosition = GamepadLayoutResolver.normalizedPosition(
+                for: proposedCenter,
+                visualSize: snapshot.size,
+                in: canvasSize
+            )
+            next.setPosition(normalizedPosition, for: snapshot.identity)
+        }
+
+        let normalizedNext = next.normalized
+        return normalizedNext == normalized ? nil : normalizedNext
+    }
+
+    @discardableResult
+    mutating func nudgeControls(
+        _ identities: Set<GamepadControlIdentity>,
+        by translation: CGSize,
+        in canvasSize: CGSize
+    ) -> Bool {
+        guard let next = nudgedControls(identities, by: translation, in: canvasSize) else { return false }
+        self = next
+        return true
+    }
+}
+
+private struct GamepadControlNudgeSnapshot {
+    let identity: GamepadControlIdentity
+    let startCenter: CGPoint
+    let size: CGSize
+
+    init(control: GamepadResolvedControl) {
+        identity = control.id
+        startCenter = control.center
+        size = control.size
+    }
+
+    var startFrame: CGRect {
+        CGRect(
+            x: startCenter.x - size.width / 2,
+            y: startCenter.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+}
+
+private enum GamepadControlNudgeSolver {
+    static func adjustedTranslation(
+        _ translation: CGSize,
+        snapshots: [GamepadControlNudgeSnapshot],
+        movingIDs: Set<GamepadControlIdentity>,
+        controls: [GamepadResolvedControl],
+        canvasSize: CGSize
+    ) -> CGSize {
+        let clampedTranslation = clampedTranslation(translation, snapshots: snapshots, canvasSize: canvasSize)
+        guard abs(clampedTranslation.width) > 0.001 || abs(clampedTranslation.height) > 0.001 else { return .zero }
+
+        let existingFrames = controls.compactMap { control in
+            movingIDs.contains(control.id) ? nil : control.frame
+        }
+        let candidateFrames = frames(snapshots, offsetBy: clampedTranslation)
+        guard candidateFrames.contains(where: { GamepadLayoutResolver.frameOverlapsAny($0, avoiding: existingFrames) }) else {
+            return clampedTranslation
+        }
+
+        var lowerBound: CGFloat = 0
+        var upperBound: CGFloat = 1
+        var bestTranslation = CGSize.zero
+        for _ in 0..<12 {
+            let fraction = (lowerBound + upperBound) / 2
+            let candidateTranslation = CGSize(
+                width: clampedTranslation.width * fraction,
+                height: clampedTranslation.height * fraction
+            )
+            let overlaps = frames(snapshots, offsetBy: candidateTranslation).contains { frame in
+                GamepadLayoutResolver.frameOverlapsAny(frame, avoiding: existingFrames)
+            }
+            if overlaps {
+                upperBound = fraction
+            } else {
+                bestTranslation = candidateTranslation
+                lowerBound = fraction
+            }
+        }
+
+        return bestTranslation
+    }
+
+    private static func clampedTranslation(
+        _ translation: CGSize,
+        snapshots: [GamepadControlNudgeSnapshot],
+        canvasSize: CGSize
+    ) -> CGSize {
+        guard !snapshots.isEmpty else { return .zero }
+        let frames = snapshots.map(\.startFrame)
+        let minXOffset = frames.map { -$0.minX }.max() ?? 0
+        let maxXOffset = frames.map { canvasSize.width - $0.maxX }.min() ?? 0
+        let minYOffset = frames.map { -$0.minY }.max() ?? 0
+        let maxYOffset = frames.map { canvasSize.height - $0.maxY }.min() ?? 0
+        return CGSize(
+            width: GamepadButtonCustomization.clamp(translation.width, lower: minXOffset, upper: maxXOffset),
+            height: GamepadButtonCustomization.clamp(translation.height, lower: minYOffset, upper: maxYOffset)
+        )
+    }
+
+    private static func frames(_ snapshots: [GamepadControlNudgeSnapshot], offsetBy translation: CGSize) -> [CGRect] {
+        snapshots.map { snapshot in
+            snapshot.startFrame.offsetBy(dx: translation.width, dy: translation.height)
+        }
+    }
 }
 
 private enum GamepadLayoutResolver {
@@ -2839,6 +2984,8 @@ struct GamepadCustomizationEditor: View {
     @State private var canvasZoomGestureStart: CGFloat?
     @State private var currentCanvasLayoutSize = GamepadCustomizationEditor.defaultDeviceFrame.screenRect.size
     @State private var activeCanvasTool: GamepadCanvasTool = .select
+    @State private var isFillColorPopoverPresented = false
+    @State private var fillColorPickerHue: CGFloat = 0
     @State private var undoTarget = GamepadEditorUndoTarget()
     @FocusState private var isProfileNameFieldFocused: Bool
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
@@ -2952,7 +3099,8 @@ struct GamepadCustomizationEditor: View {
             GamepadEditorKeyboardShortcutBridge(
                 onDelete: deleteSelectedControl,
                 onUndo: performUndo,
-                onRedo: performRedo
+                onRedo: performRedo,
+                onNudge: nudgeSelectedControls
             )
             .frame(width: 0, height: 0)
         }
@@ -3981,77 +4129,298 @@ struct GamepadCustomizationEditor: View {
         let schemeName = Self.displayName(for: editingScheme)
 
         return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Color")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
-            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Editing Palette")
-                    .geistTypography(.label13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                GeistSegmentedPicker(title: "Editing Palette", options: GamepadEditorColorScheme.allCases, selection: editorColorSchemeBinding) { scheme in
-                    scheme.displayName
-                }
-            }
-
-            Text("Editing the \(schemeName.lowercased()) keypad palette for this setup. Light and dark fills are saved separately, so switch palettes to preview and tune the other mode.")
-                .geistTypography(.copy13)
-                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: Geist.Spacing.s3) {
-                ColorPicker("\(schemeName) Fill", selection: fillColorPickerBinding(for: selectedControlID, scheme: editingScheme), supportsOpacity: true)
-                    .labelsHidden()
-                    .frame(width: 38)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(schemeName) Fill")
-                        .geistTypography(.label13)
-                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    Text(usesCustomColor ? "Custom \(schemeName.lowercased()) color" : "Using selected preset")
-                        .geistTypography(.copy13)
-                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                }
+            HStack(alignment: .center, spacing: Geist.Spacing.s2) {
+                Text("Fill")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
 
                 Spacer(minLength: Geist.Spacing.s2)
 
-                Circle()
-                    .fill(colorValue.swiftUIColor)
-                    .overlay(Circle().stroke(Geist.color(.grayAlpha500, scheme: colorScheme), lineWidth: 1))
-                    .frame(width: 28, height: 28)
+                Button {
+                    isFillColorPopoverPresented = true
+                } label: {
+                    Image(systemName: "circle.grid.2x2")
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .accessibilityLabel("Open fill color settings")
+
+                Button {
+                    isFillColorPopoverPresented = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .regular))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .accessibilityLabel("Configure fill color")
             }
 
-            HStack(spacing: Geist.Spacing.s2) {
-                colorTextField(title: "Hex", value: fillColorHexBinding(for: selectedControlID, scheme: editingScheme), unit: nil)
-                colorTextField(title: "Alpha", value: fillColorAlphaTextBinding(for: selectedControlID, scheme: editingScheme), unit: "%")
+            fillColorRow(
+                colorValue: colorValue,
+                hexValue: fillColorHexPlainBinding(for: selectedControlID, scheme: editingScheme),
+                alphaValue: fillColorAlphaTextBinding(for: selectedControlID, scheme: editingScheme),
+                usesCustomColor: usesCustomColor,
+                editingScheme: editingScheme
+            )
+            .popover(isPresented: $isFillColorPopoverPresented, arrowEdge: .leading) {
+                fillColorDetailPopover(
+                    editingScheme: editingScheme,
+                    schemeName: schemeName,
+                    usesCustomColor: usesCustomColor
+                )
             }
 
-            valueSlider(
-                title: "Opacity",
-                value: fillColorOpacityBinding(for: selectedControlID, scheme: editingScheme),
-                range: 0...1,
-                valueText: colorValue.opacityPercentageText
+            Text(usesCustomColor ? "Custom \(schemeName.lowercased()) fill" : "Using the selected preset for the \(schemeName.lowercased()) palette")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func fillColorRow(
+        colorValue: GamepadRGBAColor,
+        hexValue: Binding<String>,
+        alphaValue: Binding<String>,
+        usesCustomColor: Bool,
+        editingScheme: ColorScheme
+    ) -> some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            HStack(spacing: 0) {
+                Button {
+                    isFillColorPopoverPresented.toggle()
+                } label: {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(colorValue.swiftUIColor)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(Geist.color(.grayAlpha500, scheme: colorScheme), lineWidth: 1)
+                        )
+                        .frame(width: 28, height: 28)
+                        .padding(.leading, Geist.Spacing.s2)
+                        .padding(.trailing, Geist.Spacing.s1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open fill color picker")
+
+                TextField("000000", text: hexValue)
+                    .textFieldStyle(.plain)
+                    .geistTypography(.label14Mono)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .frame(minWidth: 72)
+#if os(iOS)
+                    .textInputAutocapitalization(.characters)
+#endif
+
+                Rectangle()
+                    .fill(Geist.color(.grayAlpha300, scheme: colorScheme))
+                    .frame(width: 1)
+
+                TextField("100", text: alphaValue)
+                    .textFieldStyle(.plain)
+                    .geistTypography(.label14Mono)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 44)
+#if os(iOS)
+                    .keyboardType(.numbersAndPunctuation)
+#endif
+
+                Text("%")
+                    .geistTypography(.label14)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .frame(width: 24)
+            }
+            .frame(height: Geist.Spacing.s10)
+            .background(Geist.color(isFillColorPopoverPresented ? .gray200 : .gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(isFillColorPopoverPresented ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.grayAlpha300, scheme: colorScheme), lineWidth: isFillColorPopoverPresented ? 1.25 : 1)
             )
 
-            Button("Use Default \(schemeName) Color") {
-                clearCustomFillColor(for: selectedControlID, scheme: editingScheme)
+            Button {
+                toggleFillVisibility(for: selectedControlID, scheme: editingScheme)
+            } label: {
+                Image(systemName: colorValue.alpha > 0.001 ? "eye" : "eye.slash")
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 28, height: 32)
             }
-            .geistButtonStyle(.tertiary, size: .small)
+            .buttonStyle(.plain)
+            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            .accessibilityLabel(colorValue.alpha > 0.001 ? "Hide fill" : "Show fill")
+
+            Button {
+                clearCustomFillColor(for: selectedControlID, scheme: editingScheme)
+            } label: {
+                Image(systemName: "minus")
+                    .font(.system(size: 16, weight: .regular))
+                    .frame(width: 28, height: 32)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(usesCustomColor ? Geist.color(.gray1000, scheme: colorScheme) : Geist.color(.gray700, scheme: colorScheme))
             .disabled(!usesCustomColor)
+            .accessibilityLabel("Remove custom fill")
+        }
+    }
 
-            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Presets")
-                    .geistTypography(.label12)
+    private func fillColorDetailPopover(
+        editingScheme: ColorScheme,
+        schemeName: String,
+        usesCustomColor: Bool
+    ) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Geist.Spacing.s3) {
+                Text("Custom")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .padding(.horizontal, Geist.Spacing.s3)
+                    .frame(height: 36)
+                    .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+
+                Text("Libraries")
+                    .geistTypography(.label14)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .textCase(.uppercase)
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: Geist.Spacing.s2)], alignment: .leading, spacing: Geist.Spacing.s2) {
-                    ForEach(GamepadAccentStyle.allCases) { style in
-                        elementColorSwatch(style, scheme: editingScheme)
-                    }
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Button {
+                    isFillColorPopoverPresented = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .regular))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                Button {
+                    isFillColorPopoverPresented = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .regular))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            }
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+
+            Divider()
+
+            HStack(spacing: Geist.Spacing.s2) {
+                ForEach(fillColorToolIcons, id: \.self) { icon in
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                        .frame(width: 34, height: 34)
+                        .background(icon == fillColorToolIcons.first ? Geist.color(.gray100, scheme: colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
                 }
             }
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                GamepadColorPlane(color: fillColorValueBinding(for: selectedControlID, scheme: editingScheme), hue: $fillColorPickerHue)
+                    .frame(height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+
+                GamepadHueSlider(color: fillColorValueBinding(for: selectedControlID, scheme: editingScheme), hue: $fillColorPickerHue)
+                    .frame(height: 26)
+
+                GamepadAlphaSlider(color: fillColorValueBinding(for: selectedControlID, scheme: editingScheme))
+                    .frame(height: 26)
+
+                HStack(spacing: Geist.Spacing.s2) {
+                    Menu {
+                        Button("Hex") {}
+                    } label: {
+                        HStack(spacing: Geist.Spacing.s2) {
+                            Text("Hex")
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .frame(width: 92, height: Geist.Spacing.s10)
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .geistInput(size: .medium)
+
+                    GamepadColorValueField(text: fillColorHexPlainBinding(for: selectedControlID, scheme: editingScheme), placeholder: "000000")
+
+                    GamepadColorValueField(text: fillColorAlphaTextBinding(for: selectedControlID, scheme: editingScheme), placeholder: "100", suffix: "%", width: 96)
+                }
+
+                Menu {
+                    ForEach(GamepadEditorColorScheme.allCases, id: \.self) { scheme in
+                        Button(scheme.displayName) {
+                            editorColorSchemeBinding.wrappedValue = scheme
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text("On this \(schemeName.lowercased()) palette")
+                            .geistTypography(.label14)
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .padding(.horizontal, Geist.Spacing.s3)
+                    .frame(height: Geist.Spacing.s10)
+                    .background(Geist.color(.background100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                            .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .menuStyle(.button)
+
+                HStack(spacing: Geist.Spacing.s2) {
+                    ForEach(GamepadAccentStyle.allCases) { style in
+                        elementColorPresetChip(style, scheme: editingScheme)
+                    }
+                }
+
+                Button("Use Default \(schemeName) Color") {
+                    clearCustomFillColor(for: selectedControlID, scheme: editingScheme)
+                }
+                .geistButtonStyle(.tertiary, size: .small)
+                .disabled(!usesCustomColor)
+            }
+            .padding(Geist.Spacing.s3)
         }
+        .frame(width: 360)
+        .background(Geist.color(.background100, scheme: colorScheme))
+    }
+
+    private var fillColorToolIcons: [String] {
+        ["square.on.square", "circle.grid.2x2", "tablecells", "photo", "play.rectangle", "waveform.path", "drop", "circle.slash"]
+    }
+
+    private func elementColorPresetChip(_ style: GamepadAccentStyle, scheme: ColorScheme) -> some View {
+        let layoutCustomization = selectedLayoutCustomization(for: selectedControlID)
+        let isSelected = !layoutCustomization.hasCustomFillColor(for: scheme) && accentStyleValue(for: selectedControlID) == style
+
+        return Button {
+            accentStyleBinding(for: selectedControlID).wrappedValue = style
+        } label: {
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .fill(style.buttonFill(isPressed: false, scheme: scheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                        .stroke(isSelected ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isSelected ? 2 : 1)
+                )
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(style.displayName)
     }
 
     private func colorTextField(title: String, value: Binding<String>, unit: String?) -> some View {
@@ -4114,27 +4483,82 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var selectedElementSizeSection: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            selectedElementPositionControls
+
+            Divider()
+
+            selectedElementLayoutControls
+        }
+    }
+
+    private var selectedElementPositionControls: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Position & Size")
+            Text("Position")
                 .geistTypography(.heading14)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
-                metricField(title: "X", value: frameMetricBinding(.x), unit: "pt")
-                metricField(title: "Y", value: frameMetricBinding(.y), unit: "pt")
-                metricField(title: "W", value: frameMetricBinding(.width), unit: "pt")
-                metricField(title: "H", value: frameMetricBinding(.height), unit: "pt")
-                metricField(title: "R", value: rotationDegreesBinding(for: selectedControlID), unit: "°")
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Position (px)")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
+                    inspectorMetricField(title: "X", value: frameMetricBinding(.x), accessibilityLabel: "X position in pixels")
+                    inspectorMetricField(title: "Y", value: frameMetricBinding(.y), accessibilityLabel: "Y position in pixels")
+                }
             }
 
-            Text("X and Y use the component’s top-left point. R rotates the component around its center.")
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Rotation")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
+                    inspectorMetricField(title: "R", value: rotationDegreesBinding(for: selectedControlID), unit: "°", accessibilityLabel: "Rotation in degrees")
+                }
+            }
+
+            Text("X and Y use the component’s top-left point. Rotation happens around the center.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
-
-            sizeSlider(title: "Width", value: widthScaleBinding(for: selectedControlID), currentValue: widthScaleValue(for: selectedControlID))
-            sizeSlider(title: "Height", value: heightScaleBinding(for: selectedControlID), currentValue: heightScaleValue(for: selectedControlID))
         }
+    }
+
+    private var selectedElementLayoutControls: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Layout")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Dimensions (px)")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
+                    inspectorMetricField(title: "W", value: frameMetricBinding(.width), accessibilityLabel: "Width in pixels")
+                    inspectorMetricField(title: "H", value: frameMetricBinding(.height), accessibilityLabel: "Height in pixels")
+                }
+            }
+        }
+    }
+
+    private func inspectorMetricField(
+        title: String,
+        value: Binding<Double>,
+        unit: String? = nil,
+        maxFractionDigits: Int = 2,
+        accessibilityLabel: String? = nil
+    ) -> some View {
+        GamepadInspectorMetricField(
+            title: title,
+            value: value,
+            unit: unit,
+            maxFractionDigits: maxFractionDigits,
+            accessibilityLabel: accessibilityLabel
+        )
     }
 
     private func metricField(title: String, value: Binding<Double>, unit: String) -> some View {
@@ -4753,6 +5177,30 @@ struct GamepadCustomizationEditor: View {
         return GamepadRGBAColor(color: fallbackColor, fallback: .defaultValue).normalized
     }
 
+    private func fillColorValueBinding(for identity: GamepadControlIdentity, scheme: ColorScheme) -> Binding<GamepadRGBAColor> {
+        Binding(
+            get: { selectedFillColorValue(for: identity, scheme: scheme) },
+            set: { color in
+                setFillColor(color.normalized, for: identity, scheme: scheme)
+            }
+        )
+    }
+
+    private func fillColorHexPlainBinding(for identity: GamepadControlIdentity, scheme: ColorScheme) -> Binding<String> {
+        Binding(
+            get: { selectedFillColorValue(for: identity, scheme: scheme).hexString.replacingOccurrences(of: "#", with: "") },
+            set: { hexString in
+                fillColorHexBinding(for: identity, scheme: scheme).wrappedValue = hexString
+            }
+        )
+    }
+
+    private func toggleFillVisibility(for identity: GamepadControlIdentity, scheme: ColorScheme) {
+        var color = selectedFillColorValue(for: identity, scheme: scheme)
+        color.alpha = color.alpha > 0.001 ? 0 : 1
+        setFillColor(color.normalized, for: identity, scheme: scheme)
+    }
+
     private func fillColorPickerBinding(for identity: GamepadControlIdentity, scheme: ColorScheme) -> Binding<Color> {
         Binding(
             get: { selectedFillColorValue(for: identity, scheme: scheme).swiftUIColor },
@@ -5359,6 +5807,33 @@ struct GamepadCustomizationEditor: View {
         return true
     }
 
+    @discardableResult
+    private func nudgeSelectedControls(_ direction: GamepadEditorNudgeDirection, isLargeStep: Bool) -> Bool {
+        guard activeCanvasTool == .select,
+              isControlSelectionActive,
+              !selectedControlIDs.isEmpty
+        else {
+            return false
+        }
+
+        var next = customization
+        let step: CGFloat = isLargeStep ? 10 : 1
+        let didMove = next.nudgeControls(
+            selectedControlIDs,
+            by: direction.translation(step: step),
+            in: currentCanvasLayoutSize
+        )
+        if didMove {
+            applyCustomization(
+                next,
+                selecting: selectedControlID,
+                selectionSet: selectedControlIDs,
+                undoActionName: "Move Selection"
+            )
+        }
+        return true
+    }
+
     private func validControlSelection(_ selection: GamepadControlIdentity, in customization: GamepadCustomization) -> GamepadControlIdentity {
         let options = controlSelectionOptions(for: customization)
         return options.contains(selection) ? selection : preferredControlSelection(for: customization) ?? .builtin(.jump)
@@ -5582,6 +6057,323 @@ struct GamepadCustomizationEditor: View {
     }
 }
 
+private struct GamepadColorValueField: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var text: String
+
+    var placeholder: String
+    var suffix: String? = nil
+    var width: CGFloat? = nil
+
+    var body: some View {
+        HStack(spacing: Geist.Spacing.s1) {
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .geistTypography(.label14Mono)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+#if os(iOS)
+                .textInputAutocapitalization(.characters)
+#endif
+
+            if let suffix {
+                Text(suffix)
+                    .geistTypography(.label14)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            }
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .frame(width: width)
+        .frame(height: Geist.Spacing.s10)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+    }
+}
+
+private struct GamepadColorPlane: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var color: GamepadRGBAColor
+    @Binding var hue: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let hsba = GamepadHSBAColor(color)
+            let effectiveHue = effectiveHue(for: hsba)
+            let markerX = GamepadHSBAColor.clamp(hsba.saturation) * proxy.size.width
+            let markerY = (1 - GamepadHSBAColor.clamp(hsba.brightness)) * proxy.size.height
+
+            ZStack(alignment: .topLeading) {
+                LinearGradient(
+                    colors: [
+                        .white,
+                        Color(hue: Double(effectiveHue), saturation: 1, brightness: 1)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+
+                LinearGradient(
+                    colors: [.clear, .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                Circle()
+                    .fill(Color.clear)
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    .overlay(Circle().stroke(Color.black.opacity(0.18), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.18), radius: 2, y: 1)
+                    .frame(width: 24, height: 24)
+                    .position(x: markerX, y: markerY)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        updateColor(at: value.location, size: proxy.size)
+                    }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(Geist.color(.grayAlpha300, scheme: colorScheme), lineWidth: 1)
+            )
+        }
+    }
+
+    private func effectiveHue(for hsba: GamepadHSBAColor) -> CGFloat {
+        hsba.saturation > 0.001 ? hsba.hue : hue
+    }
+
+    private func updateColor(at location: CGPoint, size: CGSize) {
+        var hsba = GamepadHSBAColor(color)
+        hsba.hue = effectiveHue(for: hsba)
+        hsba.saturation = GamepadHSBAColor.clamp(location.x / max(size.width, 1))
+        hsba.brightness = 1 - GamepadHSBAColor.clamp(location.y / max(size.height, 1))
+        hue = hsba.hue
+        color = hsba.rgba
+    }
+}
+
+private struct GamepadHueSlider: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var color: GamepadRGBAColor
+    @Binding var hue: CGFloat
+
+    private let handleSize: CGFloat = 24
+
+    var body: some View {
+        GeometryReader { proxy in
+            let hsba = GamepadHSBAColor(color)
+            let effectiveHue = hsba.saturation > 0.001 ? hsba.hue : hue
+            let x = handlePosition(for: effectiveHue, width: proxy.size.width)
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: stride(from: 0.0, through: 1.0, by: 1.0 / 6.0).map {
+                                Color(hue: $0, saturation: 1, brightness: 1)
+                            },
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous)
+                            .stroke(Geist.color(.grayAlpha300, scheme: colorScheme), lineWidth: 1)
+                    )
+
+                Circle()
+                    .fill(Color.white)
+                    .overlay(Circle().stroke(Geist.color(.grayAlpha500, scheme: colorScheme), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.18), radius: 2, y: 1)
+                    .frame(width: handleSize, height: handleSize)
+                    .position(x: x, y: proxy.size.height / 2)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        updateHue(at: value.location, width: proxy.size.width)
+                    }
+            )
+        }
+    }
+
+    private func handlePosition(for hue: CGFloat, width: CGFloat) -> CGFloat {
+        let radius = handleSize / 2
+        return GamepadHSBAColor.clamp(hue) * max(width - handleSize, 1) + radius
+    }
+
+    private func updateHue(at location: CGPoint, width: CGFloat) {
+        let radius = handleSize / 2
+        let nextHue = GamepadHSBAColor.clamp((location.x - radius) / max(width - handleSize, 1))
+        hue = nextHue
+
+        var hsba = GamepadHSBAColor(color)
+        hsba.hue = nextHue
+        color = hsba.rgba
+    }
+}
+
+private struct GamepadAlphaSlider: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var color: GamepadRGBAColor
+
+    private let handleSize: CGFloat = 24
+
+    var body: some View {
+        GeometryReader { proxy in
+            let normalizedColor = color.normalized
+            let opaqueColor = GamepadRGBAColor(red: normalizedColor.red, green: normalizedColor.green, blue: normalizedColor.blue, alpha: 1)
+            let transparentColor = GamepadRGBAColor(red: normalizedColor.red, green: normalizedColor.green, blue: normalizedColor.blue, alpha: 0)
+            let x = handlePosition(for: normalizedColor.alpha, width: proxy.size.width)
+
+            ZStack(alignment: .leading) {
+                GamepadAlphaCheckerboard()
+                    .clipShape(RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous))
+
+                RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [transparentColor.swiftUIColor, opaqueColor.swiftUIColor],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous)
+                            .stroke(Geist.color(.grayAlpha300, scheme: colorScheme), lineWidth: 1)
+                    )
+
+                Circle()
+                    .fill(Color.white)
+                    .overlay(Circle().stroke(Geist.color(.grayAlpha500, scheme: colorScheme), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.18), radius: 2, y: 1)
+                    .frame(width: handleSize, height: handleSize)
+                    .position(x: x, y: proxy.size.height / 2)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        updateAlpha(at: value.location, width: proxy.size.width)
+                    }
+            )
+        }
+    }
+
+    private func handlePosition(for alpha: CGFloat, width: CGFloat) -> CGFloat {
+        let radius = handleSize / 2
+        return GamepadHSBAColor.clamp(alpha) * max(width - handleSize, 1) + radius
+    }
+
+    private func updateAlpha(at location: CGPoint, width: CGFloat) {
+        let radius = handleSize / 2
+        var nextColor = color.normalized
+        nextColor.alpha = GamepadHSBAColor.clamp((location.x - radius) / max(width - handleSize, 1))
+        color = nextColor
+    }
+}
+
+private struct GamepadAlphaCheckerboard: View {
+    var body: some View {
+        Canvas { context, size in
+            let squareSize: CGFloat = 8
+            let columns = Int(ceil(size.width / squareSize))
+            let rows = Int(ceil(size.height / squareSize))
+
+            for row in 0...rows {
+                for column in 0...columns {
+                    let isDark = (row + column).isMultiple(of: 2)
+                    let rect = CGRect(
+                        x: CGFloat(column) * squareSize,
+                        y: CGFloat(row) * squareSize,
+                        width: squareSize,
+                        height: squareSize
+                    )
+                    context.fill(Path(rect), with: .color(isDark ? Color.gray.opacity(0.28) : Color.white.opacity(0.72)))
+                }
+            }
+        }
+    }
+}
+
+private struct GamepadHSBAColor {
+    var hue: CGFloat
+    var saturation: CGFloat
+    var brightness: CGFloat
+    var alpha: CGFloat
+
+    init(hue: CGFloat, saturation: CGFloat, brightness: CGFloat, alpha: CGFloat) {
+        self.hue = Self.clamp(hue)
+        self.saturation = Self.clamp(saturation)
+        self.brightness = Self.clamp(brightness)
+        self.alpha = Self.clamp(alpha)
+    }
+
+    init(_ color: GamepadRGBAColor) {
+        let normalized = color.normalized
+        let red = Double(normalized.red)
+        let green = Double(normalized.green)
+        let blue = Double(normalized.blue)
+        let maxValue = max(red, green, blue)
+        let minValue = min(red, green, blue)
+        let delta = maxValue - minValue
+
+        brightness = CGFloat(maxValue)
+        saturation = maxValue <= 0 ? 0 : CGFloat(delta / maxValue)
+        alpha = normalized.alpha
+
+        if delta <= 0.000_001 {
+            hue = 0
+        } else if maxValue == red {
+            hue = CGFloat(((green - blue) / delta).truncatingRemainder(dividingBy: 6) / 6)
+        } else if maxValue == green {
+            hue = CGFloat(((blue - red) / delta + 2) / 6)
+        } else {
+            hue = CGFloat(((red - green) / delta + 4) / 6)
+        }
+
+        if hue < 0 { hue += 1 }
+    }
+
+    var rgba: GamepadRGBAColor {
+        let normalizedHue = Double(Self.clamp(hue))
+        let normalizedSaturation = Double(Self.clamp(saturation))
+        let normalizedBrightness = Double(Self.clamp(brightness))
+        let chroma = normalizedBrightness * normalizedSaturation
+        let huePrime = normalizedHue * 6
+        let x = chroma * (1 - abs(huePrime.truncatingRemainder(dividingBy: 2) - 1))
+        let m = normalizedBrightness - chroma
+
+        let components: (Double, Double, Double)
+        switch Int(floor(huePrime)) % 6 {
+        case 0:
+            components = (chroma, x, 0)
+        case 1:
+            components = (x, chroma, 0)
+        case 2:
+            components = (0, chroma, x)
+        case 3:
+            components = (0, x, chroma)
+        case 4:
+            components = (x, 0, chroma)
+        default:
+            components = (chroma, 0, x)
+        }
+
+        return GamepadRGBAColor(
+            red: CGFloat(components.0 + m),
+            green: CGFloat(components.1 + m),
+            blue: CGFloat(components.2 + m),
+            alpha: Self.clamp(alpha)
+        ).normalized
+    }
+
+    static func clamp(_ value: CGFloat) -> CGFloat {
+        min(max(value, 0), 1)
+    }
+}
+
 private struct GamepadMetricField: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding private var value: Double
@@ -5657,6 +6449,123 @@ private struct GamepadMetricField: View {
     }
 }
 
+private struct GamepadInspectorMetricField: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding private var value: Double
+    @State private var draftText: String
+    @FocusState private var isFocused: Bool
+
+    private let title: String
+    private let unit: String?
+    private let maxFractionDigits: Int
+    private let accessibilityLabel: String?
+
+    init(
+        title: String,
+        value: Binding<Double>,
+        unit: String? = nil,
+        maxFractionDigits: Int = 2,
+        accessibilityLabel: String? = nil
+    ) {
+        self.title = title
+        self._value = value
+        self.unit = unit
+        self.maxFractionDigits = max(0, maxFractionDigits)
+        self.accessibilityLabel = accessibilityLabel
+        self._draftText = State(initialValue: Self.formatted(value.wrappedValue, maxFractionDigits: max(0, maxFractionDigits)))
+    }
+
+    var body: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Text(title)
+                .geistTypography(.label14)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(minWidth: 14, alignment: .leading)
+
+            TextField(title, text: $draftText)
+                .focused($isFocused)
+                .textFieldStyle(.plain)
+                .geistTypography(.label14Mono)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+#if os(iOS)
+                .keyboardType(.numbersAndPunctuation)
+#endif
+
+            if let unit {
+                Text(unit)
+                    .geistTypography(.label14Mono)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            }
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .frame(height: Geist.Spacing.s10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(isFocused ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.grayAlpha300, scheme: colorScheme), lineWidth: isFocused ? 1.25 : 1)
+        )
+        .accessibilityLabel(Text(accessibilityLabel ?? title))
+        .onChange(of: value) { _, newValue in
+            guard !isFocused else { return }
+            draftText = Self.formatted(newValue, maxFractionDigits: maxFractionDigits)
+        }
+        .onChange(of: draftText) { _, newValue in
+            guard isFocused, let parsedValue = Self.parsed(newValue) else { return }
+            value = parsedValue
+        }
+        .onChange(of: isFocused) { _, focused in
+            if focused {
+                draftText = Self.formatted(value, maxFractionDigits: maxFractionDigits)
+            } else {
+                commitOrResetDraft()
+            }
+        }
+        .onSubmit {
+            commitOrResetDraft()
+        }
+    }
+
+    private func commitOrResetDraft() {
+        if let parsedValue = Self.parsed(draftText) {
+            value = parsedValue
+        }
+        draftText = Self.formatted(value, maxFractionDigits: maxFractionDigits)
+    }
+
+    private static func parsed(_ text: String) -> Double? {
+        let sanitized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "px", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "pt", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "°", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sanitized.isEmpty, sanitized != "-", sanitized != ".", sanitized != "-." else { return nil }
+        return Double(sanitized)
+    }
+
+    private static func formatted(_ value: Double, maxFractionDigits: Int) -> String {
+        guard value.isFinite else { return "0" }
+        let fractionDigits = max(0, maxFractionDigits)
+        if fractionDigits == 0 {
+            let rounded = Int(value.rounded())
+            return rounded == 0 ? "0" : String(rounded)
+        }
+
+        let multiplier = pow(10, Double(fractionDigits))
+        let roundedValue = (value * multiplier).rounded() / multiplier
+        var text = String(format: "%.\(fractionDigits)f", roundedValue)
+        while text.contains(".") && text.last == "0" {
+            text.removeLast()
+        }
+        if text.last == "." {
+            text.removeLast()
+        }
+        return text == "-0" ? "0" : text
+    }
+}
+
 private struct GamepadEditorResizeHandle: View {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -5690,13 +6599,34 @@ private struct GamepadEditorResizeHandle: View {
     }
 }
 
+private enum GamepadEditorNudgeDirection {
+    case left
+    case right
+    case up
+    case down
+
+    func translation(step: CGFloat) -> CGSize {
+        switch self {
+        case .left:
+            CGSize(width: -step, height: 0)
+        case .right:
+            CGSize(width: step, height: 0)
+        case .up:
+            CGSize(width: 0, height: -step)
+        case .down:
+            CGSize(width: 0, height: step)
+        }
+    }
+}
+
 private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
     var onDelete: () -> Bool
     var onUndo: () -> Bool
     var onRedo: () -> Bool
+    var onNudge: (GamepadEditorNudgeDirection, Bool) -> Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onDelete: onDelete, onUndo: onUndo, onRedo: onRedo)
+        Coordinator(onDelete: onDelete, onUndo: onUndo, onRedo: onRedo, onNudge: onNudge)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -5711,6 +6641,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
         context.coordinator.onDelete = onDelete
         context.coordinator.onUndo = onUndo
         context.coordinator.onRedo = onRedo
+        context.coordinator.onNudge = onNudge
         context.coordinator.installMonitor()
     }
 
@@ -5722,13 +6653,20 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
         var onDelete: () -> Bool
         var onUndo: () -> Bool
         var onRedo: () -> Bool
+        var onNudge: (GamepadEditorNudgeDirection, Bool) -> Bool
         weak var view: NSView?
         private var monitor: Any?
 
-        init(onDelete: @escaping () -> Bool, onUndo: @escaping () -> Bool, onRedo: @escaping () -> Bool) {
+        init(
+            onDelete: @escaping () -> Bool,
+            onUndo: @escaping () -> Bool,
+            onRedo: @escaping () -> Bool,
+            onNudge: @escaping (GamepadEditorNudgeDirection, Bool) -> Bool
+        ) {
             self.onDelete = onDelete
             self.onUndo = onUndo
             self.onRedo = onRedo
+            self.onNudge = onNudge
         }
 
         deinit {
@@ -5770,6 +6708,10 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
                 return onUndo() ? nil : event
             }
 
+            if let nudgeDirection = Self.nudgeDirection(for: event) {
+                return onNudge(nudgeDirection, Self.isShiftOnlyModifierEvent(event)) ? nil : event
+            }
+
             return event
         }
 
@@ -5777,6 +6719,33 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
             guard !event.isARepeat else { return false }
             guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
             return event.keyCode == 51 || event.keyCode == 117
+        }
+
+        private static func nudgeDirection(for event: NSEvent) -> GamepadEditorNudgeDirection? {
+            guard isNudgeModifierEvent(event) else { return nil }
+            switch event.keyCode {
+            case 123:
+                return .left
+            case 124:
+                return .right
+            case 125:
+                return .down
+            case 126:
+                return .up
+            default:
+                return nil
+            }
+        }
+
+        private static func isNudgeModifierEvent(_ event: NSEvent) -> Bool {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            return !flags.contains(.command)
+                && !flags.contains(.option)
+                && !flags.contains(.control)
+        }
+
+        private static func isShiftOnlyModifierEvent(_ event: NSEvent) -> Bool {
+            event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.shift)
         }
 
         private static func isUndoEvent(_ event: NSEvent) -> Bool {

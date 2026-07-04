@@ -11,6 +11,8 @@ struct PocketPadCLI {
     private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
     private static let notificationKeyBindingsDataKey = "keyBindingsData"
     private static let notificationProfileKeyBindingsDataKey = "profileKeyBindingsData"
+    private static let defaultEditorCanvasSize = CGSize(width: 874, height: 402)
+    private static let portraitEditorCanvasSize = CGSize(width: 402, height: 874)
 
     private struct StoredProfileState: Codable {
         var profiles: [GamepadConfigurationProfile]
@@ -40,12 +42,71 @@ struct PocketPadCLI {
     }
 
     private struct ProfileExportEnvelope: Codable {
-        var version: Int = 1
+        var schema: String = PocketPadKeypadConfigurationExport.schemaIdentifier
+        var version: Int = PocketPadKeypadConfigurationExport.currentVersion
         var exportedAt: Int64 = Date.currentMilliseconds
         var profiles: [GamepadConfigurationProfile]
         var activeProfileID: UUID?
         var defaultProfileID: UUID?
         var profileKeyBindings: [String: [String: MacKeyBinding]]
+
+        init(
+            profiles: [GamepadConfigurationProfile],
+            activeProfileID: UUID?,
+            defaultProfileID: UUID?,
+            profileKeyBindings: [String: [String: MacKeyBinding]] = [:]
+        ) {
+            let state = GamepadConfigurationProfilePersistence.normalizedState(
+                profiles: profiles,
+                activeProfileID: activeProfileID,
+                defaultProfileID: defaultProfileID
+            )
+            self.profiles = state.profiles
+            self.activeProfileID = state.activeProfileID
+            self.defaultProfileID = state.defaultProfileID
+            self.profileKeyBindings = profileKeyBindings
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            schema = try container.decodeIfPresent(String.self, forKey: .schema) ?? PocketPadKeypadConfigurationExport.schemaIdentifier
+            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? PocketPadKeypadConfigurationExport.currentVersion
+            guard schema == PocketPadKeypadConfigurationExport.schemaIdentifier else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .schema,
+                    in: container,
+                    debugDescription: "Unsupported PocketPad keypad configuration schema: \(schema)"
+                )
+            }
+            guard version >= 1 && version <= PocketPadKeypadConfigurationExport.currentVersion else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .version,
+                    in: container,
+                    debugDescription: "Unsupported PocketPad keypad configuration version: \(version)"
+                )
+            }
+
+            exportedAt = try container.decodeIfPresent(Int64.self, forKey: .exportedAt) ?? Date.currentMilliseconds
+            let decodedProfiles = try container.decode([GamepadConfigurationProfile].self, forKey: .profiles)
+            guard !decodedProfiles.isEmpty else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .profiles,
+                    in: container,
+                    debugDescription: "PocketPad keypad configuration export must contain at least one profile."
+                )
+            }
+            let decodedActiveID = try container.decodeIfPresent(UUID.self, forKey: .activeProfileID)
+            let decodedDefaultID = try container.decodeIfPresent(UUID.self, forKey: .defaultProfileID)
+            let state = GamepadConfigurationProfilePersistence.normalizedState(
+                profiles: decodedProfiles,
+                activeProfileID: decodedActiveID,
+                defaultProfileID: decodedDefaultID
+            )
+            profiles = state.profiles
+            activeProfileID = state.activeProfileID
+            defaultProfileID = state.defaultProfileID
+            profileKeyBindings = try container.decodeIfPresent([String: [String: MacKeyBinding]].self, forKey: .profileKeyBindings) ?? [:]
+        }
     }
 
     private struct ElementSummary: Codable {
@@ -695,6 +756,8 @@ struct PocketPadCLI {
             try addElement(arguments: rest)
         case "set":
             try setElement(arguments: rest)
+        case "nudge", "move":
+            try nudgeElement(arguments: rest)
         case "delete", "rm":
             try deleteElement(arguments: rest)
         case "reset":
@@ -758,6 +821,34 @@ struct PocketPadCLI {
             }
         }
         print("Updated element \"\(targetText)\".")
+    }
+
+    private static func nudgeElement(arguments: [String]) throws {
+        let positional = positionals(in: arguments)
+        guard let targetText = positional.first else {
+            throw CLIError.message("Usage: pocketpad element nudge <element> <left|right|up|down> [--step 1|10]")
+        }
+        let directionText = positional.dropFirst().first
+        let translation = try parseNudgeTranslation(arguments: arguments, directionText: directionText)
+        let canvasSize = try parseNudgeCanvasSize(arguments)
+
+        var store = loadStore()
+        let profileIndex = try resolveProfileIndex(optionValue("--profile", in: arguments), in: store)
+        let target = try resolveElementTarget(targetText, in: store.profiles[profileIndex].customization)
+        let identity: GamepadControlIdentity = switch target {
+        case .builtin(let button): .builtin(button)
+        case .custom(let id): .custom(id)
+        }
+
+        guard let nudgedCustomization = store.profiles[profileIndex].customization.nudgedControls([identity], by: translation, in: canvasSize) else {
+            print("Element \"\(targetText)\" could not move.")
+            return
+        }
+
+        store.profiles[profileIndex].customization = nudgedCustomization.normalized
+        store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
+        try persistStore(store)
+        print("Nudged element \"\(targetText)\" by \(formatPixels(translation.width))px, \(formatPixels(translation.height))px.")
     }
 
     private static func deleteElement(arguments: [String]) throws {
@@ -1587,6 +1678,95 @@ struct PocketPadCLI {
         return CGFloat(min(max(value > 1 ? value / 100 : value, 0), 1))
     }
 
+    private static func parseNudgeTranslation(arguments: [String], directionText: String?) throws -> CGSize {
+        let dxText = optionValue("--dx", in: arguments)
+        let dyText = optionValue("--dy", in: arguments)
+        if dxText != nil || dyText != nil {
+            guard directionText == nil else { throw CLIError.message("Use either a direction or --dx/--dy, not both") }
+            let dx = try dxText.map(parsePixels) ?? 0
+            let dy = try dyText.map(parsePixels) ?? 0
+            guard abs(dx) > 0.001 || abs(dy) > 0.001 else { throw CLIError.message("Nudge delta cannot be zero") }
+            return CGSize(width: dx, height: dy)
+        }
+
+        guard let directionText else { throw CLIError.message("Missing nudge direction: left, right, up, or down") }
+        let step = try parseNudgeStep(arguments)
+        switch normalizedLookup(directionText) {
+        case "left", "arrowleft":
+            return CGSize(width: -step, height: 0)
+        case "right", "arrowright":
+            return CGSize(width: step, height: 0)
+        case "up", "arrowup":
+            return CGSize(width: 0, height: -step)
+        case "down", "arrowdown":
+            return CGSize(width: 0, height: step)
+        default:
+            throw CLIError.message("Unknown nudge direction: \(directionText)")
+        }
+    }
+
+    private static func parseNudgeStep(_ arguments: [String]) throws -> CGFloat {
+        if let value = optionValue("--step", in: arguments) ?? optionValue("--pixels", in: arguments) ?? optionValue("--by", in: arguments) {
+            let step = try parsePixels(value)
+            guard step > 0 else { throw CLIError.message("Nudge step must be greater than zero") }
+            return step
+        }
+        return (arguments.contains("--large") || arguments.contains("--shift")) ? 10 : 1
+    }
+
+    private static func parseNudgeCanvasSize(_ arguments: [String]) throws -> CGSize {
+        var canvasSize = defaultEditorCanvasSize
+        if let canvas = optionValue("--canvas", in: arguments) {
+            let normalized = normalizedLookup(canvas)
+            if normalized == "landscape" || normalized == "iphone17prolandscape" {
+                canvasSize = defaultEditorCanvasSize
+            } else if normalized == "portrait" || normalized == "iphone17proportrait" {
+                canvasSize = portraitEditorCanvasSize
+            } else if let parsed = parseCanvasSizeLiteral(canvas) {
+                canvasSize = parsed
+            } else {
+                throw CLIError.message("Invalid canvas size: \(canvas). Use landscape, portrait, or WIDTHxHEIGHT.")
+            }
+        }
+
+        let explicitWidth = optionValue("--canvas-width", in: arguments)
+        let explicitHeight = optionValue("--canvas-height", in: arguments)
+        if explicitWidth != nil || explicitHeight != nil {
+            guard let explicitWidth, let explicitHeight else { throw CLIError.message("Use --canvas-width and --canvas-height together") }
+            canvasSize = CGSize(width: try parsePixels(explicitWidth), height: try parsePixels(explicitHeight))
+        }
+
+        guard canvasSize.width > 1, canvasSize.height > 1 else { throw CLIError.message("Canvas size must be greater than 1×1") }
+        return canvasSize
+    }
+
+    private static func parseCanvasSizeLiteral(_ text: String) -> CGSize? {
+        let separators = CharacterSet(charactersIn: "xX,:")
+        let parts = text.components(separatedBy: separators)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard parts.count == 2,
+              let width = Double(parts[0]),
+              let height = Double(parts[1])
+        else { return nil }
+        return CGSize(width: CGFloat(width), height: CGFloat(height))
+    }
+
+    private static func parsePixels(_ text: String) throws -> CGFloat {
+        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw CLIError.message("Expected a numeric pixel value, got: \(text)")
+        }
+        return CGFloat(value)
+    }
+
+    private static func formatPixels(_ value: CGFloat) -> String {
+        let doubleValue = Double(value)
+        if doubleValue.rounded() == doubleValue {
+            return String(Int(doubleValue))
+        }
+        return String(format: "%.2f", doubleValue)
+    }
+
     private static func joystickMapping(from arguments: [String], fallback: GamepadJoystickMapping = .movement) throws -> GamepadJoystickMapping {
         var mapping = fallback
         if let value = optionValue("--up", in: arguments) { mapping.up = try parseButton(value) }
@@ -1694,7 +1874,8 @@ struct PocketPadCLI {
             "--width", "--width-scale", "--height", "--height-scale", "--shape", "--fill", "--light-fill", "--fill-light",
             "--light-color", "--dark-fill", "--fill-dark", "--dark-color", "--opacity", "--light-opacity", "--dark-opacity",
             "--corner", "--radius", "--corner-tl", "--corner-tr", "--corner-br", "--corner-bl", "--shadow",
-            "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--hold-ms"
+            "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--hold-ms",
+            "--step", "--pixels", "--by", "--dx", "--dy", "--canvas", "--canvas-width", "--canvas-height"
         ]
         for argument in arguments {
             if skipNext {
@@ -1828,6 +2009,7 @@ struct PocketPadCLI {
           pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#F59E0B' --dark-fill '#78350F'
           pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
           pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
+          pocketpad element nudge jump right --step 10
 
         Runtime:
           pocketpad app open|quit

@@ -102,7 +102,9 @@ pocketpad release-all
 
 ## Keypad customization
 
-Customize keypad setups from the macOS helper's **Keypad** section or with the CLI. The iOS app receives the Mac's saved setups during pairing, can switch between them from the in-controller **Keypad setup** menu, and can mark the current setup as the default. The macOS helper can also mark any setup as default from the Keypad editor.
+Customize keypad setups from the macOS helper's **Keypad** section or with the CLI. The iOS app receives the Mac's saved setups during pairing, can switch between them from the in-controller **Keypad setup** menu, and can mark the current setup as the default. The macOS helper can also mark any setup as default from the Keypad editor. On iPhone, open the in-controller **Keypad setup** menu and choose **Export Keypads as JSON** to save the synced setups locally with Files.
+
+PocketPad uses its own versioned JSON envelope because there is no broadly adopted interchange format for these multitouch keypad layouts. The current schema is `com.codybontecou.pocketpad.keypad-configuration` version `1`; it stores `profiles`, `activeProfileID`, and `defaultProfileID`. The CLI exports the same envelope and may include macOS-only `profileKeyBindings` so backups preserve shortcut mappings too.
 
 Each setup stores its own appearance preference. In the Keypad editor, use **Saved Appearance** to choose whether that setup follows the device, always uses light mode, or always uses dark mode. Use **Preview & Edit** to swap the canvas and color inspector between the light and dark palettes; per-button light and dark fill colors are saved separately with the setup. The same settings are scriptable with `pocketpad customization set --appearance light|dark|system` and `pocketpad element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'`.
 
