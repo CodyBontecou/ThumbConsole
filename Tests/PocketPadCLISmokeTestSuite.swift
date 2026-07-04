@@ -12,4 +12,8 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
     func testInputLatencySimulationSmokeSuite() {
         InputLatencySimulationSmokeTests.main()
     }
+
+    func testGamepadLayoutResolverSmokeSuite() {
+        GamepadLayoutResolverSmokeTests.main()
+    }
 }

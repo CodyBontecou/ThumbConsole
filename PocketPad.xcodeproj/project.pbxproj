@@ -18,6 +18,7 @@
 		3BB1AE0B303818DE1B7AAD41 /* ControllerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F8E4E0048EB775369CAB45B /* ControllerClient.swift */; };
 		45FBD400874A016245675BE8 /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6628198D96F8304B59FD6AF /* QRCodeScannerView.swift */; };
 		4687661823546351CD6C1146 /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */; };
+		48299BA6EFD9AC53F8359174 /* GamepadLayoutResolverSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427655EF8F8DCCDDF4151EFD /* GamepadLayoutResolverSmokeTests.swift */; };
 		49CF065CF4DBF0EC25D0C2F2 /* ButtonPulseSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */; };
 		4E941CD6F638E01A06227B0B /* PocketPadCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30507A98A59620D45824305 /* PocketPadCLI.swift */; };
 		500B3137F3761D118DFA0802 /* PocketPadCLISmokeTestSuite.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2585E3D7919C41B0DD1E3732 /* PocketPadCLISmokeTestSuite.swift */; };
@@ -65,6 +66,7 @@
 		24683D0731B15D6DF61D6DCF /* ButtonPulseSequencerSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonPulseSequencerSmokeTests.swift; sourceTree = "<group>"; };
 		252777ED386D695443B445F6 /* PocketPadiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadiOSApp.swift; sourceTree = "<group>"; };
 		2585E3D7919C41B0DD1E3732 /* PocketPadCLISmokeTestSuite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadCLISmokeTestSuite.swift; sourceTree = "<group>"; };
+		427655EF8F8DCCDDF4151EFD /* GamepadLayoutResolverSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamepadLayoutResolverSmokeTests.swift; sourceTree = "<group>"; };
 		453277C67DD55AD55623F995 /* PocketPadInputLatencySimulation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadInputLatencySimulation.swift; sourceTree = "<group>"; };
 		52DA2C9503876B04B5F82CED /* KeyMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyMap.swift; sourceTree = "<group>"; };
 		59D3034E486928F2E986F424 /* TouchCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchCaptureView.swift; sourceTree = "<group>"; };
@@ -106,6 +108,7 @@
 			children = (
 				24683D0731B15D6DF61D6DCF /* ButtonPulseSequencerSmokeTests.swift */,
 				A4C941A9BD623939DB2E9AB8 /* ControllerActiveInputStateSmokeTests.swift */,
+				427655EF8F8DCCDDF4151EFD /* GamepadLayoutResolverSmokeTests.swift */,
 				F593DC9906C55E314AD25FEC /* InputLatencySimulationSmokeTests.swift */,
 				2585E3D7919C41B0DD1E3732 /* PocketPadCLISmokeTestSuite.swift */,
 			);
@@ -350,6 +353,7 @@
 				EF8D066BCD747261677E536A /* ControllerProtocol.swift in Sources */,
 				A7B2D43579605A1DAB888102 /* GameKeypadGenerator.swift in Sources */,
 				FB4488BF86CC171B27870AB7 /* GamepadCustomization.swift in Sources */,
+				48299BA6EFD9AC53F8359174 /* GamepadLayoutResolverSmokeTests.swift in Sources */,
 				36ABDA3F3EFFD4A1124BCF5C /* GeistDesign.swift in Sources */,
 				BFB502B99DA1E1961E4C2137 /* InputLatencySimulationSmokeTests.swift in Sources */,
 				F5D0B68EBF703C066E2B886B /* PairingPayload.swift in Sources */,

@@ -1212,7 +1212,7 @@ extension GamepadCustomization {
 }
 
 private enum GamepadLayoutResolver {
-    private static let minimumControlSpacing: CGFloat = 4
+    private static let minimumControlSpacing: CGFloat = 0
 
     static func resolvedControls(
         for customization: GamepadCustomization,
