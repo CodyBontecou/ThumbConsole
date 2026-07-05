@@ -1818,13 +1818,16 @@ private struct MacKeypadPreviewControl: View {
     }
 
     private var joystickFace: some View {
-        ZStack {
+        let knobFillColor = control.layoutCustomization.joystickKnobFill(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+        let knobStrokeColor = control.layoutCustomization.joystickKnobStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+
+        return ZStack {
             Circle()
                 .stroke(controlForeground.opacity(0.24), lineWidth: max(0.75, 1 * scale))
                 .frame(width: visualSize.width * 0.70, height: visualSize.height * 0.70)
             Circle()
-                .fill(controlForeground.opacity(0.16))
-                .overlay(Circle().stroke(controlForeground.opacity(0.32), lineWidth: max(0.75, 1 * scale)))
+                .fill(knobFillColor)
+                .overlay(Circle().stroke(knobStrokeColor, lineWidth: max(0.75, 1 * scale)))
                 .frame(
                     width: min(visualSize.width, visualSize.height) * 0.34,
                     height: min(visualSize.width, visualSize.height) * 0.34

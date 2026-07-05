@@ -1047,6 +1047,10 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public var fillStyle: GamepadFillStyle?
     public var lightFillStyle: GamepadFillStyle?
     public var darkFillStyle: GamepadFillStyle?
+    /// Optional joystick thumb/knob color. When unset, joystick thumbs use the element foreground color.
+    public var joystickKnobColor: GamepadRGBAColor?
+    public var lightJoystickKnobColor: GamepadRGBAColor?
+    public var darkJoystickKnobColor: GamepadRGBAColor?
     public var cornerRadius: CGFloat?
     public var cornerRadii: GamepadCornerRadii?
     public var shadowStrength: CGFloat
@@ -1067,6 +1071,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         fillStyle: GamepadFillStyle? = nil,
         lightFillStyle: GamepadFillStyle? = nil,
         darkFillStyle: GamepadFillStyle? = nil,
+        joystickKnobColor: GamepadRGBAColor? = nil,
+        lightJoystickKnobColor: GamepadRGBAColor? = nil,
+        darkJoystickKnobColor: GamepadRGBAColor? = nil,
         cornerRadius: CGFloat? = nil,
         cornerRadii: GamepadCornerRadii? = nil,
         shadowStrength: CGFloat = GamepadButtonCustomization.defaultShadowStrength,
@@ -1086,6 +1093,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         self.fillStyle = fillStyle
         self.lightFillStyle = lightFillStyle
         self.darkFillStyle = darkFillStyle
+        self.joystickKnobColor = joystickKnobColor
+        self.lightJoystickKnobColor = lightJoystickKnobColor
+        self.darkJoystickKnobColor = darkJoystickKnobColor
         self.cornerRadius = cornerRadius
         self.cornerRadii = cornerRadii
         self.shadowStrength = shadowStrength
@@ -1108,6 +1118,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         fillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .fillStyle)
         lightFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .lightFillStyle)
         darkFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .darkFillStyle)
+        joystickKnobColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .joystickKnobColor)
+        lightJoystickKnobColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .lightJoystickKnobColor)
+        darkJoystickKnobColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .darkJoystickKnobColor)
         cornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
         cornerRadii = try container.decodeIfPresent(GamepadCornerRadii.self, forKey: .cornerRadii)
         shadowStrength = try container.decodeIfPresent(CGFloat.self, forKey: .shadowStrength) ?? Self.defaultShadowStrength
@@ -1130,6 +1143,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         try container.encodeIfPresent(fillStyle?.normalized, forKey: .fillStyle)
         try container.encodeIfPresent(lightFillStyle?.normalized, forKey: .lightFillStyle)
         try container.encodeIfPresent(darkFillStyle?.normalized, forKey: .darkFillStyle)
+        try container.encodeIfPresent(joystickKnobColor?.normalized, forKey: .joystickKnobColor)
+        try container.encodeIfPresent(lightJoystickKnobColor?.normalized, forKey: .lightJoystickKnobColor)
+        try container.encodeIfPresent(darkJoystickKnobColor?.normalized, forKey: .darkJoystickKnobColor)
         try container.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
         try container.encodeIfPresent(cornerRadii, forKey: .cornerRadii)
         try container.encode(shadowStrength, forKey: .shadowStrength)
@@ -1150,6 +1166,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         copy.fillStyle = copy.fillStyle?.normalized
         copy.lightFillStyle = copy.lightFillStyle?.normalized
         copy.darkFillStyle = copy.darkFillStyle?.normalized
+        copy.joystickKnobColor = copy.joystickKnobColor?.normalized
+        copy.lightJoystickKnobColor = copy.lightJoystickKnobColor?.normalized
+        copy.darkJoystickKnobColor = copy.darkJoystickKnobColor?.normalized
         let defaultCornerRadius = Self.defaultCornerRadius(for: copy.shape)
         let usesDynamicCornerRadiusDefault = copy.shape?.usesDynamicEditableCornerRadiusDefault == true
         if let cornerRadii = copy.cornerRadii {
@@ -1178,6 +1197,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
             && fillStyle == nil
             && lightFillStyle == nil
             && darkFillStyle == nil
+            && joystickKnobColor == nil
+            && lightJoystickKnobColor == nil
+            && darkJoystickKnobColor == nil
             && cornerRadius == nil
             && cornerRadii == nil
             && abs(shadowStrength - Self.defaultShadowStrength) < 0.001
@@ -1234,6 +1256,19 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         fillStyle(for: scheme) != nil
     }
 
+    func joystickKnobColor(for scheme: ColorScheme) -> GamepadRGBAColor? {
+        switch scheme {
+        case .dark:
+            darkJoystickKnobColor?.normalized ?? joystickKnobColor?.normalized
+        default:
+            lightJoystickKnobColor?.normalized ?? joystickKnobColor?.normalized
+        }
+    }
+
+    func hasCustomJoystickKnobColor(for scheme: ColorScheme) -> Bool {
+        joystickKnobColor(for: scheme) != nil
+    }
+
     static func defaultCornerRadius(for shape: GamepadButtonShapeStyle?) -> CGFloat {
         switch shape {
         case .some(.rectangle):
@@ -1274,6 +1309,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         case fillStyle
         case lightFillStyle
         case darkFillStyle
+        case joystickKnobColor
+        case lightJoystickKnobColor
+        case darkJoystickKnobColor
         case cornerRadius
         case cornerRadii
         case shadowStrength
@@ -2643,6 +2681,23 @@ extension GamepadButtonCustomization {
             return buttonFillStyle(accentStyle: accentStyle, isPressed: isPressed, scheme: scheme).representativeColor.strokeColor
         }
         return accentStyle.buttonStroke(isPressed: isPressed, scheme: scheme)
+    }
+
+    func joystickKnobFill(accentStyle: GamepadAccentStyle, isPressed: Bool, scheme: ColorScheme) -> Color {
+        if let color = joystickKnobColor(for: scheme) {
+            return color.adjustedForPress(isPressed).swiftUIColor
+        }
+        return buttonForeground(accentStyle: accentStyle, isPressed: isPressed, scheme: scheme)
+            .opacity(scheme == .dark ? 0.30 : 0.18)
+    }
+
+    func joystickKnobStroke(accentStyle: GamepadAccentStyle, isPressed: Bool, scheme: ColorScheme) -> Color {
+        if let color = joystickKnobColor(for: scheme) {
+            let adjustedColor = color.adjustedForPress(isPressed)
+            return adjustedColor.alpha > 0.001 ? adjustedColor.strokeColor : .clear
+        }
+        return buttonForeground(accentStyle: accentStyle, isPressed: isPressed, scheme: scheme)
+            .opacity(0.34)
     }
 }
 
@@ -4284,6 +4339,7 @@ struct GamepadCustomizationEditor: View {
     @State private var currentCanvasLayoutSize = GamepadCustomizationEditor.defaultDeviceFrame.screenRect.size
     @State private var activeCanvasTool: GamepadCanvasTool = .select
     @State private var isFillColorPopoverPresented = false
+    @State private var isJoystickKnobColorPopoverPresented = false
     @State private var isBackgroundColorPopoverPresented = false
     @State private var activeFillPopoverTab: GamepadFillPopoverTab = .solid
     @State private var isFillImageImporterPresented = false
@@ -5666,6 +5722,10 @@ struct GamepadCustomizationEditor: View {
                 )
             }
 
+            if selectedControlIsJoystick(selectedControlID) {
+                joystickKnobColorControls(for: selectedControlID, editingScheme: editingScheme, schemeName: schemeName)
+            }
+
             Text(usesCustomColor ? "Custom \(schemeName.lowercased()) fill" : "Using the selected preset for the \(schemeName.lowercased()) palette")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -5694,6 +5754,48 @@ struct GamepadCustomizationEditor: View {
             onToggleVisibility: { toggleFillVisibility(for: selectedControlID, scheme: editingScheme) },
             onClear: { clearCustomFillColor(for: selectedControlID, scheme: editingScheme) }
         )
+    }
+
+    private func joystickKnobColorControls(
+        for identity: GamepadControlIdentity,
+        editingScheme: ColorScheme,
+        schemeName: String
+    ) -> some View {
+        let colorValue = joystickKnobColorValue(for: identity, scheme: editingScheme)
+        let usesCustomColor = selectedLayoutCustomization(for: identity).hasCustomJoystickKnobColor(for: editingScheme)
+
+        return VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text("Thumbstick")
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+
+            colorFillRow(
+                colorValue: colorValue,
+                hexValue: joystickKnobColorHexPlainBinding(for: identity, scheme: editingScheme),
+                alphaValue: joystickKnobColorAlphaTextBinding(for: identity, scheme: editingScheme),
+                usesCustomColor: usesCustomColor,
+                fillStyle: .solid(colorValue),
+                isPresented: $isJoystickKnobColorPopoverPresented,
+                openAccessibilityLabel: "Open thumbstick color picker",
+                visibilityAccessibilityPrefix: "thumbstick",
+                clearAccessibilityLabel: "Use automatic thumbstick color",
+                onToggleVisibility: { toggleJoystickKnobColorVisibility(for: identity, scheme: editingScheme) },
+                onClear: { clearJoystickKnobColor(for: identity, scheme: editingScheme) }
+            )
+            .popover(isPresented: $isJoystickKnobColorPopoverPresented, arrowEdge: .leading) {
+                joystickKnobColorPopover(
+                    for: identity,
+                    editingScheme: editingScheme,
+                    schemeName: schemeName,
+                    usesCustomColor: usesCustomColor
+                )
+            }
+
+            Text(usesCustomColor ? "Custom \(schemeName.lowercased()) thumbstick color" : "Using automatic contrast for the \(schemeName.lowercased()) thumbstick")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func backgroundColorRow(
@@ -5815,6 +5917,74 @@ struct GamepadCustomizationEditor: View {
             .disabled(!usesCustomColor)
             .accessibilityLabel(clearAccessibilityLabel)
         }
+    }
+
+    private func joystickKnobColorPopover(
+        for identity: GamepadControlIdentity,
+        editingScheme: ColorScheme,
+        schemeName: String,
+        usesCustomColor: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            HStack(spacing: Geist.Spacing.s3) {
+                Text("Thumbstick Color")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Button {
+                    isJoystickKnobColorPopoverPresented = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .regular))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            }
+
+            GamepadColorPlane(color: joystickKnobColorValueBinding(for: identity, scheme: editingScheme), hue: $fillColorPickerHue)
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+
+            GamepadHueSlider(color: joystickKnobColorValueBinding(for: identity, scheme: editingScheme), hue: $fillColorPickerHue)
+                .frame(height: 26)
+
+            GamepadAlphaSlider(color: joystickKnobColorValueBinding(for: identity, scheme: editingScheme))
+                .frame(height: 26)
+
+            HStack(spacing: Geist.Spacing.s2) {
+                Menu {
+                    Button("Hex") {}
+                } label: {
+                    HStack(spacing: Geist.Spacing.s2) {
+                        Text("Hex")
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .frame(width: 92, height: Geist.Spacing.s10)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .geistInput(size: .medium)
+
+                GamepadColorValueField(text: joystickKnobColorHexPlainBinding(for: identity, scheme: editingScheme), placeholder: "000000")
+
+                GamepadColorValueField(text: joystickKnobColorAlphaTextBinding(for: identity, scheme: editingScheme), placeholder: "100", suffix: "%", width: 96)
+            }
+
+            fillPaletteScopeMenu(schemeName: schemeName)
+
+            Button("Use Automatic \(schemeName) Thumbstick") {
+                clearJoystickKnobColor(for: identity, scheme: editingScheme)
+            }
+            .geistButtonStyle(.tertiary, size: .small)
+            .disabled(!usesCustomColor)
+        }
+        .padding(Geist.Spacing.s3)
+        .frame(width: 360)
+        .background(Geist.color(.background100, scheme: colorScheme))
     }
 
     private func fillDetailPopover(
@@ -7522,6 +7692,39 @@ struct GamepadCustomizationEditor: View {
         selectedLayoutCustomization(for: identity).accentStyle ?? customization.accentStyle
     }
 
+    private func selectedControlIsJoystick(_ identity: GamepadControlIdentity) -> Bool {
+        guard case .custom(let id) = identity else { return false }
+        return customButton(id: id)?.normalized.isJoystick == true
+    }
+
+    private func joystickKnobColorValue(for identity: GamepadControlIdentity, scheme: ColorScheme) -> GamepadRGBAColor {
+        let layout = selectedLayoutCustomization(for: identity)
+        if let color = layout.joystickKnobColor(for: scheme) {
+            return color.normalized
+        }
+        let accentStyle = accentStyleValue(for: identity)
+        let fallback = layout.buttonForeground(accentStyle: accentStyle, isPressed: false, scheme: scheme)
+        return GamepadRGBAColor(color: fallback, fallback: .defaultValue).normalized
+    }
+
+    private func joystickKnobColorValueBinding(for identity: GamepadControlIdentity, scheme: ColorScheme) -> Binding<GamepadRGBAColor> {
+        Binding(
+            get: { joystickKnobColorValue(for: identity, scheme: scheme) },
+            set: { color in
+                setJoystickKnobColor(color.normalized, for: identity, scheme: scheme)
+            }
+        )
+    }
+
+    private func joystickKnobColorHexPlainBinding(for identity: GamepadControlIdentity, scheme: ColorScheme) -> Binding<String> {
+        Binding(
+            get: { joystickKnobColorValue(for: identity, scheme: scheme).hexString.replacingOccurrences(of: "#", with: "") },
+            set: { hexString in
+                joystickKnobColorHexBinding(for: identity, scheme: scheme).wrappedValue = hexString
+            }
+        )
+    }
+
     private func selectedFillColorValue(for target: GamepadFillEditorTarget, scheme: ColorScheme) -> GamepadRGBAColor {
         switch target {
         case .element(let identity):
@@ -7717,6 +7920,36 @@ struct GamepadCustomizationEditor: View {
         let fillStyle = selectedFillStyleValue(for: target, scheme: scheme)
         let nextOpacity: CGFloat = fillStyle.representativeColor.alpha > 0.001 ? 0 : 1
         setFillStyle(fillStyle.withOpacity(nextOpacity), for: target, scheme: scheme)
+    }
+
+    private func toggleJoystickKnobColorVisibility(for identity: GamepadControlIdentity, scheme: ColorScheme) {
+        var color = joystickKnobColorValue(for: identity, scheme: scheme)
+        color.alpha = color.alpha > 0.001 ? 0 : 1
+        setJoystickKnobColor(color.normalized, for: identity, scheme: scheme)
+    }
+
+    private func joystickKnobColorHexBinding(for identity: GamepadControlIdentity, scheme: ColorScheme) -> Binding<String> {
+        Binding(
+            get: { joystickKnobColorValue(for: identity, scheme: scheme).hexString },
+            set: { hexString in
+                let currentColor = joystickKnobColorValue(for: identity, scheme: scheme)
+                guard let parsedColor = GamepadRGBAColor(hexString: hexString, alpha: currentColor.alpha) else { return }
+                setJoystickKnobColor(parsedColor.normalized, for: identity, scheme: scheme)
+            }
+        )
+    }
+
+    private func joystickKnobColorAlphaTextBinding(for identity: GamepadControlIdentity, scheme: ColorScheme) -> Binding<String> {
+        Binding(
+            get: { "\(Int((joystickKnobColorValue(for: identity, scheme: scheme).alpha * 100).rounded()))" },
+            set: { alphaString in
+                guard let alphaValue = Double(alphaString.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+                let normalizedAlpha = Self.clamp(CGFloat(alphaValue / 100), lower: 0, upper: 1)
+                var color = joystickKnobColorValue(for: identity, scheme: scheme)
+                color.alpha = normalizedAlpha
+                setJoystickKnobColor(color.normalized, for: identity, scheme: scheme)
+            }
+        )
     }
 
     private func fillColorHexBinding(for target: GamepadFillEditorTarget, scheme: ColorScheme) -> Binding<String> {
@@ -8079,6 +8312,42 @@ struct GamepadCustomizationEditor: View {
         var gradient = gradientFillBinding(for: identity, scheme: scheme).wrappedValue.normalized
         gradient.stops = gradient.stops.map { GamepadGradientStop(offset: 1 - $0.offset, color: $0.color) }
         gradientFillBinding(for: identity, scheme: scheme).wrappedValue = gradient.normalized
+    }
+
+    private func setJoystickKnobColor(_ color: GamepadRGBAColor, for identity: GamepadControlIdentity, scheme: ColorScheme) {
+        updateLayoutCustomization(for: identity) { buttonCustomization in
+            prepareSchemeSpecificJoystickKnobColorStorage(&buttonCustomization)
+            switch scheme {
+            case .dark:
+                buttonCustomization.darkJoystickKnobColor = color.normalized
+            default:
+                buttonCustomization.lightJoystickKnobColor = color.normalized
+            }
+        }
+    }
+
+    private func clearJoystickKnobColor(for identity: GamepadControlIdentity, scheme: ColorScheme) {
+        updateLayoutCustomization(for: identity) { buttonCustomization in
+            prepareSchemeSpecificJoystickKnobColorStorage(&buttonCustomization)
+            switch scheme {
+            case .dark:
+                buttonCustomization.darkJoystickKnobColor = nil
+            default:
+                buttonCustomization.lightJoystickKnobColor = nil
+            }
+        }
+    }
+
+    private func prepareSchemeSpecificJoystickKnobColorStorage(_ buttonCustomization: inout GamepadButtonCustomization) {
+        if let legacyColor = buttonCustomization.joystickKnobColor?.normalized {
+            if buttonCustomization.lightJoystickKnobColor == nil {
+                buttonCustomization.lightJoystickKnobColor = legacyColor
+            }
+            if buttonCustomization.darkJoystickKnobColor == nil {
+                buttonCustomization.darkJoystickKnobColor = legacyColor
+            }
+        }
+        buttonCustomization.joystickKnobColor = nil
     }
 
     private func setFillColor(_ color: GamepadRGBAColor, for identity: GamepadControlIdentity, scheme: ColorScheme) {
@@ -12494,13 +12763,16 @@ private struct GamepadDesignerButton: View {
     }
 
     private var joystickFace: some View {
-        ZStack {
+        let knobFillColor = control.layoutCustomization.joystickKnobFill(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+        let knobStrokeColor = control.layoutCustomization.joystickKnobStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+
+        return ZStack {
             Circle()
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1 * inverseDisplayScale)
                 .frame(width: control.size.width * 0.70, height: control.size.height * 0.70)
             Circle()
-                .fill(control.layoutCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.16))
-                .overlay(Circle().stroke(Geist.color(.grayAlpha500, scheme: colorScheme), lineWidth: 1 * inverseDisplayScale))
+                .fill(knobFillColor)
+                .overlay(Circle().stroke(knobStrokeColor, lineWidth: 1 * inverseDisplayScale))
                 .frame(width: min(control.size.width, control.size.height) * 0.34, height: min(control.size.width, control.size.height) * 0.34)
 
             if customization.showsButtonLabels {

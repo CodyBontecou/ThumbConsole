@@ -130,6 +130,59 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertTrue(controls.contains { $0.id == .custom(id) && $0.isTrackpad })
     }
 
+    func testJoystickThumbColorCustomizationRoundTrips() throws {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-00000000BEEF")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addJoystick(id: id)
+        guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else {
+            XCTFail("joystick should be present")
+            return
+        }
+
+        let thumbColor = GamepadRGBAColor(hexString: "#F8FAFC")!
+        customization.customButtons[index].layout.joystickKnobColor = thumbColor
+
+        let data = try JSONEncoder().encode(customization.normalized)
+        let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data).normalized
+        let joystick = decoded.customButtons.first(where: { $0.id == id })?.normalized
+
+        XCTAssertEqual(joystick?.controlKind, .joystick)
+        XCTAssertEqual(joystick?.layout.joystickKnobColor, thumbColor.normalized)
+        XCTAssertEqual(joystick?.layout.joystickKnobColor(for: .light), thumbColor.normalized)
+    }
+
+    func testAgentJoystickThumbColorSpecGeneratesCustomJoystick() throws {
+        let json = """
+        {
+          "gameName": "Joystick Color Test",
+          "controls": [
+            {
+              "label": "Move",
+              "key": "W",
+              "kind": "joystick",
+              "fill": "#111827",
+              "thumbFill": "#F8FAFC",
+              "up": "up",
+              "down": "down",
+              "left": "left",
+              "right": "right"
+            }
+          ]
+        }
+        """
+
+        let spec = try JSONDecoder().decode(AgentKeypadSpec.self, from: Data(json.utf8))
+        let generated = GameKeypadGenerator.generate(from: spec)
+        guard let joystick = generated.profile.customization.customButtons.first?.normalized else {
+            XCTFail("generated profile should include a custom joystick")
+            return
+        }
+
+        XCTAssertTrue(joystick.isJoystick)
+        XCTAssertEqual(joystick.layout.fillColor, GamepadRGBAColor(hexString: "#111827")!.normalized)
+        XCTAssertEqual(joystick.layout.joystickKnobColor, GamepadRGBAColor(hexString: "#F8FAFC")!.normalized)
+    }
+
     func testAgentTrackpadSensitivitySpecGeneratesCustomTrackpad() throws {
         let json = """
         {

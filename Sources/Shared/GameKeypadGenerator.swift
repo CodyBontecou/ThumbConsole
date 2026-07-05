@@ -67,6 +67,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
     public var shape: GamepadButtonShapeStyle?
     public var accentStyle: GamepadAccentStyle?
     public var fillColor: GamepadRGBAColor?
+    public var joystickKnobColor: GamepadRGBAColor?
     public var cornerRadius: CGFloat?
     public var shadowStrength: CGFloat?
     public var isHidden: Bool?
@@ -89,6 +90,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         shape: GamepadButtonShapeStyle? = nil,
         accentStyle: GamepadAccentStyle? = nil,
         fillColor: GamepadRGBAColor? = nil,
+        joystickKnobColor: GamepadRGBAColor? = nil,
         cornerRadius: CGFloat? = nil,
         shadowStrength: CGFloat? = nil,
         isHidden: Bool? = nil,
@@ -110,6 +112,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         self.shape = shape
         self.accentStyle = accentStyle
         self.fillColor = fillColor
+        self.joystickKnobColor = joystickKnobColor
         self.cornerRadius = cornerRadius
         self.shadowStrength = shadowStrength
         self.isHidden = isHidden
@@ -144,6 +147,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         shape = try container.decodeIfPresent(GamepadButtonShapeStyle.self, forKey: .shape)
         accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle)
         fillColor = Self.decodeFillColor(from: container)
+        joystickKnobColor = Self.decodeJoystickKnobColor(from: container)
         cornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
         shadowStrength = try container.decodeIfPresent(CGFloat.self, forKey: .shadowStrength)
         isHidden = try container.decodeIfPresent(Bool.self, forKey: .isHidden)
@@ -169,6 +173,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         try container.encodeIfPresent(shape, forKey: .shape)
         try container.encodeIfPresent(accentStyle, forKey: .accentStyle)
         try container.encodeIfPresent(fillColor, forKey: .fillColor)
+        try container.encodeIfPresent(joystickKnobColor, forKey: .joystickKnobColor)
         try container.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
         try container.encodeIfPresent(shadowStrength, forKey: .shadowStrength)
         try container.encodeIfPresent(isHidden, forKey: .isHidden)
@@ -184,6 +189,21 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         }
 
         for key in [CodingKeys.fillColor, .fill, .fillHex, .color] {
+            if let hexString = try? container.decodeIfPresent(String.self, forKey: key),
+               let color = GamepadRGBAColor(hexString: hexString) {
+                return color
+            }
+        }
+
+        return nil
+    }
+
+    private static func decodeJoystickKnobColor(from container: KeyedDecodingContainer<CodingKeys>) -> GamepadRGBAColor? {
+        if let color = try? container.decodeIfPresent(GamepadRGBAColor.self, forKey: .joystickKnobColor) {
+            return color
+        }
+
+        for key in [CodingKeys.joystickKnobColor, .knobColor, .thumbColor, .thumbFill, .joystickThumbFill, .joystickKnobFill] {
             if let hexString = try? container.decodeIfPresent(String.self, forKey: key),
                let color = GamepadRGBAColor(hexString: hexString) {
                 return color
@@ -269,6 +289,12 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         case fill
         case fillHex
         case color
+        case joystickKnobColor
+        case knobColor
+        case thumbColor
+        case thumbFill
+        case joystickThumbFill
+        case joystickKnobFill
         case cornerRadius
         case shadowStrength
         case isHidden
@@ -415,6 +441,7 @@ private struct GeneratedControlDefinition {
     var heightScale: CGFloat
     var shape: GamepadButtonShapeStyle
     var fillColor: GamepadRGBAColor?
+    var joystickKnobColor: GamepadRGBAColor?
     var accentStyle: GamepadAccentStyle?
     var cornerRadius: CGFloat?
     var shadowStrength: CGFloat?
@@ -437,6 +464,7 @@ private struct GeneratedControlDefinition {
         shape: GamepadButtonShapeStyle = .roundedRectangle,
         fill: String? = nil,
         fillColor: GamepadRGBAColor? = nil,
+        joystickKnobColor: GamepadRGBAColor? = nil,
         accentStyle: GamepadAccentStyle? = nil,
         cornerRadius: CGFloat? = nil,
         shadowStrength: CGFloat? = nil,
@@ -456,6 +484,7 @@ private struct GeneratedControlDefinition {
         self.heightScale = height
         self.shape = shape
         self.fillColor = fillColor ?? fill.flatMap { GamepadRGBAColor(hexString: $0) }
+        self.joystickKnobColor = joystickKnobColor
         self.accentStyle = accentStyle
         self.cornerRadius = cornerRadius
         self.shadowStrength = shadowStrength
@@ -496,6 +525,7 @@ private enum GeneratedProfileBuilder {
                 shape: control.shape,
                 accentStyle: control.accentStyle ?? control.role.accentStyle,
                 fillColor: control.fillColor ?? control.role.fillColor,
+                joystickKnobColor: control.joystickKnobColor,
                 cornerRadius: control.cornerRadius ?? resolvedCornerRadius(for: control.shape),
                 shadowStrength: control.shadowStrength ?? (control.role == .primary ? 1.25 : 1.0),
                 isLocationLocked: control.isLocationLocked ?? false,
@@ -593,6 +623,7 @@ private enum AgentSpecTemplate {
                     height: controlSpec.heightScale ?? defaults.height,
                     shape: controlSpec.shape ?? defaults.shape,
                     fillColor: controlSpec.fillColor,
+                    joystickKnobColor: controlSpec.joystickKnobColor,
                     accentStyle: controlSpec.accentStyle,
                     cornerRadius: controlSpec.cornerRadius ?? (controlKind == .trackpad ? 18 : nil),
                     shadowStrength: controlSpec.shadowStrength,

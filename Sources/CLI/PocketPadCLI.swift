@@ -1617,6 +1617,43 @@ struct PocketPadCLI {
         if arguments.contains("--clear-dark-fill") || arguments.contains("--clear-dark-color") {
             clearLayoutFillColor(isDark: true, in: &layout)
         }
+        if let value = optionValue("--thumb-fill", in: arguments) ?? optionValue("--thumb-color", in: arguments) ?? optionValue("--joystick-thumb-fill", in: arguments) ?? optionValue("--joystick-knob-fill", in: arguments) {
+            layout.joystickKnobColor = try parseRGBAColor(value)
+            layout.lightJoystickKnobColor = nil
+            layout.darkJoystickKnobColor = nil
+        }
+        if arguments.contains("--clear-thumb-fill") || arguments.contains("--clear-thumb-color") || arguments.contains("--clear-joystick-thumb-fill") || arguments.contains("--clear-joystick-knob-fill") {
+            layout.joystickKnobColor = nil
+            layout.lightJoystickKnobColor = nil
+            layout.darkJoystickKnobColor = nil
+        }
+        if let value = optionValue("--light-thumb-fill", in: arguments) ?? optionValue("--thumb-light", in: arguments) ?? optionValue("--light-thumb-color", in: arguments) {
+            setLayoutJoystickKnobColor(try parseRGBAColor(value), isDark: false, in: &layout)
+        }
+        if let value = optionValue("--dark-thumb-fill", in: arguments) ?? optionValue("--thumb-dark", in: arguments) ?? optionValue("--dark-thumb-color", in: arguments) {
+            setLayoutJoystickKnobColor(try parseRGBAColor(value), isDark: true, in: &layout)
+        }
+        if arguments.contains("--clear-light-thumb-fill") || arguments.contains("--clear-light-thumb-color") {
+            clearLayoutJoystickKnobColor(isDark: false, in: &layout)
+        }
+        if arguments.contains("--clear-dark-thumb-fill") || arguments.contains("--clear-dark-thumb-color") {
+            clearLayoutJoystickKnobColor(isDark: true, in: &layout)
+        }
+        if let value = optionValue("--thumb-opacity", in: arguments), let opacity = parseOpacityIfPresent(value) {
+            var color = layout.joystickKnobColor ?? .defaultValue
+            color.alpha = opacity
+            layout.joystickKnobColor = color
+        }
+        if let value = optionValue("--light-thumb-opacity", in: arguments), let opacity = parseOpacityIfPresent(value) {
+            var color = layoutJoystickKnobColor(isDark: false, in: layout) ?? .defaultValue
+            color.alpha = opacity
+            setLayoutJoystickKnobColor(color, isDark: false, in: &layout)
+        }
+        if let value = optionValue("--dark-thumb-opacity", in: arguments), let opacity = parseOpacityIfPresent(value) {
+            var color = layoutJoystickKnobColor(isDark: true, in: layout) ?? .defaultValue
+            color.alpha = opacity
+            setLayoutJoystickKnobColor(color, isDark: true, in: &layout)
+        }
         if let value = optionValue("--opacity", in: arguments), let opacity = parseOpacityIfPresent(value) {
             var color = layout.fillColor ?? .defaultValue
             color.alpha = opacity
@@ -1701,6 +1738,40 @@ struct PocketPadCLI {
             layout.lightFillColor = nil
             layout.lightFillStyle = nil
         }
+    }
+
+    private static func layoutJoystickKnobColor(isDark: Bool, in layout: GamepadButtonCustomization) -> GamepadRGBAColor? {
+        isDark ? (layout.darkJoystickKnobColor ?? layout.joystickKnobColor) : (layout.lightJoystickKnobColor ?? layout.joystickKnobColor)
+    }
+
+    private static func setLayoutJoystickKnobColor(_ color: GamepadRGBAColor, isDark: Bool, in layout: inout GamepadButtonCustomization) {
+        prepareSchemeSpecificJoystickKnobColorStorage(in: &layout)
+        if isDark {
+            layout.darkJoystickKnobColor = color.normalized
+        } else {
+            layout.lightJoystickKnobColor = color.normalized
+        }
+    }
+
+    private static func clearLayoutJoystickKnobColor(isDark: Bool, in layout: inout GamepadButtonCustomization) {
+        prepareSchemeSpecificJoystickKnobColorStorage(in: &layout)
+        if isDark {
+            layout.darkJoystickKnobColor = nil
+        } else {
+            layout.lightJoystickKnobColor = nil
+        }
+    }
+
+    private static func prepareSchemeSpecificJoystickKnobColorStorage(in layout: inout GamepadButtonCustomization) {
+        if let legacyColor = layout.joystickKnobColor?.normalized {
+            if layout.lightJoystickKnobColor == nil {
+                layout.lightJoystickKnobColor = legacyColor
+            }
+            if layout.darkJoystickKnobColor == nil {
+                layout.darkJoystickKnobColor = legacyColor
+            }
+        }
+        layout.joystickKnobColor = nil
     }
 
     private static func prepareSchemeSpecificFillStorage(in layout: inout GamepadButtonCustomization) {
@@ -2943,6 +3014,8 @@ struct PocketPadCLI {
             "--light-background-image", "--background-light-image", "--dark-background-image", "--background-dark-image",
             "--width", "--width-scale", "--device-width", "--height", "--height-scale", "--device-height", "--shape", "--fill", "--light-fill", "--fill-light",
             "--light-color", "--dark-fill", "--fill-dark", "--dark-color", "--opacity", "--light-opacity", "--dark-opacity",
+            "--thumb-fill", "--thumb-color", "--joystick-thumb-fill", "--joystick-knob-fill", "--light-thumb-fill", "--thumb-light", "--light-thumb-color",
+            "--dark-thumb-fill", "--thumb-dark", "--dark-thumb-color", "--thumb-opacity", "--light-thumb-opacity", "--dark-thumb-opacity",
             "--fill-gradient", "--gradient", "--gradient-type", "--gradient-angle", "--light-fill-gradient", "--dark-fill-gradient", "--gradient-light", "--gradient-dark",
             "--fill-tile", "--tile", "--tile-foreground", "--tile-background", "--tile-scale", "--tile-spacing-x", "--tile-spacing-y", "--light-fill-tile", "--dark-fill-tile", "--tile-light", "--tile-dark",
             "--fill-image", "--image", "--image-mode",
@@ -3100,10 +3173,11 @@ struct PocketPadCLI {
           pocketpad device set custom --size 844x390
           pocketpad element list
           pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#F59E0B' --dark-fill '#78350F'
-          pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
+          pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
           pocketpad element add trigger --target left --orientation horizontal --sensitivity 1.2
           pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
           pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
+          pocketpad element set "Right Stick" --thumb-fill '#22C55E'
           pocketpad element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
           pocketpad element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
           pocketpad element set jump --fill-image ./button-texture.png --image-mode fill

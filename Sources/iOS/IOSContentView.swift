@@ -1684,7 +1684,10 @@ private struct GamepadJoystick: View {
         let accentStyle = elementCustomization.accentStyle ?? customization.accentStyle
         let fillStyle = elementCustomization.buttonFillStyle(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
         let strokeColor = elementCustomization.buttonStroke(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
-        let foregroundColor = elementCustomization.buttonForeground(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
+        let isActive = !activeDirections.isEmpty
+        let foregroundColor = elementCustomization.buttonForeground(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
+        let knobFillColor = elementCustomization.joystickKnobFill(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
+        let knobStrokeColor = elementCustomization.joystickKnobStroke(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
         let knobOffset = CGSize(width: normalizedOffset.width * knobTravelRadius, height: normalizedOffset.height * knobTravelRadius)
 
         return ZStack {
@@ -1703,8 +1706,8 @@ private struct GamepadJoystick: View {
             directionLabels(foregroundColor: foregroundColor)
 
             Circle()
-                .fill(foregroundColor.opacity(colorScheme == .dark ? 0.30 : 0.18))
-                .overlay(Circle().stroke(foregroundColor.opacity(0.34), lineWidth: 1))
+                .fill(knobFillColor)
+                .overlay(Circle().stroke(knobStrokeColor, lineWidth: 1))
                 .frame(width: knobSide, height: knobSide)
                 .offset(knobOffset)
                 .animation(.interactiveSpring(response: 0.16, dampingFraction: 0.82), value: normalizedOffset)

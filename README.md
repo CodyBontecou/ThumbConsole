@@ -82,8 +82,9 @@ pocketpad binding set focus --sequence 'Control+B,H'
 pocketpad output mode keyboard   # or controller/custom per setup
 pocketpad customization set --appearance dark --device iphone-17-pro --background '#101014'
 pocketpad customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
-pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
+pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
 pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
+pocketpad element set "Right Stick" --thumb-fill '#22C55E'
 ```
 
 When PocketPad Mac is running, CLI profile/customization/binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone. Runtime commands are also available:
@@ -125,7 +126,7 @@ PocketPad uses its own versioned JSON envelope because there is no broadly adopt
 
 Each setup stores its own keypad-level preferences. Select a setup in the Keypad editor to show the right-side keypad inspector, where you can choose the device canvas, set custom device dimensions, change the iPhone background fill, and toggle System/Light/Dark view modes while editing. Use **Saved Mode** to choose whether that setup follows the device, always uses light mode, or always uses dark mode; per-button light and dark fills and keypad background fills are saved separately with the setup. The same settings are scriptable with `pocketpad customization set --appearance light|dark|system --device iphone-17-pro --background '#101014'`, `pocketpad customization set --background-gradient '#101014,#4338CA'`, and `pocketpad element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'`.
 
-Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder.
+Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder. Select a joystick and edit **Fill → Thumbstick** to recolor the moving thumb separately from the joystick base; the CLI equivalent is `pocketpad element set "Right Stick" --thumb-fill '#22C55E'` (or light/dark variants such as `--light-thumb-fill`).
 
 Layouts can also include a trackpad component via **Layout tools → Add Trackpad** or `pocketpad element add trackpad`. The trackpad sends relative cursor movement to the Mac, supports tap-to-click, two-finger right click, two-finger scroll, natural-scroll inversion, and per-component cursor/scroll sensitivity. Pointer events use the paired realtime channel and the macOS helper injects them with Accessibility-approved `CGEvent` mouse and scroll events.
 

@@ -121,6 +121,7 @@ Control fields:
 | `shape` | optional | `rounded_rectangle`, `rectangle`, `capsule`, `circle`, `ellipse`, `polygon`, `star`. |
 | `accentStyle` | optional | `monochrome`, `blue`, `green`, `purple`, `pink`, `amber`. |
 | `fill`, `fillHex`, `color`, `fillColor` | optional | Hex fill color like `#7C3AED`, or `fillColor` object. |
+| `thumbFill`, `thumbColor`, `knobColor`, `joystickThumbFill`, `joystickKnobFill`, `joystickKnobColor` | optional | Hex color for a joystick's moving thumb/knob. |
 | `cornerRadius` | optional | Rounded-rectangle corner radius. |
 | `shadowStrength` | optional | Shadow multiplier `0`–`2`. |
 | `isHidden` | optional | Hide this control. |
@@ -157,8 +158,8 @@ F1-F17, Home, End, Page Up, Page Down
   "source": "Agent-provided layout",
   "confidence": "medium",
   "controls": [
-    { "label": "Move", "key": "W", "button": "custom1", "kind": "joystick", "up": "up", "down": "down", "left": "left", "right": "right", "fill": "#111827", "centerX": 0.22, "centerY": 0.64, "widthScale": 1.35, "heightScale": 1.35 },
-    { "label": "Aim", "key": "I", "button": "custom2", "kind": "joystick", "up": "custom1", "down": "custom2", "left": "custom3", "right": "custom4", "fill": "#7C3AED", "centerX": 0.78, "centerY": 0.64, "widthScale": 1.35, "heightScale": 1.35 },
+    { "label": "Move", "key": "W", "button": "custom1", "kind": "joystick", "up": "up", "down": "down", "left": "left", "right": "right", "fill": "#111827", "thumbFill": "#F8FAFC", "centerX": 0.22, "centerY": 0.64, "widthScale": 1.35, "heightScale": 1.35 },
+    { "label": "Aim", "key": "I", "button": "custom2", "kind": "joystick", "up": "custom1", "down": "custom2", "left": "custom3", "right": "custom4", "fill": "#7C3AED", "thumbFill": "#FDE68A", "centerX": 0.78, "centerY": 0.64, "widthScale": 1.35, "heightScale": 1.35 },
     { "label": "Fire", "key": "Space", "button": "jump", "role": "primary", "fill": "#F59E0B", "shape": "circle" },
     { "label": "Pause", "key": "Escape", "button": "pause", "role": "system" }
   ]
@@ -239,9 +240,10 @@ Element-level controls:
 ```bash
 "$POCKETPAD_CLI" element list
 "$POCKETPAD_CLI" element add button --label Fire --maps-to custom1 --x 0.50 --y 0.80 --light-fill '#F59E0B' --dark-fill '#78350F'
-"$POCKETPAD_CLI" element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
+"$POCKETPAD_CLI" element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
 "$POCKETPAD_CLI" element add trackpad --label Trackpad --x 0.50 --y 0.58 --width 1.25 --sensitivity 1.2 --scroll-sensitivity 0.85 --tap-to-click true
 "$POCKETPAD_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
+"$POCKETPAD_CLI" element set "Right Stick" --thumb-fill '#22C55E'
 "$POCKETPAD_CLI" element set jump --lock
 "$POCKETPAD_CLI" element set pause --hide
 "$POCKETPAD_CLI" element reset jump
