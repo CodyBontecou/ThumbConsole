@@ -831,6 +831,7 @@ public enum GamepadButtonShapeStyle: String, Codable, CaseIterable, Identifiable
 public enum GamepadCustomControlKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case button
     case joystick
+    case trigger
     case trackpad
 
     public var id: String { rawValue }
@@ -839,6 +840,7 @@ public enum GamepadCustomControlKind: String, Codable, CaseIterable, Identifiabl
         switch self {
         case .button: "Button"
         case .joystick: "Joystick"
+        case .trigger: "Trigger"
         case .trackpad: "Trackpad"
         }
     }
@@ -1323,6 +1325,8 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
     public var layout: GamepadButtonCustomization
     public var controlKind: GamepadCustomControlKind
     public var joystickMapping: GamepadJoystickMapping?
+    public var joystickOutputSettings: GamepadJoystickOutputSettings?
+    public var triggerSettings: GamepadTriggerSettings?
     public var trackpadSettings: GamepadTrackpadSettings?
 
     public init(
@@ -1338,6 +1342,8 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         ),
         controlKind: GamepadCustomControlKind = .button,
         joystickMapping: GamepadJoystickMapping? = nil,
+        joystickOutputSettings: GamepadJoystickOutputSettings? = nil,
+        triggerSettings: GamepadTriggerSettings? = nil,
         trackpadSettings: GamepadTrackpadSettings? = nil
     ) {
         self.id = id
@@ -1346,6 +1352,8 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         self.layout = layout
         self.controlKind = controlKind
         self.joystickMapping = joystickMapping
+        self.joystickOutputSettings = joystickOutputSettings
+        self.triggerSettings = triggerSettings
         self.trackpadSettings = trackpadSettings
     }
 
@@ -1363,6 +1371,8 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         )
         controlKind = try container.decodeIfPresent(GamepadCustomControlKind.self, forKey: .controlKind) ?? .button
         joystickMapping = try container.decodeIfPresent(GamepadJoystickMapping.self, forKey: .joystickMapping)
+        joystickOutputSettings = try container.decodeIfPresent(GamepadJoystickOutputSettings.self, forKey: .joystickOutputSettings)
+        triggerSettings = try container.decodeIfPresent(GamepadTriggerSettings.self, forKey: .triggerSettings)
         trackpadSettings = try container.decodeIfPresent(GamepadTrackpadSettings.self, forKey: .trackpadSettings)
     }
 
@@ -1374,6 +1384,8 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         try container.encode(layout, forKey: .layout)
         try container.encode(controlKind, forKey: .controlKind)
         try container.encodeIfPresent(joystickMapping, forKey: .joystickMapping)
+        try container.encodeIfPresent(joystickOutputSettings?.normalized, forKey: .joystickOutputSettings)
+        try container.encodeIfPresent(triggerSettings?.normalized, forKey: .triggerSettings)
         try container.encodeIfPresent(trackpadSettings?.normalized, forKey: .trackpadSettings)
     }
 
@@ -1386,16 +1398,29 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         switch copy.controlKind {
         case .joystick:
             copy.joystickMapping = copy.joystickMapping ?? .movement
+            copy.joystickOutputSettings = (copy.joystickOutputSettings ?? .defaultValue).normalized
+            copy.triggerSettings = nil
             copy.trackpadSettings = nil
             copy.layout.shape = .circle
             if copy.label.isEmpty { copy.label = "Joystick" }
+        case .trigger:
+            copy.joystickMapping = nil
+            copy.joystickOutputSettings = nil
+            copy.triggerSettings = (copy.triggerSettings ?? .defaultValue).normalized
+            copy.trackpadSettings = nil
+            if copy.layout.shape == nil { copy.layout.shape = .capsule }
+            if copy.label.isEmpty { copy.label = copy.triggerSettings?.target.shortName ?? "Trigger" }
         case .trackpad:
             copy.joystickMapping = nil
+            copy.joystickOutputSettings = nil
+            copy.triggerSettings = nil
             copy.trackpadSettings = (copy.trackpadSettings ?? .defaultValue).normalized
             if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
             if copy.label.isEmpty { copy.label = "Trackpad" }
         case .button:
             copy.joystickMapping = nil
+            copy.joystickOutputSettings = nil
+            copy.triggerSettings = nil
             copy.trackpadSettings = nil
             if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
         }
@@ -1404,6 +1429,10 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
 
     var isJoystick: Bool {
         controlKind == .joystick
+    }
+
+    var isTrigger: Bool {
+        controlKind == .trigger
     }
 
     var isTrackpad: Bool {
@@ -1422,14 +1451,17 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         case layout
         case controlKind
         case joystickMapping
+        case joystickOutputSettings
+        case triggerSettings
         case trackpadSettings
     }
 }
 
 public struct GamepadCustomization: Codable, Equatable, Sendable {
     public static let maximumLabelLength = gamepadMaximumLabelLength
-    public static let maximumCustomButtons = 8
+    public static let maximumCustomButtons = 10
     public static let maximumJoysticks = 2
+    public static let maximumTriggers = 2
     public static let maximumTrackpads = 1
     public static let defaultValue = GamepadCustomization()
     public static var blankCanvas: GamepadCustomization {
@@ -1632,7 +1664,34 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
                     accentStyle: isPrimaryJoystick ? .blue : .purple
                 ),
                 controlKind: .joystick,
-                joystickMapping: isPrimaryJoystick ? .movement : .secondary
+                joystickMapping: isPrimaryJoystick ? .movement : .secondary,
+                joystickOutputSettings: isPrimaryJoystick ? .analogLeftStick : .analogRightStick
+            )
+        )
+    }
+
+    public mutating func addTrigger(id: UUID = UUID(), target: VirtualGamepadTrigger? = nil, mappedTo mappedButton: GameButton? = nil) {
+        let triggerCount = customButtons.filter { $0.normalized.isTrigger }.count
+        guard customButtons.count < Self.maximumCustomButtons,
+              triggerCount < Self.maximumTriggers
+        else { return }
+
+        let resolvedTarget = target ?? (triggerCount == 0 ? .left : .right)
+        customButtons.append(
+            GamepadCustomButton(
+                id: id,
+                mappedButton: mappedButton ?? firstAvailableCustomSlot() ?? .custom1,
+                label: resolvedTarget.shortName,
+                layout: GamepadButtonCustomization(
+                    centerX: resolvedTarget == .left ? 0.20 : 0.80,
+                    centerY: 0.14,
+                    widthScale: 1.08,
+                    heightScale: 0.42,
+                    shape: .capsule,
+                    accentStyle: .monochrome
+                ),
+                controlKind: .trigger,
+                triggerSettings: GamepadTriggerSettings(target: resolvedTarget, orientation: .horizontal)
             )
         )
     }
@@ -1705,6 +1764,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         var seenCustomButtonIDs = Set<UUID>()
         var normalizedCustomButtons: [GamepadCustomButton] = []
         var joystickCount = 0
+        var triggerCount = 0
         var trackpadCount = 0
         for customButton in customButtons {
             let normalizedCustomButton = customButton.normalized
@@ -1712,6 +1772,9 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             if normalizedCustomButton.isJoystick {
                 guard joystickCount < Self.maximumJoysticks else { continue }
                 joystickCount += 1
+            } else if normalizedCustomButton.isTrigger {
+                guard triggerCount < Self.maximumTriggers else { continue }
+                triggerCount += 1
             } else if normalizedCustomButton.isTrackpad {
                 guard trackpadCount < Self.maximumTrackpads else { continue }
                 trackpadCount += 1
@@ -1819,10 +1882,16 @@ struct GamepadResolvedControl: Identifiable, Equatable {
     let isLocationLocked: Bool
     let controlKind: GamepadCustomControlKind
     let joystickMapping: GamepadJoystickMapping?
+    let joystickOutputSettings: GamepadJoystickOutputSettings?
+    let triggerSettings: GamepadTriggerSettings?
     let trackpadSettings: GamepadTrackpadSettings?
 
     var isJoystick: Bool {
         controlKind == .joystick
+    }
+
+    var isTrigger: Bool {
+        controlKind == .trigger
     }
 
     var isTrackpad: Bool {
@@ -1856,6 +1925,8 @@ struct GamepadResolvedControl: Identifiable, Equatable {
             isLocationLocked: isLocationLocked,
             controlKind: controlKind,
             joystickMapping: joystickMapping,
+            joystickOutputSettings: joystickOutputSettings,
+            triggerSettings: triggerSettings,
             trackpadSettings: trackpadSettings
         )
     }
@@ -2079,6 +2150,8 @@ enum GamepadLayoutResolver {
                 isLocationLocked: buttonCustomization.isLocationLocked,
                 controlKind: .button,
                 joystickMapping: nil,
+                joystickOutputSettings: nil,
+                triggerSettings: nil,
                 trackpadSettings: nil
             )
         }
@@ -2092,6 +2165,8 @@ enum GamepadLayoutResolver {
             let baseControlSize: CGSize
             if normalizedButton.isJoystick {
                 baseControlSize = joystickBaseSize(controlScale: customization.controlScale, in: canvasSize)
+            } else if normalizedButton.isTrigger {
+                baseControlSize = triggerBaseSize(controlScale: customization.controlScale, in: canvasSize)
             } else if normalizedButton.isTrackpad {
                 baseControlSize = trackpadBaseSize(controlScale: customization.controlScale, in: canvasSize)
             } else {
@@ -2129,6 +2204,8 @@ enum GamepadLayoutResolver {
                 isLocationLocked: normalizedButton.layout.isLocationLocked,
                 controlKind: normalizedButton.controlKind,
                 joystickMapping: normalizedButton.isJoystick ? (normalizedButton.joystickMapping ?? .movement) : nil,
+                joystickOutputSettings: normalizedButton.isJoystick ? (normalizedButton.joystickOutputSettings ?? .defaultValue).normalized : nil,
+                triggerSettings: normalizedButton.isTrigger ? (normalizedButton.triggerSettings ?? .defaultValue).normalized : nil,
                 trackpadSettings: normalizedButton.isTrackpad ? (normalizedButton.trackpadSettings ?? .defaultValue).normalized : nil
             )
         }
@@ -2328,6 +2405,15 @@ enum GamepadLayoutResolver {
         let scale = controlScale.multiplier
         let side = min(128 * scale, max(82 * scale, shortestSide * (isLandscape ? 0.30 : 0.24) * scale))
         return CGSize(width: side, height: side)
+    }
+
+    private static func triggerBaseSize(controlScale: GamepadControlScale, in canvasSize: CGSize) -> CGSize {
+        let isLandscape = canvasSize.width >= canvasSize.height
+        let shortestSide = max(1, min(canvasSize.width, canvasSize.height))
+        let scale = controlScale.multiplier
+        let width = min(148 * scale, max(86 * scale, shortestSide * (isLandscape ? 0.30 : 0.24) * scale))
+        let height = min(58 * scale, max(34 * scale, shortestSide * (isLandscape ? 0.11 : 0.09) * scale))
+        return CGSize(width: width, height: height)
     }
 
     private static func trackpadBaseSize(controlScale: GamepadControlScale, in canvasSize: CGSize) -> CGSize {
@@ -2625,22 +2711,73 @@ extension GamepadAccentStyle {
     }
 }
 
+public enum GamepadProfileOutputMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case keyboard
+    case controller
+    case custom
+
+    public var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .keyboard: "Keyboard"
+        case .controller: "Controller"
+        case .custom: "Custom"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .keyboard:
+            "Send this keypad as Mac keyboard shortcuts. Virtual controller output stays off for this setup."
+        case .controller:
+            "Send this keypad as a virtual Xbox-style controller using PocketPad’s default controller map."
+        case .custom:
+            "Use per-button output bindings. This can mix keyboard shortcuts and virtual controller buttons."
+        }
+    }
+}
+
 public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
     public var customization: GamepadCustomization
+    public var outputMode: GamepadProfileOutputMode
     public var updatedAt: Int64
 
     public init(
         id: UUID = UUID(),
         name: String,
         customization: GamepadCustomization,
+        outputMode: GamepadProfileOutputMode = .keyboard,
         updatedAt: Int64 = Date.currentMilliseconds
     ) {
         self.id = id
         self.name = name
         self.customization = customization.normalized
+        self.outputMode = outputMode
         self.updatedAt = updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled"
+        customization = (try container.decodeIfPresent(GamepadCustomization.self, forKey: .customization) ?? .defaultValue).normalized
+        // Profiles saved before output modes had their Mac output bindings stored next
+        // to the profile, not inside it. Treat legacy profiles as custom so any
+        // existing mixed keyboard/controller bindings keep working after migration.
+        outputMode = try container.decodeIfPresent(GamepadProfileOutputMode.self, forKey: .outputMode) ?? .custom
+        updatedAt = try container.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? Date.currentMilliseconds
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(customization.normalized, forKey: .customization)
+        try container.encode(outputMode, forKey: .outputMode)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 
     public var normalized: GamepadConfigurationProfile {
@@ -2649,6 +2786,14 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         copy.name = trimmedName.isEmpty ? "Untitled" : trimmedName
         copy.customization = customization.normalized
         return copy
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case customization
+        case outputMode
+        case updatedAt
     }
 }
 
@@ -4109,6 +4254,7 @@ struct GamepadCustomizationEditor: View {
     private let onReset: (() -> Void)?
     private let onProfilesChanged: (([GamepadConfigurationProfile], UUID, UUID) -> Void)?
     private let defaultLabelProvider: ((GameButton) -> String?)?
+    private let profileOutputModeContent: (() -> AnyView)?
     private let selectedKeyBindingContent: ((GameButton) -> AnyView)?
     private let connectedDeviceInfo: ControllerClientDeviceInfo?
 
@@ -4161,6 +4307,7 @@ struct GamepadCustomizationEditor: View {
         onReset: (() -> Void)? = nil,
         onProfilesChanged: (([GamepadConfigurationProfile], UUID, UUID) -> Void)? = nil,
         defaultLabelProvider: ((GameButton) -> String?)? = nil,
+        profileOutputModeContent: (() -> AnyView)? = nil,
         selectedKeyBindingContent: ((GameButton) -> AnyView)? = nil,
         connectedDeviceInfo: ControllerClientDeviceInfo? = nil
     ) {
@@ -4186,6 +4333,7 @@ struct GamepadCustomizationEditor: View {
         self.onReset = onReset
         self.onProfilesChanged = onProfilesChanged
         self.defaultLabelProvider = defaultLabelProvider
+        self.profileOutputModeContent = profileOutputModeContent
         self.selectedKeyBindingContent = selectedKeyBindingContent
         self.connectedDeviceInfo = connectedDeviceInfo
         self._selectedControlID = State(initialValue: .builtin(.jump))
@@ -4572,7 +4720,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var emptyComponentsMessage: some View {
-        Text("No components yet. Draw a shape on the canvas, add a joystick or trackpad, or use Layout tools → Show Default Controls.")
+        Text("No components yet. Draw a shape on the canvas, add a joystick, trigger, or trackpad, or use Layout tools → Show Default Controls.")
             .geistTypography(.copy13)
             .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             .fixedSize(horizontal: false, vertical: true)
@@ -4937,6 +5085,10 @@ struct GamepadCustomizationEditor: View {
                     addJoystickControl()
                 }
                 .disabled(customization.customButtons.filter { $0.normalized.isJoystick }.count >= GamepadCustomization.maximumJoysticks || customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
+                Button("Add Trigger") {
+                    addTriggerControl()
+                }
+                .disabled(customization.customButtons.filter { $0.normalized.isTrigger }.count >= GamepadCustomization.maximumTriggers || customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
                 Button("Add Trackpad") {
                     addTrackpadControl()
                 }
@@ -5140,6 +5292,10 @@ struct GamepadCustomizationEditor: View {
     private var selectedElementInspector: some View {
         if selectedControlIsEditable {
             VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+                if let profileOutputModeContent {
+                    profileOutputModeContent()
+                    Divider()
+                }
                 selectedElementIdentitySection
                 Divider()
                 selectedElementColorSection
@@ -5188,6 +5344,10 @@ struct GamepadCustomizationEditor: View {
             }
 
             selectedSetupNameEditor
+
+            if let profileOutputModeContent {
+                profileOutputModeContent()
+            }
         }
     }
 
@@ -5373,7 +5533,7 @@ struct GamepadCustomizationEditor: View {
             Text(isBlankSetup ? "Blank setup" : "Component editing")
                 .geistTypography(.heading14)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-            Text(isBlankSetup ? "Draw a shape on the canvas, add a joystick or trackpad, or choose Layout tools → Show Default Controls to add keypad components." : "Select a component on the canvas or from the components list to edit its label, shortcut, fill, size, and shape.")
+            Text(isBlankSetup ? "Draw a shape on the canvas, add a joystick, trigger, or trackpad, or choose Layout tools → Show Default Controls to add keypad components." : "Select a component on the canvas or from the components list to edit its label, shortcut, fill, size, and shape.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
@@ -6462,8 +6622,13 @@ struct GamepadCustomizationEditor: View {
             let subtitle: String
             let systemImage: String
             if normalizedButton.isJoystick {
-                subtitle = "Joystick → 4 directions"
+                let analogTarget = (normalizedButton.joystickOutputSettings ?? .defaultValue).normalized.analogTarget
+                subtitle = analogTarget == .none ? "Joystick → 4 directions" : "Joystick → \(analogTarget.displayName)"
                 systemImage = "circle.grid.cross"
+            } else if normalizedButton.isTrigger {
+                let target = (normalizedButton.triggerSettings ?? .defaultValue).normalized.target
+                subtitle = "Trigger → \(target.displayName)"
+                systemImage = "slider.horizontal.3"
             } else if normalizedButton.isTrackpad {
                 subtitle = "Trackpad → cursor, click, scroll"
                 systemImage = "rectangle.and.hand.point.up.left"
@@ -6516,6 +6681,8 @@ struct GamepadCustomizationEditor: View {
     private func customButtonControls(id: UUID) -> some View {
         if customButton(id: id)?.normalized.isJoystick == true {
             joystickControls(id: id)
+        } else if customButton(id: id)?.normalized.isTrigger == true {
+            triggerControls(id: id)
         } else if customButton(id: id)?.normalized.isTrackpad == true {
             trackpadControls(id: id)
         } else {
@@ -6565,12 +6732,40 @@ struct GamepadCustomizationEditor: View {
                 }
             }
 
-            Text("Joysticks hold and release the mapped directional shortcut slots as your thumb crosses the dead zone, including diagonals.")
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                HStack(spacing: Geist.Spacing.s3) {
+                    Text("Analog")
+                        .geistTypography(.label13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    Spacer()
+                    GeistMenuPicker(title: "Analog stick", options: GamepadJoystickAnalogTarget.allCases, selection: joystickAnalogTargetBinding(id: id)) { target in
+                        target.displayName
+                    }
+                }
+                GeistCheckboxToggle(title: "Also send directional shortcut slots", isOn: joystickSendsDigitalDirectionsBinding(id: id))
+                valueSlider(
+                    title: "Dead zone",
+                    value: joystickDeadZoneBinding(id: id),
+                    range: 0...0.85,
+                    valueText: "\(Int((joystickOutputSettingsValue(id: id).deadZone * 100).rounded()))%"
+                )
+                valueSlider(
+                    title: "Sensitivity",
+                    value: joystickSensitivityBinding(id: id),
+                    range: 0.2...3.0,
+                    valueText: String(format: "%.1fx", Double(joystickOutputSettingsValue(id: id).sensitivity))
+                )
+                GeistCheckboxToggle(title: "Invert X", isOn: joystickInvertXBinding(id: id))
+                GeistCheckboxToggle(title: "Invert Y", isOn: joystickInvertYBinding(id: id))
+                GeistCheckboxToggle(title: "Snap to cardinal directions", isOn: joystickSnapToCardinalBinding(id: id))
+            }
+
+            Text("Joysticks can send real analog stick values, directional shortcut slots, or both. Neutral is sent automatically when your thumb lifts.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let selectedKeyBindingContent {
+            if joystickOutputSettingsValue(id: id).sendsDigitalDirections, let selectedKeyBindingContent {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
                     ForEach(GamepadJoystickDirection.allCases) { direction in
                         let button = joystickMappingValue(id: id)[direction]
@@ -6583,6 +6778,76 @@ struct GamepadCustomizationEditor: View {
                     }
                 }
             }
+        }
+    }
+
+    private func triggerControls(id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            TextField(triggerSettingsValue(id: id).target.shortName, text: customLabelBinding(id: id))
+                .geistInput(size: .small)
+
+            HStack(spacing: Geist.Spacing.s3) {
+                Text("Trigger")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                Spacer()
+                GeistMenuPicker(title: "Trigger target", options: VirtualGamepadTrigger.allCases, selection: triggerTargetBinding(id: id)) { target in
+                    target.displayName
+                }
+            }
+
+            HStack(spacing: Geist.Spacing.s3) {
+                Text("Orientation")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                Spacer()
+                GeistMenuPicker(title: "Trigger orientation", options: GamepadTriggerOrientation.allCases, selection: triggerOrientationBinding(id: id)) { orientation in
+                    orientation.displayName
+                }
+            }
+
+            valueSlider(
+                title: "Dead zone",
+                value: triggerDeadZoneBinding(id: id),
+                range: 0...0.85,
+                valueText: "\(Int((triggerSettingsValue(id: id).deadZone * 100).rounded()))%"
+            )
+
+            valueSlider(
+                title: "Sensitivity",
+                value: triggerSensitivityBinding(id: id),
+                range: 0.2...3.0,
+                valueText: String(format: "%.1fx", Double(triggerSettingsValue(id: id).sensitivity))
+            )
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                GeistCheckboxToggle(title: "Also send a digital shortcut", isOn: triggerSendsDigitalBinding(id: id))
+                if triggerSettingsValue(id: id).sendsDigitalButton {
+                    HStack(spacing: Geist.Spacing.s3) {
+                        Text("Digital sends")
+                            .geistTypography(.label13)
+                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        Spacer()
+                        GeistMenuPicker(title: "Digital trigger sends", options: GameButton.allCases, selection: customMappedButtonBinding(id: id)) { button in
+                            button.displayName
+                        }
+                    }
+                    valueSlider(
+                        title: "Threshold",
+                        value: triggerDigitalThresholdBinding(id: id),
+                        range: 0.01...1.0,
+                        valueText: "\(Int((triggerSettingsValue(id: id).digitalThreshold * 100).rounded()))%"
+                    )
+                    if let selectedKeyBindingContent {
+                        selectedKeyBindingContent(customButton(id: id)?.mappedButton ?? .custom1)
+                    }
+                }
+            }
+
+            Text("Triggers send real analog LT/RT values to the Mac virtual controller. Optional digital output fires when the value crosses the threshold.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -6782,12 +7047,14 @@ struct GamepadCustomizationEditor: View {
 
     private func customControlKindLabel(for customButton: GamepadCustomButton) -> String {
         if customButton.isJoystick { return "Joystick" }
+        if customButton.isTrigger { return "Trigger" }
         if customButton.isTrackpad { return "Trackpad" }
         return "Shape"
     }
 
     private func customButtonFallbackLabel(for customButton: GamepadCustomButton) -> String {
         if customButton.isJoystick { return "Joystick" }
+        if customButton.isTrigger { return (customButton.triggerSettings ?? .defaultValue).normalized.target.shortName }
         if customButton.isTrackpad { return "Trackpad" }
         return visualLabel(for: customButton.mappedButton)
     }
@@ -6802,7 +7069,7 @@ struct GamepadCustomizationEditor: View {
             return button
         case .custom(let id):
             let customButton = customButton(id: id)?.normalized
-            return customButton?.isJoystick == true || customButton?.isTrackpad == true ? nil : customButton?.mappedButton
+            return customButton?.isJoystick == true || customButton?.isTrigger == true || customButton?.isTrackpad == true ? nil : customButton?.mappedButton
         }
     }
 
@@ -6921,6 +7188,147 @@ struct GamepadCustomizationEditor: View {
 
     private func joystickMappingValue(id: UUID) -> GamepadJoystickMapping {
         customButton(id: id)?.normalized.joystickMapping ?? .movement
+    }
+
+    private func joystickOutputSettingsValue(id: UUID) -> GamepadJoystickOutputSettings {
+        (customButton(id: id)?.normalized.joystickOutputSettings ?? .defaultValue).normalized
+    }
+
+    private func updateJoystickOutputSettings(id: UUID, mutate: (inout GamepadJoystickOutputSettings) -> Void) {
+        updateCustomButton(id: id) { customButton in
+            var settings = (customButton.joystickOutputSettings ?? .defaultValue).normalized
+            mutate(&settings)
+            customButton.joystickOutputSettings = settings.normalized
+        }
+    }
+
+    private func joystickAnalogTargetBinding(id: UUID) -> Binding<GamepadJoystickAnalogTarget> {
+        Binding(
+            get: { joystickOutputSettingsValue(id: id).analogTarget },
+            set: { value in
+                updateJoystickOutputSettings(id: id) { $0.analogTarget = value }
+            }
+        )
+    }
+
+    private func joystickSendsDigitalDirectionsBinding(id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { joystickOutputSettingsValue(id: id).sendsDigitalDirections },
+            set: { value in
+                updateJoystickOutputSettings(id: id) { $0.sendsDigitalDirections = value }
+            }
+        )
+    }
+
+    private func joystickDeadZoneBinding(id: UUID) -> Binding<Double> {
+        Binding(
+            get: { Double(joystickOutputSettingsValue(id: id).deadZone) },
+            set: { value in
+                updateJoystickOutputSettings(id: id) { $0.deadZone = CGFloat(value) }
+            }
+        )
+    }
+
+    private func joystickSensitivityBinding(id: UUID) -> Binding<Double> {
+        Binding(
+            get: { Double(joystickOutputSettingsValue(id: id).sensitivity) },
+            set: { value in
+                updateJoystickOutputSettings(id: id) { $0.sensitivity = CGFloat(value) }
+            }
+        )
+    }
+
+    private func joystickInvertXBinding(id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { joystickOutputSettingsValue(id: id).invertX },
+            set: { value in
+                updateJoystickOutputSettings(id: id) { $0.invertX = value }
+            }
+        )
+    }
+
+    private func joystickInvertYBinding(id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { joystickOutputSettingsValue(id: id).invertY },
+            set: { value in
+                updateJoystickOutputSettings(id: id) { $0.invertY = value }
+            }
+        )
+    }
+
+    private func joystickSnapToCardinalBinding(id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { joystickOutputSettingsValue(id: id).snapToCardinal },
+            set: { value in
+                updateJoystickOutputSettings(id: id) { $0.snapToCardinal = value }
+            }
+        )
+    }
+
+    private func triggerSettingsValue(id: UUID) -> GamepadTriggerSettings {
+        (customButton(id: id)?.normalized.triggerSettings ?? .defaultValue).normalized
+    }
+
+    private func updateTriggerSettings(id: UUID, mutate: (inout GamepadTriggerSettings) -> Void) {
+        updateCustomButton(id: id) { customButton in
+            var settings = (customButton.triggerSettings ?? .defaultValue).normalized
+            mutate(&settings)
+            customButton.triggerSettings = settings.normalized
+        }
+    }
+
+    private func triggerTargetBinding(id: UUID) -> Binding<VirtualGamepadTrigger> {
+        Binding(
+            get: { triggerSettingsValue(id: id).target },
+            set: { value in
+                updateTriggerSettings(id: id) { $0.target = value }
+            }
+        )
+    }
+
+    private func triggerOrientationBinding(id: UUID) -> Binding<GamepadTriggerOrientation> {
+        Binding(
+            get: { triggerSettingsValue(id: id).orientation },
+            set: { value in
+                updateTriggerSettings(id: id) { $0.orientation = value }
+            }
+        )
+    }
+
+    private func triggerDeadZoneBinding(id: UUID) -> Binding<Double> {
+        Binding(
+            get: { Double(triggerSettingsValue(id: id).deadZone) },
+            set: { value in
+                updateTriggerSettings(id: id) { $0.deadZone = CGFloat(value) }
+            }
+        )
+    }
+
+    private func triggerSensitivityBinding(id: UUID) -> Binding<Double> {
+        Binding(
+            get: { Double(triggerSettingsValue(id: id).sensitivity) },
+            set: { value in
+                updateTriggerSettings(id: id) { $0.sensitivity = CGFloat(value) }
+            }
+        )
+    }
+
+    private func triggerSendsDigitalBinding(id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { triggerSettingsValue(id: id).sendsDigitalButton },
+            set: { value in
+                updateTriggerSettings(id: id) { $0.sendsDigitalButton = value }
+            }
+        )
+    }
+
+    private func triggerDigitalThresholdBinding(id: UUID) -> Binding<Double> {
+        Binding(
+            get: { Double(triggerSettingsValue(id: id).digitalThreshold) },
+            set: { value in
+                updateTriggerSettings(id: id) { $0.digitalThreshold = CGFloat(value) }
+            }
+        )
     }
 
     private func trackpadSettingsValue(id: UUID) -> GamepadTrackpadSettings {
@@ -8096,6 +8504,22 @@ struct GamepadCustomizationEditor: View {
                         shape: .circle
                     )
                     $0.joystickMapping = $0.joystickMapping ?? .movement
+                    $0.joystickOutputSettings = $0.joystickOutputSettings ?? .defaultValue
+                    $0.triggerSettings = nil
+                    $0.trackpadSettings = nil
+                case .trigger:
+                    let target = ($0.triggerSettings ?? .defaultValue).normalized.target
+                    $0.label = target.shortName
+                    $0.layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.14,
+                        widthScale: 1.08,
+                        heightScale: 0.42,
+                        shape: .capsule
+                    )
+                    $0.joystickMapping = nil
+                    $0.joystickOutputSettings = nil
+                    $0.triggerSettings = GamepadTriggerSettings(target: target, orientation: .horizontal)
                     $0.trackpadSettings = nil
                 case .trackpad:
                     $0.label = "Trackpad"
@@ -8108,6 +8532,8 @@ struct GamepadCustomizationEditor: View {
                         cornerRadius: 18
                     )
                     $0.joystickMapping = nil
+                    $0.joystickOutputSettings = nil
+                    $0.triggerSettings = nil
                     $0.trackpadSettings = .defaultValue
                 case .button:
                     $0.label = "Shape"
@@ -8119,6 +8545,8 @@ struct GamepadCustomizationEditor: View {
                         shape: .roundedRectangle
                     )
                     $0.joystickMapping = nil
+                    $0.joystickOutputSettings = nil
+                    $0.triggerSettings = nil
                     $0.trackpadSettings = nil
                 }
             }
@@ -8265,6 +8693,14 @@ struct GamepadCustomizationEditor: View {
         next.addJoystick(id: id)
         placeCustomControl(id: id, in: &next)
         applyCustomization(next, selecting: .custom(id), undoActionName: "Add Joystick")
+    }
+
+    private func addTriggerControl() {
+        let id = UUID()
+        var next = customization
+        next.addTrigger(id: id)
+        placeCustomControl(id: id, in: &next)
+        applyCustomization(next, selecting: .custom(id), undoActionName: "Add Trigger")
     }
 
     private func addTrackpadControl() {

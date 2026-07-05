@@ -34,6 +34,7 @@ targets:
     sources:
       - path: Sources/Shared
       - path: Sources/Mac/KeyMap.swift
+      - path: Sources/Mac/MacControlOutputBinding.swift
       - path: Sources/CLI
     settings:
       base:

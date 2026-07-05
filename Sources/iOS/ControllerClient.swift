@@ -202,6 +202,10 @@ final class ControllerClient: ObservableObject {
     private var lastSentEventUpdateTask: Task<Void, Never>?
     private var pendingLastSentEvent = "None"
     private var activeInputState = ControllerActiveInputState()
+    private var activeStickValues: [VirtualGamepadStick: CGVector] = [:]
+    private var activeTriggerValues: [VirtualGamepadTrigger: Double] = [:]
+    private var lastAnalogSendUptimeByKey: [String: UInt64] = [:]
+    private var analogSequenceNumber: UInt64 = 0
     private let binaryMessageContext = NWConnection.ContentContext(
         identifier: "PocketPadMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
@@ -210,6 +214,7 @@ final class ControllerClient: ObservableObject {
     private let decoder = JSONDecoder()
     private static let liveInputStatusUpdatesEnabled = false
     private static let defaultPort: UInt16 = 8765
+    private static let analogSendIntervalNanoseconds: UInt64 = 16_000_000
     private static let trustedMacCredentialDefaultsKey = "PocketPad.iOS.trustedMacCredential.v1"
     private static let hasSavedKeypadSnapshotDefaultsKey = "PocketPad.iOS.hasSavedKeypadSnapshot.v1"
 
@@ -382,6 +387,9 @@ final class ControllerClient: ObservableObject {
             releaseAll()
         }
         activeInputState.removeAll()
+        activeStickValues.removeAll()
+        activeTriggerValues.removeAll()
+        lastAnalogSendUptimeByKey.removeAll()
         inputTransport.disconnect()
         heartbeatTask?.cancel()
         heartbeatTask = nil
@@ -415,6 +423,54 @@ final class ControllerClient: ObservableObject {
         if Self.liveInputStatusUpdatesEnabled {
             updateLastSentEvent("\(button.rawValue) \(state.rawValue)")
         }
+    }
+
+    func setGamepadStick(_ stick: VirtualGamepadStick, x: Double, y: Double, isFinal: Bool = false) {
+        guard isConnected else { return }
+        let clampedX = Self.clamp(x, lower: -1, upper: 1)
+        let clampedY = Self.clamp(y, lower: -1, upper: 1)
+        let vector = CGVector(dx: clampedX, dy: clampedY)
+        let isNeutral = abs(clampedX) < 0.001 && abs(clampedY) < 0.001
+        if isNeutral {
+            activeStickValues[stick] = nil
+        } else {
+            activeStickValues[stick] = vector
+        }
+        guard shouldSendAnalog(key: "stick.\(stick.rawValue)", isFinal: isFinal || isNeutral) else { return }
+        send(
+            .init(
+                type: .gamepadAnalog,
+                timestamp: Date.currentMilliseconds,
+                analogStick: stick,
+                analogX: clampedX,
+                analogY: clampedY,
+                analogSequence: nextAnalogSequenceNumber()
+            ),
+            prefersRealtimeDatagram: true,
+            mirrorsReliably: isFinal || isNeutral
+        )
+    }
+
+    func setGamepadTrigger(_ trigger: VirtualGamepadTrigger, value: Double, isFinal: Bool = false) {
+        guard isConnected else { return }
+        let clampedValue = Self.clamp(value, lower: 0, upper: 1)
+        if clampedValue < 0.001 {
+            activeTriggerValues[trigger] = nil
+        } else {
+            activeTriggerValues[trigger] = clampedValue
+        }
+        guard shouldSendAnalog(key: "trigger.\(trigger.rawValue)", isFinal: isFinal || clampedValue < 0.001) else { return }
+        send(
+            .init(
+                type: .gamepadAnalog,
+                timestamp: Date.currentMilliseconds,
+                analogTrigger: trigger,
+                analogValue: clampedValue,
+                analogSequence: nextAnalogSequenceNumber()
+            ),
+            prefersRealtimeDatagram: true,
+            mirrorsReliably: isFinal || clampedValue < 0.001
+        )
     }
 
     func sendPointerMove(deltaX: Double, deltaY: Double) {
@@ -463,6 +519,9 @@ final class ControllerClient: ObservableObject {
 
     func releaseAll() {
         activeInputState.removeAll()
+        activeStickValues.removeAll()
+        activeTriggerValues.removeAll()
+        lastAnalogSendUptimeByKey.removeAll()
         guard connection != nil else { return }
         send(.init(type: .releaseAll, timestamp: 0), prefersRealtimeDatagram: true)
         updateLastSentEvent("release_all", immediately: true)
@@ -603,6 +662,9 @@ final class ControllerClient: ObservableObject {
             guard connection === stateConnection else { return }
             inputTransport.disconnect()
             activeInputState.removeAll()
+            activeStickValues.removeAll()
+            activeTriggerValues.removeAll()
+            lastAnalogSendUptimeByKey.removeAll()
             heartbeatTask?.cancel()
             heartbeatTask = nil
             stopRealtimeDatagram()
@@ -648,14 +710,72 @@ final class ControllerClient: ObservableObject {
         resendActiveInputs()
     }
 
+    private func shouldSendAnalog(key: String, isFinal: Bool) -> Bool {
+        if isFinal {
+            lastAnalogSendUptimeByKey[key] = DispatchTime.now().uptimeNanoseconds
+            return true
+        }
+
+        let now = DispatchTime.now().uptimeNanoseconds
+        let last = lastAnalogSendUptimeByKey[key] ?? 0
+        guard now - last >= Self.analogSendIntervalNanoseconds else { return false }
+        lastAnalogSendUptimeByKey[key] = now
+        return true
+    }
+
+    private func nextAnalogSequenceNumber() -> UInt64 {
+        if analogSequenceNumber >= ControllerWireCodec.maximumButtonSequenceNumber {
+            analogSequenceNumber = 1
+        } else {
+            analogSequenceNumber += 1
+        }
+        return analogSequenceNumber
+    }
+
+    private static func clamp(_ value: Double, lower: Double, upper: Double) -> Double {
+        guard value.isFinite else { return lower }
+        return min(max(value, lower), upper)
+    }
+
     private func resendActiveInputs() {
-        guard isConnected, !activeInputState.isEmpty else { return }
+        guard isConnected,
+              !activeInputState.isEmpty || !activeStickValues.isEmpty || !activeTriggerValues.isEmpty
+        else { return }
 
         for activePress in activeInputState.activePresses {
             _ = inputTransport.sendButton(
                 activePress.button,
                 state: .down,
                 pressIdentifier: activePress.pressIdentifier
+            )
+        }
+
+        for (stick, vector) in activeStickValues {
+            send(
+                .init(
+                    type: .gamepadAnalog,
+                    timestamp: Date.currentMilliseconds,
+                    analogStick: stick,
+                    analogX: Double(vector.dx),
+                    analogY: Double(vector.dy),
+                    analogSequence: nextAnalogSequenceNumber()
+                ),
+                prefersRealtimeDatagram: true,
+                mirrorsReliably: false
+            )
+        }
+
+        for (trigger, value) in activeTriggerValues {
+            send(
+                .init(
+                    type: .gamepadAnalog,
+                    timestamp: Date.currentMilliseconds,
+                    analogTrigger: trigger,
+                    analogValue: value,
+                    analogSequence: nextAnalogSequenceNumber()
+                ),
+                prefersRealtimeDatagram: true,
+                mirrorsReliably: false
             )
         }
     }
@@ -945,6 +1065,9 @@ final class ControllerClient: ObservableObject {
         guard connection === failedConnection else { return }
         inputTransport.disconnect()
         activeInputState.removeAll()
+        activeStickValues.removeAll()
+        activeTriggerValues.removeAll()
+        lastAnalogSendUptimeByKey.removeAll()
         lastError = error.localizedDescription
         heartbeatTask?.cancel()
         heartbeatTask = nil

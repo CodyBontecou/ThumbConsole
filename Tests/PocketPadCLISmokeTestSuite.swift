@@ -31,6 +31,21 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(decoded.defaultProfileID, profile.id)
     }
 
+    func testKeypadProfileOutputModeDefaultsToKeyboardAndPreservesLegacyBindings() throws {
+        let newProfile = GamepadConfigurationProfile(name: "Keyboard Setup", customization: .defaultValue)
+        XCTAssertEqual(newProfile.outputMode, .keyboard)
+
+        let legacyJSON = """
+        {
+          "id": "00000000-0000-0000-0000-00000000ABCD",
+          "name": "Legacy Mixed Setup",
+          "customization": {}
+        }
+        """
+        let legacyProfile = try JSONDecoder().decode(GamepadConfigurationProfile.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(legacyProfile.outputMode, .custom)
+    }
+
     func testKeypadConfigurationExportFilenameSanitizesProfileNames() {
         XCTAssertEqual(
             PocketPadKeypadConfigurationExport.suggestedFilename(activeProfileName: "My Arcade / Setup"),
@@ -115,6 +130,46 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertTrue(controls.contains { $0.id == .custom(id) && $0.isTrackpad })
     }
 
+    func testAgentTrackpadSensitivitySpecGeneratesCustomTrackpad() throws {
+        let json = """
+        {
+          "gameName": "Trackpad Sensitivity Test",
+          "controls": [
+            {
+              "label": "Aim Pad",
+              "key": "Space",
+              "kind": "trackpad",
+              "sensitivity": 2.5,
+              "scrollSensitivity": 1.75,
+              "tapToClick": false,
+              "twoFingerScroll": true,
+              "naturalScroll": false
+            }
+          ]
+        }
+        """
+
+        let spec = try JSONDecoder().decode(AgentKeypadSpec.self, from: Data(json.utf8))
+        let generated = GameKeypadGenerator.generate(from: spec)
+        guard let trackpad = generated.profile.customization.customButtons.first?.normalized else {
+            XCTFail("generated profile should include a custom trackpad")
+            return
+        }
+
+        XCTAssertTrue(trackpad.isTrackpad)
+        XCTAssertEqual(trackpad.label, "Aim Pad")
+        XCTAssertEqual(trackpad.layout.centerX, Optional(CGFloat(0.50)))
+        XCTAssertEqual(trackpad.layout.centerY, Optional(CGFloat(0.58)))
+        XCTAssertEqual(trackpad.layout.widthScale, CGFloat(1.25))
+        XCTAssertEqual(trackpad.layout.cornerRadius, Optional(CGFloat(18)))
+        XCTAssertEqual(trackpad.trackpadSettings?.sensitivity, CGFloat(2.5))
+        XCTAssertEqual(trackpad.trackpadSettings?.scrollSensitivity, CGFloat(1.75))
+        XCTAssertEqual(trackpad.trackpadSettings?.tapToClick, false)
+        XCTAssertEqual(trackpad.trackpadSettings?.twoFingerScroll, true)
+        XCTAssertEqual(trackpad.trackpadSettings?.naturalScrolling, false)
+        XCTAssertEqual(generated.keyBindings[trackpad.mappedButton]?.key, "Space")
+    }
+
     func testPointerMessageRoundTripsThroughJSONCodec() throws {
         let message = ControllerMessage(
             type: .pointer,
@@ -134,6 +189,25 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(decoded.state, .down)
         XCTAssertEqual(decoded.deltaX, 1.5)
         XCTAssertEqual(decoded.deltaY, -2.25)
+    }
+
+    func testAnalogGamepadMessageRoundTripsThroughJSONCodec() throws {
+        let message = ControllerMessage(
+            type: .gamepadAnalog,
+            timestamp: 456,
+            analogStick: .left,
+            analogX: -0.35,
+            analogY: 0.75,
+            analogSequence: 42
+        )
+        let data = try ControllerWireCodec.encode(message, using: JSONEncoder())
+        XCTAssertNotEqual(data.count, 14)
+        let decoded = try ControllerWireCodec.decode(data, using: JSONDecoder())
+        XCTAssertEqual(decoded.type, .gamepadAnalog)
+        XCTAssertEqual(decoded.analogStick, .left)
+        XCTAssertEqual(decoded.analogX, -0.35)
+        XCTAssertEqual(decoded.analogY, 0.75)
+        XCTAssertEqual(decoded.analogSequence, 42)
     }
 
     func testBackgroundFillStyleRoundTripsAndSupportsSchemeOverrides() throws {

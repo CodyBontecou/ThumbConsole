@@ -22,6 +22,7 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var recoveredButtonEdges = 0
     @Published private(set) var accessibilityTrusted = false
     @Published private(set) var keyBindings: [GameButton: MacKeyBinding]
+    @Published private(set) var outputBindings: [GameButton: MacControlOutputBinding]
     @Published private(set) var gamepadCustomization: GamepadCustomization
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
     @Published private(set) var activeGamepadProfileID: UUID
@@ -40,12 +41,15 @@ final class MacControllerServer: ObservableObject {
     private let encoder = JSONEncoder()
     private let injector = KeyboardInjector()
     private let pointerInjector = PointerInjector()
+    private let virtualGamepadInjector = VirtualGamepadInjector()
     private let debugLogURL = URL(fileURLWithPath: "/tmp/pocketpad-mac-events.log")
     private let logQueue = DispatchQueue(label: "PocketPad.DebugLog", qos: .utility)
     private static let preferredPort: UInt16 = 8765
     private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
     private static let legacyKeyBindingsDefaultsKey = "PocketPadMac.keyBindings.v1"
     private static let profileKeyBindingsDefaultsKey = "PocketPadMac.profileKeyBindings.v1"
+    private static let outputBindingsDefaultsKey = "PocketPadMac.outputBindings.v1"
+    private static let profileOutputBindingsDefaultsKey = "PocketPadMac.profileOutputBindings.v1"
     private static let serverIdentityDefaultsKey = "PocketPadMac.serverIdentity.v1"
     private static let trustedClientsDefaultsKey = "PocketPadMac.trustedClients.v1"
     private static let bonjourServiceType = "_pocketpad._tcp."
@@ -54,6 +58,8 @@ final class MacControllerServer: ObservableObject {
     private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
     private static let notificationKeyBindingsDataKey = "keyBindingsData"
     private static let notificationProfileKeyBindingsDataKey = "profileKeyBindingsData"
+    private static let notificationOutputBindingsDataKey = "outputBindingsData"
+    private static let notificationProfileOutputBindingsDataKey = "profileOutputBindingsData"
     private static let inputEventLoggingEnabled = false
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
@@ -82,11 +88,14 @@ final class MacControllerServer: ObservableObject {
     private var heartbeatTimedOut = false
     private var inputPressedButtons: Set<GameButton> = []
     private var profileKeyBindings: [UUID: [GameButton: MacKeyBinding]] = [:]
+    private var profileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]] = [:]
     private var realtimeKeyBindings: [GameButton: MacKeyBinding]
+    private var realtimeOutputBindings: [GameButton: MacControlOutputBinding]
     private var realtimeGamepadCustomization: GamepadCustomization
     private var realtimeGamepadProfiles: [GamepadConfigurationProfile]
     private var realtimeActiveGamepadProfileID: UUID
     private var realtimeDefaultGamepadProfileID: UUID
+    private var realtimeOutputMode: GamepadProfileOutputMode
     private var pendingLastReceivedEvent: String?
     private var pendingPressedButtons: Set<GameButton>?
     private var controllerDebugUpdateTask: Task<Void, Never>?
@@ -94,7 +103,10 @@ final class MacControllerServer: ObservableObject {
     private var lastClientActivityPublishUptime: UInt64 = 0
     private var lastAccessibilityRefresh = Date.distantPast
     private var activeBindings: [GameButton: MacKeyBinding] = [:]
+    private var activeOutputBindings: [GameButton: MacControlOutputBinding] = [:]
     private var heldBindingCounts: [MacKeyBinding: Int] = [:]
+    private var heldGamepadButtonCounts: [VirtualGamepadButton: Int] = [:]
+    private var lastAnalogSequenceNumberByKey: [String: UInt64] = [:]
     private var activePointerButtons: Set<ControllerPointerButton> = []
     private var recentPointerButtonEvents: [PointerButtonEventFingerprint: UInt64] = [:]
     private static let pointerButtonDuplicateWindowNanoseconds: UInt64 = 2_000_000_000
@@ -146,6 +158,7 @@ final class MacControllerServer: ObservableObject {
 
         let loadedKeyBindings = Self.loadKeyBindings()
         var loadedProfileKeyBindings = Self.loadProfileKeyBindings()
+        var loadedProfileOutputBindings = Self.loadProfileOutputBindings(fallbackProfileKeyBindings: loadedProfileKeyBindings)
         let savedGamepadCustomization = GamepadCustomizationPersistence.load()
         let loadedProfileState = GamepadConfigurationProfilePersistence.load(activeCustomization: savedGamepadCustomization)
         let startupProfile = loadedProfileState.defaultProfile ?? loadedProfileState.activeProfile ?? loadedProfileState.profiles[0]
@@ -158,18 +171,36 @@ final class MacControllerServer: ObservableObject {
             in: loadedProfileKeyBindings,
             fallback: loadedKeyBindings
         )
+        if loadedProfileOutputBindings[startupProfile.id] == nil {
+            loadedProfileOutputBindings[startupProfile.id] = Self.outputBindings(from: startupKeyBindings)
+        }
+        let storedStartupOutputBindings = Self.resolvedOutputBindings(
+            for: startupProfile.id,
+            in: loadedProfileOutputBindings,
+            fallback: Self.outputBindings(from: startupKeyBindings)
+        )
+        let startupOutputBindings = Self.effectiveOutputBindings(
+            for: startupProfile.outputMode,
+            keyBindings: startupKeyBindings,
+            customOutputBindings: storedStartupOutputBindings
+        )
+        loadedProfileOutputBindings[startupProfile.id] = startupOutputBindings
 
         keyBindings = startupKeyBindings
+        outputBindings = startupOutputBindings
         realtimeKeyBindings = startupKeyBindings
+        realtimeOutputBindings = startupOutputBindings
         gamepadCustomization = startupGamepadCustomization
         gamepadProfiles = loadedProfileState.profiles
         activeGamepadProfileID = startupProfile.id
         defaultGamepadProfileID = loadedProfileState.defaultProfileID
         profileKeyBindings = loadedProfileKeyBindings
+        profileOutputBindings = loadedProfileOutputBindings
         realtimeGamepadCustomization = startupGamepadCustomization
         realtimeGamepadProfiles = loadedProfileState.profiles
         realtimeActiveGamepadProfileID = startupProfile.id
         realtimeDefaultGamepadProfileID = loadedProfileState.defaultProfileID
+        realtimeOutputMode = startupProfile.outputMode
         GamepadCustomizationPersistence.save(startupGamepadCustomization)
         GamepadConfigurationProfilePersistence.save(
             loadedProfileState.profiles,
@@ -178,6 +209,8 @@ final class MacControllerServer: ObservableObject {
         )
         saveKeyBindings()
         saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
         networkQueue.setSpecific(key: networkQueueKey, value: true)
         refreshAccessibilityStatus()
         localURLs = Self.localIPv4Addresses().map { "ws://\($0):\(port)" }
@@ -198,6 +231,7 @@ final class MacControllerServer: ObservableObject {
                 self.reloadProfilesFromDefaults(source: "cli")
             }
         }
+        refreshVirtualGamepadMaterialization(reason: "startup", publish: false)
         publishRuntimeStatus()
     }
 
@@ -275,6 +309,7 @@ final class MacControllerServer: ObservableObject {
                 logDebug("server starting port=auto")
             }
             startHeartbeatTimer()
+            refreshVirtualGamepadMaterialization(reason: "server_start", publish: false)
             publishRuntimeStatus()
         } catch {
             guard fallbackIfBusy, isPreferredPortUnavailable(error) else {
@@ -424,31 +459,58 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
+    var activeGamepadOutputMode: GamepadProfileOutputMode {
+        gamepadProfiles.first { $0.id == activeGamepadProfileID }?.outputMode ?? .keyboard
+    }
+
     func keyLabel(for button: GameButton) -> String {
         guard let binding = keyBindings[button] else { return "Unmapped" }
         return binding.displayName
     }
 
+    func outputLabel(for button: GameButton) -> String {
+        outputBindings[button]?.displayName ?? keyLabel(for: button)
+    }
+
+    func gamepadButtonBinding(for button: GameButton) -> VirtualGamepadButton? {
+        outputBindings[button]?.gamepadButtons.sortedForDisplay.first
+    }
+
     func recordedShortcutLabel(for button: GameButton) -> String? {
-        keyBindings[button]?.displayName
+        outputBindings[button]?.displayName ?? keyBindings[button]?.displayName
     }
 
     func isDefaultBinding(for button: GameButton) -> Bool {
         keyBindings[button] == DefaultKeypadKeyMap.defaultBinding(for: button)
+            && outputBindings[button] == DefaultMacControlOutputMap.defaultBinding(for: button)
     }
 
     func setKeyBinding(_ binding: MacKeyBinding, for button: GameButton) {
         keyBindings[button] = binding
+        let mode = activeGamepadOutputMode
+        if mode != .controller {
+            var outputBinding = outputBindings[button] ?? MacControlOutputBinding()
+            outputBinding.keyboard = binding
+            outputBindings[button] = outputBinding
+        }
+        if mode == .keyboard {
+            outputBindings = Self.outputBindings(from: keyBindings)
+        }
         profileKeyBindings[activeGamepadProfileID] = keyBindings
+        profileOutputBindings[activeGamepadProfileID] = outputBindings
+        let realtimeOutputs = outputBindings
         syncOnNetworkQueue {
             releaseIfPressedOnNetworkQueue(button)
             realtimeKeyBindings[button] = binding
+            realtimeOutputBindings = realtimeOutputs
             sendGamepadProfileStateOnNetworkQueue()
         }
         saveKeyBindings()
         saveProfileKeyBindings()
-        lastReceivedEvent = "Mapped \(button.displayName) to \(binding.displayName)"
-        logDebug("key_binding profile=\(activeGamepadProfileID.uuidString) button=\(button.rawValue) binding=\(binding.displayName) sequence=\(binding.isSequence)")
+        saveOutputBindings()
+        saveProfileOutputBindings()
+        lastReceivedEvent = mode == .controller ? "Saved keyboard shortcut for \(button.displayName)" : "Mapped \(button.displayName) to \(binding.displayName)"
+        logDebug("key_binding profile=\(activeGamepadProfileID.uuidString) button=\(button.rawValue) binding=\(binding.displayName) mode=\(mode.rawValue) sequence=\(binding.isSequence)")
         publishRuntimeStatus()
     }
 
@@ -456,23 +518,115 @@ final class MacControllerServer: ObservableObject {
         setKeyBinding(MacKeyBinding(keyCode: keyCode), for: button)
     }
 
-    func resetKeyBinding(_ button: GameButton) {
-        guard let defaultBinding = DefaultKeypadKeyMap.defaultBinding(for: button) else { return }
-        setKeyBinding(defaultBinding, for: button)
+    func setGamepadButtonBinding(_ gamepadButton: VirtualGamepadButton?, for button: GameButton) {
+        var outputBinding = outputBindings[button] ?? MacControlOutputBinding(keyboard: keyBindings[button])
+        if outputBinding.keyboard == nil, activeGamepadOutputMode == .controller {
+            outputBinding.keyboard = keyBindings[button]
+        }
+        outputBinding.setGamepadButton(gamepadButton)
+        setOutputBinding(outputBinding, for: button, reason: gamepadButton.map { "Mapped \(button.displayName) to \($0.shortName)" } ?? "Cleared gamepad output for \(button.displayName)")
     }
 
-    func resetAllKeyBindings() {
-        keyBindings = DefaultKeypadKeyMap.defaultBindings
+    func setOutputMode(_ mode: GamepadProfileOutputMode) {
+        guard let activeProfileIndex = gamepadProfiles.firstIndex(where: { $0.id == activeGamepadProfileID }) else { return }
+        var profiles = gamepadProfiles
+        profiles[activeProfileIndex].outputMode = mode
+        profiles[activeProfileIndex].updatedAt = Date.currentMilliseconds
+
+        let activeKeyBindings = keyBindings
+        let nextOutputBindings = Self.effectiveOutputBindings(
+            for: mode,
+            keyBindings: activeKeyBindings,
+            customOutputBindings: outputBindings
+        )
+
+        releaseAll(reason: "Switch output mode")
+        gamepadProfiles = profiles
+        outputBindings = nextOutputBindings
         profileKeyBindings[activeGamepadProfileID] = keyBindings
+        profileOutputBindings[activeGamepadProfileID] = nextOutputBindings
+        persistGamepadProfileState()
+        saveKeyBindings()
+        saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
+        lastReceivedEvent = "Switched output to \(mode.displayName)"
+
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            self.realtimeOutputMode = mode
+            self.realtimeOutputBindings = nextOutputBindings
+            self.realtimeKeyBindings = activeKeyBindings
+            self.realtimeGamepadProfiles = profiles
+            self.sendGamepadProfileStateOnNetworkQueue()
+        }
+        logDebug("output_mode profile=\(activeGamepadProfileID.uuidString) mode=\(mode.rawValue)")
+        refreshVirtualGamepadMaterialization(reason: "output_mode", publish: false)
+        publishRuntimeStatus()
+    }
+
+    func setOutputBinding(_ binding: MacControlOutputBinding, for button: GameButton, reason: String? = nil) {
+        outputBindings[button] = binding.isEmpty ? nil : binding
+        if let keyboard = binding.keyboard {
+            keyBindings[button] = keyboard
+        } else {
+            keyBindings[button] = nil
+        }
+        setActiveProfileOutputMode(.custom)
+        profileKeyBindings[activeGamepadProfileID] = keyBindings
+        profileOutputBindings[activeGamepadProfileID] = outputBindings
+        let updatedProfiles = gamepadProfiles
         syncOnNetworkQueue {
-            releaseAllOnNetworkQueue(reason: "Reset all key bindings")
-            realtimeKeyBindings = DefaultKeypadKeyMap.defaultBindings
+            releaseIfPressedOnNetworkQueue(button)
+            realtimeOutputMode = .custom
+            realtimeOutputBindings[button] = binding.isEmpty ? nil : binding
+            realtimeKeyBindings = keyBindings
+            realtimeGamepadProfiles = updatedProfiles
             sendGamepadProfileStateOnNetworkQueue()
         }
         saveKeyBindings()
         saveProfileKeyBindings()
-        lastReceivedEvent = "Reset all key bindings"
-        logDebug("key_bindings_reset_all profile=\(activeGamepadProfileID.uuidString)")
+        saveOutputBindings()
+        saveProfileOutputBindings()
+        lastReceivedEvent = reason ?? "Updated output for \(button.displayName)"
+        logDebug("output_binding profile=\(activeGamepadProfileID.uuidString) button=\(button.rawValue) binding=\(binding.displayName)")
+        refreshVirtualGamepadMaterialization(reason: "output_binding", publish: false)
+        publishRuntimeStatus()
+    }
+
+    private func setActiveProfileOutputMode(_ mode: GamepadProfileOutputMode) {
+        guard let activeProfileIndex = gamepadProfiles.firstIndex(where: { $0.id == activeGamepadProfileID }) else { return }
+        gamepadProfiles[activeProfileIndex].outputMode = mode
+        gamepadProfiles[activeProfileIndex].updatedAt = Date.currentMilliseconds
+    }
+
+    func resetKeyBinding(_ button: GameButton) {
+        guard let defaultBinding = DefaultMacControlOutputMap.defaultBinding(for: button) else { return }
+        setOutputBinding(defaultBinding, for: button, reason: "Reset output for \(button.displayName)")
+    }
+
+    func resetAllKeyBindings() {
+        outputBindings = DefaultMacControlOutputMap.defaultBindings
+        keyBindings = outputBindings.keyboardBindings
+        setActiveProfileOutputMode(.keyboard)
+        profileKeyBindings[activeGamepadProfileID] = keyBindings
+        profileOutputBindings[activeGamepadProfileID] = outputBindings
+        let updatedProfiles = gamepadProfiles
+        syncOnNetworkQueue {
+            releaseAllOnNetworkQueue(reason: "Reset all outputs")
+            realtimeOutputMode = .keyboard
+            realtimeKeyBindings = keyBindings
+            realtimeOutputBindings = outputBindings
+            realtimeGamepadProfiles = updatedProfiles
+            sendGamepadProfileStateOnNetworkQueue()
+        }
+        saveKeyBindings()
+        saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
+        lastReceivedEvent = "Reset all outputs"
+        logDebug("output_bindings_reset_all profile=\(activeGamepadProfileID.uuidString)")
+        refreshVirtualGamepadMaterialization(reason: "output_bindings_reset_all", publish: false)
         publishRuntimeStatus()
     }
 
@@ -498,6 +652,7 @@ final class MacControllerServer: ObservableObject {
             self.sendGamepadCustomizationOnNetworkQueue(normalizedCustomization)
         }
         logDebug("gamepad_customization_updated source=mac")
+        refreshVirtualGamepadMaterialization(reason: "gamepad_customization", publish: false)
         publishRuntimeStatus()
     }
 
@@ -524,12 +679,24 @@ final class MacControllerServer: ObservableObject {
             in: profileKeyBindings,
             fallback: keyBindings
         )
+        let storedActiveOutputBindings = Self.resolvedOutputBindings(
+            for: state.activeProfileID,
+            in: profileOutputBindings,
+            fallback: Self.outputBindings(from: activeKeyBindings)
+        )
+        let activeOutputBindings = Self.effectiveOutputBindings(
+            for: state.activeProfile?.outputMode ?? .keyboard,
+            keyBindings: activeKeyBindings,
+            customOutputBindings: storedActiveOutputBindings
+        )
 
         gamepadProfiles = state.profiles
         activeGamepadProfileID = state.activeProfileID
         defaultGamepadProfileID = state.defaultProfileID
         keyBindings = activeKeyBindings
+        outputBindings = activeOutputBindings
         profileKeyBindings[state.activeProfileID] = activeKeyBindings
+        profileOutputBindings[state.activeProfileID] = activeOutputBindings
         pruneProfileKeyBindings()
 
         if shouldApplyActiveCustomization {
@@ -539,16 +706,21 @@ final class MacControllerServer: ObservableObject {
         persistGamepadProfileState()
         saveKeyBindings()
         saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
 
         asyncOnNetworkQueue { [weak self] in
             guard let self else { return }
             self.realtimeKeyBindings = activeKeyBindings
+            self.realtimeOutputBindings = activeOutputBindings
             self.realtimeGamepadCustomization = realtimeCustomization
             self.realtimeGamepadProfiles = state.profiles
             self.realtimeActiveGamepadProfileID = state.activeProfileID
             self.realtimeDefaultGamepadProfileID = state.defaultProfileID
+            self.realtimeOutputMode = state.activeProfile?.outputMode ?? .keyboard
             self.sendGamepadProfileStateOnNetworkQueue()
         }
+        refreshVirtualGamepadMaterialization(reason: "gamepad_profile_state", publish: false)
         publishRuntimeStatus()
     }
 
@@ -560,26 +732,43 @@ final class MacControllerServer: ObservableObject {
             in: profileKeyBindings,
             fallback: keyBindings
         )
+        let storedSelectedOutputBindings = Self.resolvedOutputBindings(
+            for: profile.id,
+            in: profileOutputBindings,
+            fallback: Self.outputBindings(from: selectedKeyBindings)
+        )
+        let selectedOutputBindings = Self.effectiveOutputBindings(
+            for: profile.outputMode,
+            keyBindings: selectedKeyBindings,
+            customOutputBindings: storedSelectedOutputBindings
+        )
 
         releaseAll(reason: "Switch keypad setup")
         activeGamepadProfileID = profile.id
         gamepadCustomization = normalizedCustomization
         keyBindings = selectedKeyBindings
+        outputBindings = selectedOutputBindings
         profileKeyBindings[profile.id] = selectedKeyBindings
+        profileOutputBindings[profile.id] = selectedOutputBindings
         GamepadCustomizationPersistence.save(normalizedCustomization)
         persistGamepadProfileState()
         saveKeyBindings()
         saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
         lastReceivedEvent = "Switched keypad to \(profile.name)"
 
         asyncOnNetworkQueue { [weak self] in
             guard let self else { return }
             self.realtimeKeyBindings = selectedKeyBindings
+            self.realtimeOutputBindings = selectedOutputBindings
             self.realtimeGamepadCustomization = normalizedCustomization
             self.realtimeActiveGamepadProfileID = profile.id
+            self.realtimeOutputMode = profile.outputMode
             self.sendGamepadCustomizationOnNetworkQueue(normalizedCustomization)
         }
         logDebug("gamepad_profile_selected source=\(source) profile=\(profile.id.uuidString)")
+        refreshVirtualGamepadMaterialization(reason: "gamepad_profile_selected", publish: false)
         publishRuntimeStatus()
     }
 
@@ -609,6 +798,7 @@ final class MacControllerServer: ObservableObject {
     private func pruneProfileKeyBindings() {
         let validProfileIDs = Set(gamepadProfiles.map(\.id))
         profileKeyBindings = profileKeyBindings.filter { validProfileIDs.contains($0.key) }
+        profileOutputBindings = profileOutputBindings.filter { validProfileIDs.contains($0.key) }
     }
 
     @discardableResult
@@ -648,6 +838,24 @@ final class MacControllerServer: ObservableObject {
             )
         )
         loadedProfileKeyBindings[activeProfile.id] = activeKeyBindings
+        var loadedProfileOutputBindings = Self.notificationProfileOutputBindings(
+            from: Self.notificationData(from: notification.userInfo, key: Self.notificationProfileOutputBindingsDataKey),
+            fallbackProfileKeyBindings: loadedProfileKeyBindings
+        ) ?? profileOutputBindings
+        let notifiedOutputBindings = Self.notificationOutputBindings(
+            from: Self.notificationData(from: notification.userInfo, key: Self.notificationOutputBindingsDataKey),
+            fallback: Self.resolvedOutputBindings(
+                for: activeProfile.id,
+                in: loadedProfileOutputBindings,
+                fallback: Self.outputBindings(from: activeKeyBindings)
+            )
+        )
+        let activeOutputBindings = Self.effectiveOutputBindings(
+            for: activeProfile.outputMode,
+            keyBindings: activeKeyBindings,
+            customOutputBindings: notifiedOutputBindings
+        )
+        loadedProfileOutputBindings[activeProfile.id] = activeOutputBindings
 
         releaseAll(reason: "Apply external keypad profile update")
         gamepadProfiles = state.profiles
@@ -655,24 +863,31 @@ final class MacControllerServer: ObservableObject {
         defaultGamepadProfileID = state.defaultProfileID
         gamepadCustomization = activeCustomization
         keyBindings = activeKeyBindings
+        outputBindings = activeOutputBindings
         profileKeyBindings = loadedProfileKeyBindings
+        profileOutputBindings = loadedProfileOutputBindings
         pruneProfileKeyBindings()
         GamepadCustomizationPersistence.save(activeCustomization)
         persistGamepadProfileState()
         saveKeyBindings()
         saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
         lastReceivedEvent = "Applied keypad profiles from \(source)"
 
         asyncOnNetworkQueue { [weak self] in
             guard let self else { return }
             self.realtimeKeyBindings = activeKeyBindings
+            self.realtimeOutputBindings = activeOutputBindings
             self.realtimeGamepadCustomization = activeCustomization
             self.realtimeGamepadProfiles = state.profiles
             self.realtimeActiveGamepadProfileID = state.activeProfileID
             self.realtimeDefaultGamepadProfileID = state.defaultProfileID
+            self.realtimeOutputMode = activeProfile.outputMode
             self.sendGamepadProfileStateOnNetworkQueue()
         }
         logDebug("gamepad_profiles_applied_from_notification source=\(source) profile=\(activeProfile.id.uuidString)")
+        refreshVirtualGamepadMaterialization(reason: "profile_notification", publish: false)
         publishRuntimeStatus()
         return true
     }
@@ -684,12 +899,24 @@ final class MacControllerServer: ObservableObject {
         let activeProfile = loadedProfileState.activeProfile ?? loadedProfileState.defaultProfile ?? loadedProfileState.profiles[0]
         let activeCustomization = activeProfile.customization.normalized
         var loadedProfileKeyBindings = Self.loadProfileKeyBindings()
+        var loadedProfileOutputBindings = Self.loadProfileOutputBindings(fallbackProfileKeyBindings: loadedProfileKeyBindings)
         let activeKeyBindings = Self.resolvedKeyBindings(
             for: activeProfile.id,
             in: loadedProfileKeyBindings,
             fallback: keyBindings
         )
         loadedProfileKeyBindings[activeProfile.id] = activeKeyBindings
+        let storedActiveOutputBindings = Self.resolvedOutputBindings(
+            for: activeProfile.id,
+            in: loadedProfileOutputBindings,
+            fallback: Self.outputBindings(from: activeKeyBindings)
+        )
+        let activeOutputBindings = Self.effectiveOutputBindings(
+            for: activeProfile.outputMode,
+            keyBindings: activeKeyBindings,
+            customOutputBindings: storedActiveOutputBindings
+        )
+        loadedProfileOutputBindings[activeProfile.id] = activeOutputBindings
 
         releaseAll(reason: "Reload keypad profiles")
         gamepadProfiles = loadedProfileState.profiles
@@ -697,22 +924,29 @@ final class MacControllerServer: ObservableObject {
         defaultGamepadProfileID = loadedProfileState.defaultProfileID
         gamepadCustomization = activeCustomization
         keyBindings = activeKeyBindings
+        outputBindings = activeOutputBindings
         profileKeyBindings = loadedProfileKeyBindings
+        profileOutputBindings = loadedProfileOutputBindings
         pruneProfileKeyBindings()
         saveKeyBindings()
         saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
         lastReceivedEvent = "Reloaded keypad profiles from \(source)"
 
         asyncOnNetworkQueue { [weak self] in
             guard let self else { return }
             self.realtimeKeyBindings = activeKeyBindings
+            self.realtimeOutputBindings = activeOutputBindings
             self.realtimeGamepadCustomization = activeCustomization
             self.realtimeGamepadProfiles = loadedProfileState.profiles
             self.realtimeActiveGamepadProfileID = activeProfile.id
             self.realtimeDefaultGamepadProfileID = loadedProfileState.defaultProfileID
+            self.realtimeOutputMode = activeProfile.outputMode
             self.sendGamepadProfileStateOnNetworkQueue()
         }
         logDebug("gamepad_profiles_reloaded source=\(source) profile=\(activeProfile.id.uuidString)")
+        refreshVirtualGamepadMaterialization(reason: "profiles_reload", publish: false)
         publishRuntimeStatus()
     }
 
@@ -738,8 +972,12 @@ final class MacControllerServer: ObservableObject {
         resetPendingButtonMessagesOnNetworkQueue()
         resetPhysicalInputTrackingOnNetworkQueue()
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
+        lastAnalogSequenceNumberByKey.removeAll()
 
-        guard !inputPressedButtons.isEmpty || !heldBindingCounts.isEmpty || !activePointerButtons.isEmpty else { return }
+        guard !inputPressedButtons.isEmpty || !heldBindingCounts.isEmpty || !heldGamepadButtonCounts.isEmpty || !activePointerButtons.isEmpty else {
+            virtualGamepadInjector.reset()
+            return
+        }
         for binding in heldBindingCounts.keys {
             injector.keyUp(binding)
         }
@@ -747,9 +985,12 @@ final class MacControllerServer: ObservableObject {
             pointerInjector.setButton(button, pressed: false)
         }
         heldBindingCounts.removeAll()
+        heldGamepadButtonCounts.removeAll()
         activeBindings.removeAll()
+        activeOutputBindings.removeAll()
         activePointerButtons.removeAll()
         inputPressedButtons.removeAll()
+        virtualGamepadInjector.reset()
         publishControllerDebug(event: reason, pressedButtons: [], immediately: true)
         logDebug("release_all reason=\(reason) pressed=[]")
     }
@@ -955,6 +1196,9 @@ final class MacControllerServer: ObservableObject {
         case .pointer:
             handlePointerMessageOnNetworkQueue(message, source: "iPhone UDP")
 
+        case .gamepadAnalog:
+            handleGamepadAnalogMessageOnNetworkQueue(message, source: "iPhone UDP")
+
         case .releaseAll:
             releaseAllOnNetworkQueue(reason: "release_all from iPhone UDP")
 
@@ -1068,6 +1312,13 @@ final class MacControllerServer: ObservableObject {
                 return
             }
             handlePointerMessageOnNetworkQueue(message, source: "iPhone")
+
+        case .gamepadAnalog:
+            guard isPairedConnection else {
+                logDebug("ignored_unpaired_message type=gamepad_analog")
+                return
+            }
+            handleGamepadAnalogMessageOnNetworkQueue(message, source: "iPhone")
 
         case .releaseAll:
             guard isPairedConnection else { return }
@@ -1390,6 +1641,49 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
+    private func handleGamepadAnalogMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
+        guard realtimeOutputMode != .keyboard else {
+            logInputEvent("gamepad_analog_ignored source=\(source) mode=keyboard")
+            return
+        }
+
+        if let stick = message.analogStick {
+            let sequenceKey = "stick.\(stick.rawValue)"
+            guard acceptAnalogSequence(message.analogSequence, key: sequenceKey, source: source) else { return }
+
+            let x = message.analogX ?? 0
+            let y = message.analogY ?? 0
+            virtualGamepadInjector.setStick(stick, x: x, y: y)
+            logInputEvent("gamepad_analog source=\(source) stick=\(stick.rawValue) x=\(String(format: "%.3f", x)) y=\(String(format: "%.3f", y))")
+            return
+        }
+
+        if let trigger = message.analogTrigger {
+            let sequenceKey = "trigger.\(trigger.rawValue)"
+            guard acceptAnalogSequence(message.analogSequence, key: sequenceKey, source: source) else { return }
+
+            let value = message.analogValue ?? 0
+            virtualGamepadInjector.setTrigger(trigger, value: value)
+            logInputEvent("gamepad_analog source=\(source) trigger=\(trigger.rawValue) value=\(String(format: "%.3f", value))")
+            return
+        }
+
+        publishControllerDebug(event: "Ignored malformed analog gamepad event", immediately: true)
+    }
+
+    private func acceptAnalogSequence(_ sequence: UInt64?, key: String, source: String) -> Bool {
+        guard let sequence else { return true }
+        if let lastSequence = lastAnalogSequenceNumberByKey[key],
+           sequence <= lastSequence,
+           lastSequence - sequence < ControllerWireCodec.maximumButtonSequenceNumber / 2
+        {
+            logInputEvent("gamepad_analog_stale source=\(source) key=\(key) sequence=\(sequence) last=\(lastSequence)")
+            return false
+        }
+        lastAnalogSequenceNumberByKey[key] = sequence
+        return true
+    }
+
     private func handleButtonMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
         guard let button = message.button, let state = message.state else {
             publishControllerDebug(event: "Ignored malformed button event", immediately: true)
@@ -1594,7 +1888,8 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func handleButtonOnNetworkQueue(_ button: GameButton, state: ButtonPressState, source: String) {
-        guard let binding = realtimeKeyBindings[button] else { return }
+        let baseOutput = realtimeOutputBindings[button] ?? realtimeKeyBindings[button].map { MacControlOutputBinding.keyboard($0) }
+        guard let baseOutput, !baseOutput.isEmpty else { return }
 
         switch state {
         case .down:
@@ -1602,23 +1897,29 @@ final class MacControllerServer: ObservableObject {
                 noteIgnoredButtonEdge(button: button, state: state, reason: "duplicate_down")
                 return
             }
-            let effectiveBinding = binding.withAdditionalModifiers(activeModifierKeysOnNetworkQueue())
-            activeBindings[button] = effectiveBinding
-            activateBinding(effectiveBinding)
+            let effectiveOutput = baseOutput.withAdditionalModifiers(activeModifierKeysOnNetworkQueue())
+            if let keyboard = effectiveOutput.keyboard {
+                activeBindings[button] = keyboard
+            }
+            activeOutputBindings[button] = effectiveOutput
+            activateOutput(effectiveOutput)
             inputPressedButtons.insert(button)
-            publishInputDebugIfDue(source: source, button: button, state: state, binding: effectiveBinding)
-            logInputEvent("button source=\(source) button=\(button.rawValue) state=down binding=\(effectiveBinding.displayName) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
+            publishInputDebugIfDue(source: source, button: button, state: state, binding: effectiveOutput)
+            logInputEvent("button source=\(source) button=\(button.rawValue) state=down binding=\(effectiveOutput.displayName) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
 
         case .up:
             guard inputPressedButtons.contains(button) else {
                 noteIgnoredButtonEdge(button: button, state: state, reason: "orphan_up")
                 return
             }
-            let releasedBinding = activeBindings.removeValue(forKey: button) ?? binding
-            deactivateBinding(releasedBinding)
+            let releasedOutput = activeOutputBindings.removeValue(forKey: button) ?? baseOutput
+            if releasedOutput.keyboard != nil {
+                activeBindings.removeValue(forKey: button)
+            }
+            deactivateOutput(releasedOutput)
             inputPressedButtons.remove(button)
-            publishInputDebugIfDue(source: source, button: button, state: state, binding: releasedBinding)
-            logInputEvent("button source=\(source) button=\(button.rawValue) state=up binding=\(releasedBinding.displayName) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
+            publishInputDebugIfDue(source: source, button: button, state: state, binding: releasedOutput)
+            logInputEvent("button source=\(source) button=\(button.rawValue) state=up binding=\(releasedOutput.displayName) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
         }
     }
 
@@ -1853,10 +2154,30 @@ final class MacControllerServer: ObservableObject {
         clearPhysicalHoldsOnNetworkQueue(for: button)
         guard inputPressedButtons.contains(button) else { return }
         inputPressedButtons.remove(button)
-        if let activeBinding = activeBindings.removeValue(forKey: button) {
+        if let activeOutput = activeOutputBindings.removeValue(forKey: button) {
+            deactivateOutput(activeOutput)
+        } else if let activeBinding = activeBindings.removeValue(forKey: button) {
             deactivateBinding(activeBinding)
         }
         publishControllerDebug(pressedButtons: inputPressedButtons, immediately: true)
+    }
+
+    private func activateOutput(_ output: MacControlOutputBinding) {
+        if let binding = output.keyboard {
+            activateBinding(binding)
+        }
+        for button in output.gamepadButtons {
+            pressGamepadButton(button)
+        }
+    }
+
+    private func deactivateOutput(_ output: MacControlOutputBinding) {
+        if let binding = output.keyboard {
+            deactivateBinding(binding)
+        }
+        for button in output.gamepadButtons {
+            releaseGamepadButton(button)
+        }
     }
 
     private func activateBinding(_ binding: MacKeyBinding) {
@@ -1903,6 +2224,29 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
+    private func pressGamepadButton(_ button: VirtualGamepadButton) {
+        let currentCount = heldGamepadButtonCounts[button, default: 0]
+        heldGamepadButtonCounts[button] = currentCount + 1
+        if currentCount == 0 {
+            virtualGamepadInjector.setButton(button, pressed: true)
+        }
+    }
+
+    private func releaseGamepadButton(_ button: VirtualGamepadButton) {
+        let currentCount = heldGamepadButtonCounts[button, default: 0]
+        guard currentCount > 0 else {
+            virtualGamepadInjector.setButton(button, pressed: false)
+            return
+        }
+
+        if currentCount == 1 {
+            heldGamepadButtonCounts[button] = nil
+            virtualGamepadInjector.setButton(button, pressed: false)
+        } else {
+            heldGamepadButtonCounts[button] = currentCount - 1
+        }
+    }
+
     private func send(_ message: ControllerMessage, on connection: NWConnection) {
         guard let data = try? ControllerWireCodec.encode(message, using: encoder) else { return }
         let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
@@ -1913,8 +2257,11 @@ final class MacControllerServer: ObservableObject {
     private func gamepadCustomizationForClient(_ customization: GamepadCustomization) -> GamepadCustomization {
         var clientCustomization = customization.normalized
         for button in GameButton.allCases where clientCustomization.labelOverride(for: button) == nil {
-            guard let binding = realtimeKeyBindings[button] else { continue }
-            clientCustomization.setLabel(binding.displayName, for: button)
+            if let output = realtimeOutputBindings[button], !output.isEmpty {
+                clientCustomization.setLabel(output.displayName, for: button)
+            } else if let binding = realtimeKeyBindings[button] {
+                clientCustomization.setLabel(binding.displayName, for: button)
+            }
         }
         return clientCustomization.normalized
     }
@@ -2185,7 +2532,7 @@ final class MacControllerServer: ObservableObject {
         source: String,
         button: GameButton,
         state: ButtonPressState,
-        binding: MacKeyBinding
+        binding: MacControlOutputBinding
     ) {
         let now = DispatchTime.now().uptimeNanoseconds
         guard inputPressedButtons.isEmpty || now - lastInputDebugPublishUptime >= Self.inputDebugPublishIntervalNanoseconds else { return }
@@ -2315,6 +2662,56 @@ final class MacControllerServer: ObservableObject {
         publishRuntimeStatus()
     }
 
+    private func refreshVirtualGamepadMaterialization(reason: String, publish: Bool = true) {
+        let shouldMaterialize = Self.needsVirtualGamepadMaterialization(
+            outputMode: activeGamepadOutputMode,
+            outputBindings: outputBindings,
+            customization: gamepadCustomization
+        )
+
+        if shouldMaterialize {
+            let wasActive = virtualGamepadInjector.isActive
+            if virtualGamepadInjector.start() {
+                if !wasActive {
+                    logDebug("virtual_gamepad_started reason=\(reason)")
+                }
+            } else {
+                let error = virtualGamepadInjector.status().lastError ?? "unknown"
+                logDebug("virtual_gamepad_start_failed reason=\(reason) error=\(error)")
+            }
+        } else if virtualGamepadInjector.isActive {
+            virtualGamepadInjector.stop()
+            logDebug("virtual_gamepad_stopped reason=\(reason)")
+        }
+
+        if publish {
+            publishRuntimeStatus()
+        }
+    }
+
+    private static func needsVirtualGamepadMaterialization(
+        outputMode: GamepadProfileOutputMode,
+        outputBindings: [GameButton: MacControlOutputBinding],
+        customization: GamepadCustomization
+    ) -> Bool {
+        guard outputMode != .keyboard else { return false }
+
+        if outputBindings.values.contains(where: { !$0.gamepadButtons.isEmpty }) {
+            return true
+        }
+
+        return customization.normalized.customButtons.contains { customButton in
+            let normalizedButton = customButton.normalized
+            if normalizedButton.isTrigger {
+                return true
+            }
+            if normalizedButton.isJoystick {
+                return (normalizedButton.joystickOutputSettings ?? .defaultValue).normalized.analogTarget.stick != nil
+            }
+            return false
+        }
+    }
+
     private func publishRuntimeStatus(synchronize: Bool = false) {
         if Thread.isMainThread {
             publishRuntimeStatusOnMain(synchronize: synchronize)
@@ -2335,7 +2732,8 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func runtimeStatusSnapshot() -> PocketPadMacRuntimeStatus {
-        PocketPadMacRuntimeStatus(
+        let virtualGamepadStatus = virtualGamepadInjector.status()
+        return PocketPadMacRuntimeStatus(
             updatedAt: Date.currentMilliseconds,
             statusText: statusText,
             isRunning: isRunning,
@@ -2356,7 +2754,17 @@ final class MacControllerServer: ObservableObject {
             port: port,
             activeGamepadProfileID: activeGamepadProfileID,
             defaultGamepadProfileID: defaultGamepadProfileID,
-            clientDeviceInfo: clientDeviceInfo
+            clientDeviceInfo: clientDeviceInfo,
+            virtualGamepadActive: virtualGamepadStatus.isActive,
+            virtualGamepadAvailable: virtualGamepadStatus.isAvailable,
+            virtualGamepadLastError: virtualGamepadStatus.lastError,
+            virtualGamepadPressedButtons: virtualGamepadStatus.pressedButtons,
+            virtualGamepadLeftStickX: virtualGamepadStatus.leftStickX,
+            virtualGamepadLeftStickY: virtualGamepadStatus.leftStickY,
+            virtualGamepadRightStickX: virtualGamepadStatus.rightStickX,
+            virtualGamepadRightStickY: virtualGamepadStatus.rightStickY,
+            virtualGamepadLeftTrigger: virtualGamepadStatus.leftTrigger,
+            virtualGamepadRightTrigger: virtualGamepadStatus.rightTrigger
         )
     }
 
@@ -2434,6 +2842,57 @@ final class MacControllerServer: ObservableObject {
         UserDefaults.standard.set(data, forKey: Self.profileKeyBindingsDefaultsKey)
     }
 
+    private func saveOutputBindings() {
+        let stored = Self.rawOutputBindings(outputBindings)
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        UserDefaults.standard.set(data, forKey: Self.outputBindingsDefaultsKey)
+    }
+
+    private func saveProfileOutputBindings() {
+        let stored = Dictionary(uniqueKeysWithValues: profileOutputBindings.map { profileID, bindings in
+            (profileID.uuidString, Self.rawOutputBindings(bindings))
+        })
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        UserDefaults.standard.set(data, forKey: Self.profileOutputBindingsDefaultsKey)
+    }
+
+    private static func rawOutputBindings(_ bindings: [GameButton: MacControlOutputBinding]) -> [String: MacControlOutputBinding] {
+        Dictionary(uniqueKeysWithValues: bindings.map { button, binding in
+            (button.rawValue, binding)
+        })
+    }
+
+    private static func decodedOutputBindings(_ raw: [String: MacControlOutputBinding]?, fallback: [GameButton: MacControlOutputBinding] = [:]) -> [GameButton: MacControlOutputBinding] {
+        var bindings = fallback
+        guard let raw else { return bindings }
+        for (rawButton, binding) in raw {
+            guard let button = GameButton(rawValue: rawButton) else { continue }
+            bindings[button] = binding.isEmpty ? nil : binding
+        }
+        return bindings
+    }
+
+    private static func outputBindings(from keyBindings: [GameButton: MacKeyBinding]) -> [GameButton: MacControlOutputBinding] {
+        Dictionary(uniqueKeysWithValues: keyBindings.map { button, binding in
+            (button, MacControlOutputBinding.keyboard(binding))
+        })
+    }
+
+    private static func effectiveOutputBindings(
+        for mode: GamepadProfileOutputMode,
+        keyBindings: [GameButton: MacKeyBinding],
+        customOutputBindings: [GameButton: MacControlOutputBinding]
+    ) -> [GameButton: MacControlOutputBinding] {
+        switch mode {
+        case .keyboard:
+            return outputBindings(from: keyBindings)
+        case .controller:
+            return DefaultMacControlOutputMap.xboxStyleBindings
+        case .custom:
+            return customOutputBindings.isEmpty ? outputBindings(from: keyBindings) : customOutputBindings
+        }
+    }
+
     private static func notificationData(from userInfo: [AnyHashable: Any]?, key: String) -> Data? {
         let value = userInfo?[key]
         if let data = value as? Data { return data }
@@ -2476,6 +2935,37 @@ final class MacControllerServer: ObservableObject {
         return profiles
     }
 
+    private static func notificationOutputBindings(from data: Data?, fallback: [GameButton: MacControlOutputBinding]) -> [GameButton: MacControlOutputBinding] {
+        guard let data,
+              let stored = try? JSONDecoder().decode([String: MacControlOutputBinding].self, from: data)
+        else {
+            return fallback
+        }
+        return decodedOutputBindings(stored, fallback: fallback)
+    }
+
+    private static func notificationProfileOutputBindings(
+        from data: Data?,
+        fallbackProfileKeyBindings: [UUID: [GameButton: MacKeyBinding]]
+    ) -> [UUID: [GameButton: MacControlOutputBinding]]? {
+        guard let data,
+              let stored = try? JSONDecoder().decode([String: [String: MacControlOutputBinding]].self, from: data)
+        else {
+            return nil
+        }
+
+        var profiles: [UUID: [GameButton: MacControlOutputBinding]] = Dictionary(
+            uniqueKeysWithValues: fallbackProfileKeyBindings.map { profileID, bindings in
+                (profileID, outputBindings(from: bindings))
+            }
+        )
+        for (rawProfileID, rawBindings) in stored {
+            guard let profileID = UUID(uuidString: rawProfileID) else { continue }
+            profiles[profileID] = decodedOutputBindings(rawBindings, fallback: profiles[profileID] ?? [:])
+        }
+        return profiles
+    }
+
     private static func loadProfileKeyBindings() -> [UUID: [GameButton: MacKeyBinding]] {
         guard let data = UserDefaults.standard.data(forKey: profileKeyBindingsDefaultsKey),
               let stored = try? JSONDecoder().decode([String: [String: MacKeyBinding]].self, from: data)
@@ -2496,6 +2986,28 @@ final class MacControllerServer: ObservableObject {
         return profiles
     }
 
+    private static func loadProfileOutputBindings(
+        fallbackProfileKeyBindings: [UUID: [GameButton: MacKeyBinding]]
+    ) -> [UUID: [GameButton: MacControlOutputBinding]] {
+        var profiles = Dictionary(
+            uniqueKeysWithValues: fallbackProfileKeyBindings.map { profileID, bindings in
+                (profileID, outputBindings(from: bindings))
+            }
+        )
+
+        guard let data = UserDefaults.standard.data(forKey: profileOutputBindingsDefaultsKey),
+              let stored = try? JSONDecoder().decode([String: [String: MacControlOutputBinding]].self, from: data)
+        else {
+            return profiles
+        }
+
+        for (rawProfileID, rawBindings) in stored {
+            guard let profileID = UUID(uuidString: rawProfileID) else { continue }
+            profiles[profileID] = decodedOutputBindings(rawBindings, fallback: profiles[profileID] ?? [:])
+        }
+        return profiles
+    }
+
     private static func resolvedKeyBindings(
         for profileID: UUID,
         in profileKeyBindings: [UUID: [GameButton: MacKeyBinding]],
@@ -2505,6 +3017,20 @@ final class MacControllerServer: ObservableObject {
         if let storedBindings = profileKeyBindings[profileID] {
             for (button, binding) in storedBindings {
                 bindings[button] = binding
+            }
+        }
+        return bindings
+    }
+
+    private static func resolvedOutputBindings(
+        for profileID: UUID,
+        in profileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]],
+        fallback: [GameButton: MacControlOutputBinding]
+    ) -> [GameButton: MacControlOutputBinding] {
+        var bindings = fallback
+        if let storedBindings = profileOutputBindings[profileID] {
+            for (button, binding) in storedBindings {
+                bindings[button] = binding.isEmpty ? nil : binding
             }
         }
         return bindings

@@ -7,17 +7,25 @@ struct PocketPadCLI {
     private static let appDefaultsDomain = PocketPadMacIPC.appDefaultsDomain
     private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
     private static let profileKeyBindingsDefaultsKey = "PocketPadMac.profileKeyBindings.v1"
+    private static let outputBindingsDefaultsKey = "PocketPadMac.outputBindings.v1"
+    private static let profileOutputBindingsDefaultsKey = "PocketPadMac.profileOutputBindings.v1"
     private static let profileStoreChangedNotificationName = Notification.Name("com.codybontecou.PocketPadMac.profileStoreChanged")
     private static let notificationProfileStateDataKey = "profileStateData"
     private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
     private static let notificationKeyBindingsDataKey = "keyBindingsData"
     private static let notificationProfileKeyBindingsDataKey = "profileKeyBindingsData"
+    private static let notificationOutputBindingsDataKey = "outputBindingsData"
+    private static let notificationProfileOutputBindingsDataKey = "profileOutputBindingsData"
     private static let defaultEditorCanvasSize = GamepadEditorDeviceCatalog.defaultFrame.screenRect.size
     private static let portraitEditorCanvasSize = GamepadEditorDeviceFrame(spec: GamepadEditorDeviceCatalog.specs[0], orientation: .portrait).screenRect.size
     private static let trackpadOptionNames = [
         "--sensitivity", "--cursor-sensitivity", "--pointer-sensitivity",
         "--scroll-sensitivity", "--tap-to-click", "--two-finger-scroll",
         "--natural-scrolling", "--natural-scroll"
+    ]
+    private static let triggerOptionNames = [
+        "--target", "--trigger", "--orientation", "--dead-zone", "--deadzone",
+        "--digital", "--digital-button", "--digital-threshold"
     ]
 
     private struct StoredProfileState: Codable {
@@ -31,6 +39,7 @@ struct PocketPadCLI {
         var activeProfileID: UUID
         var defaultProfileID: UUID
         var profileKeyBindings: [String: [String: MacKeyBinding]]
+        var profileOutputBindings: [String: [String: MacControlOutputBinding]]
     }
 
     private struct GenerateOptions {
@@ -58,12 +67,14 @@ struct PocketPadCLI {
         var activeProfileID: UUID?
         var defaultProfileID: UUID?
         var profileKeyBindings: [String: [String: MacKeyBinding]]
+        var profileOutputBindings: [String: [String: MacControlOutputBinding]]
 
         init(
             profiles: [GamepadConfigurationProfile],
             activeProfileID: UUID?,
             defaultProfileID: UUID?,
-            profileKeyBindings: [String: [String: MacKeyBinding]] = [:]
+            profileKeyBindings: [String: [String: MacKeyBinding]] = [:],
+            profileOutputBindings: [String: [String: MacControlOutputBinding]] = [:]
         ) {
             let state = GamepadConfigurationProfilePersistence.normalizedState(
                 profiles: profiles,
@@ -74,6 +85,7 @@ struct PocketPadCLI {
             self.activeProfileID = state.activeProfileID
             self.defaultProfileID = state.defaultProfileID
             self.profileKeyBindings = profileKeyBindings
+            self.profileOutputBindings = profileOutputBindings
         }
 
         init(from decoder: Decoder) throws {
@@ -115,6 +127,7 @@ struct PocketPadCLI {
             activeProfileID = state.activeProfileID
             defaultProfileID = state.defaultProfileID
             profileKeyBindings = try container.decodeIfPresent([String: [String: MacKeyBinding]].self, forKey: .profileKeyBindings) ?? [:]
+            profileOutputBindings = try container.decodeIfPresent([String: [String: MacControlOutputBinding]].self, forKey: .profileOutputBindings) ?? [:]
         }
     }
 
@@ -127,6 +140,7 @@ struct PocketPadCLI {
         var isLocationLocked: Bool
         var layout: GamepadButtonCustomization
         var joystickMapping: GamepadJoystickMapping?
+        var triggerSettings: GamepadTriggerSettings?
         var trackpadSettings: GamepadTrackpadSettings?
     }
 
@@ -182,6 +196,8 @@ struct PocketPadCLI {
             try template(arguments: rest)
         case "binding", "bindings", "shortcut", "shortcuts":
             try binding(arguments: rest)
+        case "output", "outputs":
+            try output(arguments: rest)
         case "customization", "customize", "layout":
             try customization(arguments: rest)
         case "device", "devices", "frame", "frames":
@@ -352,7 +368,7 @@ struct PocketPadCLI {
             let showIDs = rest.contains("--ids") || json
             let store = loadStore()
             if json {
-                try printJSON(ProfileExportEnvelope(profiles: store.profiles, activeProfileID: store.activeProfileID, defaultProfileID: store.defaultProfileID, profileKeyBindings: store.profileKeyBindings))
+                try printJSON(ProfileExportEnvelope(profiles: store.profiles, activeProfileID: store.activeProfileID, defaultProfileID: store.defaultProfileID, profileKeyBindings: store.profileKeyBindings, profileOutputBindings: store.profileOutputBindings))
             } else {
                 for profile in store.profiles {
                     let activeMarker = profile.id == store.activeProfileID ? "*" : " "
@@ -369,7 +385,10 @@ struct PocketPadCLI {
             let profile = try resolveProfile(target, in: store)
             if json {
                 let bindings = store.profileKeyBindings[profile.id.uuidString] ?? rawBindings(DefaultKeypadKeyMap.defaultBindings)
-                try printJSON(ProfileExportEnvelope(profiles: [profile], activeProfileID: profile.id, defaultProfileID: store.defaultProfileID == profile.id ? profile.id : nil, profileKeyBindings: [profile.id.uuidString: bindings]))
+                let keyboardBindings = decodedBindings(bindings) ?? DefaultKeypadKeyMap.defaultBindings
+                let storedOutputs = decodedOutputBindings(store.profileOutputBindings[profile.id.uuidString]) ?? outputBindings(from: keyboardBindings)
+                let outputs = effectiveOutputBindings(for: profile.outputMode, keyBindings: keyboardBindings, customOutputBindings: storedOutputs)
+                try printJSON(ProfileExportEnvelope(profiles: [profile], activeProfileID: profile.id, defaultProfileID: store.defaultProfileID == profile.id ? profile.id : nil, profileKeyBindings: [profile.id.uuidString: bindings], profileOutputBindings: [profile.id.uuidString: rawOutputBindings(outputs)]))
             } else {
                 printProfile(profile, store: store)
             }
@@ -410,10 +429,11 @@ struct PocketPadCLI {
             var store = loadStore()
             let source = try resolveProfile(target, in: store)
             let duplicateName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "\(source.name) Copy" : name
-            let duplicate = GamepadConfigurationProfile(name: duplicateName, customization: source.customization)
+            let duplicate = GamepadConfigurationProfile(name: duplicateName, customization: source.customization, outputMode: source.outputMode)
             store.profiles.append(duplicate)
             store.activeProfileID = duplicate.id
             store.profileKeyBindings[duplicate.id.uuidString] = store.profileKeyBindings[source.id.uuidString] ?? rawBindings(DefaultKeypadKeyMap.defaultBindings)
+            store.profileOutputBindings[duplicate.id.uuidString] = store.profileOutputBindings[source.id.uuidString] ?? rawOutputBindings(DefaultMacControlOutputMap.defaultBindings)
             try persistStore(store)
             print("Duplicated \"\(source.name)\" as \"\(duplicate.name)\".")
 
@@ -424,6 +444,7 @@ struct PocketPadCLI {
             let index = try resolveProfileIndex(target, in: store)
             let removed = store.profiles.remove(at: index)
             store.profileKeyBindings[removed.id.uuidString] = nil
+            store.profileOutputBindings[removed.id.uuidString] = nil
             if store.activeProfileID == removed.id { store.activeProfileID = store.profiles[min(index, store.profiles.count - 1)].id }
             if store.defaultProfileID == removed.id { store.defaultProfileID = store.activeProfileID }
             try persistStore(store)
@@ -492,30 +513,40 @@ struct PocketPadCLI {
         var store = loadStore()
         let requestedName = nameParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         let baseCustomization: GamepadCustomization
+        let baseOutputMode: GamepadProfileOutputMode
         let defaultName: String
         var baseBindings = decodedBindings(store.profileKeyBindings[store.activeProfileID.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
+        var baseOutputBindings: [String: MacControlOutputBinding]?
 
         if let templateName {
             let template = try resolveTemplate(templateName)
             let profile = template.makeProfile()
             baseCustomization = profile.customization
+            baseOutputMode = profile.outputMode
             defaultName = profile.name
         } else if let fromProfile {
             let profile = try resolveProfile(fromProfile, in: store)
             baseCustomization = profile.customization
+            baseOutputMode = profile.outputMode
             defaultName = "\(profile.name) Copy"
             baseBindings = decodedBindings(store.profileKeyBindings[profile.id.uuidString]) ?? baseBindings
+            baseOutputBindings = store.profileOutputBindings[profile.id.uuidString]
         } else if blank {
             baseCustomization = .blankCanvas
+            baseOutputMode = .keyboard
             defaultName = "Blank Setup"
         } else {
             baseCustomization = .defaultValue
+            baseOutputMode = .keyboard
             defaultName = "Setup \(store.profiles.count + 1)"
         }
 
-        let profile = GamepadConfigurationProfile(name: requestedName.isEmpty ? defaultName : requestedName, customization: baseCustomization)
+        let profile = GamepadConfigurationProfile(name: requestedName.isEmpty ? defaultName : requestedName, customization: baseCustomization, outputMode: baseOutputMode)
         store.profiles.append(profile)
         store.profileKeyBindings[profile.id.uuidString] = rawBindings(baseBindings)
+        if let baseOutputBindings {
+            store.profileOutputBindings[profile.id.uuidString] = baseOutputBindings
+        }
         if select { store.activeProfileID = profile.id }
         if makeDefault { store.defaultProfileID = profile.id }
         try persistStore(store)
@@ -543,7 +574,7 @@ struct PocketPadCLI {
         }
         let validIDs = Set(profiles.map { $0.id.uuidString })
         let bindings = store.profileKeyBindings.filter { validIDs.contains($0.key) }
-        let envelope = ProfileExportEnvelope(profiles: profiles, activeProfileID: activeID, defaultProfileID: defaultID, profileKeyBindings: bindings)
+        let envelope = ProfileExportEnvelope(profiles: profiles, activeProfileID: activeID, defaultProfileID: defaultID, profileKeyBindings: bindings, profileOutputBindings: store.profileOutputBindings.filter { validIDs.contains($0.key) })
         try writeJSON(envelope, to: outputPath)
     }
 
@@ -556,17 +587,21 @@ struct PocketPadCLI {
         let decoder = JSONDecoder()
         var importedProfiles: [GamepadConfigurationProfile] = []
         var importedBindings: [String: [String: MacKeyBinding]] = [:]
+        var importedOutputBindings: [String: [String: MacControlOutputBinding]] = [:]
         var importedActiveID: UUID?
         var importedDefaultID: UUID?
 
         if let envelope = try? decoder.decode(ProfileExportEnvelope.self, from: data) {
             importedProfiles = envelope.profiles.map(\.normalized)
             importedBindings = envelope.profileKeyBindings
+            importedOutputBindings = envelope.profileOutputBindings
             importedActiveID = envelope.activeProfileID
             importedDefaultID = envelope.defaultProfileID
         } else if let generated = try? decoder.decode(GeneratedGameKeypadProfile.self, from: data) {
             importedProfiles = [generated.profile.normalized]
-            importedBindings[generated.profile.id.uuidString] = rawBindings(try resolvedMacBindings(for: generated))
+            let generatedBindings = try resolvedMacBindings(for: generated)
+            importedBindings[generated.profile.id.uuidString] = rawBindings(generatedBindings)
+            importedOutputBindings[generated.profile.id.uuidString] = rawOutputBindings(outputBindings(from: generatedBindings))
             importedActiveID = generated.profile.id
         } else if let profile = try? decoder.decode(GamepadConfigurationProfile.self, from: data) {
             importedProfiles = [profile.normalized]
@@ -598,6 +633,9 @@ struct PocketPadCLI {
             selectedID = selectedID ?? profile.id
             if let raw = importedBindings[imported.id.uuidString] ?? importedBindings[profile.id.uuidString] {
                 store.profileKeyBindings[profile.id.uuidString] = raw
+            }
+            if let rawOutput = importedOutputBindings[imported.id.uuidString] ?? importedOutputBindings[profile.id.uuidString] {
+                store.profileOutputBindings[profile.id.uuidString] = rawOutput
             }
         }
 
@@ -729,10 +767,177 @@ struct PocketPadCLI {
 
     private static func mutateBindings(profileTarget: String?, mutate: (inout [GameButton: MacKeyBinding]) throws -> Void) throws {
         var store = loadStore()
-        let profile = try resolveProfile(profileTarget, in: store)
-        var bindings = decodedBindings(store.profileKeyBindings[profile.id.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
+        let profileIndex = try resolveProfileIndex(profileTarget, in: store)
+        let profile = store.profiles[profileIndex]
+        let profileID = profile.id.uuidString
+        var bindings = decodedBindings(store.profileKeyBindings[profileID]) ?? DefaultKeypadKeyMap.defaultBindings
         try mutate(&bindings)
-        store.profileKeyBindings[profile.id.uuidString] = rawBindings(bindings)
+        store.profileKeyBindings[profileID] = rawBindings(bindings)
+        var outputs = decodedOutputBindings(store.profileOutputBindings[profileID]) ?? outputBindings(from: bindings)
+        switch profile.outputMode {
+        case .keyboard:
+            outputs = outputBindings(from: bindings)
+        case .controller:
+            outputs = effectiveOutputBindings(for: .controller, keyBindings: bindings, customOutputBindings: outputs)
+        case .custom:
+            for (button, binding) in bindings {
+                var output = outputs[button] ?? MacControlOutputBinding()
+                output.keyboard = binding
+                outputs[button] = output
+            }
+        }
+        store.profileOutputBindings[profileID] = rawOutputBindings(outputs)
+        try persistStore(store)
+    }
+
+    // MARK: - Outputs
+
+    private static func output(arguments: [String]) throws {
+        guard let subcommand = arguments.first else { throw CLIError.message("Missing output subcommand") }
+        let rest = Array(arguments.dropFirst())
+        switch subcommand {
+        case "list", "ls":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            let keyboardBindings = decodedBindings(store.profileKeyBindings[profile.id.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
+            let storedOutputs = decodedOutputBindings(store.profileOutputBindings[profile.id.uuidString]) ?? outputBindings(from: keyboardBindings)
+            let outputs = effectiveOutputBindings(for: profile.outputMode, keyBindings: keyboardBindings, customOutputBindings: storedOutputs)
+            if rest.contains("--json") {
+                try printJSON(rawOutputBindings(outputs))
+            } else {
+                print("Outputs for \"\(profile.name)\":")
+                print("Mode: \(profile.outputMode.displayName)")
+                for button in GameButton.allCases {
+                    print("- \(button.rawValue): \(outputs[button]?.displayName ?? "Unmapped")")
+                }
+            }
+        case "mode", "preset":
+            try outputMode(arguments: rest)
+        case "set":
+            try setOutput(arguments: rest)
+        case "reset":
+            guard let buttonText = firstPositional(in: rest) else { throw CLIError.message("Missing button") }
+            let button = try parseButton(buttonText)
+            try mutateOutputs(profileTarget: optionValue("--profile", in: rest)) { outputs in
+                outputs[button] = DefaultMacControlOutputMap.defaultBinding(for: button)
+            }
+            print("Reset output for \(button.displayName).")
+        case "reset-all":
+            try mutateOutputs(profileTarget: optionValue("--profile", in: rest), outputMode: .keyboard) { outputs in
+                outputs = DefaultMacControlOutputMap.defaultBindings
+            }
+            print("Reset all outputs to keyboard defaults.")
+        default:
+            throw CLIError.message("Unknown output subcommand: \(subcommand)")
+        }
+    }
+
+    private static func outputMode(arguments: [String]) throws {
+        var store = loadStore()
+        let profileTarget = optionValue("--profile", in: arguments)
+        let index = try resolveProfileIndex(profileTarget, in: store)
+        let modeText = firstPositional(in: arguments)
+
+        guard let modeText else {
+            let profile = store.profiles[index]
+            print("\(profile.name): \(profile.outputMode.displayName)")
+            print(profile.outputMode.description)
+            return
+        }
+
+        let mode = try parseOutputMode(modeText)
+        store.profiles[index].outputMode = mode
+        store.profiles[index].updatedAt = Date.currentMilliseconds
+        let profileID = store.profiles[index].id.uuidString
+        let keyboardBindings = decodedBindings(store.profileKeyBindings[profileID]) ?? DefaultKeypadKeyMap.defaultBindings
+        let storedOutputs = decodedOutputBindings(store.profileOutputBindings[profileID]) ?? outputBindings(from: keyboardBindings)
+        store.profileOutputBindings[profileID] = rawOutputBindings(
+            effectiveOutputBindings(
+                for: mode,
+                keyBindings: keyboardBindings,
+                customOutputBindings: storedOutputs
+            )
+        )
+        try persistStore(store)
+        print("Set \"\(store.profiles[index].name)\" output mode to \(mode.displayName).")
+    }
+
+    private static func setOutput(arguments: [String]) throws {
+        guard let buttonText = firstPositional(in: arguments) else { throw CLIError.message("Missing button") }
+        let button = try parseButton(buttonText)
+        let keyboardText = optionValue("--keyboard", in: arguments) ?? optionValue("--key", in: arguments)
+        let sequenceText = optionValue("--sequence", in: arguments)
+        let gamepadButtonText = optionValue("--gamepad-button", in: arguments) ?? optionValue("--gamepad", in: arguments)
+        let clearKeyboard = arguments.contains("--clear-keyboard")
+        let clearGamepad = arguments.contains("--clear-gamepad")
+
+        try mutateOutputs(
+            profileTarget: optionValue("--profile", in: arguments),
+            preserveKeyboardForChangedButtons: !clearKeyboard && keyboardText == nil && sequenceText == nil
+        ) { outputs in
+            var output = outputs[button] ?? MacControlOutputBinding()
+            if clearKeyboard {
+                output.keyboard = nil
+            }
+            if let sequenceText {
+                output.keyboard = try parseKeyBindingSequence(sequenceText)
+            } else if let keyboardText {
+                output.keyboard = try parseKeyBindingSequence(keyboardText)
+            }
+            if clearGamepad {
+                output.gamepadButtons.removeAll()
+            }
+            if let gamepadButtonText {
+                let normalized = gamepadButtonText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if normalized == "none" || normalized == "clear" || normalized == "off" {
+                    output.gamepadButtons.removeAll()
+                } else {
+                    output.setGamepadButton(try parseVirtualGamepadButton(gamepadButtonText))
+                }
+            }
+            outputs[button] = output.isEmpty ? nil : output
+        }
+        print("Updated output for \(button.displayName).")
+    }
+
+    private static func mutateOutputs(
+        profileTarget: String?,
+        outputMode: GamepadProfileOutputMode = .custom,
+        preserveKeyboardForChangedButtons: Bool = false,
+        mutate: (inout [GameButton: MacControlOutputBinding]) throws -> Void
+    ) throws {
+        var store = loadStore()
+        let profileIndex = try resolveProfileIndex(profileTarget, in: store)
+        let profileID = store.profiles[profileIndex].id.uuidString
+        let keyboardBindings = decodedBindings(store.profileKeyBindings[profileID]) ?? DefaultKeypadKeyMap.defaultBindings
+        var outputs = decodedOutputBindings(store.profileOutputBindings[profileID]) ?? outputBindings(from: keyboardBindings)
+        let originalOutputs = outputs
+        try mutate(&outputs)
+        if preserveKeyboardForChangedButtons {
+            for button in GameButton.allCases where outputs[button] != originalOutputs[button] {
+                guard outputs[button]?.keyboard == nil,
+                      outputs[button]?.gamepadButtons.isEmpty == false,
+                      let keyboard = keyboardBindings[button]
+                else { continue }
+                outputs[button]?.keyboard = keyboard
+            }
+        }
+        store.profiles[profileIndex].outputMode = outputMode
+        store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
+        store.profileOutputBindings[profileID] = rawOutputBindings(outputs)
+        if outputMode == .keyboard {
+            store.profileKeyBindings[profileID] = rawBindings(outputs.keyboardBindings)
+        } else {
+            var nextKeyboardBindings = keyboardBindings
+            for button in GameButton.allCases where outputs[button] != originalOutputs[button] {
+                if let keyboard = outputs[button]?.keyboard {
+                    nextKeyboardBindings[button] = keyboard
+                } else {
+                    nextKeyboardBindings[button] = nil
+                }
+            }
+            store.profileKeyBindings[profileID] = rawBindings(nextKeyboardBindings)
+        }
         try persistStore(store)
     }
 
@@ -1122,25 +1327,31 @@ struct PocketPadCLI {
     }
 
     private static func addElement(arguments: [String]) throws {
-        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: pocketpad element add <button|joystick|trackpad> [options]") }
+        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: pocketpad element add <button|joystick|trigger|trackpad> [options]") }
         let kind = try parseCustomControlKind(kindText)
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments)) { customization in
             guard customization.customButtons.count < GamepadCustomization.maximumCustomButtons else { throw CLIError.message("Maximum custom element count reached") }
             if kind == .joystick && customization.customButtons.filter({ $0.normalized.isJoystick }).count >= GamepadCustomization.maximumJoysticks {
                 throw CLIError.message("Maximum joystick count reached")
             }
+            if kind == .trigger && customization.customButtons.filter({ $0.normalized.isTrigger }).count >= GamepadCustomization.maximumTriggers {
+                throw CLIError.message("Maximum trigger count reached")
+            }
             if kind == .trackpad && customization.customButtons.filter({ $0.normalized.isTrackpad }).count >= GamepadCustomization.maximumTrackpads {
                 throw CLIError.message("Maximum trackpad count reached")
             }
 
             let id = UUID()
+            let triggerCount = customization.customButtons.filter { $0.normalized.isTrigger }.count
+            let defaultTriggerTarget: VirtualGamepadTrigger = triggerCount == 0 ? .left : .right
             let mapped = try optionValue("--maps-to", in: arguments).map(parseButton) ?? (kind == .joystick ? .up : firstAvailableCustomSlot(in: customization) ?? .custom1)
             var customButton = GamepadCustomButton(
                 id: id,
                 mappedButton: mapped,
-                label: optionValue("--label", in: arguments) ?? defaultLabel(for: kind),
+                label: optionValue("--label", in: arguments) ?? (kind == .trigger ? defaultTriggerTarget.shortName : defaultLabel(for: kind)),
                 controlKind: kind,
                 joystickMapping: kind == .joystick ? try joystickMapping(from: arguments) : nil,
+                triggerSettings: kind == .trigger ? try triggerSettings(from: arguments, fallback: GamepadTriggerSettings(target: defaultTriggerTarget, orientation: .horizontal)) : nil,
                 trackpadSettings: kind == .trackpad ? .defaultValue : nil
             )
             try applyLayoutOptions(arguments, to: &customButton.layout)
@@ -1149,6 +1360,21 @@ struct PocketPadCLI {
                 customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 1.35 : customButton.layout.widthScale
                 customButton.layout.heightScale = customButton.layout.heightScale == 1.0 ? 1.35 : customButton.layout.heightScale
                 customButton.joystickMapping = try joystickMapping(from: arguments)
+                customButton.triggerSettings = nil
+            } else if kind == .trigger {
+                let settings = try triggerSettings(from: arguments, fallback: customButton.triggerSettings ?? .defaultValue)
+                customButton.layout.shape = .capsule
+                customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 1.08 : customButton.layout.widthScale
+                customButton.layout.heightScale = customButton.layout.heightScale == 1.0 ? 0.42 : customButton.layout.heightScale
+                if optionValue("--x", in: arguments) == nil && optionValue("--center-x", in: arguments) == nil {
+                    customButton.layout.centerX = settings.target == .left ? 0.20 : 0.80
+                }
+                if optionValue("--y", in: arguments) == nil && optionValue("--center-y", in: arguments) == nil {
+                    customButton.layout.centerY = 0.14
+                }
+                customButton.joystickMapping = nil
+                customButton.triggerSettings = settings
+                customButton.trackpadSettings = nil
             } else if kind == .trackpad {
                 customButton.layout.shape = customButton.layout.shape ?? .roundedRectangle
                 customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 1.25 : customButton.layout.widthScale
@@ -1159,6 +1385,7 @@ struct PocketPadCLI {
                 if optionValue("--corner", in: arguments) == nil && optionValue("--radius", in: arguments) == nil {
                     customButton.layout.cornerRadius = customButton.layout.cornerRadius ?? 18
                 }
+                customButton.triggerSettings = nil
                 customButton.trackpadSettings = try trackpadSettings(from: arguments)
             }
             customization.customButtons.append(customButton)
@@ -1182,17 +1409,30 @@ struct PocketPadCLI {
                 if let mapped = optionValue("--maps-to", in: arguments) { customization.customButtons[index].mappedButton = try parseButton(mapped) }
                 if let kind = optionValue("--kind", in: arguments) { customization.customButtons[index].controlKind = try parseCustomControlKind(kind) }
                 let hasJoystickOptions = hasAnyOption(["--up", "--down", "--left", "--right"], in: arguments)
+                let hasTriggerOptions = hasAnyOption(triggerOptionNames, in: arguments)
                 let hasTrackpadOptions = hasAnyOption(trackpadOptionNames, in: arguments)
                 if customization.customButtons[index].controlKind == .joystick || hasJoystickOptions {
                     customization.customButtons[index].controlKind = .joystick
                     customization.customButtons[index].joystickMapping = try joystickMapping(from: arguments, fallback: customization.customButtons[index].joystickMapping ?? .movement)
+                    customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].trackpadSettings = nil
                     customization.customButtons[index].layout.shape = .circle
+                } else if customization.customButtons[index].controlKind == .trigger || hasTriggerOptions {
+                    customization.customButtons[index].controlKind = .trigger
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].triggerSettings = try triggerSettings(from: arguments, fallback: customization.customButtons[index].triggerSettings ?? .defaultValue)
+                    customization.customButtons[index].trackpadSettings = nil
+                    customization.customButtons[index].layout.shape = .capsule
                 } else if customization.customButtons[index].controlKind == .trackpad || hasTrackpadOptions {
                     customization.customButtons[index].controlKind = .trackpad
                     customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].layout.shape = customization.customButtons[index].layout.shape ?? .roundedRectangle
                     customization.customButtons[index].trackpadSettings = try trackpadSettings(from: arguments, fallback: customization.customButtons[index].trackpadSettings ?? .defaultValue)
+                } else if customization.customButtons[index].controlKind == .button {
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].triggerSettings = nil
+                    customization.customButtons[index].trackpadSettings = nil
                 }
                 try applyLayoutOptions(arguments, to: &customization.customButtons[index].layout)
             }
@@ -1278,6 +1518,20 @@ struct PocketPadCLI {
                     )
                     customization.customButtons[index].joystickMapping = nil
                     customization.customButtons[index].trackpadSettings = .defaultValue
+                    customization.customButtons[index].triggerSettings = nil
+                case .trigger:
+                    let target = (customization.customButtons[index].triggerSettings ?? .defaultValue).normalized.target
+                    customization.customButtons[index].layout = GamepadButtonCustomization(
+                        centerX: target == .left ? 0.20 : 0.80,
+                        centerY: 0.14,
+                        widthScale: 1.08,
+                        heightScale: 0.42,
+                        shape: .capsule,
+                        accentStyle: .monochrome
+                    )
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].trackpadSettings = nil
+                    customization.customButtons[index].triggerSettings = GamepadTriggerSettings(target: target, orientation: .horizontal)
                 case .button:
                     customization.customButtons[index].layout = GamepadButtonCustomization(
                         centerX: 0.5,
@@ -1904,6 +2158,17 @@ struct PocketPadCLI {
             }
             print("Last Event: \(status.lastReceivedEvent)")
             print("Pressed: \(status.pressedButtons.map(\.rawValue).sorted().joined(separator: ", "))")
+            if status.virtualGamepadActive != nil || status.virtualGamepadAvailable != nil || status.virtualGamepadLastError != nil {
+                let active = status.virtualGamepadActive == true ? "active" : "inactive"
+                let availability = status.virtualGamepadAvailable == false ? "unavailable" : "available"
+                print("Virtual Gamepad: \(active), \(availability)")
+                if let error = status.virtualGamepadLastError, !error.isEmpty {
+                    print("Virtual Gamepad Error: \(error)")
+                }
+                if let pressed = status.virtualGamepadPressedButtons, !pressed.isEmpty {
+                    print("Virtual Gamepad Pressed: \(pressed.map(\.shortName).joined(separator: ", "))")
+                }
+            }
             print("Frames: missing=\(status.missedButtonFrames) ignored=\(status.ignoredButtonEdges) recovered=\(status.recoveredButtonEdges)")
         }
     }
@@ -1917,11 +2182,24 @@ struct PocketPadCLI {
         if profileBindings[state.activeProfileID.uuidString] == nil {
             profileBindings[state.activeProfileID.uuidString] = rawBindings(loadActiveKeyBindings(from: domain))
         }
+        var profileOutputBindings = loadProfileOutputBindings(from: domain, fallbackProfileKeyBindings: profileBindings)
+        if profileOutputBindings[state.activeProfileID.uuidString] == nil {
+            let activeBindings = decodedBindings(profileBindings[state.activeProfileID.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
+            let activeProfile = state.activeProfile ?? state.profiles[0]
+            profileOutputBindings[state.activeProfileID.uuidString] = rawOutputBindings(
+                effectiveOutputBindings(
+                    for: activeProfile.outputMode,
+                    keyBindings: activeBindings,
+                    customOutputBindings: outputBindings(from: activeBindings)
+                )
+            )
+        }
         return ProfileStore(
             profiles: state.profiles,
             activeProfileID: state.activeProfileID,
             defaultProfileID: state.defaultProfileID,
-            profileKeyBindings: profileBindings
+            profileKeyBindings: profileBindings,
+            profileOutputBindings: profileOutputBindings
         )
     }
 
@@ -1939,9 +2217,17 @@ struct PocketPadCLI {
 
         let validIDs = Set(store.profiles.map { $0.id.uuidString })
         store.profileKeyBindings = store.profileKeyBindings.filter { validIDs.contains($0.key) }
+        store.profileOutputBindings = store.profileOutputBindings.filter { validIDs.contains($0.key) }
         let activeProfile = state.activeProfile ?? state.profiles[0]
         let activeBindings = decodedBindings(store.profileKeyBindings[activeProfile.id.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
         store.profileKeyBindings[activeProfile.id.uuidString] = rawBindings(activeBindings)
+        let storedActiveOutputBindings = decodedOutputBindings(store.profileOutputBindings[activeProfile.id.uuidString]) ?? outputBindings(from: activeBindings)
+        let activeOutputBindings = effectiveOutputBindings(
+            for: activeProfile.outputMode,
+            keyBindings: activeBindings,
+            customOutputBindings: storedActiveOutputBindings
+        )
+        store.profileOutputBindings[activeProfile.id.uuidString] = rawOutputBindings(activeOutputBindings)
 
         var domain = loadAppDomain()
         let stateData = try JSONEncoder().encode(
@@ -1954,11 +2240,15 @@ struct PocketPadCLI {
         let activeCustomizationData = try JSONEncoder().encode(activeProfile.customization.normalized)
         let keyBindingsData = try JSONEncoder().encode(rawBindings(activeBindings))
         let profileKeyBindingsData = try JSONEncoder().encode(store.profileKeyBindings)
+        let outputBindingsData = try JSONEncoder().encode(rawOutputBindings(activeOutputBindings))
+        let profileOutputBindingsData = try JSONEncoder().encode(store.profileOutputBindings)
 
         domain[GamepadConfigurationProfilePersistence.defaultsKey] = stateData
         domain[GamepadCustomizationPersistence.defaultsKey] = activeCustomizationData
         domain[keyBindingsDefaultsKey] = keyBindingsData
         domain[profileKeyBindingsDefaultsKey] = profileKeyBindingsData
+        domain[outputBindingsDefaultsKey] = outputBindingsData
+        domain[profileOutputBindingsDefaultsKey] = profileOutputBindingsData
 
         UserDefaults.standard.setPersistentDomain(domain, forName: appDefaultsDomain)
         UserDefaults.standard.synchronize()
@@ -1966,7 +2256,9 @@ struct PocketPadCLI {
             profileStateData: stateData,
             activeCustomizationData: activeCustomizationData,
             keyBindingsData: keyBindingsData,
-            profileKeyBindingsData: profileKeyBindingsData
+            profileKeyBindingsData: profileKeyBindingsData,
+            outputBindingsData: outputBindingsData,
+            profileOutputBindingsData: profileOutputBindingsData
         )
     }
 
@@ -2028,6 +2320,55 @@ struct PocketPadCLI {
         Dictionary(uniqueKeysWithValues: bindings.map { button, binding in (button.rawValue, binding) })
     }
 
+    private static func outputBindings(from keyBindings: [GameButton: MacKeyBinding]) -> [GameButton: MacControlOutputBinding] {
+        Dictionary(uniqueKeysWithValues: keyBindings.map { button, binding in
+            (button, MacControlOutputBinding.keyboard(binding))
+        })
+    }
+
+    private static func effectiveOutputBindings(
+        for mode: GamepadProfileOutputMode,
+        keyBindings: [GameButton: MacKeyBinding],
+        customOutputBindings: [GameButton: MacControlOutputBinding]
+    ) -> [GameButton: MacControlOutputBinding] {
+        switch mode {
+        case .keyboard:
+            return outputBindings(from: keyBindings)
+        case .controller:
+            return DefaultMacControlOutputMap.xboxStyleBindings
+        case .custom:
+            return customOutputBindings.isEmpty ? outputBindings(from: keyBindings) : customOutputBindings
+        }
+    }
+
+    private static func rawOutputBindings(_ bindings: [GameButton: MacControlOutputBinding]) -> [String: MacControlOutputBinding] {
+        Dictionary(uniqueKeysWithValues: bindings.map { button, binding in (button.rawValue, binding) })
+    }
+
+    private static func decodedOutputBindings(_ raw: [String: MacControlOutputBinding]?) -> [GameButton: MacControlOutputBinding]? {
+        guard let raw else { return nil }
+        return Dictionary(uniqueKeysWithValues: raw.compactMap { key, binding in
+            guard let button = GameButton(rawValue: key), !binding.isEmpty else { return nil }
+            return (button, binding)
+        })
+    }
+
+    private static func loadProfileOutputBindings(
+        from domain: [String: Any],
+        fallbackProfileKeyBindings: [String: [String: MacKeyBinding]]
+    ) -> [String: [String: MacControlOutputBinding]] {
+        var resolvedOutputBindings = Dictionary(uniqueKeysWithValues: fallbackProfileKeyBindings.map { profileID, rawBindings in
+            (profileID, rawOutputBindings(outputBindings(from: decodedBindings(rawBindings) ?? DefaultKeypadKeyMap.defaultBindings)))
+        })
+        guard let data = dataValue(domain[profileOutputBindingsDefaultsKey]),
+              let decoded = try? JSONDecoder().decode([String: [String: MacControlOutputBinding]].self, from: data)
+        else { return resolvedOutputBindings }
+        for (profileID, bindings) in decoded {
+            resolvedOutputBindings[profileID] = bindings
+        }
+        return resolvedOutputBindings
+    }
+
     private static func dataValue(_ value: Any?) -> Data? {
         if let data = value as? Data { return data }
         if let data = value as? NSData { return data as Data }
@@ -2038,14 +2379,18 @@ struct PocketPadCLI {
         profileStateData: Data,
         activeCustomizationData: Data?,
         keyBindingsData: Data?,
-        profileKeyBindingsData: Data
+        profileKeyBindingsData: Data,
+        outputBindingsData: Data?,
+        profileOutputBindingsData: Data
     ) {
         var userInfo: [String: Any] = [
             notificationProfileStateDataKey: profileStateData,
-            notificationProfileKeyBindingsDataKey: profileKeyBindingsData
+            notificationProfileKeyBindingsDataKey: profileKeyBindingsData,
+            notificationProfileOutputBindingsDataKey: profileOutputBindingsData
         ]
         if let activeCustomizationData { userInfo[notificationActiveCustomizationDataKey] = activeCustomizationData }
         if let keyBindingsData { userInfo[notificationKeyBindingsDataKey] = keyBindingsData }
+        if let outputBindingsData { userInfo[notificationOutputBindingsDataKey] = outputBindingsData }
 
         DistributedNotificationCenter.default().postNotificationName(
             profileStoreChangedNotificationName,
@@ -2102,6 +2447,53 @@ struct PocketPadCLI {
             return button
         }
         throw CLIError.message("Unknown button: \(text)")
+    }
+
+    private static func parseOutputMode(_ text: String) throws -> GamepadProfileOutputMode {
+        if let mode = GamepadProfileOutputMode(rawValue: text.lowercased()) { return mode }
+        switch normalizedLookup(text) {
+        case "key", "keys", "keyboard", "shortcut", "shortcuts":
+            return .keyboard
+        case "controller", "gamepad", "pad", "xbox":
+            return .controller
+        case "custom", "mixed", "hybrid", "both":
+            return .custom
+        default:
+            throw CLIError.message("Unknown output mode: \(text). Use keyboard, controller, or custom.")
+        }
+    }
+
+    private static func parseVirtualGamepadButton(_ text: String) throws -> VirtualGamepadButton {
+        let normalized = normalizedLookup(text)
+        if let button = VirtualGamepadButton(rawValue: text) { return button }
+        if let button = VirtualGamepadButton.allCases.first(where: {
+            normalizedLookup($0.rawValue) == normalized
+                || normalizedLookup($0.displayName) == normalized
+                || normalizedLookup($0.shortName) == normalized
+        }) {
+            return button
+        }
+        throw CLIError.message("Unknown gamepad button: \(text)")
+    }
+
+    private static func parseVirtualGamepadTrigger(_ text: String) throws -> VirtualGamepadTrigger {
+        let normalized = normalizedLookup(text)
+        if let trigger = VirtualGamepadTrigger(rawValue: text) { return trigger }
+        if normalized == "lt" || normalized == "l2" || normalized == "lefttrigger" { return .left }
+        if normalized == "rt" || normalized == "r2" || normalized == "righttrigger" { return .right }
+        if let trigger = VirtualGamepadTrigger.allCases.first(where: {
+            normalizedLookup($0.rawValue) == normalized
+                || normalizedLookup($0.displayName) == normalized
+                || normalizedLookup($0.shortName) == normalized
+        }) {
+            return trigger
+        }
+        throw CLIError.message("Unknown gamepad trigger: \(text)")
+    }
+
+    private static func parseTriggerOrientation(_ text: String) throws -> GamepadTriggerOrientation {
+        if let orientation = GamepadTriggerOrientation(rawValue: text.lowercased()) { return orientation }
+        throw CLIError.message("Unknown trigger orientation: \(text). Use vertical or horizontal.")
     }
 
     private static func parseKeyBindingSequence(_ text: String) throws -> MacKeyBinding {
@@ -2234,6 +2626,7 @@ struct PocketPadCLI {
         let normalized = normalizedLookup(text)
         if normalized == "shape" { return .button }
         if normalized == "stick" { return .joystick }
+        if normalized == "trigger" || normalized == "slider" { return .trigger }
         if normalized == "touchpad" || normalized == "trackpad" || normalized == "cursorpad" { return .trackpad }
         throw CLIError.message("Unknown element kind: \(text)")
     }
@@ -2242,8 +2635,35 @@ struct PocketPadCLI {
         switch kind {
         case .button: return "Shape"
         case .joystick: return "Joystick"
+        case .trigger: return "Trigger"
         case .trackpad: return "Trackpad"
         }
+    }
+
+    private static func triggerSettings(
+        from arguments: [String],
+        fallback: GamepadTriggerSettings = .defaultValue
+    ) throws -> GamepadTriggerSettings {
+        var settings = fallback.normalized
+        if let value = optionValue("--target", in: arguments) ?? optionValue("--trigger", in: arguments) {
+            settings.target = try parseVirtualGamepadTrigger(value)
+        }
+        if let value = optionValue("--orientation", in: arguments) {
+            settings.orientation = try parseTriggerOrientation(value)
+        }
+        if let value = optionValue("--dead-zone", in: arguments) ?? optionValue("--deadzone", in: arguments) {
+            settings.deadZone = try parseUnitInterval(value, option: "trigger dead zone")
+        }
+        if let value = optionValue("--sensitivity", in: arguments) {
+            settings.sensitivity = try parseTrackpadScale(value, option: "trigger sensitivity")
+        }
+        if let value = optionValue("--digital", in: arguments) ?? optionValue("--digital-button", in: arguments) {
+            settings.sendsDigitalButton = try parseBool(value)
+        }
+        if let value = optionValue("--digital-threshold", in: arguments) {
+            settings.digitalThreshold = try parseUnitInterval(value, option: "trigger digital threshold")
+        }
+        return settings.normalized
     }
 
     private static func trackpadSettings(
@@ -2271,7 +2691,14 @@ struct PocketPadCLI {
 
     private static func parseTrackpadScale(_ text: String, option: String) throws -> CGFloat {
         guard let value = Double(text), value.isFinite else {
-            throw CLIError.message("Invalid trackpad \(option): \(text)")
+            throw CLIError.message("Invalid \(option): \(text)")
+        }
+        return CGFloat(value)
+    }
+
+    private static func parseUnitInterval(_ text: String, option: String) throws -> CGFloat {
+        guard let value = Double(text), value.isFinite else {
+            throw CLIError.message("Invalid \(option): \(text)")
         }
         return CGFloat(value)
     }
@@ -2433,20 +2860,24 @@ struct PocketPadCLI {
                 isLocationLocked: layout.isLocationLocked,
                 layout: layout,
                 joystickMapping: nil,
+                triggerSettings: nil,
                 trackpadSettings: nil
             )
         }
         summaries += customization.customButtons.map { custom in
             let normalized = custom.normalized
+            let kind = normalized.isJoystick ? "joystick" : (normalized.isTrigger ? "trigger" : (normalized.isTrackpad ? "trackpad" : "button"))
+            let fallbackLabel = normalized.isTrigger ? (normalized.triggerSettings ?? .defaultValue).normalized.target.shortName : (normalized.isTrackpad ? "Trackpad" : normalized.mappedButton.displayName)
             return ElementSummary(
                 id: normalized.id.uuidString,
-                kind: normalized.isJoystick ? "joystick" : (normalized.isTrackpad ? "trackpad" : "button"),
+                kind: kind,
                 mappedButton: normalized.mappedButton,
-                label: normalized.visualLabel(fallback: normalized.isTrackpad ? "Trackpad" : normalized.mappedButton.displayName),
+                label: normalized.visualLabel(fallback: fallbackLabel),
                 isHidden: normalized.layout.isHidden,
                 isLocationLocked: normalized.layout.isLocationLocked,
                 layout: normalized.layout,
                 joystickMapping: normalized.joystickMapping,
+                triggerSettings: normalized.triggerSettings,
                 trackpadSettings: normalized.trackpadSettings
             )
         }
@@ -2503,7 +2934,7 @@ struct PocketPadCLI {
         let optionsWithValues: Set<String> = [
             "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from",
             "--layout-preview", "--preview-output", "--path", "--image-scale", "--render-scale",
-            "--sequence", "--key", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
+            "--sequence", "--keyboard", "--key", "--gamepad-button", "--gamepad", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
             "--appearance", "--color-scheme", "--scheme", "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
             "--background", "--bg", "--light-background", "--background-light", "--dark-background", "--background-dark",
             "--background-gradient", "--bg-gradient", "--background-tile", "--bg-tile", "--background-image", "--bg-image",
@@ -2516,9 +2947,9 @@ struct PocketPadCLI {
             "--fill-tile", "--tile", "--tile-foreground", "--tile-background", "--tile-scale", "--tile-spacing-x", "--tile-spacing-y", "--light-fill-tile", "--dark-fill-tile", "--tile-light", "--tile-dark",
             "--fill-image", "--image", "--image-mode",
             "--corner", "--radius", "--corner-tl", "--corner-tr", "--corner-br", "--corner-bl", "--shadow",
-            "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--sensitivity",
+            "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--target", "--trigger", "--dead-zone", "--deadzone", "--sensitivity",
             "--cursor-sensitivity", "--pointer-sensitivity", "--scroll-sensitivity", "--tap-to-click",
-            "--two-finger-scroll", "--natural-scrolling", "--natural-scroll", "--hold-ms",
+            "--two-finger-scroll", "--natural-scrolling", "--natural-scroll", "--digital", "--digital-button", "--digital-threshold", "--hold-ms",
             "--step", "--pixels", "--by", "--dx", "--dy", "--canvas", "--canvas-width", "--canvas-height",
             "--device", "--frame", "--size", "--device-size", "--orientation", "--device-orientation"
         ]
@@ -2544,6 +2975,7 @@ struct PocketPadCLI {
         print("ID: \(profile.id.uuidString)")
         print("Active: \(profile.id == store.activeProfileID ? "yes" : "no")")
         print("Default: \(profile.id == store.defaultProfileID ? "yes" : "no")")
+        print("Output: \(profile.outputMode.displayName)")
         print("Layout: \(profile.customization.layoutMode.rawValue)")
         print("Scale: \(profile.customization.controlScale.rawValue)")
         let deviceFrame = profile.customization.deviceCanvas.editorDeviceFrame
@@ -2651,6 +3083,10 @@ struct PocketPadCLI {
           pocketpad binding set focus --sequence 'Control+B,H'
           pocketpad binding reset jump
           pocketpad binding reset-all
+          pocketpad output list [--profile PROFILE]
+          pocketpad output mode keyboard|controller|custom [--profile PROFILE]
+          pocketpad output set jump --keyboard Space --gamepad south
+          pocketpad output set custom5 --clear-keyboard --gamepad leftTriggerButton
 
         Customization:
           pocketpad customization set --appearance dark --device iphone-17-pro --background '#101014'
@@ -2665,6 +3101,7 @@ struct PocketPadCLI {
           pocketpad element list
           pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#F59E0B' --dark-fill '#78350F'
           pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
+          pocketpad element add trigger --target left --orientation horizontal --sensitivity 1.2
           pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
           pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
           pocketpad element set jump --fill-gradient '#000000,#666666' --gradient-angle 0

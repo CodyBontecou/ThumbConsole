@@ -79,6 +79,7 @@ pocketpad template install snes --name "SNES Browser Controls" --default
 pocketpad profile export --all -o pocketpad-profiles.json
 pocketpad profile import pocketpad-profiles.json
 pocketpad binding set focus --sequence 'Control+B,H'
+pocketpad output mode keyboard   # or controller/custom per setup
 pocketpad customization set --appearance dark --device iphone-17-pro --background '#101014'
 pocketpad customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
 pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
@@ -100,6 +101,21 @@ pocketpad release-all
 ```
 
 `pocketpad latency simulate` is a headless replay harness for agent debugging. It runs Hollow-Knight-style bursts, same-button mash bursts, UDP recovery, or UDP recovery-burst cases through the compact button wire format and Mac sequence buffering model, then prints touch-to-injection latency and can write a per-edge JSON report. `pocketpad latency verify` runs every current-path pattern and exits nonzero if the configured max or p95 latency budget is exceeded.
+
+## Virtual gamepad output
+
+PocketPad can map keypad controls to system-visible virtual gamepad buttons, analog sticks, and triggers while keeping keyboard and pointer output available. Each keypad setup has an output mode: `keyboard` keeps the virtual controller off, `controller` applies the default Xbox-style virtual controller map, and `custom` uses per-button mixed bindings. Configure the mode and mappings in the macOS Keypad editor or with the CLI:
+
+```bash
+pocketpad output mode controller
+pocketpad output mode keyboard --profile "SNES Browser Controls"
+pocketpad output set jump --keyboard Space --gamepad south
+pocketpad output set attack --gamepad west
+pocketpad element add joystick --target left-stick --no-digital-directions
+pocketpad element add trigger --target left --orientation horizontal --sensitivity 1.2
+```
+
+On macOS, the virtual controller is created with `IOHIDUserDevice` and requires the Apple-granted `com.apple.developer.hid.virtual.device` signing entitlement. If the Mac app is not signed with that entitlement, keyboard/pointer output continues to work, but macOS Game Controller settings and games will show no controller. `pocketpad status` reports the virtual gamepad availability and the entitlement error when creation is denied.
 
 ## Keypad customization
 

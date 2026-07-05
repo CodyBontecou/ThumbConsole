@@ -48,219 +48,473 @@ struct MacContentView: View {
     }
 
     private var homePage: some View {
-        contentScroll {
-            homeHero
-            homeNextStepPanel
+        GeometryReader { proxy in
+            homePageContent(availableSize: proxy.size)
+        }
+        .geistScreenBackground()
+    }
 
-            if server.isPairingPending {
-                pairingRequestPanel
+    private func homePageContent(availableSize: CGSize) -> some View {
+        let pagePadding = homePagePadding(for: availableSize.width)
+        let contentWidth = max(0, availableSize.width - pagePadding * 2)
+        let contentHeight = max(0, availableSize.height - pagePadding * 2)
+
+        return ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
+                homeHero(availableSize: CGSize(width: contentWidth, height: contentHeight))
             }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: Geist.Spacing.s6) {
-                    activeKeypadPanel
-                    homePairingPanel
-                        .frame(width: 340)
-                }
-
-                VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
-                    activeKeypadPanel
-                    homePairingPanel
-                }
-            }
-
-            homeDiscoveryPanel
+            .padding(pagePadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(minHeight: availableSize.height, alignment: .topLeading)
         }
     }
 
-    private var homeHero: some View {
-        homeHeroCopy
-        .padding(Geist.Spacing.s8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Geist.color(.gray100, scheme: colorScheme),
-                            Geist.color(.background100, scheme: colorScheme),
-                            Geist.color(.blue100, scheme: colorScheme).opacity(colorScheme == .dark ? 0.38 : 0.72)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+    private func homePagePadding(for width: CGFloat) -> CGFloat {
+        if width < 760 { return Geist.Spacing.s4 }
+        if width < 1100 { return Geist.Spacing.s6 }
+        return Geist.Spacing.s8
+    }
+
+    private func homeHero(availableSize: CGSize) -> some View {
+        let innerWidth = max(0, availableSize.width - Geist.Spacing.s6 * 2)
+        let usesWideLayout = innerWidth >= 820
+        let connectionWidth = homeConnectionCardWidth(for: innerWidth)
+        let previewWidth = usesWideLayout
+            ? max(0, innerWidth - connectionWidth - Geist.Spacing.s6)
+            : innerWidth
+        let previewHeight = homePreviewHeight(
+            for: previewWidth,
+            availableHeight: availableSize.height,
+            isWideLayout: usesWideLayout
         )
+
+        return VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
+            homeHeroHeader
+
+            if usesWideLayout {
+                HStack(alignment: .top, spacing: Geist.Spacing.s6) {
+                    homeActiveKeypadSurface(previewHeight: previewHeight)
+                        .layoutPriority(1)
+
+                    homeConnectionSummaryCard
+                        .frame(width: connectionWidth)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    homeConnectionSummaryCard
+                        .frame(maxWidth: min(560, innerWidth), alignment: .leading)
+                    homeActiveKeypadSurface(previewHeight: previewHeight)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(Geist.Spacing.s6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Geist.color(.background100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
+        .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous))
     }
 
-    private var homeHeroCopy: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+    private func homeConnectionCardWidth(for innerWidth: CGFloat) -> CGFloat {
+        min(420, max(340, innerWidth * 0.30))
+    }
+
+    private func homePreviewHeight(for previewWidth: CGFloat, availableHeight: CGFloat, isWideLayout: Bool) -> CGFloat {
+        let aspectHeight = previewWidth / activeKeypadPreviewAspectRatio
+        let roomyCap: CGFloat = isWideLayout ? 460 : 360
+        let viewportCap = availableHeight > 0
+            ? availableHeight * (isWideLayout ? 0.58 : 0.45)
+            : roomyCap
+        let maxHeight = max(240, min(roomyCap, viewportCap))
+        let minHeight = min(isWideLayout ? 280 : 220, maxHeight)
+        return min(max(aspectHeight, minHeight), maxHeight)
+    }
+
+    private var homeHeroHeader: some View {
+        HStack(alignment: .top, spacing: Geist.Spacing.s4) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                Text("PocketPad")
+                    .geistTypography(.heading24)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                Text("Use your iPhone as the active keypad for the focused Mac app.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Geist.Spacing.s4)
+
             MacStatusPill(
                 title: homeStatusTitle,
                 systemImage: homeStatusSystemImage,
                 tone: homeStatusTone
             )
-
-            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Your iPhone, tuned for every Mac app.")
-                    .geistTypography(.heading40)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text("PocketPad turns a phone into a programmable shortcut keypad for games, editors, terminals, streams, and daily workflows.")
-                    .geistTypography(.copy16)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: Geist.Spacing.s3) {
-                    Button {
-                        selectedSection = .gamepad
-                    } label: {
-                        Label("Edit Keypad", systemImage: "slider.horizontal.3")
-                    }
-                    .geistButtonStyle(.primary)
-
-                    profileSwitcherMenu
-                }
-
-                VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                    Button {
-                        selectedSection = .gamepad
-                    } label: {
-                        Label("Edit Keypad", systemImage: "slider.horizontal.3")
-                    }
-                    .geistButtonStyle(.primary)
-
-                    profileSwitcherMenu
-                }
-            }
         }
-        .frame(maxWidth: 620, alignment: .leading)
     }
 
-
-    private var homeNextStepPanel: some View {
+    private func homeActiveKeypadSurface(previewHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
-            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s4) {
-                SectionHeader(
-                    title: homeNextStepTitle,
-                    subtitle: homeNextStepSubtitle
-                )
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s3) {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                    Text(activeProfileName)
+                        .geistTypography(.heading20)
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Text("\(activeProfileControlCount) controls • \(server.gamepadProfiles.count) saved setups")
+                        .geistTypography(.copy13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: Geist.Spacing.s3)
 
-                MacStatusPill(
-                    title: homeReadinessSummary,
-                    systemImage: homeReadinessSystemImage,
-                    tone: homeReadinessTone
+                if server.activeGamepadProfileID == server.defaultGamepadProfileID {
+                    MacStatusPill(title: "Default", systemImage: "star.fill", tone: .warning)
+                }
+            }
+
+            activeKeypadPreview
+                .frame(height: previewHeight)
+                .frame(maxWidth: .infinity)
+                .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                        .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
                 )
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s3) {
+                    homeActiveKeypadActions
+                }
+
+                VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                    homeActiveKeypadActions
+                }
             }
 
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: Geist.Spacing.s6) {
-                    homeReadinessChecklist
-                    Spacer(minLength: Geist.Spacing.s4)
-                    homeNextStepActions
+                HStack(spacing: Geist.Spacing.s2) {
+                    homeInlineMetric(
+                        title: "iPhone",
+                        value: server.isClientConnected ? server.clientName : "Not connected",
+                        systemImage: server.isClientConnected ? "iphone.gen3.radiowaves.left.and.right" : "iphone.gen3.slash"
+                    )
+                    homeInlineMetric(
+                        title: "Appearance",
+                        value: (activeGamepadProfile?.customization ?? server.gamepadCustomization).colorSchemePreference.displayName,
+                        systemImage: "circle.lefthalf.filled"
+                    )
+                    homeInlineMetric(
+                        title: "Last event",
+                        value: server.lastReceivedEvent,
+                        systemImage: "waveform.path.ecg"
+                    )
                 }
 
-                VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
-                    homeReadinessChecklist
-                    homeNextStepActions
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    homeInlineMetric(
+                        title: "iPhone",
+                        value: server.isClientConnected ? server.clientName : "Not connected",
+                        systemImage: server.isClientConnected ? "iphone.gen3.radiowaves.left.and.right" : "iphone.gen3.slash"
+                    )
+                    homeInlineMetric(
+                        title: "Appearance",
+                        value: (activeGamepadProfile?.customization ?? server.gamepadCustomization).colorSchemePreference.displayName,
+                        systemImage: "circle.lefthalf.filled"
+                    )
+                    homeInlineMetric(
+                        title: "Last event",
+                        value: server.lastReceivedEvent,
+                        systemImage: "waveform.path.ecg"
+                    )
                 }
             }
         }
-        .geistPanel()
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var homeReadinessChecklist: some View {
+    @ViewBuilder
+    private var homeActiveKeypadActions: some View {
+        Button {
+            selectedSection = .gamepad
+        } label: {
+            Label("Edit Keypad", systemImage: "slider.horizontal.3")
+        }
+        .geistButtonStyle(.primary)
+
+        profileSwitcherMenu
+
+        Button("Make Default") {
+            server.setDefaultGamepadProfile(server.activeGamepadProfileID)
+        }
+        .geistButtonStyle(.secondary)
+        .disabled(server.activeGamepadProfileID == server.defaultGamepadProfileID)
+    }
+
+    private func homeInlineMetric(title: String, value: String, systemImage: String) -> some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .lineLimit(1)
+                Text(value)
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: Geist.Spacing.s1)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+
+    private var homeConnectionSummaryCard: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s2) {
+                Text(homeNextStepTitle)
+                    .geistTypography(.heading16)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .lineLimit(2)
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Text(homeReadinessSummary)
+                    .geistTypography(.label12)
+                    .foregroundStyle(homeReadinessTone.foreground(scheme: colorScheme))
+                    .padding(.horizontal, Geist.Spacing.s2)
+                    .padding(.vertical, Geist.Spacing.s1)
+                    .background(homeReadinessTone.background(scheme: colorScheme), in: Capsule())
+                    .overlay(Capsule().stroke(homeReadinessTone.border(scheme: colorScheme), lineWidth: 1))
+                    .fixedSize()
+            }
+
+            Text(homeCompactConnectionSubtitle)
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+
+            homeReadinessSummaryRows
+
+            if server.isPairingPending {
+                homePendingPairingInline
+            } else if server.accessibilityTrusted && server.isRunning && !server.isClientConnected {
+                homePairingCodeInline
+            } else {
+                homeCompactConnectionActions
+            }
+        }
+    }
+
+    private var homeReadinessSummaryRows: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-            readinessRow(
+            homeReadinessRow(
                 title: "Accessibility",
-                detail: server.accessibilityTrusted ? "Keyboard injection is allowed" : "Permission is required to send shortcuts",
+                value: server.accessibilityTrusted ? "Allowed" : "Needed",
+                systemImage: "checkmark.shield.fill",
                 isComplete: server.accessibilityTrusted
             )
-            readinessRow(
+            homeReadinessRow(
                 title: "Mac helper",
-                detail: server.isRunning ? "Listening on port \(server.port)" : "Server is stopped",
+                value: server.isRunning ? "Port \(server.port)" : "Stopped",
+                systemImage: "macbook",
                 isComplete: server.isRunning
             )
-            readinessRow(
+            homeReadinessRow(
                 title: "iPhone",
-                detail: server.isClientConnected ? server.clientName : "Scan the QR code from PocketPad on iPhone",
+                value: server.isClientConnected ? server.clientName : "Waiting",
+                systemImage: server.isClientConnected ? "iphone.gen3.radiowaves.left.and.right" : "iphone.gen3",
                 isComplete: server.isClientConnected
             )
         }
-        .frame(maxWidth: 520, alignment: .leading)
     }
 
-    private func readinessRow(title: String, detail: String, isComplete: Bool) -> some View {
-        HStack(alignment: .top, spacing: Geist.Spacing.s3) {
-            Image(systemName: isComplete ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(isComplete ? Geist.color(.green900, scheme: colorScheme) : Geist.color(.gray900, scheme: colorScheme))
-                .frame(width: 20, height: 20)
+    private func homeReadinessRow(title: String, value: String, systemImage: String, isComplete: Bool) -> some View {
+        HStack(spacing: Geist.Spacing.s3) {
+            Image(systemName: isComplete ? "checkmark.circle.fill" : systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isComplete ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.gray800, scheme: colorScheme))
+                .frame(width: 16)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .geistTypography(.heading14)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                Text(detail)
-                    .geistTypography(.copy13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(title)
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .lineLimit(1)
+
+            Spacer(minLength: Geist.Spacing.s2)
+
+            Text(value)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
     }
 
-    @ViewBuilder
-    private var homeNextStepActions: some View {
+    private var homePairingCodeInline: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: Geist.Spacing.s3) {
-                homePrimaryNextStepButtons
+            HStack(alignment: .center, spacing: Geist.Spacing.s3) {
+                QRCodeView(text: server.pairingPayload)
+                    .frame(width: 104, height: 104)
+                homePairingCodeContent
             }
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                homePrimaryNextStepButtons
+                QRCodeView(text: server.pairingPayload)
+                    .frame(width: 120, height: 120)
+                homePairingCodeContent
             }
         }
     }
 
-    @ViewBuilder
-    private var homePrimaryNextStepButtons: some View {
-        if !server.accessibilityTrusted {
-            Button("Enable Accessibility") { server.promptForAccessibility() }
-                .geistButtonStyle(.primary)
-            Button("Open Settings") { server.openAccessibilitySettings() }
-                .geistButtonStyle(.secondary)
-            Button("Refresh") { server.refreshAccessibilityStatus() }
-                .geistButtonStyle(.tertiary)
-        } else if !server.isRunning {
-            Button("Start Server") { server.start() }
-                .geistButtonStyle(.primary)
-            Button("Server Settings") { selectedSection = .settings }
-                .geistButtonStyle(.secondary)
-        } else if server.isClientConnected {
-            Button {
-                selectedSection = .gamepad
-            } label: {
-                Label("Customize Active Keypad", systemImage: "slider.horizontal.3")
+    private var homePairingCodeContent: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Pairing code")
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                Text(server.pairingCode)
+                    .geistTypography(.heading20)
+                    .monospacedDigit()
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .textSelection(.enabled)
             }
-            .geistButtonStyle(.primary)
-            Button("Release All Keys") { server.releaseAll(reason: "Home next step release all") }
-                .geistButtonStyle(.secondary)
-        } else {
-            Button("Copy Pairing Code") { copyToPasteboard(server.pairingCode) }
-                .geistButtonStyle(.primary)
-            Button("Restart Server") { server.restart() }
-                .geistButtonStyle(.secondary)
+
+            Text("Scan from PocketPad on iPhone or enter the code manually.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+
+            homeCompactConnectionActions
         }
     }
+
+    private var homePendingPairingInline: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            HStack(spacing: Geist.Spacing.s2) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Waiting for \(server.pendingPairingClientName ?? "iPhone")")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Button("Cancel") {
+                    server.cancelPairing()
+                }
+                .geistButtonStyle(.tertiary, size: .small)
+            }
+
+            Text(server.pairingCode)
+                .geistTypography(.heading24)
+                .monospacedDigit()
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .textSelection(.enabled)
+        }
+        .padding(Geist.Spacing.s3)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.amber400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var homeCompactConnectionActions: some View {
+        if !server.accessibilityTrusted {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s2) {
+                    Button("Enable") { server.promptForAccessibility() }
+                        .geistButtonStyle(.primary, size: .small)
+                    Button("Settings") { server.openAccessibilitySettings() }
+                        .geistButtonStyle(.secondary, size: .small)
+                }
+
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    Button("Enable") { server.promptForAccessibility() }
+                        .geistButtonStyle(.primary, size: .small)
+                    Button("Settings") { server.openAccessibilitySettings() }
+                        .geistButtonStyle(.secondary, size: .small)
+                }
+            }
+        } else if !server.isRunning {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s2) {
+                    Button("Start Server") { server.start() }
+                        .geistButtonStyle(.primary, size: .small)
+                    Button("Settings") { selectedSection = .settings }
+                        .geistButtonStyle(.secondary, size: .small)
+                }
+
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    Button("Start Server") { server.start() }
+                        .geistButtonStyle(.primary, size: .small)
+                    Button("Settings") { selectedSection = .settings }
+                        .geistButtonStyle(.secondary, size: .small)
+                }
+            }
+        } else if server.isClientConnected {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s2) {
+                    Button("Edit Keypad") { selectedSection = .gamepad }
+                        .geistButtonStyle(.primary, size: .small)
+                    Button("Release") { server.releaseAll(reason: "Home compact connection release all") }
+                        .geistButtonStyle(.secondary, size: .small)
+                }
+
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    Button("Edit Keypad") { selectedSection = .gamepad }
+                        .geistButtonStyle(.primary, size: .small)
+                    Button("Release") { server.releaseAll(reason: "Home compact connection release all") }
+                        .geistButtonStyle(.secondary, size: .small)
+                }
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s2) {
+                    Button("Copy Code") { copyToPasteboard(server.pairingCode) }
+                        .geistButtonStyle(.primary, size: .small)
+                    Button("Restart") { server.restart() }
+                        .geistButtonStyle(.secondary, size: .small)
+                }
+
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    Button("Copy Code") { copyToPasteboard(server.pairingCode) }
+                        .geistButtonStyle(.primary, size: .small)
+                    Button("Restart") { server.restart() }
+                        .geistButtonStyle(.secondary, size: .small)
+                }
+            }
+        }
+    }
+
 
     private var activeKeypadPanel: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
@@ -694,6 +948,12 @@ struct MacContentView: View {
         ).count
     }
 
+    private var activeKeypadPreviewAspectRatio: CGFloat {
+        let screenSize = (activeGamepadProfile?.customization ?? server.gamepadCustomization)
+            .deviceCanvas.editorDeviceFrame.screenRect.size
+        return max(1.35, screenSize.width / max(screenSize.height, 1))
+    }
+
     private var homeStatusTitle: String {
         if !server.accessibilityTrusted { return "Accessibility Needed" }
         if server.isClientConnected { return "iPhone Connected" }
@@ -724,27 +984,23 @@ struct MacContentView: View {
         return "Connect your iPhone"
     }
 
-    private var homeNextStepSubtitle: String {
+    private var homeCompactConnectionSubtitle: String {
         if !server.accessibilityTrusted {
-            return "macOS blocks keyboard injection until PocketPad Mac is allowed in Privacy & Security → Accessibility."
+            return "Allow PocketPad to send shortcuts from your phone."
         }
         if !server.isRunning {
-            return "The helper needs to be running so your iPhone can discover and pair with this Mac."
+            return "Start the helper before pairing an iPhone."
         }
         if server.isClientConnected {
-            return "Focus the Mac app you want to control, then use the active keypad from your iPhone."
+            return "\(server.clientName) is ready to control the focused Mac app."
         }
-        return "Scan the pairing code below from PocketPad on iPhone. After the first pair, Smart Connect can reconnect automatically."
+        return "Copy the pairing code here or scan the QR card below."
     }
 
     private var homeReadinessSummary: String {
         if server.accessibilityTrusted && server.isRunning && server.isClientConnected { return "3 of 3 Ready" }
         let readyCount = [server.accessibilityTrusted, server.isRunning, server.isClientConnected].filter { $0 }.count
         return "\(readyCount) of 3 Ready"
-    }
-
-    private var homeReadinessSystemImage: String {
-        server.accessibilityTrusted && server.isRunning && server.isClientConnected ? "checkmark.seal.fill" : "list.bullet.clipboard"
     }
 
     private var homeReadinessTone: MacInterfaceTone {
@@ -816,6 +1072,12 @@ struct MacContentView: View {
             defaultLabelProvider: { button in
                 server.recordedShortcutLabel(for: button)
             },
+            profileOutputModeContent: {
+                AnyView(
+                    MacGamepadOutputModeInspector()
+                        .environmentObject(server)
+                )
+            },
             selectedKeyBindingContent: { button in
                 AnyView(
                     MacGamepadSelectedKeyBindingInspector(button: button)
@@ -833,7 +1095,7 @@ struct MacContentView: View {
                 Text("PocketPad Mac Helper")
                     .geistTypography(.heading40)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                Text("iPhone keypad → WebSocket → CGEvent keyboard shortcuts")
+                Text("iPhone keypad → WebSocket → keyboard shortcuts or virtual controller")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             }
@@ -1440,11 +1702,20 @@ private struct MacKeypadMiniPreview: View {
         customization.deviceCanvas.editorDeviceFrame.screenRect.size
     }
 
+    private let deviceChromePadding: CGFloat = 24
+    private let minimumPreviewPadding: CGFloat = 18
+
     var body: some View {
         GeometryReader { proxy in
             let availableWidth = max(proxy.size.width, 1)
             let availableHeight = max(proxy.size.height, 1)
-            let scale = max(0.001, min(availableWidth / designSize.width, availableHeight / designSize.height))
+            let fittedWidth = max(availableWidth - minimumPreviewPadding * 2, 1)
+            let fittedHeight = max(availableHeight - minimumPreviewPadding * 2, 1)
+            let deviceFrameSize = CGSize(
+                width: designSize.width + deviceChromePadding,
+                height: designSize.height + deviceChromePadding
+            )
+            let scale = max(0.001, min(fittedWidth / deviceFrameSize.width, fittedHeight / deviceFrameSize.height))
             let displaySize = CGSize(width: designSize.width * scale, height: designSize.height * scale)
             let controls = customization.resolvedControls(in: designSize, defaultLabelProvider: defaultLabelProvider)
             let previewColorScheme = customization.resolvedColorScheme(system: colorScheme)
@@ -1452,7 +1723,7 @@ private struct MacKeypadMiniPreview: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 30 * scale, style: .continuous)
                     .fill(Geist.color(.gray1000, scheme: previewColorScheme))
-                    .frame(width: displaySize.width + 24 * scale, height: displaySize.height + 24 * scale)
+                    .frame(width: displaySize.width + deviceChromePadding * scale, height: displaySize.height + deviceChromePadding * scale)
                     .shadow(color: Color.black.opacity(previewColorScheme == .dark ? 0.24 : 0.10), radius: 18 * scale, x: 0, y: 10 * scale)
 
                 ZStack(alignment: .topLeading) {
@@ -1496,33 +1767,14 @@ private struct MacKeypadPreviewControl: View {
             controlShape
 
             if control.isJoystick {
-                Circle()
-                    .stroke(control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.58), lineWidth: max(1, 3 * scale))
-                    .padding(max(3, 10 * scale))
-                Circle()
-                    .fill(control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.42))
-                    .frame(width: max(8, 22 * scale), height: max(8, 22 * scale))
+                joystickFace
             } else if control.isTrackpad {
-                RoundedRectangle(cornerRadius: max(4, 10 * scale), style: .continuous)
-                    .stroke(control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.34), lineWidth: max(1, 1.5 * scale))
-                    .padding(max(3, 8 * scale))
-                Image(systemName: "cursorarrow")
-                    .font(.system(size: max(9, 18 * scale), weight: .semibold))
-                    .foregroundStyle(control.layoutCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.62))
-                    .offset(y: max(-4, -8 * scale))
-            }
-
-            if customization.showsButtonLabels {
-                Text(control.label)
-                    .geistTypography(.label12)
-                    .foregroundStyle(control.layoutCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.45)
-                    .padding(.horizontal, max(2, 4 * scale))
-                    .offset(y: control.isTrackpad ? max(6, 12 * scale) : 0)
+                trackpadFace
+            } else if customization.showsButtonLabels {
+                controlLabel
             }
         }
-        .frame(width: max(1, control.size.width * scale), height: max(1, control.size.height * scale))
+        .frame(width: visualSize.width, height: visualSize.height)
         .shadow(
             color: Color.black.opacity(Double(min(0.18, 0.05 + 0.04 * control.layoutCustomization.shadowStrength))),
             radius: max(0.5, 4 * scale * control.layoutCustomization.shadowStrength),
@@ -1546,6 +1798,60 @@ private struct MacKeypadPreviewControl: View {
             bottomTrailing: resolvedCornerRadii.bottomTrailing * scale,
             topTrailing: resolvedCornerRadii.topTrailing * scale
         )
+    }
+
+    private var visualSize: CGSize {
+        CGSize(width: max(1, control.size.width * scale), height: max(1, control.size.height * scale))
+    }
+
+    private var controlForeground: Color {
+        control.layoutCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+    }
+
+    private var controlLabel: some View {
+        Text(control.label)
+            .geistTypography(.label12)
+            .foregroundStyle(controlForeground)
+            .lineLimit(1)
+            .minimumScaleFactor(0.45)
+            .padding(.horizontal, max(2, 4 * scale))
+    }
+
+    private var joystickFace: some View {
+        ZStack {
+            Circle()
+                .stroke(controlForeground.opacity(0.24), lineWidth: max(0.75, 1 * scale))
+                .frame(width: visualSize.width * 0.70, height: visualSize.height * 0.70)
+            Circle()
+                .fill(controlForeground.opacity(0.16))
+                .overlay(Circle().stroke(controlForeground.opacity(0.32), lineWidth: max(0.75, 1 * scale)))
+                .frame(
+                    width: min(visualSize.width, visualSize.height) * 0.34,
+                    height: min(visualSize.width, visualSize.height) * 0.34
+                )
+
+            if customization.showsButtonLabels {
+                controlLabel
+                    .offset(y: visualSize.height * 0.34)
+            }
+        }
+    }
+
+    private var trackpadFace: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: max(4, 10 * scale), style: .continuous)
+                .stroke(controlForeground.opacity(0.24), lineWidth: max(1, 1.5 * scale))
+                .padding(max(3, 8 * scale))
+            Image(systemName: "cursorarrow")
+                .font(.system(size: max(9, 18 * scale), weight: .semibold))
+                .foregroundStyle(controlForeground.opacity(0.62))
+                .offset(y: max(-4, -8 * scale))
+
+            if customization.showsButtonLabels {
+                controlLabel
+                    .offset(y: max(6, 12 * scale))
+            }
+        }
     }
 
     @ViewBuilder
@@ -1643,10 +1949,49 @@ private struct TestKeyButton: View {
     }
 }
 
+private struct MacGamepadOutputModeInspector: View {
+    @EnvironmentObject private var server: MacControllerServer
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var outputModeBinding: Binding<GamepadProfileOutputMode> {
+        Binding(
+            get: { server.activeGamepadOutputMode },
+            set: { server.setOutputMode($0) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text("Output")
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+
+            Picker("Output", selection: outputModeBinding) {
+                ForEach(GamepadProfileOutputMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(server.activeGamepadOutputMode.description)
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 private struct MacGamepadSelectedKeyBindingInspector: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
     let button: GameButton
+
+    private var gamepadButtonSelection: Binding<VirtualGamepadButton?> {
+        Binding(
+            get: { server.gamepadButtonBinding(for: button) },
+            set: { server.setGamepadButtonBinding($0, for: button) }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
@@ -1666,9 +2011,29 @@ private struct MacGamepadSelectedKeyBindingInspector: View {
 
             MacKeyBindingRecorderField(button: button)
 
-            Text("Click the field, press one or more keys, then pause. It saves automatically.")
+            HStack(spacing: Geist.Spacing.s3) {
+                Text("Gamepad")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                Spacer(minLength: Geist.Spacing.s2)
+                Picker("Gamepad output", selection: gamepadButtonSelection) {
+                    Text("None").tag(nil as VirtualGamepadButton?)
+                    ForEach(VirtualGamepadButton.allCases) { gamepadButton in
+                        Text(gamepadButton.displayName).tag(Optional(gamepadButton))
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+
+            Text("Per-button gamepad choices switch this setup to Custom output so it can mix keyboard shortcuts and controller buttons.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Virtual gamepad output appears as a system HID controller when the Mac app is signed with Apple’s HID Virtual Device entitlement; keyboard output continues to work without it.")
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray700, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

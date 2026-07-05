@@ -1529,9 +1529,21 @@ private struct GamepadFreeformControllerCanvas: View {
                     if control.isJoystick, let joystickMapping = control.joystickMapping {
                         GamepadJoystick(
                             mapping: joystickMapping,
+                            outputSettings: control.joystickOutputSettings ?? .defaultValue,
                             label: control.label,
                             size: control.size,
                             elementCustomization: control.layoutCustomization,
+                            customization: customization
+                        )
+                        .rotationEffect(.degrees(control.rotationDegrees))
+                        .position(control.center)
+                    } else if control.isTrigger, let triggerSettings = control.triggerSettings {
+                        GamepadTrigger(
+                            mappedButton: control.mappedButton,
+                            label: control.label,
+                            size: control.size,
+                            elementCustomization: control.layoutCustomization,
+                            settings: triggerSettings,
                             customization: customization
                         )
                         .rotationEffect(.degrees(control.rotationDegrees))
@@ -1622,6 +1634,7 @@ private struct GamepadJoystick: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
     let mapping: GamepadJoystickMapping
+    let outputSettings: GamepadJoystickOutputSettings
     let label: String
     let size: CGSize
     let elementCustomization: GamepadButtonCustomization
@@ -1655,6 +1668,7 @@ private struct GamepadJoystick: View {
             } onVectorChanged: { vector, directions in
                 normalizedOffset = CGSize(width: vector.dx, height: vector.dy)
                 activeDirections = directions
+                handleVectorChanged(vector)
             }
             .frame(width: hitSide, height: hitSide)
         }
@@ -1730,7 +1744,106 @@ private struct GamepadJoystick: View {
     }
 
     private func handleDirectionEdge(_ direction: GamepadJoystickDirection, pressed: Bool, pressIdentifier: UInt64) {
+        guard outputSettings.normalized.sendsDigitalDirections else { return }
         client.setButton(mapping[direction], pressed: pressed, pressIdentifier: pressIdentifier)
+    }
+
+    private func handleVectorChanged(_ vector: CGVector) {
+        let settings = outputSettings.normalized
+        guard let stick = settings.analogTarget.stick else { return }
+        let transformed = settings.transformedVector(x: vector.dx, y: vector.dy)
+        let isFinal = abs(vector.dx) < 0.001 && abs(vector.dy) < 0.001
+        client.setGamepadStick(stick, x: Double(transformed.dx), y: Double(transformed.dy), isFinal: isFinal)
+    }
+}
+
+private struct GamepadTrigger: View {
+    @EnvironmentObject private var client: ControllerClient
+    @Environment(\.colorScheme) private var colorScheme
+    let mappedButton: GameButton
+    let label: String
+    let size: CGSize
+    let elementCustomization: GamepadButtonCustomization
+    let settings: GamepadTriggerSettings
+    let customization: GamepadCustomization
+
+    @State private var value: CGFloat = 0
+    @State private var isDigitalPressed = false
+
+    var body: some View {
+        let hitSize = ControllerLayoutMetrics.hitSize(for: size)
+        ZStack {
+            triggerFace
+                .frame(width: size.width, height: size.height)
+                .allowsHitTesting(false)
+
+            TriggerCaptureView(orientation: settings.normalized.orientation) { rawValue, isActive in
+                handleValueChanged(rawValue, isActive: isActive)
+            }
+            .frame(width: hitSize.width, height: hitSize.height)
+        }
+        .frame(width: hitSize.width, height: hitSize.height)
+        .accessibilityLabel(label)
+        .onDisappear {
+            if value != 0 {
+                handleValueChanged(0, isActive: false)
+            }
+        }
+    }
+
+    private var triggerFace: some View {
+        let normalizedSettings = settings.normalized
+        let accentStyle = elementCustomization.accentStyle ?? customization.accentStyle
+        let isPressed = value > normalizedSettings.deadZone
+        let fillStyle = elementCustomization.buttonFillStyle(accentStyle: accentStyle, isPressed: isPressed, scheme: colorScheme)
+        let strokeColor = elementCustomization.buttonStroke(accentStyle: accentStyle, isPressed: isPressed, scheme: colorScheme)
+        let foregroundColor = elementCustomization.buttonForeground(accentStyle: accentStyle, isPressed: isPressed, scheme: colorScheme)
+        let fillFraction = max(0, min(1, value))
+
+        return ZStack(alignment: normalizedSettings.orientation == .vertical ? .bottom : .leading) {
+            GamepadFillShapeLayer(shape: Capsule(), fillStyle: fillStyle)
+                .overlay(Capsule().stroke(strokeColor, lineWidth: isPressed ? 2 : 1))
+                .shadow(
+                    color: Color.black.opacity((isPressed ? 0.16 : 0.05) * elementCustomization.shadowStrength),
+                    radius: (isPressed ? 4 : 2) * max(0.25, elementCustomization.shadowStrength),
+                    y: (isPressed ? 3 : 2) * elementCustomization.shadowStrength
+                )
+
+            Capsule()
+                .fill(foregroundColor.opacity(colorScheme == .dark ? 0.24 : 0.18))
+                .frame(
+                    width: normalizedSettings.orientation == .vertical ? size.width : max(4, size.width * fillFraction),
+                    height: normalizedSettings.orientation == .vertical ? max(4, size.height * fillFraction) : size.height
+                )
+                .allowsHitTesting(false)
+
+            if customization.showsButtonLabels {
+                Text(label)
+                    .geistTypography(size.height <= 44 ? .button12 : .button14)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .foregroundStyle(foregroundColor)
+                    .padding(.horizontal, 8)
+            }
+        }
+    }
+
+    private func handleValueChanged(_ rawValue: CGFloat, isActive: Bool) {
+        let normalizedSettings = settings.normalized
+        let transformed = normalizedSettings.transformedValue(rawValue)
+        value = transformed
+        client.setGamepadTrigger(normalizedSettings.target, value: Double(transformed), isFinal: !isActive || transformed <= 0.001)
+
+        guard normalizedSettings.sendsDigitalButton else { return }
+        let shouldPress = transformed >= normalizedSettings.digitalThreshold
+        if shouldPress != isDigitalPressed {
+            isDigitalPressed = shouldPress
+            client.setButton(mappedButton, pressed: shouldPress)
+        }
+        if !isActive, isDigitalPressed {
+            isDigitalPressed = false
+            client.setButton(mappedButton, pressed: false)
+        }
     }
 }
 

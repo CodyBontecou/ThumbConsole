@@ -170,6 +170,16 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
     public var activeGamepadProfileID: UUID
     public var defaultGamepadProfileID: UUID
     public var clientDeviceInfo: ControllerClientDeviceInfo?
+    public var virtualGamepadActive: Bool?
+    public var virtualGamepadAvailable: Bool?
+    public var virtualGamepadLastError: String?
+    public var virtualGamepadPressedButtons: [VirtualGamepadButton]?
+    public var virtualGamepadLeftStickX: Double?
+    public var virtualGamepadLeftStickY: Double?
+    public var virtualGamepadRightStickX: Double?
+    public var virtualGamepadRightStickY: Double?
+    public var virtualGamepadLeftTrigger: Double?
+    public var virtualGamepadRightTrigger: Double?
 
     public init(
         updatedAt: Int64,
@@ -192,7 +202,17 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         port: UInt16,
         activeGamepadProfileID: UUID,
         defaultGamepadProfileID: UUID,
-        clientDeviceInfo: ControllerClientDeviceInfo? = nil
+        clientDeviceInfo: ControllerClientDeviceInfo? = nil,
+        virtualGamepadActive: Bool? = nil,
+        virtualGamepadAvailable: Bool? = nil,
+        virtualGamepadLastError: String? = nil,
+        virtualGamepadPressedButtons: [VirtualGamepadButton]? = nil,
+        virtualGamepadLeftStickX: Double? = nil,
+        virtualGamepadLeftStickY: Double? = nil,
+        virtualGamepadRightStickX: Double? = nil,
+        virtualGamepadRightStickY: Double? = nil,
+        virtualGamepadLeftTrigger: Double? = nil,
+        virtualGamepadRightTrigger: Double? = nil
     ) {
         self.updatedAt = updatedAt
         self.statusText = statusText
@@ -215,6 +235,16 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         self.activeGamepadProfileID = activeGamepadProfileID
         self.defaultGamepadProfileID = defaultGamepadProfileID
         self.clientDeviceInfo = clientDeviceInfo
+        self.virtualGamepadActive = virtualGamepadActive
+        self.virtualGamepadAvailable = virtualGamepadAvailable
+        self.virtualGamepadLastError = virtualGamepadLastError
+        self.virtualGamepadPressedButtons = virtualGamepadPressedButtons
+        self.virtualGamepadLeftStickX = virtualGamepadLeftStickX
+        self.virtualGamepadLeftStickY = virtualGamepadLeftStickY
+        self.virtualGamepadRightStickX = virtualGamepadRightStickX
+        self.virtualGamepadRightStickY = virtualGamepadRightStickY
+        self.virtualGamepadLeftTrigger = virtualGamepadLeftTrigger
+        self.virtualGamepadRightTrigger = virtualGamepadRightTrigger
     }
 }
 
@@ -242,6 +272,7 @@ public enum ControllerMessageType: String, Codable, Sendable {
     case pairingAccepted = "pairing_accepted"
     case button
     case pointer
+    case gamepadAnalog = "gamepad_analog"
     case releaseAll = "release_all"
     case heartbeat
     case ping
@@ -273,6 +304,12 @@ public struct ControllerMessage: Codable, Sendable {
     public var pointerButton: ControllerPointerButton?
     public var deltaX: Double?
     public var deltaY: Double?
+    public var analogStick: VirtualGamepadStick?
+    public var analogTrigger: VirtualGamepadTrigger?
+    public var analogX: Double?
+    public var analogY: Double?
+    public var analogValue: Double?
+    public var analogSequence: UInt64?
 
     public init(
         type: ControllerMessageType,
@@ -293,7 +330,13 @@ public struct ControllerMessage: Codable, Sendable {
         pointerEvent: ControllerPointerEventKind? = nil,
         pointerButton: ControllerPointerButton? = nil,
         deltaX: Double? = nil,
-        deltaY: Double? = nil
+        deltaY: Double? = nil,
+        analogStick: VirtualGamepadStick? = nil,
+        analogTrigger: VirtualGamepadTrigger? = nil,
+        analogX: Double? = nil,
+        analogY: Double? = nil,
+        analogValue: Double? = nil,
+        analogSequence: UInt64? = nil
     ) {
         self.type = type
         self.button = button
@@ -314,6 +357,12 @@ public struct ControllerMessage: Codable, Sendable {
         self.pointerButton = pointerButton
         self.deltaX = deltaX
         self.deltaY = deltaY
+        self.analogStick = analogStick
+        self.analogTrigger = analogTrigger
+        self.analogX = analogX
+        self.analogY = analogY
+        self.analogValue = analogValue
+        self.analogSequence = analogSequence
     }
 }
 
@@ -506,6 +555,12 @@ public enum ControllerWireCodec {
               message.pointerButton == nil,
               message.deltaX == nil,
               message.deltaY == nil,
+              message.analogStick == nil,
+              message.analogTrigger == nil,
+              message.analogX == nil,
+              message.analogY == nil,
+              message.analogValue == nil,
+              message.analogSequence == nil,
               let typeCode = message.type.compactWireCode
         else {
             return nil
@@ -602,7 +657,7 @@ private extension ControllerMessageType {
         case .heartbeat: 3
         case .ping: 4
         case .pong: 5
-        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .pointer, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .error: nil
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .error: nil
         }
     }
 

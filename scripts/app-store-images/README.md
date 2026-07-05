@@ -12,13 +12,19 @@ Install the tool dependencies from the repo root:
 npm --prefix scripts/app-store-images install
 ```
 
-Add your Vercel AI Gateway key to a local `.env` file or export it in your shell:
+Store your OpenAI API key in macOS Keychain once:
 
 ```bash
-AI_GATEWAY_API_KEY=your_key_here
+npm --prefix scripts/app-store-images run store-key
 ```
 
-The key is required only when `--generate` is passed. Dry runs never call the AI API.
+You can also export it in your shell instead:
+
+```bash
+OPENAI_API_KEY=your_key_here
+```
+
+The key is required only when `--generate` is passed. Dry runs never call the AI API. Do not commit real keys to `.env`, `.env.example`, or source files.
 
 ## Dry run
 
@@ -38,7 +44,7 @@ app-store-output/manifest.json
 
 ## Generate images
 
-Generation requires `AI_GATEWAY_API_KEY` and an explicit `--generate` flag:
+Generation requires either a stored Keychain key or `OPENAI_API_KEY`, plus an explicit `--generate` flag:
 
 ```bash
 npm --prefix scripts/app-store-images run generate
@@ -101,7 +107,7 @@ The tool is conservative by default:
 - `--max-variants-per-screen` defaults to `1`
 - an absolute first-draft cap rejects more than `2` variants per screen
 - `--quality` defaults to `medium`
-- `--model` defaults to `openai/gpt-image-2`
+- `--model` defaults to `gpt-image-2`
 - each image is retried at most once
 - existing output PNGs are not overwritten unless `--force` is passed
 

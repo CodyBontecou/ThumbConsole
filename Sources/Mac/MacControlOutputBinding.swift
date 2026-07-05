@@ -1,0 +1,101 @@
+import Foundation
+
+struct MacControlOutputBinding: Codable, Equatable, Hashable, Sendable {
+    var keyboard: MacKeyBinding?
+    var gamepadButtons: Set<VirtualGamepadButton>
+
+    init(keyboard: MacKeyBinding? = nil, gamepadButtons: Set<VirtualGamepadButton> = []) {
+        self.keyboard = keyboard
+        self.gamepadButtons = gamepadButtons
+    }
+
+    var isEmpty: Bool {
+        keyboard == nil && gamepadButtons.isEmpty
+    }
+
+    var displayName: String {
+        var parts: [String] = []
+        if let keyboard {
+            parts.append(keyboard.displayName)
+        }
+        if !gamepadButtons.isEmpty {
+            parts.append(gamepadButtons.sortedForDisplay.map(\.shortName).joined(separator: "+"))
+        }
+        return parts.isEmpty ? "Unmapped" : parts.joined(separator: " + ")
+    }
+
+    func withAdditionalModifiers(_ modifiers: MacKeyModifiers) -> MacControlOutputBinding {
+        guard let keyboard else { return self }
+        var copy = self
+        copy.keyboard = keyboard.withAdditionalModifiers(modifiers)
+        return copy
+    }
+
+    mutating func setKeyboard(_ binding: MacKeyBinding?) {
+        keyboard = binding
+    }
+
+    mutating func setGamepadButton(_ button: VirtualGamepadButton?) {
+        gamepadButtons = button.map { Set([$0]) } ?? []
+    }
+
+    static func keyboard(_ binding: MacKeyBinding) -> MacControlOutputBinding {
+        MacControlOutputBinding(keyboard: binding)
+    }
+
+    static func gamepadButton(_ button: VirtualGamepadButton) -> MacControlOutputBinding {
+        MacControlOutputBinding(gamepadButtons: [button])
+    }
+}
+
+extension Dictionary where Key == GameButton, Value == MacControlOutputBinding {
+    var keyboardBindings: [GameButton: MacKeyBinding] {
+        reduce(into: [:]) { partial, entry in
+            if let keyboard = entry.value.keyboard {
+                partial[entry.key] = keyboard
+            }
+        }
+    }
+}
+
+extension Set where Element == VirtualGamepadButton {
+    var sortedForDisplay: [VirtualGamepadButton] {
+        sorted { lhs, rhs in
+            let lhsIndex = VirtualGamepadButton.allCases.firstIndex(of: lhs) ?? VirtualGamepadButton.allCases.endIndex
+            let rhsIndex = VirtualGamepadButton.allCases.firstIndex(of: rhs) ?? VirtualGamepadButton.allCases.endIndex
+            return lhsIndex < rhsIndex
+        }
+    }
+}
+
+enum DefaultMacControlOutputMap {
+    static let defaultBindings: [GameButton: MacControlOutputBinding] = Dictionary(
+        uniqueKeysWithValues: DefaultKeypadKeyMap.defaultBindings.map { button, binding in
+            (button, MacControlOutputBinding.keyboard(binding))
+        }
+    )
+
+    static func defaultBinding(for button: GameButton) -> MacControlOutputBinding? {
+        defaultBindings[button]
+    }
+
+    static let xboxStyleBindings: [GameButton: MacControlOutputBinding] = [
+        .up: .gamepadButton(.dpadUp),
+        .down: .gamepadButton(.dpadDown),
+        .left: .gamepadButton(.dpadLeft),
+        .right: .gamepadButton(.dpadRight),
+        .jump: .gamepadButton(.south),
+        .attack: .gamepadButton(.east),
+        .dash: .gamepadButton(.west),
+        .focus: .gamepadButton(.north),
+        .map: .gamepadButton(.select),
+        .pause: .gamepadButton(.start),
+        .custom1: .gamepadButton(.leftShoulder),
+        .custom2: .gamepadButton(.rightShoulder),
+        .custom3: .gamepadButton(.leftStickPress),
+        .custom4: .gamepadButton(.rightStickPress),
+        .custom5: .gamepadButton(.leftTriggerButton),
+        .custom6: .gamepadButton(.rightTriggerButton),
+        .custom7: .gamepadButton(.home)
+    ]
+}

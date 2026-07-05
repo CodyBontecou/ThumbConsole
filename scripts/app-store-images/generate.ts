@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -18,6 +19,9 @@ const DEFAULT_AI_BACKGROUND_SIZE = "1024x1536";
 const ABSOLUTE_MAX_IMAGES = 6;
 const ABSOLUTE_MAX_VARIANTS_PER_SCREEN = 2;
 const DEFAULT_RETRIES_PER_IMAGE = 1;
+const OPENAI_KEYCHAIN_SERVICE = "appstore-ai-images.openai-api-key";
+const OPENAI_KEYCHAIN_ACCOUNT = "default";
+let cachedOpenAIApiKey: string | undefined;
 
 const TARGET_SIZES: Record<string, TargetSize> = {
   "1320x2868": { width: 1320, height: 2868, label: "iPhone 6.9-inch portrait" },
@@ -119,6 +123,8 @@ type Manifest = {
   model: string;
   quality: string;
   aiGeneration: {
+    provider: string;
+    credentialSource: "env" | "keychain" | "missing";
     dryRun: boolean;
     paid: boolean;
     plannedImageGenerations: number;
@@ -138,7 +144,7 @@ type Manifest = {
 
 function parseArgs(argv: string[]): CliOptions {
   const defaults = {
-    model: "openai/gpt-image-2",
+    model: "gpt-image-2",
     quality: "medium",
     maxImages: 3,
     maxVariantsPerScreen: 1,
@@ -277,7 +283,7 @@ function resolveRepoPath(value: string): string {
 }
 
 function printHelpAndExit(): never {
-  console.log(`Repo-aware App Store draft image generator\n\nUsage:\n  npm --prefix scripts/app-store-images run plan\n  npm --prefix scripts/app-store-images run generate -- --max-images 3\n  npm --prefix scripts/app-store-images exec -- tsx scripts/app-store-images/generate.ts --dry-run\n\nFlags:\n  --dry-run                         Plan only; no paid AI calls. Default.\n  --generate                        Enable AI background generation and final PNG compositing.\n  --model <id>                      AI Gateway model. Default: openai/gpt-image-2\n  --quality <quality>               Provider image quality. Default: medium\n  --max-images <n>                  Hard cap. Default: 3, absolute max: ${ABSOLUTE_MAX_IMAGES}\n  --max-variants-per-screen <n>     Safety cap. Default: 1, absolute max: ${ABSOLUTE_MAX_VARIANTS_PER_SCREEN}\n  --target-size <WxH>               ${Object.keys(TARGET_SIZES).join(" | ")}\n  --input-screenshots <dir>         Default: app-store-input/screenshots\n  --output-dir <dir>                Default: app-store-output\n  --brand-file <file>               Default: app-store-input/brand.json\n  --seed <number>                   Passed to the provider if supported.\n  --force                           Overwrite existing background/final PNG files.\n`);
+  console.log(`Repo-aware App Store draft image generator\n\nUsage:\n  npm --prefix scripts/app-store-images run plan\n  npm --prefix scripts/app-store-images run store-key\n  npm --prefix scripts/app-store-images run generate -- --max-images 3\n  npm --prefix scripts/app-store-images exec -- tsx scripts/app-store-images/generate.ts --dry-run\n\nFlags:\n  --dry-run                         Plan only; no paid AI calls. Default.\n  --generate                        Enable OpenAI image generation and final PNG compositing.\n  --model <id>                      OpenAI image model. Default: gpt-image-2\n  --quality <quality>               OpenAI image quality. Default: medium\n  --max-images <n>                  Hard cap. Default: 3, absolute max: ${ABSOLUTE_MAX_IMAGES}\n  --max-variants-per-screen <n>     Safety cap. Default: 1, absolute max: ${ABSOLUTE_MAX_VARIANTS_PER_SCREEN}\n  --target-size <WxH>               ${Object.keys(TARGET_SIZES).join(" | ")}\n  --input-screenshots <dir>         Default: app-store-input/screenshots\n  --output-dir <dir>                Default: app-store-output\n  --brand-file <file>               Default: app-store-input/brand.json\n  --seed <number>                   Passed to OpenAI if supported by the selected model.\n  --force                           Overwrite existing background/final PNG files.\n\nCredentials:\n  Set OPENAI_API_KEY in the environment, or run the store-key script once to save it in macOS Keychain.\n`);
   process.exit(0);
 }
 
@@ -308,9 +314,9 @@ async function main() {
     return;
   }
 
-  if (!process.env.AI_GATEWAY_API_KEY) {
+  if (!getOpenAIApiKey(false)) {
     throw new Error(
-      "--generate was requested, but AI_GATEWAY_API_KEY is missing. Add it to .env or export it in your shell before running generation.",
+      "--generate was requested, but OPENAI_API_KEY is missing and no appstore-ai-images key was found in macOS Keychain. Export OPENAI_API_KEY or run `npm --prefix scripts/app-store-images run store-key` first.",
     );
   }
 
@@ -982,6 +988,7 @@ function printPlan(
     console.log("No real app screenshots found. Final generated images will be marked draft-only with placeholders.");
   }
   console.log(`Planned image generations: ${plannedImageGenerations}`);
+  console.log("Provider: OpenAI direct Images API");
   console.log(`Model: ${options.model}`);
   console.log(`Quality: ${options.quality}`);
   console.log(`AI background size: ${DEFAULT_AI_BACKGROUND_SIZE}`);
@@ -1042,12 +1049,48 @@ function preflightOutputFiles(plan: ScreenPlan[], force: boolean): void {
   }
 }
 
-async function generateBackground(prompt: string, options: CliOptions): Promise<Buffer> {
-  const ai = (await import("ai")) as Record<string, unknown>;
-  const generateImage = ai.experimental_generateImage;
-  if (typeof generateImage !== "function") {
-    throw new Error("The installed ai package does not expose experimental_generateImage. Check scripts/app-store-images/package.json.");
+function getOpenAIApiKey(required: true): string;
+function getOpenAIApiKey(required?: false): string | undefined;
+function getOpenAIApiKey(required = false): string | undefined {
+  if (process.env.OPENAI_API_KEY?.trim()) {
+    return process.env.OPENAI_API_KEY.trim();
   }
+
+  if (cachedOpenAIApiKey) {
+    return cachedOpenAIApiKey;
+  }
+
+  try {
+    const key = execFileSync(
+      "security",
+      ["find-generic-password", "-a", OPENAI_KEYCHAIN_ACCOUNT, "-s", OPENAI_KEYCHAIN_SERVICE, "-w"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+    if (key) {
+      cachedOpenAIApiKey = key;
+      return key;
+    }
+  } catch {
+    // Missing keychain item, locked keychain, or non-macOS environment. The caller handles the missing key.
+  }
+
+  if (required) {
+    throw new Error(
+      "OPENAI_API_KEY is missing and no appstore-ai-images key was found in macOS Keychain. Export OPENAI_API_KEY or run `npm --prefix scripts/app-store-images run store-key` first.",
+    );
+  }
+  return undefined;
+}
+
+function getOpenAICredentialSource(): "env" | "keychain" | "missing" {
+  if (process.env.OPENAI_API_KEY?.trim()) return "env";
+  return getOpenAIApiKey(false) ? "keychain" : "missing";
+}
+
+async function generateBackground(prompt: string, options: CliOptions): Promise<Buffer> {
+  const { default: OpenAI } = await import("openai");
+  const apiKey = getOpenAIApiKey(true);
+  const client = new OpenAI({ apiKey });
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= DEFAULT_RETRIES_PER_IMAGE; attempt += 1) {
@@ -1057,45 +1100,44 @@ async function generateBackground(prompt: string, options: CliOptions): Promise<
         prompt,
         size: DEFAULT_AI_BACKGROUND_SIZE,
         n: 1,
-        providerOptions: {
-          openai: {
-            quality: options.quality,
-          },
-        },
+        quality: options.quality,
       };
       if (options.seed !== undefined) request.seed = options.seed;
 
-      const result = await generateImage(request);
-      return extractImageBuffer(result);
+      const result = await client.images.generate(request as never);
+      return await extractOpenAIImageBuffer(result);
     } catch (error) {
       lastError = error;
       if (attempt < DEFAULT_RETRIES_PER_IMAGE) {
-        console.warn(`AI image generation failed; retrying once. Reason: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`OpenAI image generation failed; retrying once. Reason: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }
 
-  throw new Error(`AI image generation failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+  throw new Error(`OpenAI image generation failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
-function extractImageBuffer(result: unknown): Buffer {
+async function extractOpenAIImageBuffer(result: unknown): Promise<Buffer> {
   const record = result as Record<string, unknown>;
-  const images = Array.isArray(record.images) ? record.images : [];
-  const image = record.image ?? images[0];
-  if (!image) {
-    throw new Error("AI image generation returned no image.");
+  const data = Array.isArray(record.data) ? record.data : [];
+  const firstImage = data[0] as Record<string, unknown> | undefined;
+  if (!firstImage) {
+    throw new Error("OpenAI image generation returned no image data.");
   }
 
-  if (Buffer.isBuffer(image)) return image;
-  if (typeof image === "string") return Buffer.from(image, "base64");
+  if (typeof firstImage.b64_json === "string") {
+    return Buffer.from(firstImage.b64_json, "base64");
+  }
 
-  const imageRecord = image as Record<string, unknown>;
-  if (imageRecord.uint8Array instanceof Uint8Array) return Buffer.from(imageRecord.uint8Array);
-  if (typeof imageRecord.base64 === "string") return Buffer.from(imageRecord.base64, "base64");
-  if (typeof imageRecord.data === "string") return Buffer.from(imageRecord.data, "base64");
-  if (imageRecord.data instanceof Uint8Array) return Buffer.from(imageRecord.data);
+  if (typeof firstImage.url === "string") {
+    const response = await fetch(firstImage.url);
+    if (!response.ok) {
+      throw new Error(`OpenAI returned an image URL, but download failed: ${response.status} ${response.statusText}`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
 
-  throw new Error("Could not extract bytes from AI image response.");
+  throw new Error("Could not extract b64_json or url from OpenAI image response.");
 }
 
 async function compositeFinalImage(screen: ScreenPlan, insights: RepoInsights, options: CliOptions): Promise<void> {
@@ -1319,6 +1361,8 @@ function buildManifest(
     model: options.model,
     quality: options.quality,
     aiGeneration: {
+      provider: "openai-direct",
+      credentialSource: getOpenAICredentialSource(),
       dryRun: options.dryRun,
       paid: !options.dryRun,
       plannedImageGenerations,

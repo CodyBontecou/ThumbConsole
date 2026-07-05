@@ -126,6 +126,10 @@ Control fields:
 | `isHidden` | optional | Hide this control. |
 | `isLocationLocked` | optional | Prevent drag repositioning in the Mac editor. |
 | `kind` / `controlKind` | optional | `button`, `joystick`, or `trackpad` for saved element/profile editing. Agent-generated key specs still require a keyboard `key`. |
+| `trackpadSettings` | optional | Object with `sensitivity`, `scrollSensitivity`, `tapToClick`, `twoFingerScroll`, and `naturalScrolling` for trackpad components. |
+| `sensitivity`, `cursorSensitivity`, `pointerSensitivity` | optional | Trackpad cursor sensitivity multiplier (`0.2`–`4.0` after normalization). Implies `kind: "trackpad"` if no kind is set. |
+| `scrollSensitivity` | optional | Trackpad scroll sensitivity multiplier (`0.1`–`4.0` after normalization). |
+| `tapToClick`, `twoFingerScroll`, `naturalScrolling` / `naturalScroll` | optional | Trackpad gesture toggles. |
 | `joystickMapping` | optional | Object mapping joystick directions to PocketPad button slots. |
 | `up`, `down`, `left`, `right` | optional | Direction aliases for joystick mappings; values are PocketPad slots, not keyboard keys. |
 
@@ -157,6 +161,19 @@ F1-F17, Home, End, Page Up, Page Down
     { "label": "Aim", "key": "I", "button": "custom2", "kind": "joystick", "up": "custom1", "down": "custom2", "left": "custom3", "right": "custom4", "fill": "#7C3AED", "centerX": 0.78, "centerY": 0.64, "widthScale": 1.35, "heightScale": 1.35 },
     { "label": "Fire", "key": "Space", "button": "jump", "role": "primary", "fill": "#F59E0B", "shape": "circle" },
     { "label": "Pause", "key": "Escape", "button": "pause", "role": "system" }
+  ]
+}
+```
+
+### Trackpad sensitivity spec example
+
+```json
+{
+  "gameName": "Remote Desktop Pad",
+  "source": "Agent-provided layout",
+  "confidence": "medium",
+  "controls": [
+    { "label": "Trackpad", "key": "Space", "kind": "trackpad", "sensitivity": 1.8, "scrollSensitivity": 1.1, "tapToClick": true, "twoFingerScroll": true, "naturalScrolling": false, "centerX": 0.50, "centerY": 0.58, "widthScale": 1.35 }
   ]
 }
 ```

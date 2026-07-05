@@ -73,6 +73,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
     public var isLocationLocked: Bool?
     public var controlKind: GamepadCustomControlKind?
     public var joystickMapping: GamepadJoystickMapping?
+    public var trackpadSettings: GamepadTrackpadSettings?
 
     public init(
         id: String? = nil,
@@ -93,7 +94,8 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         isHidden: Bool? = nil,
         isLocationLocked: Bool? = nil,
         controlKind: GamepadCustomControlKind? = nil,
-        joystickMapping: GamepadJoystickMapping? = nil
+        joystickMapping: GamepadJoystickMapping? = nil,
+        trackpadSettings: GamepadTrackpadSettings? = nil
     ) {
         self.id = id
         self.button = button
@@ -114,6 +116,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         self.isLocationLocked = isLocationLocked
         self.controlKind = controlKind
         self.joystickMapping = joystickMapping
+        self.trackpadSettings = trackpadSettings
     }
 
     public init(from decoder: Decoder) throws {
@@ -148,6 +151,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         controlKind = try container.decodeIfPresent(GamepadCustomControlKind.self, forKey: .controlKind)
             ?? Self.decodeControlKindAlias(from: container, forKey: .kind)
         joystickMapping = try Self.decodeJoystickMapping(from: container)
+        trackpadSettings = try Self.decodeTrackpadSettings(from: container)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -171,6 +175,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         try container.encodeIfPresent(isLocationLocked, forKey: .isLocationLocked)
         try container.encodeIfPresent(controlKind, forKey: .controlKind)
         try container.encodeIfPresent(joystickMapping, forKey: .joystickMapping)
+        try container.encodeIfPresent(trackpadSettings?.normalized, forKey: .trackpadSettings)
     }
 
     private static func decodeFillColor(from container: KeyedDecodingContainer<CodingKeys>) -> GamepadRGBAColor? {
@@ -218,6 +223,31 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         )
     }
 
+    private static func decodeTrackpadSettings(from container: KeyedDecodingContainer<CodingKeys>) throws -> GamepadTrackpadSettings? {
+        let explicitSettings = try container.decodeIfPresent(GamepadTrackpadSettings.self, forKey: .trackpadSettings)
+        let sensitivity = try container.decodeIfPresent(CGFloat.self, forKey: .sensitivity)
+            ?? container.decodeIfPresent(CGFloat.self, forKey: .cursorSensitivity)
+            ?? container.decodeIfPresent(CGFloat.self, forKey: .pointerSensitivity)
+        let scrollSensitivity = try container.decodeIfPresent(CGFloat.self, forKey: .scrollSensitivity)
+        let tapToClick = try container.decodeIfPresent(Bool.self, forKey: .tapToClick)
+        let twoFingerScroll = try container.decodeIfPresent(Bool.self, forKey: .twoFingerScroll)
+        let naturalScrolling = try container.decodeIfPresent(Bool.self, forKey: .naturalScrolling)
+            ?? container.decodeIfPresent(Bool.self, forKey: .naturalScroll)
+
+        guard sensitivity != nil || scrollSensitivity != nil || tapToClick != nil || twoFingerScroll != nil || naturalScrolling != nil else {
+            return explicitSettings?.normalized
+        }
+
+        let base = explicitSettings ?? .defaultValue
+        return GamepadTrackpadSettings(
+            sensitivity: sensitivity ?? base.sensitivity,
+            scrollSensitivity: scrollSensitivity ?? base.scrollSensitivity,
+            tapToClick: tapToClick ?? base.tapToClick,
+            twoFingerScroll: twoFingerScroll ?? base.twoFingerScroll,
+            naturalScrolling: naturalScrolling ?? base.naturalScrolling
+        ).normalized
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case button
@@ -250,6 +280,15 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         case down
         case left
         case right
+        case trackpadSettings
+        case sensitivity
+        case cursorSensitivity
+        case pointerSensitivity
+        case scrollSensitivity
+        case tapToClick
+        case twoFingerScroll
+        case naturalScrolling
+        case naturalScroll
     }
 }
 
@@ -383,6 +422,7 @@ private struct GeneratedControlDefinition {
     var isLocationLocked: Bool?
     var controlKind: GamepadCustomControlKind?
     var joystickMapping: GamepadJoystickMapping?
+    var trackpadSettings: GamepadTrackpadSettings?
 
     init(
         _ button: GameButton,
@@ -403,7 +443,8 @@ private struct GeneratedControlDefinition {
         isHidden: Bool? = nil,
         isLocationLocked: Bool? = nil,
         controlKind: GamepadCustomControlKind? = nil,
-        joystickMapping: GamepadJoystickMapping? = nil
+        joystickMapping: GamepadJoystickMapping? = nil,
+        trackpadSettings: GamepadTrackpadSettings? = nil
     ) {
         self.button = button
         self.label = label
@@ -422,6 +463,7 @@ private struct GeneratedControlDefinition {
         self.isLocationLocked = isLocationLocked
         self.controlKind = controlKind
         self.joystickMapping = joystickMapping
+        self.trackpadSettings = trackpadSettings
     }
 }
 
@@ -460,18 +502,19 @@ private enum GeneratedProfileBuilder {
                 isHidden: control.isHidden ?? false
             )
 
-            if GameButton.builtInControls.contains(control.button) {
+            let controlKind = control.controlKind ?? (control.trackpadSettings == nil ? (control.joystickMapping == nil ? .button : .joystick) : .trackpad)
+            if GameButton.builtInControls.contains(control.button), controlKind == .button {
                 customization.setButtonCustomization(layout, for: control.button)
                 customization.setLabel(control.label, for: control.button)
             } else {
-                let controlKind = control.controlKind ?? (control.joystickMapping == nil ? .button : .joystick)
                 customButtons.append(
                     GamepadCustomButton(
                         mappedButton: control.button,
                         label: control.label,
                         layout: layout,
                         controlKind: controlKind,
-                        joystickMapping: controlKind == .joystick ? (control.joystickMapping ?? .movement) : control.joystickMapping
+                        joystickMapping: controlKind == .joystick ? (control.joystickMapping ?? .movement) : nil,
+                        trackpadSettings: controlKind == .trackpad ? (control.trackpadSettings ?? .defaultValue).normalized : nil
                     )
                 )
             }
@@ -526,12 +569,15 @@ private enum AgentSpecTemplate {
             guard let button = assignButton(for: controlSpec, usedButtons: usedButtons) else { continue }
             usedButtons.insert(button)
 
+            let controlKind = inferredControlKind(for: controlSpec)
             let role = inferRole(for: controlSpec, button: button)
             let roleIndex = roleCounts[role, default: 0]
             roleCounts[role] = roleIndex + 1
-            let defaults = layoutDefaults(for: button, role: role, index: roleIndex)
+            let defaults = controlKind == .trackpad
+                ? trackpadLayoutDefaults()
+                : layoutDefaults(for: button, role: role, index: roleIndex)
             let label = controlSpec.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? button.displayName
+                ? (controlKind == .trackpad ? "Trackpad" : button.displayName)
                 : controlSpec.label
 
             controls.append(
@@ -548,12 +594,13 @@ private enum AgentSpecTemplate {
                     shape: controlSpec.shape ?? defaults.shape,
                     fillColor: controlSpec.fillColor,
                     accentStyle: controlSpec.accentStyle,
-                    cornerRadius: controlSpec.cornerRadius,
+                    cornerRadius: controlSpec.cornerRadius ?? (controlKind == .trackpad ? 18 : nil),
                     shadowStrength: controlSpec.shadowStrength,
                     isHidden: controlSpec.isHidden,
                     isLocationLocked: controlSpec.isLocationLocked,
-                    controlKind: controlSpec.controlKind,
-                    joystickMapping: controlSpec.joystickMapping
+                    controlKind: controlKind,
+                    joystickMapping: controlSpec.joystickMapping,
+                    trackpadSettings: controlSpec.trackpadSettings
                 )
             )
         }
@@ -574,12 +621,19 @@ private enum AgentSpecTemplate {
         )
     }
 
+    private static func inferredControlKind(for control: AgentKeypadControlSpec) -> GamepadCustomControlKind? {
+        if let controlKind = control.controlKind { return controlKind }
+        if control.trackpadSettings != nil { return .trackpad }
+        if control.joystickMapping != nil { return .joystick }
+        return nil
+    }
+
     private static func assignButton(for control: AgentKeypadControlSpec, usedButtons: Set<GameButton>) -> GameButton? {
         if let button = control.button, !usedButtons.contains(button) {
             return button
         }
 
-        if control.controlKind == .joystick || control.joystickMapping != nil {
+        if let controlKind = inferredControlKind(for: control), controlKind != .button {
             return GameButton.customSlots.first { !usedButtons.contains($0) }
         }
 
@@ -610,7 +664,7 @@ private enum AgentSpecTemplate {
             return KeypadRole(role)
         }
 
-        if control.controlKind == .joystick || control.joystickMapping != nil {
+        if let controlKind = inferredControlKind(for: control), controlKind != .button {
             return .movement
         }
 
@@ -640,6 +694,10 @@ private enum AgentSpecTemplate {
             return .secondary
         }
         return .primary
+    }
+
+    private static func trackpadLayoutDefaults() -> LayoutDefaults {
+        LayoutDefaults(x: 0.50, y: 0.58, width: 1.25, height: 1.0, shape: .roundedRectangle)
     }
 
     private static func layoutDefaults(for button: GameButton, role: KeypadRole, index: Int) -> LayoutDefaults {
