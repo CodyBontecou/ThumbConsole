@@ -998,10 +998,10 @@ private enum HollowKnightTemplate {
             .init(.left, label: "←", key: "LeftArrow", role: .movement, x: 0.07, y: 0.68, width: 0.98, height: 0.98, fill: dPadFill, cornerRadius: 8),
             .init(.right, label: "→", key: "RightArrow", role: .movement, x: 0.25, y: 0.68, width: 0.98, height: 0.98, fill: dPadFill, cornerRadius: 8),
 
-            .init(.focus, label: "△ Focus", key: "A", role: .secondary, x: 0.84, y: 0.48, width: 0.98, height: 0.98, shape: .circle, fill: "#22C55E", shadowStrength: 1.25),
-            .init(.dash, label: "○ Dash", key: "C", role: .primary, x: 0.93, y: 0.68, width: 0.98, height: 0.98, shape: .circle, fill: "#EF4444", shadowStrength: 1.25),
-            .init(.jump, label: "× Jump", key: "Z", role: .primary, x: 0.84, y: 0.88, width: 0.98, height: 0.98, shape: .circle, fill: "#3B82F6", shadowStrength: 1.25),
-            .init(.attack, label: "□ Nail", key: "X", role: .primary, x: 0.75, y: 0.68, width: 0.98, height: 0.98, shape: .circle, fill: "#EC4899", shadowStrength: 1.25),
+            .init(.focus, label: "Soul", key: "A", role: .secondary, x: 0.84, y: 0.48, width: 0.98, height: 0.98, shape: .circle, fill: "#22C55E", shadowStrength: 1.25),
+            .init(.dash, label: "Dash", key: "C", role: .primary, x: 0.93, y: 0.68, width: 0.98, height: 0.98, shape: .circle, fill: "#EF4444", shadowStrength: 1.25),
+            .init(.jump, label: "Jump", key: "Z", role: .primary, x: 0.84, y: 0.88, width: 0.98, height: 0.98, shape: .circle, fill: "#3B82F6", shadowStrength: 1.25),
+            .init(.attack, label: "Nail", key: "X", role: .primary, x: 0.75, y: 0.68, width: 0.98, height: 0.98, shape: .circle, fill: "#EC4899", shadowStrength: 1.25),
 
             .init(.map, label: "Map", key: "Tab", role: .utility, x: 0.43, y: 0.88, width: 0.76, height: 0.90, shape: .capsule, fill: utilityFill, shadowStrength: 0.75),
             .init(.pause, label: "Pause", key: "Escape", role: .system, x: 0.57, y: 0.88, width: 0.76, height: 0.90, shape: .capsule, fill: utilityFill, shadowStrength: 0.75),
@@ -1012,19 +1012,22 @@ private enum HollowKnightTemplate {
             .init(.custom8, label: "Inventory", key: "I", role: .utility, x: 0.80, y: 0.185, width: 1.14, height: 0.62, shape: .capsule, fill: dPadFill)
         ]
 
-        return GeneratedProfileBuilder.build(
+        var generated = GeneratedProfileBuilder.build(
             requestedGameName: requestedGameName,
             resolvedGameName: "Hollow Knight",
             controls: controls,
-            source: "Built-in Hollow Knight default keyboard template, styled after PocketPad's PlayStation controller template",
+            source: "Built-in Hollow Knight default keyboard template with PocketPad's Cavern Glow showcase theme",
             confidence: .high,
             notes: [
                 "Uses Hollow Knight's default keyboard bindings: Arrow keys for movement, Z jump, X attack, C dash, A focus/cast.",
-                "Styled like a controller preset with a larger compact D-pad, PlayStation-style face buttons, menu buttons, and shoulder actions for Quick Cast, Dream Nail, Super Dash, and Inventory."
+                "Applies the Cavern Glow theme: dark cave gradient background, pale glyph controls, cyan Soul glow, parchment utility buttons, pressed states, icons, and per-control haptics.",
+                "The theme is inspired by dark-fantasy metroidvania controls without bundling copyrighted game art."
             ],
             controlScale: .compact,
             accentStyle: .purple
         )
+        GamepadThemePreset.cavernGlow.apply(to: &generated.profile.customization)
+        return generated
     }
 }
 

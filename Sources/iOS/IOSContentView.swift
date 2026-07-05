@@ -2267,7 +2267,7 @@ private struct GamepadButton: View {
                 .minimumScaleFactor(0.55)
                 .foregroundStyle(presentation.foregroundSwiftUIColor)
                 .padding(.horizontal, 4)
-                .offset(y: presentation.icon?.placement == .top ? size.height * 0.18 : 0)
+                .offset(labelOffset(for: presentation.icon?.placement))
         }
     }
 
@@ -2304,6 +2304,16 @@ private struct GamepadButton: View {
         case .top: CGSize(width: 0, height: -size.height * 0.18)
         case .bottom: CGSize(width: 0, height: size.height * 0.18)
         case .center, .background: .zero
+        }
+    }
+
+    private func labelOffset(for placement: GamepadControlIconPlacement?) -> CGSize {
+        switch placement {
+        case .leading: CGSize(width: size.width * 0.11, height: 0)
+        case .trailing: CGSize(width: -size.width * 0.11, height: 0)
+        case .top: CGSize(width: 0, height: size.height * 0.15)
+        case .bottom: CGSize(width: 0, height: -size.height * 0.15)
+        case .center, .background, nil: .zero
         }
     }
 

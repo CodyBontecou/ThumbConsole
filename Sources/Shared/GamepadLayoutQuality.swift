@@ -452,9 +452,68 @@ enum GamepadLayoutPreviewRenderer {
     }
 
     private static func drawBackground(in context: CGContext, customization: GamepadCustomization, canvasSize: CGSize) {
-        let color = customization.keypadBackgroundFillStyle(scheme: .dark).representativeColor
-        context.setFillColor(cgColor(color))
-        context.fill(CGRect(origin: .zero, size: canvasSize))
+        drawFillStyle(
+            customization.keypadBackgroundFillStyle(scheme: .dark),
+            in: CGRect(origin: .zero, size: canvasSize),
+            context: context
+        )
+    }
+
+    private static func drawFillStyle(_ fillStyle: GamepadFillStyle, in rect: CGRect, context: CGContext) {
+        switch fillStyle.normalized {
+        case .solid(let color):
+            context.setFillColor(cgColor(color))
+            context.fill(rect)
+        case .gradient(let gradient):
+            drawGradient(gradient, in: rect, context: context)
+        case .tile(let tile):
+            context.setFillColor(cgColor(tile.representativeColor))
+            context.fill(rect)
+        case .image(let image):
+            context.setFillColor(cgColor(image.representativeColor))
+            context.fill(rect)
+        }
+    }
+
+    private static func drawGradient(_ gradient: GamepadGradientFill, in rect: CGRect, context: CGContext) {
+        let normalized = gradient.normalized
+        let colors = normalized.stops.map { cgColor($0.color) as CGColor } as CFArray
+        let locations = normalized.stops.map { CGFloat($0.offset) }
+        guard let cgGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locations) else {
+            context.setFillColor(cgColor(normalized.representativeColor))
+            context.fill(rect)
+            return
+        }
+
+        context.saveGState()
+        context.clip(to: rect)
+        switch normalized.type {
+        case .linear:
+            let points = gradientEndpoints(angleDegrees: normalized.angleDegrees, rect: rect)
+            context.drawLinearGradient(cgGradient, start: points.start, end: points.end, options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        case .radial:
+            let radius = hypot(rect.width, rect.height) / 2
+            context.drawRadialGradient(
+                cgGradient,
+                startCenter: CGPoint(x: rect.midX, y: rect.midY),
+                startRadius: 0,
+                endCenter: CGPoint(x: rect.midX, y: rect.midY),
+                endRadius: radius,
+                options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+            )
+        }
+        context.restoreGState()
+    }
+
+    private static func gradientEndpoints(angleDegrees: CGFloat, rect: CGRect) -> (start: CGPoint, end: CGPoint) {
+        let radians = angleDegrees * CGFloat.pi / 180
+        let direction = CGVector(dx: cos(radians), dy: sin(radians))
+        let halfLength = hypot(rect.width, rect.height) / 2
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        return (
+            CGPoint(x: center.x - direction.dx * halfLength, y: center.y - direction.dy * halfLength),
+            CGPoint(x: center.x + direction.dx * halfLength, y: center.y + direction.dy * halfLength)
+        )
     }
 
     private static func drawGrid(in context: CGContext, canvasSize: CGSize) {
@@ -507,12 +566,21 @@ enum GamepadLayoutPreviewRenderer {
             drawFrameOutline(control.frame.insetBy(dx: -2, dy: -2), in: context, color: .systemRed, dashed: false, lineWidth: 2)
         }
 
-        if let icon = presentation.icon {
+        let icon = presentation.icon
+        if let icon {
             drawIcon(icon, in: control.frame, foreground: foreground, context: context)
         }
 
-        if customization.showsButtonLabels {
-            drawLabel(control.label, in: control.frame, foreground: foreground, context: context, isJoystick: control.isJoystick, isTrackpad: control.isTrackpad)
+        if customization.showsButtonLabels, shouldDrawLabel(control.label, with: icon) {
+            drawLabel(
+                control.label,
+                in: control.frame,
+                foreground: foreground,
+                context: context,
+                isJoystick: control.isJoystick,
+                isTrackpad: control.isTrackpad,
+                iconPlacement: icon?.placement
+            )
         }
 
         context.restoreGState()
@@ -557,7 +625,7 @@ enum GamepadLayoutPreviewRenderer {
         let text: String
         switch icon.source {
         case .sfSymbol:
-            text = "◉"
+            text = previewGlyph(for: icon.value)
         case .text:
             text = icon.value
         case .asset:
@@ -588,10 +656,44 @@ enum GamepadLayoutPreviewRenderer {
         context.restoreGState()
     }
 
-    private static func drawLabel(_ label: String, in frame: CGRect, foreground: GamepadRGBAColor, context: CGContext, isJoystick: Bool, isTrackpad: Bool) {
+    private static func shouldDrawLabel(_ label: String, with icon: GamepadControlIcon?) -> Bool {
+        guard let icon else { return true }
+        if icon.placement == .center, label.count > 2 { return false }
+        if icon.placement == .background { return true }
+        return true
+    }
+
+    private static func previewGlyph(for sfSymbolName: String) -> String {
+        let normalized = sfSymbolName.lowercased()
+        if normalized.contains("sparkle") { return "✦" }
+        if normalized.contains("wind") { return "≋" }
+        if normalized.contains("slash") { return "⟋" }
+        if normalized.contains("arrow.up") || normalized.contains("chevron.up") { return "↑" }
+        if normalized.contains("arrow.down") || normalized.contains("chevron.down") { return "↓" }
+        if normalized.contains("arrow.left") || normalized.contains("chevron.left") { return "←" }
+        if normalized.contains("arrow.right") || normalized.contains("chevron.right") { return "→" }
+        if normalized.contains("map") { return "◇" }
+        if normalized.contains("pause") { return "Ⅱ" }
+        if normalized.contains("moon") { return "☾" }
+        if normalized.contains("forward") { return "»" }
+        if normalized.contains("bag") { return "▣" }
+        return "•"
+    }
+
+    private static func drawLabel(
+        _ label: String,
+        in frame: CGRect,
+        foreground: GamepadRGBAColor,
+        context: CGContext,
+        isJoystick: Bool,
+        isTrackpad: Bool,
+        iconPlacement: GamepadControlIconPlacement? = nil
+    ) {
         let maxFontSize = isJoystick || isTrackpad ? CGFloat(14) : CGFloat(label.count <= 2 ? 28 : 16)
-        let availableWidth = max(1, frame.width - 8)
-        let availableHeight = max(1, frame.height - 6)
+        let reservesHorizontalIconSpace = iconPlacement == .leading || iconPlacement == .trailing
+        let reservesVerticalIconSpace = iconPlacement == .top || iconPlacement == .bottom
+        let availableWidth = max(1, frame.width - 8 - (reservesHorizontalIconSpace ? frame.width * 0.26 : 0))
+        let availableHeight = max(1, frame.height - 6 - (reservesVerticalIconSpace ? frame.height * 0.24 : 0))
         var fontSize = max(8, min(maxFontSize, frame.height * 0.36))
         var attributed = NSAttributedString(
             string: label,
@@ -620,8 +722,17 @@ enum GamepadLayoutPreviewRenderer {
             height: min(textSize.height, availableHeight)
         )
 
+        let baseYOffset = isJoystick ? frame.height * 0.28 : (isTrackpad ? frame.height * 0.18 : 0)
+        let labelOffset: CGPoint = switch iconPlacement {
+        case .leading: CGPoint(x: frame.width * 0.11, y: 0)
+        case .trailing: CGPoint(x: -frame.width * 0.11, y: 0)
+        case .top: CGPoint(x: 0, y: frame.height * 0.15)
+        case .bottom: CGPoint(x: 0, y: -frame.height * 0.15)
+        case .center, .background, nil: .zero
+        }
+
         context.saveGState()
-        context.translateBy(x: frame.midX, y: frame.midY + (isJoystick ? frame.height * 0.28 : (isTrackpad ? frame.height * 0.18 : 0)))
+        context.translateBy(x: frame.midX + labelOffset.x, y: frame.midY + baseYOffset + labelOffset.y)
         context.scaleBy(x: 1, y: -1)
         attributed.draw(in: textRect)
         context.restoreGState()

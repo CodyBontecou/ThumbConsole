@@ -1020,7 +1020,8 @@ struct GamepadStarButtonShape: Shape {
 }
 
 public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
-    public static let minimumScale: CGFloat = 0.55
+    public static let minimumDimension: CGFloat = 1
+    public static let minimumScale: CGFloat = 0.001
     public static let maximumScale: CGFloat = 8.0
     public static let minimumCornerRadius: CGFloat = 0
     public static let capsulePreviewCornerRadius: CGFloat = 240
@@ -1325,6 +1326,10 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
 
     static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
         min(max(value, lower), upper)
+    }
+
+    static func minimumDimension(forBaseDimension baseDimension: CGFloat) -> CGFloat {
+        max(Self.minimumDimension, baseDimension * Self.minimumScale)
     }
 
     static func normalizedCornerRadius(_ value: CGFloat) -> CGFloat {
@@ -9147,8 +9152,8 @@ struct GamepadCustomizationEditor: View {
     private func setControlFrame(_ frame: CGRect, for control: GamepadResolvedControl) {
         let layout = selectedLayoutCustomization(for: control.id)
         let baseSize = baseSize(for: control, layout: layout)
-        let minWidth = baseSize.width * GamepadButtonCustomization.minimumScale
-        let minHeight = baseSize.height * GamepadButtonCustomization.minimumScale
+        let minWidth = GamepadButtonCustomization.minimumDimension(forBaseDimension: baseSize.width)
+        let minHeight = GamepadButtonCustomization.minimumDimension(forBaseDimension: baseSize.height)
         let maxWidth = min(currentCanvasLayoutSize.width, baseSize.width * GamepadButtonCustomization.maximumScale)
         let maxHeight = min(currentCanvasLayoutSize.height, baseSize.height * GamepadButtonCustomization.maximumScale)
         let clampedWidth = Self.clamp(frame.width, lower: minWidth, upper: maxWidth)
@@ -11553,7 +11558,7 @@ private struct GamepadLayoutDesigner: View {
     @State private var isShiftKeyPressed = false
 
     private static let dragActivationDistance: CGFloat = 4
-    private static let minimumDrawnButtonSize: CGFloat = 44
+    private static let minimumDrawnButtonSize = GamepadButtonCustomization.minimumDimension
     private static let defaultDrawnButtonSize = CGSize(width: 76, height: 76)
 
     var body: some View {
@@ -12430,8 +12435,8 @@ private struct GamepadLayoutDesigner: View {
 
         let baseWidth = max(1, resizeState.startSize.width / max(resizeState.startWidthScale, 0.001))
         let baseHeight = max(1, resizeState.startSize.height / max(resizeState.startHeightScale, 0.001))
-        let minWidth = baseWidth * GamepadButtonCustomization.minimumScale
-        let minHeight = baseHeight * GamepadButtonCustomization.minimumScale
+        let minWidth = GamepadButtonCustomization.minimumDimension(forBaseDimension: baseWidth)
+        let minHeight = GamepadButtonCustomization.minimumDimension(forBaseDimension: baseHeight)
         let maxWidth = min(canvasSize.width, baseWidth * GamepadButtonCustomization.maximumScale)
         let maxHeight = min(canvasSize.height, baseHeight * GamepadButtonCustomization.maximumScale)
         let translation = CGSize(
@@ -12518,8 +12523,8 @@ private struct GamepadLayoutDesigner: View {
             let baseWidth = max(1, control.size.width / max(currentLayout.widthScale, 0.001))
             let baseHeight = max(1, control.size.height / max(currentLayout.heightScale, 0.001))
             let minSize = CGSize(
-                width: baseWidth * GamepadButtonCustomization.minimumScale,
-                height: baseHeight * GamepadButtonCustomization.minimumScale
+                width: GamepadButtonCustomization.minimumDimension(forBaseDimension: baseWidth),
+                height: GamepadButtonCustomization.minimumDimension(forBaseDimension: baseHeight)
             )
             let maxSize = CGSize(
                 width: min(canvasSize.width, baseWidth * GamepadButtonCustomization.maximumScale),

@@ -317,6 +317,51 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(layout.visualStyle?.pressed?.fillStyle?.representativeColor, GamepadRGBAColor(hexString: "#38BDF8")!.normalized)
     }
 
+    func testThemePresetAppliesCavernGlowDesignSystem() throws {
+        var customization = GamepadCustomization.defaultValue
+        GamepadThemePreset.cavernGlow.apply(to: &customization)
+        let normalized = customization.normalized
+
+        XCTAssertEqual(normalized.colorSchemePreference, .dark)
+        XCTAssertEqual(normalized.backgroundDarkFillStyle?.displayName, "Linear")
+        XCTAssertEqual(normalized.styleLibrary.styles.map(\.id).sorted(), [
+            "cavern-dash",
+            "cavern-jump",
+            "cavern-nail",
+            "cavern-parchment",
+            "cavern-rune",
+            "cavern-soul",
+            "cavern-stone"
+        ])
+        XCTAssertEqual(normalized.buttonCustomization(for: .focus).styleID, "cavern-soul")
+        XCTAssertEqual(normalized.buttonCustomization(for: .attack).styleID, "cavern-nail")
+        XCTAssertEqual(normalized.buttonCustomization(for: .dash).styleID, "cavern-dash")
+        XCTAssertTrue(normalized.designMetadata?.tags.contains("marketable") == true)
+
+        let focus = normalized.resolvedControls(in: CGSize(width: 874, height: 402)).first { $0.id == .builtin(.focus) }!
+        let normal = normalized.resolvedPresentation(for: focus, state: .normal, scheme: .dark)
+        let pressed = normalized.resolvedPresentation(for: focus, state: .pressed, scheme: .dark)
+        XCTAssertEqual(normal.icon?.value, "sparkles")
+        XCTAssertEqual(normal.hapticFeedback.pattern, .pulse)
+        XCTAssertNotNil(normal.glowColor)
+        XCTAssertNotEqual(normal.fillStyle.representativeColor, pressed.fillStyle.representativeColor)
+    }
+
+    func testHollowKnightBuiltInUsesMarketableCavernGlowTheme() throws {
+        let generated = try XCTUnwrap(GameKeypadGenerator.generate(for: "Hollow Knight"))
+        let customization = generated.profile.customization.normalized
+
+        XCTAssertEqual(generated.source, "Built-in Hollow Knight default keyboard template with PocketPad's Cavern Glow showcase theme")
+        XCTAssertEqual(customization.colorSchemePreference, .dark)
+        XCTAssertEqual(customization.buttonCustomization(for: .focus).styleID, "cavern-soul")
+        XCTAssertEqual(customization.buttonCustomization(for: .attack).styleID, "cavern-nail")
+        XCTAssertEqual(customization.buttonCustomization(for: .map).styleID, "cavern-parchment")
+        XCTAssertTrue(customization.styleLibrary.style(id: "cavern-soul") != nil)
+        XCTAssertTrue(customization.hasCustomBackgroundFill(for: .dark))
+        XCTAssertTrue(customization.designMetadata?.tags.contains("showcase") == true)
+        XCTAssertTrue(generated.notes.contains { $0.contains("dark cave gradient") })
+    }
+
     func testPointerMessageRoundTripsThroughJSONCodec() throws {
         let message = ControllerMessage(
             type: .pointer,

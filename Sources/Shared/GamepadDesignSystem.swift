@@ -889,6 +889,401 @@ extension GamepadButtonCustomization {
     }
 }
 
+public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sendable {
+    case cavernGlow = "cavern-glow"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .cavernGlow: "Cavern Glow"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .cavernGlow:
+            "A marketable dark-fantasy action theme with misty cave gradients, pale glyph buttons, cyan soul glows, parchment utility controls, pressed states, icons, and tactile haptics."
+        }
+    }
+
+    public static func resolve(_ value: String) -> GamepadThemePreset? {
+        let normalized = normalizedLookup(value)
+        return allCases.first { preset in
+            normalized == normalizedLookup(preset.rawValue)
+                || normalized == normalizedLookup(preset.displayName)
+                || preset.aliases.contains(normalized)
+        }
+    }
+
+    public func apply(to customization: inout GamepadCustomization) {
+        switch self {
+        case .cavernGlow:
+            Self.applyCavernGlow(to: &customization)
+        }
+    }
+
+    public func applying(to customization: GamepadCustomization) -> GamepadCustomization {
+        var copy = customization
+        apply(to: &copy)
+        return copy.normalized
+    }
+
+    private var aliases: Set<String> {
+        switch self {
+        case .cavernGlow:
+            [
+                "cavernglow",
+                "cavernknight",
+                "darkfantasy",
+                "bugknight",
+                "hollowknight",
+                "hollowknightinspired",
+                "hallownest",
+                "hallownestglow"
+            ]
+        }
+    }
+
+    private static func applyCavernGlow(to customization: inout GamepadCustomization) {
+        customization.colorSchemePreference = .dark
+        customization.accentStyle = .purple
+        customization.showsButtonLabels = true
+        customization.backgroundLightFillStyle = .gradient(
+            gradient(
+                angle: 145,
+                stops: [
+                    (0.00, "#E5EDF2", 1.0),
+                    (0.42, "#94A3B8", 1.0),
+                    (1.00, "#1E293B", 1.0)
+                ]
+            )
+        )
+        customization.backgroundDarkFillStyle = .gradient(
+            gradient(
+                angle: 132,
+                stops: [
+                    (0.00, "#04070D", 1.0),
+                    (0.38, "#0B1324", 1.0),
+                    (0.74, "#111827", 1.0),
+                    (1.00, "#1E1B4B", 1.0)
+                ]
+            )
+        )
+        customization.backgroundFillStyle = nil
+        customization.backgroundLightColor = nil
+        customization.backgroundDarkColor = nil
+        customization.styleLibrary = cavernGlowStyleLibrary
+
+        for button in GameButton.builtInControls {
+            var layout = customization.buttonCustomization(for: button)
+            applyCavernGlowRole(to: &layout, button: button, label: customization.visualLabel(for: button), controlKind: .button)
+            customization.setButtonCustomization(layout, for: button)
+        }
+
+        for index in customization.customButtons.indices {
+            var layout = customization.customButtons[index].layout
+            let custom = customization.customButtons[index]
+            applyCavernGlowRole(
+                to: &layout,
+                button: custom.mappedButton,
+                label: custom.label,
+                controlKind: custom.controlKind
+            )
+            customization.customButtons[index].layout = layout.normalized
+        }
+
+        var metadata = customization.designMetadata ?? .empty
+        var tags = Set(metadata.tags)
+        tags.insert("showcase")
+        tags.insert("dark-fantasy")
+        tags.insert("marketable")
+        metadata.tags = Array(tags).sorted()
+        metadata.notes = metadata.notes ?? "Styled with PocketPad's Cavern Glow showcase theme for streamable, shareable, marketable game keypads."
+        customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+        customization.updatedAt = Date.currentMilliseconds
+        customization = customization.normalized
+    }
+
+    private static var cavernGlowStyleLibrary: GamepadStyleLibrary {
+        GamepadStyleLibrary(styles: [
+            styleToken(
+                id: "cavern-stone",
+                name: "Cavern Stone",
+                fill: .gradient(gradient(angle: 160, stops: [(0, "#0B1120", 1), (0.52, "#172033", 1), (1, "#020617", 1)])),
+                foreground: "#E0F2FE",
+                stroke: "#64748B",
+                strokeWidth: 1.5,
+                pressedFill: .gradient(gradient(angle: 160, stops: [(0, "#101827", 1), (1, "#334155", 1)])),
+                shadow: "#000000",
+                shadowAlpha: 0.42,
+                shadowRadius: 12,
+                shadowY: 7,
+                glow: "#38BDF8",
+                glowAlpha: 0.22,
+                glowRadius: 6,
+                haptic: GamepadHapticFeedback(style: .light, pattern: .single, intensity: 0.42, sharpness: 0.34, duration: 0.045)
+            ),
+            styleToken(
+                id: "cavern-nail",
+                name: "Nail Slash",
+                fill: .gradient(gradient(angle: 22, stops: [(0, "#111827", 1), (0.55, "#334155", 1), (1, "#E2E8F0", 0.92)])),
+                foreground: "#F8FAFC",
+                stroke: "#E0F2FE",
+                strokeWidth: 2.2,
+                pressedFill: .solid(color("#F8FAFC")),
+                pressedForeground: "#020617",
+                shadow: "#000000",
+                shadowAlpha: 0.48,
+                shadowRadius: 16,
+                shadowY: 9,
+                glow: "#F8FAFC",
+                glowAlpha: 0.34,
+                glowRadius: 12,
+                haptic: GamepadHapticFeedback(style: .rigid, pattern: .single, intensity: 0.72, sharpness: 0.95, duration: 0.045)
+            ),
+            styleToken(
+                id: "cavern-soul",
+                name: "Soul Orb",
+                fill: .gradient(gradient(angle: 35, stops: [(0, "#F8FAFC", 1), (0.52, "#BAE6FD", 1), (1, "#0EA5E9", 0.92)])),
+                foreground: "#020617",
+                stroke: "#E0F2FE",
+                strokeWidth: 2.5,
+                pressedFill: .gradient(gradient(angle: 35, stops: [(0, "#7DD3FC", 1), (1, "#0369A1", 1)])),
+                pressedForeground: "#FFFFFF",
+                shadow: "#075985",
+                shadowAlpha: 0.44,
+                shadowRadius: 18,
+                shadowY: 8,
+                glow: "#38BDF8",
+                glowAlpha: 0.70,
+                glowRadius: 18,
+                haptic: GamepadHapticFeedback(style: .soft, pattern: .pulse, intensity: 0.58, sharpness: 0.28, duration: 0.12)
+            ),
+            styleToken(
+                id: "cavern-dash",
+                name: "Dash Streak",
+                fill: .gradient(gradient(angle: 0, stops: [(0, "#0F172A", 1), (0.42, "#0284C7", 1), (1, "#7DD3FC", 0.96)])),
+                foreground: "#F8FAFC",
+                stroke: "#BAE6FD",
+                strokeWidth: 2,
+                pressedFill: .gradient(gradient(angle: 0, stops: [(0, "#0369A1", 1), (1, "#E0F2FE", 1)])),
+                shadow: "#082F49",
+                shadowAlpha: 0.50,
+                shadowRadius: 18,
+                shadowY: 8,
+                glow: "#0EA5E9",
+                glowAlpha: 0.58,
+                glowRadius: 16,
+                haptic: GamepadHapticFeedback(style: .medium, pattern: .single, intensity: 0.64, sharpness: 0.72, duration: 0.055)
+            ),
+            styleToken(
+                id: "cavern-jump",
+                name: "Pale Jump",
+                fill: .gradient(gradient(angle: 120, stops: [(0, "#E0F2FE", 1), (0.55, "#94A3B8", 1), (1, "#475569", 1)])),
+                foreground: "#020617",
+                stroke: "#F8FAFC",
+                strokeWidth: 2,
+                pressedFill: .solid(color("#CBD5E1")),
+                shadow: "#000000",
+                shadowAlpha: 0.38,
+                shadowRadius: 14,
+                shadowY: 7,
+                glow: "#E0F2FE",
+                glowAlpha: 0.32,
+                glowRadius: 10,
+                haptic: GamepadHapticFeedback(style: .light, pattern: .single, intensity: 0.50, sharpness: 0.42, duration: 0.05)
+            ),
+            styleToken(
+                id: "cavern-parchment",
+                name: "Parchment Utility",
+                fill: .gradient(gradient(angle: 18, stops: [(0, "#FDE68A", 1), (0.58, "#D97706", 1), (1, "#78350F", 1)])),
+                foreground: "#1C1205",
+                stroke: "#FCD34D",
+                strokeWidth: 1.6,
+                pressedFill: .solid(color("#F59E0B")),
+                shadow: "#451A03",
+                shadowAlpha: 0.42,
+                shadowRadius: 12,
+                shadowY: 7,
+                glow: "#F59E0B",
+                glowAlpha: 0.32,
+                glowRadius: 10,
+                haptic: GamepadHapticFeedback(style: .light, pattern: .double, intensity: 0.40, sharpness: 0.36, duration: 0.05)
+            ),
+            styleToken(
+                id: "cavern-rune",
+                name: "Small Rune",
+                fill: .gradient(gradient(angle: 90, stops: [(0, "#1E1B4B", 1), (0.62, "#312E81", 1), (1, "#111827", 1)])),
+                foreground: "#EDE9FE",
+                stroke: "#818CF8",
+                strokeWidth: 1.4,
+                pressedFill: .solid(color("#4338CA")),
+                shadow: "#000000",
+                shadowAlpha: 0.36,
+                shadowRadius: 10,
+                shadowY: 6,
+                glow: "#818CF8",
+                glowAlpha: 0.28,
+                glowRadius: 9,
+                haptic: GamepadHapticFeedback(style: .light, pattern: .single, intensity: 0.36, sharpness: 0.30, duration: 0.045)
+            )
+        ]).normalized
+    }
+
+    private static func applyCavernGlowRole(
+        to layout: inout GamepadButtonCustomization,
+        button: GameButton,
+        label: String,
+        controlKind: GamepadCustomControlKind
+    ) {
+        if controlKind == .joystick {
+            layout.styleID = "cavern-stone"
+            layout.shape = .circle
+            layout.joystickKnobColor = color("#E0F2FE")
+            layout.shadowStrength = max(layout.shadowStrength, 1.25)
+            layout.visualStyle = nil
+            return
+        }
+
+        if controlKind == .trigger || controlKind == .trackpad {
+            layout.styleID = "cavern-rune"
+            layout.shadowStrength = max(layout.shadowStrength, 1.10)
+            layout.visualStyle = nil
+            return
+        }
+
+        let normalizedLabel = normalizedLookup(label)
+        switch button {
+        case .up, .down, .left, .right:
+            layout.styleID = "cavern-stone"
+            layout.shape = .roundedRectangle
+            layout.cornerRadius = layout.cornerRadius ?? 10
+            layout.icon = movementIcon(for: button)
+        case .attack:
+            layout.styleID = "cavern-nail"
+            layout.shape = .circle
+            layout.icon = GamepadControlIcon(source: .sfSymbol, value: "slash.circle.fill", placement: .top, scale: 0.88)
+        case .focus:
+            layout.styleID = "cavern-soul"
+            layout.shape = .circle
+            layout.icon = GamepadControlIcon(source: .sfSymbol, value: "sparkles", placement: .top, scale: 0.92)
+        case .dash:
+            layout.styleID = "cavern-dash"
+            layout.shape = .circle
+            layout.icon = GamepadControlIcon(source: .sfSymbol, value: "wind", placement: .top, scale: 0.88)
+        case .jump:
+            layout.styleID = "cavern-jump"
+            layout.shape = .circle
+            layout.icon = GamepadControlIcon(source: .sfSymbol, value: "arrow.up.circle.fill", placement: .top, scale: 0.88)
+        case .map:
+            layout.styleID = "cavern-parchment"
+            layout.shape = .capsule
+            layout.icon = GamepadControlIcon(source: .sfSymbol, value: "map.fill", placement: .leading, scale: 0.70)
+        case .pause:
+            layout.styleID = "cavern-rune"
+            layout.shape = .capsule
+            layout.icon = GamepadControlIcon(source: .sfSymbol, value: "pause.fill", placement: .leading, scale: 0.70)
+        case .custom1, .custom2, .custom3, .custom4, .custom5, .custom6, .custom7, .custom8:
+            layout.icon = nil
+            if normalizedLabel.contains("cast") || normalizedLabel.contains("soul") || normalizedLabel.contains("focus") {
+                layout.styleID = "cavern-soul"
+            } else if normalizedLabel.contains("dream") || normalizedLabel.contains("nail") {
+                layout.styleID = "cavern-nail"
+            } else if normalizedLabel.contains("dash") || normalizedLabel.contains("super") {
+                layout.styleID = "cavern-dash"
+            } else if normalizedLabel.contains("inventory") || normalizedLabel.contains("charm") || normalizedLabel.contains("map") {
+                layout.styleID = "cavern-parchment"
+            } else {
+                layout.styleID = "cavern-rune"
+            }
+            if layout.shape == nil || layout.shape == .roundedRectangle { layout.shape = .capsule }
+        }
+
+        if layout.shadowStrength < 1.15 { layout.shadowStrength = 1.15 }
+        layout.visualStyle = nil
+        layout.hapticStyle = nil
+        layout.hapticFeedback = nil
+    }
+
+    private static func movementIcon(for button: GameButton) -> GamepadControlIcon? {
+        switch button {
+        case .up: GamepadControlIcon.sfSymbol("chevron.up", placement: .center)
+        case .down: GamepadControlIcon.sfSymbol("chevron.down", placement: .center)
+        case .left: GamepadControlIcon.sfSymbol("chevron.left", placement: .center)
+        case .right: GamepadControlIcon.sfSymbol("chevron.right", placement: .center)
+        default: nil
+        }
+    }
+
+    private static func styleToken(
+        id: String,
+        name: String,
+        fill: GamepadFillStyle,
+        foreground: String,
+        stroke: String,
+        strokeWidth: CGFloat,
+        pressedFill: GamepadFillStyle,
+        pressedForeground: String? = nil,
+        shadow: String,
+        shadowAlpha: CGFloat,
+        shadowRadius: CGFloat,
+        shadowY: CGFloat,
+        glow: String? = nil,
+        glowAlpha: CGFloat = 0,
+        glowRadius: CGFloat = 0,
+        icon: GamepadControlIcon? = nil,
+        haptic: GamepadHapticFeedback
+    ) -> GamepadStyleToken {
+        GamepadStyleToken(
+            id: id,
+            name: name,
+            visualStyle: GamepadControlVisualStyle(
+                normal: GamepadControlStateStyle(
+                    fillStyle: fill,
+                    foregroundColor: color(foreground),
+                    strokeColor: color(stroke),
+                    strokeWidth: strokeWidth,
+                    shadowColor: color(shadow, alpha: shadowAlpha),
+                    shadowRadius: shadowRadius,
+                    shadowY: shadowY,
+                    glowColor: glow.map { color($0, alpha: glowAlpha) },
+                    glowRadius: glow == nil ? nil : glowRadius,
+                    scale: 1
+                ),
+                pressed: GamepadControlStateStyle(
+                    fillStyle: pressedFill,
+                    foregroundColor: pressedForeground.map { color($0) },
+                    shadowRadius: max(2, shadowRadius * 0.62),
+                    shadowY: max(1, shadowY * 0.42),
+                    glowRadius: glow == nil ? nil : glowRadius * 1.25,
+                    scale: 0.94
+                ),
+                icon: icon,
+                hapticFeedback: haptic
+            )
+        )
+    }
+
+    private static func gradient(angle: CGFloat, stops: [(CGFloat, String, CGFloat)]) -> GamepadGradientFill {
+        GamepadGradientFill(
+            type: .linear,
+            angleDegrees: angle,
+            stops: stops.map { GamepadGradientStop(offset: $0.0, color: color($0.1, alpha: $0.2)) }
+        ).normalized
+    }
+
+    private static func color(_ hex: String, alpha: CGFloat? = nil) -> GamepadRGBAColor {
+        var color = GamepadRGBAColor(hexString: hex) ?? .defaultValue
+        if let alpha { color.alpha = alpha }
+        return color.normalized
+    }
+
+    private static func normalizedLookup(_ value: String) -> String {
+        value.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+}
+
 extension GamepadCustomization {
     var allControlIdentitiesForDesign: [GamepadControlIdentity] {
         GameButton.builtInControls.map { .builtin($0) } + customButtons.map { .custom($0.id) }

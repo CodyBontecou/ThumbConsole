@@ -10,6 +10,7 @@ struct GamepadLayoutResolverSmokeTests {
         testNudgeMovesMultipleControlsTogether()
         testNudgeSkipsLockedControls()
         testNudgePreventsOverlaps()
+        testOnePixelInspectorSizedControlsResolveAtRequestedSize()
         testLayoutQualityPassesDefaultController()
         testLayoutQualityDetectsBadOverlaps()
         testLayoutQualityDetectsUnderusedBottomSpace()
@@ -132,6 +133,28 @@ struct GamepadLayoutResolverSmokeTests {
         expect(!customization.nudgeControls([.custom(leftID)], by: CGSize(width: 1, height: 0), in: canvasSize), "nudge should not move into an overlapping frame")
         let after = controlsByID(customization.resolvedControls(in: canvasSize))
         expectAlmostEqual(after[.custom(leftID)]?.center.x ?? -1, before[.custom(leftID)]?.center.x ?? 0, "blocked nudge should keep x position")
+    }
+
+    private static func testOnePixelInspectorSizedControlsResolveAtRequestedSize() {
+        let canvasSize = CGSize(width: 874, height: 402)
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000501")!
+        let targetSize: CGFloat = 1
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = [customButton(id: id, center: CGPoint(x: 0.5, y: 0.5))]
+
+        guard let baseControl = customization.resolvedControls(in: canvasSize).first(where: { $0.id == .custom(id) }) else {
+            fail("could not resolve custom control before resizing")
+        }
+
+        customization.customButtons[0].layout.widthScale = targetSize / baseControl.size.width
+        customization.customButtons[0].layout.heightScale = targetSize / baseControl.size.height
+
+        guard let resizedControl = customization.resolvedControls(in: canvasSize).first(where: { $0.id == .custom(id) }) else {
+            fail("could not resolve custom control after resizing")
+        }
+
+        expectAlmostEqual(resizedControl.size.width, targetSize, "1 pt inspector width should be preserved")
+        expectAlmostEqual(resizedControl.size.height, targetSize, "1 pt inspector height should be preserved")
     }
 
     private static func testLayoutQualityPassesDefaultController() {

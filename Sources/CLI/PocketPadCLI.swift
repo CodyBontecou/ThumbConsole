@@ -131,6 +131,12 @@ struct PocketPadCLI {
         }
     }
 
+    private struct ThemeSummary: Codable {
+        var id: String
+        var name: String
+        var description: String
+    }
+
     private struct ElementSummary: Codable {
         var id: String
         var kind: String
@@ -194,6 +200,8 @@ struct PocketPadCLI {
             try profile(arguments: rest)
         case "template", "templates":
             try template(arguments: rest)
+        case "theme", "themes":
+            try theme(arguments: rest)
         case "binding", "bindings", "shortcut", "shortcuts":
             try binding(arguments: rest)
         case "output", "outputs":
@@ -690,6 +698,49 @@ struct PocketPadCLI {
         default:
             throw CLIError.message("Unknown template subcommand: \(subcommand)")
         }
+    }
+
+    // MARK: - Themes
+
+    private static func theme(arguments: [String]) throws {
+        guard let subcommand = arguments.first else { throw CLIError.message("Missing theme subcommand") }
+        let rest = Array(arguments.dropFirst())
+        switch subcommand {
+        case "list", "ls":
+            let summaries = GamepadThemePreset.allCases.map { themeSummary(for: $0) }
+            if rest.contains("--json") {
+                try printJSON(summaries)
+            } else {
+                for summary in summaries {
+                    print("\(summary.id)\t\(summary.name) — \(summary.description)")
+                }
+            }
+        case "show":
+            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad theme show <theme-id>") }
+            let preset = try resolveThemePreset(name)
+            try printJSON(themeSummary(for: preset))
+        case "apply", "set":
+            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad theme apply <theme-id> [--profile PROFILE]") }
+            let preset = try resolveThemePreset(name)
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                preset.apply(to: &customization)
+            }
+            print("Applied theme \"\(preset.displayName)\".")
+        default:
+            throw CLIError.message("Unknown theme subcommand: \(subcommand)")
+        }
+    }
+
+    private static func resolveThemePreset(_ value: String) throws -> GamepadThemePreset {
+        guard let preset = GamepadThemePreset.resolve(value) else {
+            let ids = GamepadThemePreset.allCases.map(\.rawValue).joined(separator: ", ")
+            throw CLIError.message("Unknown theme: \(value). Available themes: \(ids)")
+        }
+        return preset
+    }
+
+    private static func themeSummary(for preset: GamepadThemePreset) -> ThemeSummary {
+        ThemeSummary(id: preset.rawValue, name: preset.displayName, description: preset.description)
     }
 
     // MARK: - Bindings
@@ -3619,6 +3670,11 @@ struct PocketPadCLI {
         Templates:
           pocketpad template list
           pocketpad template install nes [--name "My NES"] [--default]
+
+        Themes:
+          pocketpad theme list
+          pocketpad theme show cavern-glow
+          pocketpad theme apply cavern-glow [--profile PROFILE]
 
         Bindings:
           pocketpad binding list [--profile PROFILE]
