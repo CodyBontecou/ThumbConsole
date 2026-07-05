@@ -3858,6 +3858,218 @@ private struct GamepadFillPreview<S: Shape>: View {
     }
 }
 
+struct GamepadRenderedControlFace: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let control: GamepadResolvedControl
+    let customization: GamepadCustomization
+    var state: GamepadControlPresentationState = .normal
+
+    var body: some View {
+        let presentation = resolvedPresentation
+
+        ZStack {
+            if let glowColor = presentation.glowSwiftUIColor, presentation.glowRadius > 0 {
+                controlSilhouette(fill: glowColor)
+                    .blur(radius: presentation.glowRadius)
+                    .opacity(0.68)
+                    .allowsHitTesting(false)
+            }
+
+            controlBackground(presentation: presentation)
+                .shadow(
+                    color: presentation.shadowSwiftUIColor,
+                    radius: presentation.shadowRadius,
+                    x: presentation.shadowX,
+                    y: presentation.shadowY
+                )
+
+            if control.isJoystick {
+                joystickFace(presentation: presentation)
+            } else if control.isTrackpad {
+                trackpadFace(presentation: presentation)
+            } else {
+                buttonContent(presentation: presentation)
+            }
+        }
+        .opacity(presentation.opacity)
+        .blur(radius: presentation.blurRadius)
+        .scaleEffect(presentation.scale)
+        .frame(width: control.size.width, height: control.size.height)
+        .accessibilityLabel(control.label)
+    }
+
+    private var resolvedPresentation: GamepadResolvedControlPresentation {
+        customization.resolvedPresentation(for: control, state: state, scheme: colorScheme)
+    }
+
+    private var resolvedAccentStyle: GamepadAccentStyle {
+        control.layoutCustomization.accentStyle ?? customization.accentStyle
+    }
+
+    private var resolvedCornerRadii: GamepadCornerRadii {
+        control.layoutCustomization.resolvedCornerRadii(defaultRadius: control.shape.defaultEditableCornerRadius(in: control.size))
+    }
+
+    @ViewBuilder
+    private func controlBackground(presentation: GamepadResolvedControlPresentation) -> some View {
+        let fillStyle = presentation.fillStyle
+        let strokeColor = presentation.strokeSwiftUIColor
+        let lineWidth = presentation.strokeWidth
+
+        switch control.shape {
+        case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
+            let shape = UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
+            GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
+                .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+        case .polygon:
+            let shape = GamepadRegularPolygonButtonShape(sides: 3)
+            GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
+                .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+        case .star:
+            let shape = GamepadStarButtonShape(points: 5)
+            GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
+                .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+        }
+    }
+
+    @ViewBuilder
+    private func controlSilhouette(fill color: Color) -> some View {
+        switch control.shape {
+        case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
+            UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
+                .fill(color)
+        case .polygon:
+            GamepadRegularPolygonButtonShape(sides: 3)
+                .fill(color)
+        case .star:
+            GamepadStarButtonShape(points: 5)
+                .fill(color)
+        }
+    }
+
+    @ViewBuilder
+    private func buttonContent(presentation: GamepadResolvedControlPresentation) -> some View {
+        if let icon = presentation.icon {
+            controlIcon(icon, presentation: presentation)
+                .padding(.horizontal, 4)
+        }
+
+        if customization.showsButtonLabels && (presentation.icon?.placement != .center || control.label.count <= 2) {
+            Text(control.label)
+                .geistTypography(control.label.count <= 2 ? .heading32 : .button16)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+                .foregroundStyle(presentation.foregroundSwiftUIColor)
+                .padding(.horizontal, 4)
+                .offset(labelOffset(for: presentation.icon?.placement))
+        }
+    }
+
+    private func controlIcon(_ icon: GamepadControlIcon, presentation: GamepadResolvedControlPresentation) -> some View {
+        let tint = icon.tintColor?.swiftUIColor ?? presentation.foregroundSwiftUIColor
+        let baseSize = max(12, min(control.size.width, control.size.height) * 0.34 * icon.scale)
+
+        return Group {
+            switch icon.source {
+            case .sfSymbol:
+                Image(systemName: icon.value)
+                    .font(.system(size: baseSize, weight: .semibold))
+                    .symbolRenderingMode(icon.renderingMode == .multicolor ? .multicolor : .monochrome)
+                    .foregroundStyle(tint)
+            case .text:
+                Text(icon.value)
+                    .font(.system(size: baseSize, weight: .semibold, design: .rounded))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+            case .asset:
+                Text("▧")
+                    .font(.system(size: baseSize, weight: .semibold))
+                    .foregroundStyle(tint.opacity(0.72))
+            }
+        }
+        .offset(iconOffset(for: icon.placement))
+    }
+
+    private func iconOffset(for placement: GamepadControlIconPlacement) -> CGSize {
+        switch placement {
+        case .leading: CGSize(width: -control.size.width * 0.20, height: 0)
+        case .trailing: CGSize(width: control.size.width * 0.20, height: 0)
+        case .top: CGSize(width: 0, height: -control.size.height * 0.18)
+        case .bottom: CGSize(width: 0, height: control.size.height * 0.18)
+        case .center, .background: .zero
+        }
+    }
+
+    private func labelOffset(for placement: GamepadControlIconPlacement?) -> CGSize {
+        switch placement {
+        case .leading: CGSize(width: control.size.width * 0.11, height: 0)
+        case .trailing: CGSize(width: -control.size.width * 0.11, height: 0)
+        case .top: CGSize(width: 0, height: control.size.height * 0.15)
+        case .bottom: CGSize(width: 0, height: -control.size.height * 0.15)
+        case .center, .background, nil: .zero
+        }
+    }
+
+    private func joystickFace(presentation: GamepadResolvedControlPresentation) -> some View {
+        let knobFillColor = control.layoutCustomization.joystickKnobFill(accentStyle: resolvedAccentStyle, isPressed: state.usesPressedFallback, scheme: colorScheme)
+        let knobStrokeColor = control.layoutCustomization.joystickKnobStroke(accentStyle: resolvedAccentStyle, isPressed: state.usesPressedFallback, scheme: colorScheme)
+        let visualSide = min(control.size.width, control.size.height)
+
+        return ZStack {
+            Circle()
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                .frame(width: visualSide * 0.70, height: visualSide * 0.70)
+
+            Circle()
+                .fill(knobFillColor)
+                .overlay(Circle().stroke(knobStrokeColor, lineWidth: 1))
+                .frame(width: visualSide * 0.34, height: visualSide * 0.34)
+
+            if customization.showsButtonLabels {
+                Text(control.label)
+                    .geistTypography(visualSide <= 88 ? .button12 : .button14)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.48)
+                    .foregroundStyle(presentation.foregroundSwiftUIColor)
+                    .padding(.horizontal, 4)
+                    .offset(y: control.size.height * 0.34)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func trackpadFace(presentation: GamepadResolvedControlPresentation) -> some View {
+        let foreground = presentation.foregroundSwiftUIColor
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: max(5, min(control.size.width, control.size.height) * 0.08), style: .continuous)
+                .stroke(foreground.opacity(0.24), lineWidth: 1)
+                .padding(max(5, min(control.size.width, control.size.height) * 0.08))
+
+            HStack(spacing: 9) {
+                Image(systemName: "cursorarrow")
+                    .font(.system(size: max(12, min(control.size.width, control.size.height) * 0.18), weight: .semibold))
+                if customization.showsButtonLabels {
+                    Text(control.label)
+                        .geistTypography(control.size.width <= 96 ? .button12 : .button14)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.48)
+                }
+            }
+            .foregroundStyle(foreground.opacity(0.82))
+
+            HStack(spacing: 7) {
+                Capsule().fill(foreground.opacity(0.34))
+                Capsule().fill(foreground.opacity(0.18))
+            }
+            .frame(width: control.size.width * 0.34, height: 5)
+            .offset(y: control.size.height * 0.36)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 
 #if os(macOS)
 private final class GamepadEditorUndoTarget {}
@@ -4745,16 +4957,28 @@ struct GamepadCustomizationEditor: View {
         let isExpanded = isSelected && isSelectedProfileExpanded
 
         VStack(alignment: .leading, spacing: isExpanded ? Geist.Spacing.s2 : 0) {
-            Button {
-                toggleProfileRow(profile, isSelected: isSelected)
-            } label: {
-                VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                    HStack(spacing: Geist.Spacing.s2) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                            .frame(width: 12)
+            HStack(spacing: 0) {
+                Button {
+                    toggleProfileRow(profile, isSelected: isSelected)
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        .frame(width: 12, height: 22)
+                        .padding(.leading, Geist.Spacing.s3)
+                        .padding(.trailing, Geist.Spacing.s2)
+                        .padding(.vertical, Geist.Spacing.s3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("\(isExpanded ? "Collapse" : "Expand") \(profile.name) setup details"))
+                .accessibilityHint(Text(profileDisclosureAccessibilityHint(isSelected: isSelected, isExpanded: isExpanded)))
+                .help(isExpanded ? "Hide setup details" : "Show setup details")
 
+                Button {
+                    selectProfile(profile, expandsDetails: false)
+                } label: {
+                    HStack(spacing: Geist.Spacing.s2) {
                         Text(profile.name)
                             .geistTypography(.heading14)
                             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
@@ -4775,21 +4999,24 @@ struct GamepadCustomizationEditor: View {
                                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                         }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+                    .padding(.vertical, Geist.Spacing.s3)
+                    .padding(.trailing, Geist.Spacing.s3)
+                    .contentShape(Rectangle())
                 }
-                .padding(Geist.Spacing.s3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                        .fill(isSelected ? Geist.color(.background100, scheme: colorScheme) : Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                        .stroke(isSelected ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isSelected ? 1.5 : 1)
-                )
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("\(profile.name) keypad setup"))
+                .accessibilityHint(Text(profileRowAccessibilityHint(isSelected: isSelected, isExpanded: isExpanded)))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("\(profile.name) keypad setup"))
-            .accessibilityHint(Text(profileRowAccessibilityHint(isSelected: isSelected, isExpanded: isExpanded)))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .fill(isSelected ? Geist.color(.background100, scheme: colorScheme) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(isSelected ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isSelected ? 1.5 : 1)
+            )
 
             if isExpanded {
                 selectedSetupNameEditor
@@ -9691,12 +9918,17 @@ struct GamepadCustomizationEditor: View {
         persistProfiles()
     }
 
-    private func selectProfile(_ profile: GamepadConfigurationProfile) {
+    private func selectProfile(_ profile: GamepadConfigurationProfile, expandsDetails: Bool = true) {
         commitSelectedProfileNameDraft()
         let nextProfile = profiles.first { $0.id == profile.id } ?? profile
+        let wasSelectedProfile = selectedProfileID == nextProfile.id
         selectedProfileID = nextProfile.id
         selectedProfileNameDraft = nextProfile.name
-        isSelectedProfileExpanded = true
+        if expandsDetails {
+            isSelectedProfileExpanded = true
+        } else if !wasSelectedProfile {
+            isSelectedProfileExpanded = false
+        }
         selectKeypadInspector()
         applyCustomization(nextProfile.customization)
         persistProfiles()
@@ -9713,10 +9945,18 @@ struct GamepadCustomizationEditor: View {
 
     private func profileRowAccessibilityHint(isSelected: Bool, isExpanded: Bool) -> String {
         if isSelected {
-            return isExpanded ? "Closes the keypad setup details." : "Opens the keypad setup details."
+            return "Shows this keypad setup in the editor. Use the arrow to \(isExpanded ? "hide" : "show") setup details."
         }
 
-        return "Selects and opens this keypad setup."
+        return "Selects and shows this keypad setup without opening details. Use the arrow to show setup details."
+    }
+
+    private func profileDisclosureAccessibilityHint(isSelected: Bool, isExpanded: Bool) -> String {
+        if isSelected {
+            return isExpanded ? "Hides the keypad setup details." : "Shows the keypad setup details."
+        }
+
+        return "Selects this keypad setup and shows its details."
     }
 
     private func setSelectedProfileAsDefault() {

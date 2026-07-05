@@ -1728,23 +1728,25 @@ private struct MacKeypadMiniPreview: View {
 
                 ZStack(alignment: .topLeading) {
                     GamepadFillShapeLayer(
-                        shape: RoundedRectangle(cornerRadius: 22 * scale, style: .continuous),
+                        shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
                         fillStyle: customization.keypadBackgroundFillStyle(scheme: previewColorScheme)
                     )
 
                     ForEach(controls) { control in
-                        MacKeypadPreviewControl(
+                        GamepadRenderedControlFace(
                             control: control,
                             customization: customization,
-                            scale: scale
+                            state: .normal
                         )
                         .environment(\.colorScheme, previewColorScheme)
                         .rotationEffect(.degrees(control.rotationDegrees))
-                        .position(x: control.center.x * scale, y: control.center.y * scale)
+                        .position(control.center)
                     }
                 }
-                .frame(width: displaySize.width, height: displaySize.height)
-                .clipShape(RoundedRectangle(cornerRadius: 22 * scale, style: .continuous))
+                .frame(width: designSize.width, height: designSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
                 .overlay(
                     RoundedRectangle(cornerRadius: 22 * scale, style: .continuous)
                         .stroke(Geist.color(.grayAlpha400, scheme: previewColorScheme), lineWidth: 1)

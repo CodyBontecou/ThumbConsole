@@ -8,7 +8,7 @@ struct IOSContentView: View {
     @AppStorage("macHost") private var macHost = "192.168.0.113"
     @AppStorage("macPort") private var macPort = "8765"
     @AppStorage("pairingCode") private var pairingCode = ""
-    @State private var prefersConnectionView = false
+    @State private var prefersConnectionView = true
 
     private let defaultMacHost = "192.168.0.113"
     private let defaultMacPort = "8765"
@@ -690,9 +690,7 @@ private struct ControllerPadView: View {
         }
         .environment(\.keypadHapticsEnabled, isKeypadHapticsEnabled)
         .onAppear {
-            if !client.isConnected {
-                isTopBarVisible = true
-            }
+            isTopBarVisible = !client.isConnected
         }
         .onChange(of: client.isConnected) { _, isConnected in
             isTopBarVisible = !isConnected
@@ -1303,6 +1301,7 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
         context.coordinator.isVisible = $isVisible
         context.coordinator.animation = animation
         uiView.updateActivationFrame()
+        uiView.scheduleActivationFrameUpdate()
     }
 
     final class ActivationView: UIView {
@@ -1322,11 +1321,13 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
             super.didMoveToWindow()
             coordinator?.attach(to: window)
             updateActivationFrame()
+            scheduleActivationFrameUpdate()
         }
 
         override func layoutSubviews() {
             super.layoutSubviews()
             updateActivationFrame()
+            scheduleActivationFrameUpdate()
         }
 
         func updateActivationFrame() {
@@ -1336,6 +1337,12 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
             }
 
             coordinator?.activationFrame = convert(bounds, to: window)
+        }
+
+        func scheduleActivationFrameUpdate() {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateActivationFrame()
+            }
         }
     }
 
@@ -1373,11 +1380,31 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard gestureRecognizer === panRecognizer,
-                  let window = gestureRecognizer.view
+                  let hostView = gestureRecognizer.view
             else { return false }
 
-            let paddedFrame = activationFrame.insetBy(dx: -18, dy: -18)
-            return !paddedFrame.isNull && paddedFrame.contains(touch.location(in: window))
+            let location = touch.location(in: hostView)
+            let paddedFrame = activationFrame.insetBy(dx: -24, dy: -24)
+            if !paddedFrame.isNull, paddedFrame.width > 1, paddedFrame.height > 1, paddedFrame.contains(location) {
+                return true
+            }
+
+            // On a cold launch into the saved keypad, SwiftUI can install the
+            // bridge before the drawer's background view has a stable frame.
+            // Keep the edge swipe available from the top interaction band so
+            // the bar can still be hidden without visiting Home and reopening.
+            return fallbackActivationFrame(in: hostView).contains(location)
+        }
+
+        private func fallbackActivationFrame(in hostView: UIView) -> CGRect {
+            let topInset = hostView.safeAreaInsets.top
+            let height = if isVisible.wrappedValue {
+                min(220, max(120, topInset + 132))
+            } else {
+                min(140, max(72, topInset + 80))
+            }
+
+            return CGRect(x: 0, y: 0, width: hostView.bounds.width, height: height)
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
