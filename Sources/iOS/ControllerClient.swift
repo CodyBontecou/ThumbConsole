@@ -417,6 +417,50 @@ final class ControllerClient: ObservableObject {
         }
     }
 
+    func sendPointerMove(deltaX: Double, deltaY: Double) {
+        guard abs(deltaX) >= 0.01 || abs(deltaY) >= 0.01 else { return }
+        sendPointer(kind: .move, deltaX: deltaX, deltaY: deltaY, mirrorsReliably: false)
+    }
+
+    func sendPointerScroll(deltaX: Double, deltaY: Double) {
+        guard abs(deltaX) >= 0.01 || abs(deltaY) >= 0.01 else { return }
+        sendPointer(kind: .scroll, deltaX: deltaX, deltaY: deltaY, mirrorsReliably: false)
+    }
+
+    func sendPointerClick(_ button: ControllerPointerButton) {
+        setPointerButton(button, pressed: true)
+        setPointerButton(button, pressed: false)
+    }
+
+    func setPointerButton(_ button: ControllerPointerButton, pressed: Bool) {
+        let state: ButtonPressState = pressed ? .down : .up
+        sendPointer(kind: .button, pointerButton: button, state: state, mirrorsReliably: true)
+    }
+
+    private func sendPointer(
+        kind: ControllerPointerEventKind,
+        pointerButton: ControllerPointerButton? = nil,
+        state: ButtonPressState? = nil,
+        deltaX: Double? = nil,
+        deltaY: Double? = nil,
+        mirrorsReliably: Bool
+    ) {
+        guard isConnected else { return }
+        send(
+            .init(
+                type: .pointer,
+                state: state,
+                timestamp: Date.currentMilliseconds,
+                pointerEvent: kind,
+                pointerButton: pointerButton,
+                deltaX: deltaX,
+                deltaY: deltaY
+            ),
+            prefersRealtimeDatagram: true,
+            mirrorsReliably: mirrorsReliably
+        )
+    }
+
     func releaseAll() {
         activeInputState.removeAll()
         guard connection != nil else { return }
@@ -669,11 +713,11 @@ final class ControllerClient: ObservableObject {
         .nilIfBlank
     }
 
-    private func send(_ message: ControllerMessage, prefersRealtimeDatagram: Bool = false) {
+    private func send(_ message: ControllerMessage, prefersRealtimeDatagram: Bool = false, mirrorsReliably: Bool = true) {
         do {
             let data = try ControllerWireCodec.encode(message, using: encoder)
             if prefersRealtimeDatagram {
-                sendRealtimeDataWithReliableMirror(data)
+                sendRealtimeData(data, mirrorsReliably: mirrorsReliably)
             } else {
                 sendData(data)
             }
@@ -682,9 +726,11 @@ final class ControllerClient: ObservableObject {
         }
     }
 
-    private func sendRealtimeDataWithReliableMirror(_ data: Data) {
-        _ = sendRealtimeDatagramData(data)
-        sendData(data, reportsSendErrors: false)
+    private func sendRealtimeData(_ data: Data, mirrorsReliably: Bool) {
+        let sentDatagram = sendRealtimeDatagramData(data)
+        if mirrorsReliably || !sentDatagram {
+            sendData(data, reportsSendErrors: !sentDatagram)
+        }
     }
 
     @discardableResult

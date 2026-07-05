@@ -39,6 +39,7 @@ final class MacControllerServer: ObservableObject {
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     private let injector = KeyboardInjector()
+    private let pointerInjector = PointerInjector()
     private let debugLogURL = URL(fileURLWithPath: "/tmp/pocketpad-mac-events.log")
     private let logQueue = DispatchQueue(label: "PocketPad.DebugLog", qos: .utility)
     private static let preferredPort: UInt16 = 8765
@@ -94,6 +95,14 @@ final class MacControllerServer: ObservableObject {
     private var lastAccessibilityRefresh = Date.distantPast
     private var activeBindings: [GameButton: MacKeyBinding] = [:]
     private var heldBindingCounts: [MacKeyBinding: Int] = [:]
+    private var activePointerButtons: Set<ControllerPointerButton> = []
+    private var recentPointerButtonEvents: [PointerButtonEventFingerprint: UInt64] = [:]
+    private static let pointerButtonDuplicateWindowNanoseconds: UInt64 = 2_000_000_000
+    private struct PointerButtonEventFingerprint: Hashable {
+        let button: ControllerPointerButton
+        let state: ButtonPressState
+        let timestamp: Int64
+    }
     private struct PendingButtonMessage {
         let message: ControllerMessage
         let button: GameButton
@@ -328,7 +337,9 @@ final class MacControllerServer: ObservableObject {
 
     func refreshAccessibilityStatus() {
         accessibilityTrusted = syncOnNetworkQueue {
-            injector.refreshAccessibilityStatus()
+            let keyboardTrusted = injector.refreshAccessibilityStatus()
+            let pointerTrusted = pointerInjector.refreshAccessibilityStatus()
+            return keyboardTrusted && pointerTrusted
         }
         lastAccessibilityRefresh = Date()
         publishRuntimeStatus()
@@ -728,12 +739,16 @@ final class MacControllerServer: ObservableObject {
         resetPhysicalInputTrackingOnNetworkQueue()
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
 
-        guard !inputPressedButtons.isEmpty || !heldBindingCounts.isEmpty else { return }
+        guard !inputPressedButtons.isEmpty || !heldBindingCounts.isEmpty || !activePointerButtons.isEmpty else { return }
         for binding in heldBindingCounts.keys {
             injector.keyUp(binding)
         }
+        for button in activePointerButtons {
+            pointerInjector.setButton(button, pressed: false)
+        }
         heldBindingCounts.removeAll()
         activeBindings.removeAll()
+        activePointerButtons.removeAll()
         inputPressedButtons.removeAll()
         publishControllerDebug(event: reason, pressedButtons: [], immediately: true)
         logDebug("release_all reason=\(reason) pressed=[]")
@@ -931,11 +946,14 @@ final class MacControllerServer: ObservableObject {
             return
         }
 
-        publishClientActivity(from: pairedConnection, force: message.type != .button)
+        publishClientActivity(from: pairedConnection, force: message.type != .button && message.type != .pointer)
 
         switch message.type {
         case .button:
             handleButtonMessageOnNetworkQueue(message, source: "iPhone UDP")
+
+        case .pointer:
+            handlePointerMessageOnNetworkQueue(message, source: "iPhone UDP")
 
         case .releaseAll:
             releaseAllOnNetworkQueue(reason: "release_all from iPhone UDP")
@@ -1000,7 +1018,7 @@ final class MacControllerServer: ObservableObject {
         let isPairedConnection = pairedConnection === connection
 
         if isPairedConnection {
-            publishClientActivity(from: connection, force: message.type != .button)
+            publishClientActivity(from: connection, force: message.type != .button && message.type != .pointer)
         }
 
         switch message.type {
@@ -1043,6 +1061,13 @@ final class MacControllerServer: ObservableObject {
                 return
             }
             handleButtonMessageOnNetworkQueue(message, source: "iPhone")
+
+        case .pointer:
+            guard isPairedConnection else {
+                logDebug("ignored_unpaired_message type=pointer")
+                return
+            }
+            handlePointerMessageOnNetworkQueue(message, source: "iPhone")
 
         case .releaseAll:
             guard isPairedConnection else { return }
@@ -1298,6 +1323,71 @@ final class MacControllerServer: ObservableObject {
         }
 
         return inspection
+    }
+
+    private func handlePointerMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
+        guard let event = message.pointerEvent else {
+            publishControllerDebug(event: "Ignored malformed pointer event", immediately: true)
+            return
+        }
+
+        switch event {
+        case .move:
+            let deltaX = message.deltaX ?? 0
+            let deltaY = message.deltaY ?? 0
+            pointerInjector.moveBy(deltaX: deltaX, deltaY: deltaY)
+            logInputEvent("pointer source=\(source) event=move dx=\(String(format: "%.2f", deltaX)) dy=\(String(format: "%.2f", deltaY))")
+
+        case .scroll:
+            let deltaX = message.deltaX ?? 0
+            let deltaY = message.deltaY ?? 0
+            pointerInjector.scrollBy(deltaX: deltaX, deltaY: deltaY)
+            logInputEvent("pointer source=\(source) event=scroll dx=\(String(format: "%.2f", deltaX)) dy=\(String(format: "%.2f", deltaY))")
+
+        case .button:
+            guard let pointerButton = message.pointerButton,
+                  let state = message.state
+            else {
+                publishControllerDebug(event: "Ignored malformed pointer button event", immediately: true)
+                return
+            }
+
+            let fingerprint = PointerButtonEventFingerprint(
+                button: pointerButton,
+                state: state,
+                timestamp: message.timestamp
+            )
+            guard !isDuplicatePointerButtonEvent(fingerprint) else { return }
+
+            switch state {
+            case .down:
+                guard activePointerButtons.insert(pointerButton).inserted else { return }
+                rememberPointerButtonEvent(fingerprint)
+                pointerInjector.setButton(pointerButton, pressed: true)
+            case .up:
+                guard activePointerButtons.remove(pointerButton) != nil else { return }
+                rememberPointerButtonEvent(fingerprint)
+                pointerInjector.setButton(pointerButton, pressed: false)
+            }
+            logInputEvent("pointer source=\(source) event=button button=\(pointerButton.rawValue) state=\(state.rawValue)")
+        }
+    }
+
+    private func isDuplicatePointerButtonEvent(_ fingerprint: PointerButtonEventFingerprint) -> Bool {
+        pruneRecentPointerButtonEvents()
+        return recentPointerButtonEvents[fingerprint] != nil
+    }
+
+    private func rememberPointerButtonEvent(_ fingerprint: PointerButtonEventFingerprint) {
+        pruneRecentPointerButtonEvents()
+        recentPointerButtonEvents[fingerprint] = DispatchTime.now().uptimeNanoseconds
+    }
+
+    private func pruneRecentPointerButtonEvents() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        recentPointerButtonEvents = recentPointerButtonEvents.filter { _, eventUptime in
+            now - eventUptime <= Self.pointerButtonDuplicateWindowNanoseconds
+        }
     }
 
     private func handleButtonMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {

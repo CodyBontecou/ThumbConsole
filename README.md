@@ -111,6 +111,8 @@ Each setup stores its own keypad-level preferences. Select a setup in the Keypad
 
 Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder.
 
+Layouts can also include a trackpad component via **Layout tools → Add Trackpad** or `pocketpad element add trackpad`. The trackpad sends relative cursor movement to the Mac, supports tap-to-click, two-finger right click, two-finger scroll, natural-scroll inversion, and per-component cursor/scroll sensitivity. Pointer events use the paired realtime channel and the macOS helper injects them with Accessibility-approved `CGEvent` mouse and scroll events.
+
 ### iPhone device frames
 
 The Keypad editor can preview layouts inside every iPhone display class PocketPad supports on iOS 17+, from iPhone XS/XR and SE 2/3 through the iPhone 17 family. The editor uses a vector device frame plus the real logical screen size for each model, so keypad placement matches the phone display instead of relying on a single bundled PNG.

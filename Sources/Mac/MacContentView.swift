@@ -1502,6 +1502,14 @@ private struct MacKeypadPreviewControl: View {
                 Circle()
                     .fill(control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.42))
                     .frame(width: max(8, 22 * scale), height: max(8, 22 * scale))
+            } else if control.isTrackpad {
+                RoundedRectangle(cornerRadius: max(4, 10 * scale), style: .continuous)
+                    .stroke(control.layoutCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.34), lineWidth: max(1, 1.5 * scale))
+                    .padding(max(3, 8 * scale))
+                Image(systemName: "cursorarrow")
+                    .font(.system(size: max(9, 18 * scale), weight: .semibold))
+                    .foregroundStyle(control.layoutCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme).opacity(0.62))
+                    .offset(y: max(-4, -8 * scale))
             }
 
             if customization.showsButtonLabels {
@@ -1511,6 +1519,7 @@ private struct MacKeypadPreviewControl: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.45)
                     .padding(.horizontal, max(2, 4 * scale))
+                    .offset(y: control.isTrackpad ? max(6, 12 * scale) : 0)
             }
         }
         .frame(width: max(1, control.size.width * scale), height: max(1, control.size.height * scale))

@@ -831,6 +831,7 @@ public enum GamepadButtonShapeStyle: String, Codable, CaseIterable, Identifiable
 public enum GamepadCustomControlKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case button
     case joystick
+    case trackpad
 
     public var id: String { rawValue }
 
@@ -838,7 +839,51 @@ public enum GamepadCustomControlKind: String, Codable, CaseIterable, Identifiabl
         switch self {
         case .button: "Button"
         case .joystick: "Joystick"
+        case .trackpad: "Trackpad"
         }
+    }
+}
+
+public struct GamepadTrackpadSettings: Codable, Equatable, Sendable {
+    public static let minimumSensitivity: CGFloat = 0.2
+    public static let maximumSensitivity: CGFloat = 4.0
+    public static let minimumScrollSensitivity: CGFloat = 0.1
+    public static let maximumScrollSensitivity: CGFloat = 4.0
+    public static let defaultValue = GamepadTrackpadSettings()
+
+    public var sensitivity: CGFloat
+    public var scrollSensitivity: CGFloat
+    public var tapToClick: Bool
+    public var twoFingerScroll: Bool
+    public var naturalScrolling: Bool
+
+    public init(
+        sensitivity: CGFloat = 1.2,
+        scrollSensitivity: CGFloat = 0.85,
+        tapToClick: Bool = true,
+        twoFingerScroll: Bool = true,
+        naturalScrolling: Bool = true
+    ) {
+        self.sensitivity = sensitivity
+        self.scrollSensitivity = scrollSensitivity
+        self.tapToClick = tapToClick
+        self.twoFingerScroll = twoFingerScroll
+        self.naturalScrolling = naturalScrolling
+    }
+
+    public var normalized: GamepadTrackpadSettings {
+        GamepadTrackpadSettings(
+            sensitivity: Self.clamp(sensitivity, lower: Self.minimumSensitivity, upper: Self.maximumSensitivity),
+            scrollSensitivity: Self.clamp(scrollSensitivity, lower: Self.minimumScrollSensitivity, upper: Self.maximumScrollSensitivity),
+            tapToClick: tapToClick,
+            twoFingerScroll: twoFingerScroll,
+            naturalScrolling: naturalScrolling
+        )
+    }
+
+    private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        guard value.isFinite else { return lower }
+        return min(max(value, lower), upper)
     }
 }
 
@@ -1278,6 +1323,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
     public var layout: GamepadButtonCustomization
     public var controlKind: GamepadCustomControlKind
     public var joystickMapping: GamepadJoystickMapping?
+    public var trackpadSettings: GamepadTrackpadSettings?
 
     public init(
         id: UUID = UUID(),
@@ -1291,7 +1337,8 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
             shape: .roundedRectangle
         ),
         controlKind: GamepadCustomControlKind = .button,
-        joystickMapping: GamepadJoystickMapping? = nil
+        joystickMapping: GamepadJoystickMapping? = nil,
+        trackpadSettings: GamepadTrackpadSettings? = nil
     ) {
         self.id = id
         self.mappedButton = mappedButton
@@ -1299,6 +1346,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         self.layout = layout
         self.controlKind = controlKind
         self.joystickMapping = joystickMapping
+        self.trackpadSettings = trackpadSettings
     }
 
     public init(from decoder: Decoder) throws {
@@ -1315,6 +1363,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         )
         controlKind = try container.decodeIfPresent(GamepadCustomControlKind.self, forKey: .controlKind) ?? .button
         joystickMapping = try container.decodeIfPresent(GamepadJoystickMapping.self, forKey: .joystickMapping)
+        trackpadSettings = try container.decodeIfPresent(GamepadTrackpadSettings.self, forKey: .trackpadSettings)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1325,6 +1374,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         try container.encode(layout, forKey: .layout)
         try container.encode(controlKind, forKey: .controlKind)
         try container.encodeIfPresent(joystickMapping, forKey: .joystickMapping)
+        try container.encodeIfPresent(trackpadSettings?.normalized, forKey: .trackpadSettings)
     }
 
     var normalized: GamepadCustomButton {
@@ -1333,12 +1383,20 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         copy.layout = copy.layout.normalized
         if copy.layout.centerX == nil { copy.layout.centerX = 0.5 }
         if copy.layout.centerY == nil { copy.layout.centerY = 0.5 }
-        if copy.controlKind == .joystick {
+        switch copy.controlKind {
+        case .joystick:
             copy.joystickMapping = copy.joystickMapping ?? .movement
+            copy.trackpadSettings = nil
             copy.layout.shape = .circle
             if copy.label.isEmpty { copy.label = "Joystick" }
-        } else {
+        case .trackpad:
             copy.joystickMapping = nil
+            copy.trackpadSettings = (copy.trackpadSettings ?? .defaultValue).normalized
+            if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
+            if copy.label.isEmpty { copy.label = "Trackpad" }
+        case .button:
+            copy.joystickMapping = nil
+            copy.trackpadSettings = nil
             if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
         }
         return copy
@@ -1346,6 +1404,10 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
 
     var isJoystick: Bool {
         controlKind == .joystick
+    }
+
+    var isTrackpad: Bool {
+        controlKind == .trackpad
     }
 
     func visualLabel(fallback: String) -> String {
@@ -1360,6 +1422,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         case layout
         case controlKind
         case joystickMapping
+        case trackpadSettings
     }
 }
 
@@ -1367,6 +1430,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     public static let maximumLabelLength = gamepadMaximumLabelLength
     public static let maximumCustomButtons = 8
     public static let maximumJoysticks = 2
+    public static let maximumTrackpads = 1
     public static let defaultValue = GamepadCustomization()
     public static var blankCanvas: GamepadCustomization {
         var customization = GamepadCustomization.defaultValue
@@ -1573,6 +1637,32 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         )
     }
 
+    public mutating func addTrackpad(id: UUID = UUID(), mappedTo mappedButton: GameButton? = nil) {
+        let trackpadCount = customButtons.filter { $0.normalized.isTrackpad }.count
+        guard customButtons.count < Self.maximumCustomButtons,
+              trackpadCount < Self.maximumTrackpads
+        else { return }
+
+        customButtons.append(
+            GamepadCustomButton(
+                id: id,
+                mappedButton: mappedButton ?? firstAvailableCustomSlot() ?? .custom1,
+                label: "Trackpad",
+                layout: GamepadButtonCustomization(
+                    centerX: 0.50,
+                    centerY: 0.58,
+                    widthScale: 1.25,
+                    heightScale: 1.0,
+                    shape: .roundedRectangle,
+                    accentStyle: .monochrome,
+                    cornerRadius: 18
+                ),
+                controlKind: .trackpad,
+                trackpadSettings: .defaultValue
+            )
+        )
+    }
+
     public mutating func removeCustomButton(id: UUID) {
         customButtons.removeAll { $0.id == id }
     }
@@ -1615,12 +1705,16 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         var seenCustomButtonIDs = Set<UUID>()
         var normalizedCustomButtons: [GamepadCustomButton] = []
         var joystickCount = 0
+        var trackpadCount = 0
         for customButton in customButtons {
             let normalizedCustomButton = customButton.normalized
             guard seenCustomButtonIDs.insert(normalizedCustomButton.id).inserted else { continue }
             if normalizedCustomButton.isJoystick {
                 guard joystickCount < Self.maximumJoysticks else { continue }
                 joystickCount += 1
+            } else if normalizedCustomButton.isTrackpad {
+                guard trackpadCount < Self.maximumTrackpads else { continue }
+                trackpadCount += 1
             }
             normalizedCustomButtons.append(normalizedCustomButton)
             if normalizedCustomButtons.count >= Self.maximumCustomButtons { break }
@@ -1725,9 +1819,14 @@ struct GamepadResolvedControl: Identifiable, Equatable {
     let isLocationLocked: Bool
     let controlKind: GamepadCustomControlKind
     let joystickMapping: GamepadJoystickMapping?
+    let trackpadSettings: GamepadTrackpadSettings?
 
     var isJoystick: Bool {
         controlKind == .joystick
+    }
+
+    var isTrackpad: Bool {
+        controlKind == .trackpad
     }
 
     var frame: CGRect {
@@ -1756,7 +1855,8 @@ struct GamepadResolvedControl: Identifiable, Equatable {
             isCustom: isCustom,
             isLocationLocked: isLocationLocked,
             controlKind: controlKind,
-            joystickMapping: joystickMapping
+            joystickMapping: joystickMapping,
+            trackpadSettings: trackpadSettings
         )
     }
 }
@@ -1978,7 +2078,8 @@ enum GamepadLayoutResolver {
                 isCustom: false,
                 isLocationLocked: buttonCustomization.isLocationLocked,
                 controlKind: .button,
-                joystickMapping: nil
+                joystickMapping: nil,
+                trackpadSettings: nil
             )
         }
 
@@ -1988,13 +2089,18 @@ enum GamepadLayoutResolver {
 
             let defaultShape = normalizedButton.isJoystick ? GamepadButtonShapeStyle.circle : defaultShape(for: normalizedButton.mappedButton)
             let shape = normalizedButton.layout.resolvedShape(defaultShape: defaultShape)
-            let baseSize = normalizedButton.isJoystick
-                ? joystickBaseSize(controlScale: customization.controlScale, in: canvasSize)
-                : baseSize(for: normalizedButton.mappedButton, controlScale: customization.controlScale, in: canvasSize)
+            let baseControlSize: CGSize
+            if normalizedButton.isJoystick {
+                baseControlSize = joystickBaseSize(controlScale: customization.controlScale, in: canvasSize)
+            } else if normalizedButton.isTrackpad {
+                baseControlSize = trackpadBaseSize(controlScale: customization.controlScale, in: canvasSize)
+            } else {
+                baseControlSize = baseSize(for: normalizedButton.mappedButton, controlScale: customization.controlScale, in: canvasSize)
+            }
             let scaledSize = effectiveSize(
                 CGSize(
-                    width: baseSize.width * normalizedButton.layout.widthScale,
-                    height: baseSize.height * normalizedButton.layout.heightScale
+                    width: baseControlSize.width * normalizedButton.layout.widthScale,
+                    height: baseControlSize.height * normalizedButton.layout.heightScale
                 ),
                 shape: shape
             )
@@ -2022,7 +2128,8 @@ enum GamepadLayoutResolver {
                 isCustom: true,
                 isLocationLocked: normalizedButton.layout.isLocationLocked,
                 controlKind: normalizedButton.controlKind,
-                joystickMapping: normalizedButton.isJoystick ? (normalizedButton.joystickMapping ?? .movement) : nil
+                joystickMapping: normalizedButton.isJoystick ? (normalizedButton.joystickMapping ?? .movement) : nil,
+                trackpadSettings: normalizedButton.isTrackpad ? (normalizedButton.trackpadSettings ?? .defaultValue).normalized : nil
             )
         }
 
@@ -2221,6 +2328,15 @@ enum GamepadLayoutResolver {
         let scale = controlScale.multiplier
         let side = min(128 * scale, max(82 * scale, shortestSide * (isLandscape ? 0.30 : 0.24) * scale))
         return CGSize(width: side, height: side)
+    }
+
+    private static func trackpadBaseSize(controlScale: GamepadControlScale, in canvasSize: CGSize) -> CGSize {
+        let isLandscape = canvasSize.width >= canvasSize.height
+        let shortestSide = max(1, min(canvasSize.width, canvasSize.height))
+        let scale = controlScale.multiplier
+        let width = min(230 * scale, max(142 * scale, shortestSide * (isLandscape ? 0.48 : 0.42) * scale))
+        let height = min(150 * scale, max(92 * scale, shortestSide * (isLandscape ? 0.28 : 0.24) * scale))
+        return CGSize(width: width, height: height)
     }
 
     private static func effectiveSize(_ size: CGSize, shape: GamepadButtonShapeStyle) -> CGSize {
@@ -4456,7 +4572,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var emptyComponentsMessage: some View {
-        Text("No components yet. Draw a shape on the canvas, add a joystick, or use Layout tools → Show Default Controls.")
+        Text("No components yet. Draw a shape on the canvas, add a joystick or trackpad, or use Layout tools → Show Default Controls.")
             .geistTypography(.copy13)
             .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             .fixedSize(horizontal: false, vertical: true)
@@ -4821,6 +4937,10 @@ struct GamepadCustomizationEditor: View {
                     addJoystickControl()
                 }
                 .disabled(customization.customButtons.filter { $0.normalized.isJoystick }.count >= GamepadCustomization.maximumJoysticks || customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
+                Button("Add Trackpad") {
+                    addTrackpadControl()
+                }
+                .disabled(customization.customButtons.filter { $0.normalized.isTrackpad }.count >= GamepadCustomization.maximumTrackpads || customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
                 Divider()
                 Button("Reset Key Layout") {
                     resetKeyLayout()
@@ -5253,7 +5373,7 @@ struct GamepadCustomizationEditor: View {
             Text(isBlankSetup ? "Blank setup" : "Component editing")
                 .geistTypography(.heading14)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-            Text(isBlankSetup ? "Draw a shape on the canvas, add a joystick, or choose Layout tools → Show Default Controls to add keypad components." : "Select a component on the canvas or from the components list to edit its label, shortcut, fill, size, and shape.")
+            Text(isBlankSetup ? "Draw a shape on the canvas, add a joystick or trackpad, or choose Layout tools → Show Default Controls to add keypad components." : "Select a component on the canvas or from the components list to edit its label, shortcut, fill, size, and shape.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
@@ -5299,7 +5419,7 @@ struct GamepadCustomizationEditor: View {
 
             if case .custom(let id) = selectedControlID,
                let customButton = customButton(id: id)?.normalized {
-                Button(customButton.isJoystick ? "Delete Joystick" : "Delete Shape") {
+                Button(deleteTitle(for: customButton)) {
                     _ = deleteCustomButton(id: id)
                 }
                 .geistButtonStyle(.error, size: .small)
@@ -6344,6 +6464,9 @@ struct GamepadCustomizationEditor: View {
             if normalizedButton.isJoystick {
                 subtitle = "Joystick → 4 directions"
                 systemImage = "circle.grid.cross"
+            } else if normalizedButton.isTrackpad {
+                subtitle = "Trackpad → cursor, click, scroll"
+                systemImage = "rectangle.and.hand.point.up.left"
             } else {
                 subtitle = "Shape → \(normalizedButton.mappedButton.displayName)"
                 systemImage = "plus.square.fill"
@@ -6385,7 +6508,7 @@ struct GamepadCustomizationEditor: View {
             return button.displayName
         case .custom(let id):
             guard let customButton = customButton(id: id)?.normalized else { return "Shape" }
-            return customButton.visualLabel(fallback: customButton.isJoystick ? "Joystick" : visualLabel(for: customButton.mappedButton))
+            return customButton.visualLabel(fallback: customButtonFallbackLabel(for: customButton))
         }
     }
 
@@ -6393,6 +6516,8 @@ struct GamepadCustomizationEditor: View {
     private func customButtonControls(id: UUID) -> some View {
         if customButton(id: id)?.normalized.isJoystick == true {
             joystickControls(id: id)
+        } else if customButton(id: id)?.normalized.isTrackpad == true {
+            trackpadControls(id: id)
         } else {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                 HStack(spacing: Geist.Spacing.s3) {
@@ -6458,6 +6583,38 @@ struct GamepadCustomizationEditor: View {
                     }
                 }
             }
+        }
+    }
+
+    private func trackpadControls(id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            TextField("Trackpad", text: customLabelBinding(id: id))
+                .geistInput(size: .small)
+
+            valueSlider(
+                title: "Cursor",
+                value: trackpadSensitivityBinding(id: id),
+                range: Double(GamepadTrackpadSettings.minimumSensitivity)...Double(GamepadTrackpadSettings.maximumSensitivity),
+                valueText: String(format: "%.1fx", Double(trackpadSettingsValue(id: id).sensitivity))
+            )
+
+            valueSlider(
+                title: "Scroll",
+                value: trackpadScrollSensitivityBinding(id: id),
+                range: Double(GamepadTrackpadSettings.minimumScrollSensitivity)...Double(GamepadTrackpadSettings.maximumScrollSensitivity),
+                valueText: String(format: "%.1fx", Double(trackpadSettingsValue(id: id).scrollSensitivity))
+            )
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                GeistCheckboxToggle(title: "Tap to click", isOn: trackpadTapToClickBinding(id: id))
+                GeistCheckboxToggle(title: "Two-finger scroll", isOn: trackpadTwoFingerScrollBinding(id: id))
+                GeistCheckboxToggle(title: "Natural scrolling", isOn: trackpadNaturalScrollingBinding(id: id))
+            }
+
+            Text("Trackpads send relative cursor movement to the Mac. Tap for left click, two-finger tap for right click, and drag two fingers to scroll.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -6617,9 +6774,26 @@ struct GamepadCustomizationEditor: View {
             return button.displayName
         case .custom(let id):
             guard let customButton = customButton(id: id)?.normalized else { return "Shape" }
-            let fallback = customButton.isJoystick ? "Joystick" : visualLabel(for: customButton.mappedButton)
-            return "\(customButton.isJoystick ? "Joystick" : "Shape"): \(customButton.visualLabel(fallback: fallback))"
+            let kindLabel = customControlKindLabel(for: customButton)
+            let fallback = customButtonFallbackLabel(for: customButton)
+            return "\(kindLabel): \(customButton.visualLabel(fallback: fallback))"
         }
+    }
+
+    private func customControlKindLabel(for customButton: GamepadCustomButton) -> String {
+        if customButton.isJoystick { return "Joystick" }
+        if customButton.isTrackpad { return "Trackpad" }
+        return "Shape"
+    }
+
+    private func customButtonFallbackLabel(for customButton: GamepadCustomButton) -> String {
+        if customButton.isJoystick { return "Joystick" }
+        if customButton.isTrackpad { return "Trackpad" }
+        return visualLabel(for: customButton.mappedButton)
+    }
+
+    private func deleteTitle(for customButton: GamepadCustomButton) -> String {
+        "Delete \(customControlKindLabel(for: customButton))"
     }
 
     private var selectedShortcutButton: GameButton? {
@@ -6628,7 +6802,7 @@ struct GamepadCustomizationEditor: View {
             return button
         case .custom(let id):
             let customButton = customButton(id: id)?.normalized
-            return customButton?.isJoystick == true ? nil : customButton?.mappedButton
+            return customButton?.isJoystick == true || customButton?.isTrackpad == true ? nil : customButton?.mappedButton
         }
     }
 
@@ -6747,6 +6921,63 @@ struct GamepadCustomizationEditor: View {
 
     private func joystickMappingValue(id: UUID) -> GamepadJoystickMapping {
         customButton(id: id)?.normalized.joystickMapping ?? .movement
+    }
+
+    private func trackpadSettingsValue(id: UUID) -> GamepadTrackpadSettings {
+        (customButton(id: id)?.normalized.trackpadSettings ?? .defaultValue).normalized
+    }
+
+    private func updateTrackpadSettings(id: UUID, mutate: (inout GamepadTrackpadSettings) -> Void) {
+        updateCustomButton(id: id) { customButton in
+            var settings = (customButton.trackpadSettings ?? .defaultValue).normalized
+            mutate(&settings)
+            customButton.trackpadSettings = settings.normalized
+        }
+    }
+
+    private func trackpadSensitivityBinding(id: UUID) -> Binding<Double> {
+        Binding(
+            get: { Double(trackpadSettingsValue(id: id).sensitivity) },
+            set: { value in
+                updateTrackpadSettings(id: id) { $0.sensitivity = CGFloat(value) }
+            }
+        )
+    }
+
+    private func trackpadScrollSensitivityBinding(id: UUID) -> Binding<Double> {
+        Binding(
+            get: { Double(trackpadSettingsValue(id: id).scrollSensitivity) },
+            set: { value in
+                updateTrackpadSettings(id: id) { $0.scrollSensitivity = CGFloat(value) }
+            }
+        )
+    }
+
+    private func trackpadTapToClickBinding(id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { trackpadSettingsValue(id: id).tapToClick },
+            set: { value in
+                updateTrackpadSettings(id: id) { $0.tapToClick = value }
+            }
+        )
+    }
+
+    private func trackpadTwoFingerScrollBinding(id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { trackpadSettingsValue(id: id).twoFingerScroll },
+            set: { value in
+                updateTrackpadSettings(id: id) { $0.twoFingerScroll = value }
+            }
+        )
+    }
+
+    private func trackpadNaturalScrollingBinding(id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { trackpadSettingsValue(id: id).naturalScrolling },
+            set: { value in
+                updateTrackpadSettings(id: id) { $0.naturalScrolling = value }
+            }
+        )
     }
 
     private func visibleBinding(for identity: GamepadControlIdentity) -> Binding<Bool> {
@@ -7852,9 +8083,10 @@ struct GamepadCustomizationEditor: View {
                 $0.setLabel("", for: button)
             }
         case .custom(let id):
-            let isJoystick = customButton(id: id)?.normalized.isJoystick == true
+            let kind = customButton(id: id)?.normalized.controlKind ?? .button
             updateCustomButton(id: id) {
-                if isJoystick {
+                switch kind {
+                case .joystick:
                     $0.label = "Joystick"
                     $0.layout = GamepadButtonCustomization(
                         centerX: 0.5,
@@ -7864,7 +8096,20 @@ struct GamepadCustomizationEditor: View {
                         shape: .circle
                     )
                     $0.joystickMapping = $0.joystickMapping ?? .movement
-                } else {
+                    $0.trackpadSettings = nil
+                case .trackpad:
+                    $0.label = "Trackpad"
+                    $0.layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.58,
+                        widthScale: 1.25,
+                        heightScale: 1.0,
+                        shape: .roundedRectangle,
+                        cornerRadius: 18
+                    )
+                    $0.joystickMapping = nil
+                    $0.trackpadSettings = .defaultValue
+                case .button:
                     $0.label = "Shape"
                     $0.layout = GamepadButtonCustomization(
                         centerX: 0.5,
@@ -7873,6 +8118,8 @@ struct GamepadCustomizationEditor: View {
                         heightScale: 1.0,
                         shape: .roundedRectangle
                     )
+                    $0.joystickMapping = nil
+                    $0.trackpadSettings = nil
                 }
             }
         }
@@ -8018,6 +8265,14 @@ struct GamepadCustomizationEditor: View {
         next.addJoystick(id: id)
         placeCustomControl(id: id, in: &next)
         applyCustomization(next, selecting: .custom(id), undoActionName: "Add Joystick")
+    }
+
+    private func addTrackpadControl() {
+        let id = UUID()
+        var next = customization
+        next.addTrackpad(id: id)
+        placeCustomControl(id: id, in: &next)
+        applyCustomization(next, selecting: .custom(id), undoActionName: "Add Trackpad")
     }
 
     private func placeCustomControl(id: UUID, in next: inout GamepadCustomization) {
@@ -11685,6 +11940,8 @@ private struct GamepadDesignerButton: View {
 
             if control.isJoystick {
                 joystickFace
+            } else if control.isTrackpad {
+                trackpadFace
             } else if customization.showsButtonLabels {
                 Text(control.label)
                     .geistTypography(control.size.width <= 44 ? .button12 : .button14)
@@ -11819,6 +12076,35 @@ private struct GamepadDesignerButton: View {
                     .padding(.horizontal, 4)
                     .offset(y: control.size.height * 0.34)
             }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var trackpadFace: some View {
+        let foreground = control.layoutCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+        return ZStack {
+            RoundedRectangle(cornerRadius: max(5, min(control.size.width, control.size.height) * 0.08), style: .continuous)
+                .stroke(foreground.opacity(0.24), lineWidth: 1 * inverseDisplayScale)
+                .padding(max(5, 10 * inverseDisplayScale))
+
+            HStack(spacing: max(5, 9 * inverseDisplayScale)) {
+                Image(systemName: "cursorarrow")
+                    .font(.system(size: max(12, min(control.size.width, control.size.height) * 0.18), weight: .semibold))
+                if customization.showsButtonLabels {
+                    Text(control.label)
+                        .geistTypography(control.size.width <= 96 ? .button12 : .button14)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.48)
+                }
+            }
+            .foregroundStyle(foreground.opacity(0.82))
+
+            HStack(spacing: max(4, 7 * inverseDisplayScale)) {
+                Capsule().fill(foreground.opacity(0.34))
+                Capsule().fill(foreground.opacity(0.18))
+            }
+            .frame(width: control.size.width * 0.34, height: max(3, 5 * inverseDisplayScale))
+            .offset(y: control.size.height * 0.36)
         }
         .allowsHitTesting(false)
     }

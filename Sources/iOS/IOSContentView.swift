@@ -1536,6 +1536,16 @@ private struct GamepadFreeformControllerCanvas: View {
                         )
                         .rotationEffect(.degrees(control.rotationDegrees))
                         .position(control.center)
+                    } else if control.isTrackpad {
+                        GamepadTrackpad(
+                            label: control.label,
+                            size: control.size,
+                            elementCustomization: control.layoutCustomization,
+                            settings: control.trackpadSettings ?? .defaultValue,
+                            customization: customization
+                        )
+                        .rotationEffect(.degrees(control.rotationDegrees))
+                        .position(control.center)
                     } else {
                         GamepadButton(
                             button: control.mappedButton,
@@ -1721,6 +1731,153 @@ private struct GamepadJoystick: View {
 
     private func handleDirectionEdge(_ direction: GamepadJoystickDirection, pressed: Bool, pressIdentifier: UInt64) {
         client.setButton(mapping[direction], pressed: pressed, pressIdentifier: pressIdentifier)
+    }
+}
+
+private struct GamepadTrackpad: View {
+    @EnvironmentObject private var client: ControllerClient
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.keypadHapticsEnabled) private var isKeypadHapticsEnabled
+    let label: String
+    let size: CGSize
+    let elementCustomization: GamepadButtonCustomization
+    let settings: GamepadTrackpadSettings
+    let customization: GamepadCustomization
+
+    @State private var isActive = false
+    @State private var touchCount = 0
+    @State private var haptic = UIImpactFeedbackGenerator(style: .light)
+
+    private var normalizedSettings: GamepadTrackpadSettings {
+        settings.normalized
+    }
+
+    var body: some View {
+        let hitSize = CGSize(
+            width: size.width + ControllerLayoutMetrics.buttonHitOutset * 2,
+            height: size.height + ControllerLayoutMetrics.buttonHitOutset * 2
+        )
+
+        ZStack {
+            trackpadSurface
+                .frame(width: size.width, height: size.height)
+                .allowsHitTesting(false)
+
+            TrackpadCaptureView(
+                isTapToClickEnabled: normalizedSettings.tapToClick,
+                isTwoFingerScrollEnabled: normalizedSettings.twoFingerScroll
+            ) { delta in
+                handleMove(delta)
+            } onScroll: { delta in
+                handleScroll(delta)
+            } onTap: { fingerCount in
+                handleTap(fingerCount: fingerCount)
+            } onActiveChanged: { active, count in
+                isActive = active
+                touchCount = count
+            }
+            .frame(width: hitSize.width, height: hitSize.height)
+        }
+        .frame(width: hitSize.width, height: hitSize.height)
+        .accessibilityLabel(label)
+        .onAppear { prepareHapticIfNeeded() }
+        .onChange(of: isKeypadHapticsEnabled) { _, isEnabled in
+            if isEnabled { prepareHapticIfNeeded() }
+        }
+        .onDisappear {
+            isActive = false
+            touchCount = 0
+        }
+    }
+
+    private var resolvedAccentStyle: GamepadAccentStyle {
+        elementCustomization.accentStyle ?? customization.accentStyle
+    }
+
+    private var resolvedCornerRadii: GamepadCornerRadii {
+        elementCustomization.resolvedCornerRadii(defaultRadius: GamepadButtonShapeStyle.roundedRectangle.defaultEditableCornerRadius(in: size))
+    }
+
+    private var trackpadSurface: some View {
+        let fillStyle = elementCustomization.buttonFillStyle(accentStyle: resolvedAccentStyle, isPressed: isActive, scheme: colorScheme)
+        let strokeColor = elementCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: isActive, scheme: colorScheme)
+        let foregroundColor = elementCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: isActive, scheme: colorScheme)
+        let shape = UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
+
+        return ZStack {
+            GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
+                .overlay(shape.stroke(strokeColor, lineWidth: isActive ? 2 : 1))
+                .shadow(
+                    color: Color.black.opacity((isActive ? 0.16 : 0.05) * elementCustomization.shadowStrength),
+                    radius: (isActive ? 4 : 2) * max(0.25, elementCustomization.shadowStrength),
+                    y: (isActive ? 3 : 2) * elementCustomization.shadowStrength
+                )
+
+            RoundedRectangle(cornerRadius: max(8, min(size.width, size.height) * 0.08), style: .continuous)
+                .stroke(foregroundColor.opacity(isActive ? 0.28 : 0.18), lineWidth: 1)
+                .padding(max(8, min(size.width, size.height) * 0.08))
+
+            VStack(spacing: max(4, size.height * 0.06)) {
+                Image(systemName: touchCount >= 2 ? "hand.draw" : "cursorarrow")
+                    .font(.system(size: max(18, min(size.width, size.height) * 0.20), weight: .semibold))
+                    .foregroundStyle(foregroundColor.opacity(isActive ? 0.95 : 0.70))
+
+                if customization.showsButtonLabels {
+                    Text(label)
+                        .geistTypography(size.width <= 112 ? .button12 : .button14)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .foregroundStyle(foregroundColor.opacity(0.94))
+                        .padding(.horizontal, 8)
+                }
+            }
+
+            HStack(spacing: 7) {
+                Capsule().fill(foregroundColor.opacity(isActive ? 0.42 : 0.30))
+                Capsule().fill(foregroundColor.opacity(touchCount >= 2 ? 0.42 : 0.16))
+            }
+            .frame(width: size.width * 0.32, height: max(4, size.height * 0.045))
+            .offset(y: size.height * 0.37)
+        }
+        .scaleEffect(isActive ? 0.985 : 1)
+        .animation(.interactiveSpring(response: 0.14, dampingFraction: 0.82), value: isActive)
+        .animation(.interactiveSpring(response: 0.14, dampingFraction: 0.82), value: touchCount)
+    }
+
+    private func handleMove(_ delta: CGVector) {
+        let settings = normalizedSettings
+        client.sendPointerMove(
+            deltaX: Double(delta.dx) * Double(settings.sensitivity),
+            deltaY: Double(delta.dy) * Double(settings.sensitivity)
+        )
+    }
+
+    private func handleScroll(_ delta: CGVector) {
+        let settings = normalizedSettings
+        let direction = settings.naturalScrolling ? 1.0 : -1.0
+        client.sendPointerScroll(
+            deltaX: Double(delta.dx) * Double(settings.scrollSensitivity) * direction,
+            deltaY: Double(delta.dy) * Double(settings.scrollSensitivity) * direction
+        )
+    }
+
+    private func handleTap(fingerCount: Int) {
+        scheduleTapHaptic()
+        client.sendPointerClick(fingerCount >= 2 ? .right : .left)
+    }
+
+    private func scheduleTapHaptic() {
+        guard isKeypadHapticsEnabled else { return }
+        let haptic = haptic
+        DispatchQueue.main.async {
+            haptic.impactOccurred(intensity: 0.35)
+            haptic.prepare()
+        }
+    }
+
+    private func prepareHapticIfNeeded() {
+        guard isKeypadHapticsEnabled else { return }
+        haptic.prepare()
     }
 }
 

@@ -59,7 +59,7 @@ struct GamepadLayoutControlSummary: Codable, Equatable {
     init(requested: GamepadResolvedControl, resolved: GamepadResolvedControl, canvasSize: CGSize) {
         id = requested.id.id
         mappedButton = requested.mappedButton
-        kind = requested.isJoystick ? "joystick" : "button"
+        kind = requested.isJoystick ? "joystick" : (requested.isTrackpad ? "trackpad" : "button")
         label = requested.label
         shape = requested.shape
         requestedFrame = GamepadLayoutRectSummary(requested.frame)
@@ -260,10 +260,11 @@ private extension GamepadLayoutQualityReport {
             }
 
             let isJoystick = control.kind == "joystick"
-            let heightWarning = isJoystick ? 0.34 : 0.24
-            let heightError = isJoystick ? 0.42 : 0.30
-            let widthWarning = isJoystick ? 0.28 : 0.34
-            let widthError = isJoystick ? 0.36 : 0.48
+            let isTrackpad = control.kind == "trackpad"
+            let heightWarning = isJoystick ? 0.34 : (isTrackpad ? 0.36 : 0.24)
+            let heightError = isJoystick ? 0.42 : (isTrackpad ? 0.46 : 0.30)
+            let widthWarning = isJoystick ? 0.28 : (isTrackpad ? 0.58 : 0.34)
+            let widthError = isJoystick ? 0.36 : (isTrackpad ? 0.72 : 0.48)
 
             if control.heightRatio > heightError || control.widthRatio > widthError {
                 return GamepadLayoutIssue(
@@ -500,6 +501,8 @@ enum GamepadLayoutPreviewRenderer {
 
         if control.isJoystick {
             drawJoystickDetails(control: control, foreground: foreground, in: context)
+        } else if control.isTrackpad {
+            drawTrackpadDetails(control: control, foreground: foreground, in: context)
         }
 
         if annotateIssues, problemIDs.contains(control.id.id) {
@@ -507,7 +510,7 @@ enum GamepadLayoutPreviewRenderer {
         }
 
         if customization.showsButtonLabels {
-            drawLabel(control.label, in: control.frame, foreground: foreground, context: context, isJoystick: control.isJoystick)
+            drawLabel(control.label, in: control.frame, foreground: foreground, context: context, isJoystick: control.isJoystick, isTrackpad: control.isTrackpad)
         }
 
         context.restoreGState()
@@ -529,8 +532,27 @@ enum GamepadLayoutPreviewRenderer {
         context.restoreGState()
     }
 
-    private static func drawLabel(_ label: String, in frame: CGRect, foreground: GamepadRGBAColor, context: CGContext, isJoystick: Bool) {
-        let maxFontSize = isJoystick ? CGFloat(14) : CGFloat(label.count <= 2 ? 28 : 16)
+    private static func drawTrackpadDetails(control: GamepadResolvedControl, foreground: GamepadRGBAColor, in context: CGContext) {
+        let inset = max(6, min(control.frame.width, control.frame.height) * 0.08)
+        let inner = control.frame.insetBy(dx: inset, dy: inset)
+        let radius = max(6, min(inner.width, inner.height) * 0.08)
+        context.saveGState()
+        context.setStrokeColor(cgColor(foreground, alphaMultiplier: 0.22))
+        context.setLineWidth(1)
+        context.addPath(CGPath(roundedRect: inner, cornerWidth: radius, cornerHeight: radius, transform: nil))
+        context.strokePath()
+
+        let pillWidth = inner.width * 0.34
+        let pillHeight = max(3, inner.height * 0.045)
+        let pillY = control.frame.maxY - inset - pillHeight * 2
+        context.setFillColor(cgColor(foreground, alphaMultiplier: 0.28))
+        context.addPath(CGPath(roundedRect: CGRect(x: control.center.x - pillWidth / 2, y: pillY, width: pillWidth, height: pillHeight), cornerWidth: pillHeight / 2, cornerHeight: pillHeight / 2, transform: nil))
+        context.fillPath()
+        context.restoreGState()
+    }
+
+    private static func drawLabel(_ label: String, in frame: CGRect, foreground: GamepadRGBAColor, context: CGContext, isJoystick: Bool, isTrackpad: Bool) {
+        let maxFontSize = isJoystick || isTrackpad ? CGFloat(14) : CGFloat(label.count <= 2 ? 28 : 16)
         let availableWidth = max(1, frame.width - 8)
         let availableHeight = max(1, frame.height - 6)
         var fontSize = max(8, min(maxFontSize, frame.height * 0.36))
@@ -562,7 +584,7 @@ enum GamepadLayoutPreviewRenderer {
         )
 
         context.saveGState()
-        context.translateBy(x: frame.midX, y: frame.midY + (isJoystick ? frame.height * 0.28 : 0))
+        context.translateBy(x: frame.midX, y: frame.midY + (isJoystick ? frame.height * 0.28 : (isTrackpad ? frame.height * 0.18 : 0)))
         context.scaleBy(x: 1, y: -1)
         attributed.draw(in: textRect)
         context.restoreGState()

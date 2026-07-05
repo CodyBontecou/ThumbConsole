@@ -21,6 +21,7 @@
 		3BB1AE0B303818DE1B7AAD41 /* ControllerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F8E4E0048EB775369CAB45B /* ControllerClient.swift */; };
 		45FBD400874A016245675BE8 /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6628198D96F8304B59FD6AF /* QRCodeScannerView.swift */; };
 		4687661823546351CD6C1146 /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */; };
+		46D78851C48FE140E8B3F840 /* PointerInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A51251EA7E80E0F6DE48C2 /* PointerInjector.swift */; };
 		48299BA6EFD9AC53F8359174 /* GamepadLayoutResolverSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427655EF8F8DCCDDF4151EFD /* GamepadLayoutResolverSmokeTests.swift */; };
 		49CF065CF4DBF0EC25D0C2F2 /* ButtonPulseSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */; };
 		4E941CD6F638E01A06227B0B /* PocketPadCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30507A98A59620D45824305 /* PocketPadCLI.swift */; };
@@ -83,6 +84,7 @@
 		52DA2C9503876B04B5F82CED /* KeyMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyMap.swift; sourceTree = "<group>"; };
 		59D3034E486928F2E986F424 /* TouchCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchCaptureView.swift; sourceTree = "<group>"; };
 		5C2F6CF097E93197F4FD6CA8 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
+		64A51251EA7E80E0F6DE48C2 /* PointerInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointerInjector.swift; sourceTree = "<group>"; };
 		681B687067A5F4292A2D4111 /* PocketPadMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PocketPadMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6DA34DBC7CEC14A47E61489E /* GamepadEditorDeviceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamepadEditorDeviceCatalog.swift; sourceTree = "<group>"; };
 		6F8E4E0048EB775369CAB45B /* ControllerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerClient.swift; sourceTree = "<group>"; };
@@ -138,6 +140,7 @@
 				5C2F6CF097E93197F4FD6CA8 /* MacContentView.swift */,
 				0C89F51B6A80B1068097A64E /* MacControllerServer.swift */,
 				8A0354CA7F7F471B40C715D4 /* PocketPadMacApp.swift */,
+				64A51251EA7E80E0F6DE48C2 /* PointerInjector.swift */,
 			);
 			name = Mac;
 			path = Sources/Mac;
@@ -426,6 +429,7 @@
 				1CEC429B738164F29705D382 /* PairingPayload.swift in Sources */,
 				33F3A7E2D25E3B5C317AE148 /* PocketPadInputLatencySimulation.swift in Sources */,
 				AEE86D2D421A00321BC28B13 /* PocketPadMacApp.swift in Sources */,
+				46D78851C48FE140E8B3F840 /* PointerInjector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

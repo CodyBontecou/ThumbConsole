@@ -125,7 +125,7 @@ Control fields:
 | `shadowStrength` | optional | Shadow multiplier `0`–`2`. |
 | `isHidden` | optional | Hide this control. |
 | `isLocationLocked` | optional | Prevent drag repositioning in the Mac editor. |
-| `kind` / `controlKind` | optional | `button` or `joystick`. |
+| `kind` / `controlKind` | optional | `button`, `joystick`, or `trackpad` for saved element/profile editing. Agent-generated key specs still require a keyboard `key`. |
 | `joystickMapping` | optional | Object mapping joystick directions to PocketPad button slots. |
 | `up`, `down`, `left`, `right` | optional | Direction aliases for joystick mappings; values are PocketPad slots, not keyboard keys. |
 
@@ -223,6 +223,7 @@ Element-level controls:
 "$POCKETPAD_CLI" element list
 "$POCKETPAD_CLI" element add button --label Fire --maps-to custom1 --x 0.50 --y 0.80 --light-fill '#F59E0B' --dark-fill '#78350F'
 "$POCKETPAD_CLI" element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
+"$POCKETPAD_CLI" element add trackpad --label Trackpad --x 0.50 --y 0.58 --width 1.25 --sensitivity 1.2 --scroll-sensitivity 0.85 --tap-to-click true
 "$POCKETPAD_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
 "$POCKETPAD_CLI" element set jump --lock
 "$POCKETPAD_CLI" element set pause --hide

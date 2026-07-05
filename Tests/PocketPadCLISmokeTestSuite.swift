@@ -94,6 +94,48 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(invalid.cornerRadii?.bottomLeading, Optional(CGFloat(0)))
     }
 
+    func testTrackpadCustomizationRoundTrips() throws {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-00000000A11D")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addTrackpad(id: id)
+        guard let trackpad = customization.normalized.customButtons.first(where: { $0.id == id }) else {
+            XCTFail("trackpad should be present")
+            return
+        }
+        XCTAssertTrue(trackpad.isTrackpad)
+        XCTAssertEqual(trackpad.label, "Trackpad")
+        XCTAssertEqual(trackpad.trackpadSettings, Optional(GamepadTrackpadSettings.defaultValue.normalized))
+
+        let data = try JSONEncoder().encode(customization.normalized)
+        let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data).normalized
+        XCTAssertEqual(decoded.customButtons.first(where: { $0.id == id })?.controlKind, .trackpad)
+        XCTAssertEqual(decoded.customButtons.first(where: { $0.id == id })?.trackpadSettings, Optional(GamepadTrackpadSettings.defaultValue.normalized))
+
+        let controls = decoded.resolvedControls(in: CGSize(width: 874, height: 402))
+        XCTAssertTrue(controls.contains { $0.id == .custom(id) && $0.isTrackpad })
+    }
+
+    func testPointerMessageRoundTripsThroughJSONCodec() throws {
+        let message = ControllerMessage(
+            type: .pointer,
+            state: .down,
+            timestamp: 123,
+            pointerEvent: .button,
+            pointerButton: .right,
+            deltaX: 1.5,
+            deltaY: -2.25
+        )
+        let data = try ControllerWireCodec.encode(message, using: JSONEncoder())
+        XCTAssertNotEqual(data.count, 14)
+        let decoded = try ControllerWireCodec.decode(data, using: JSONDecoder())
+        XCTAssertEqual(decoded.type, .pointer)
+        XCTAssertEqual(decoded.pointerEvent, .button)
+        XCTAssertEqual(decoded.pointerButton, .right)
+        XCTAssertEqual(decoded.state, .down)
+        XCTAssertEqual(decoded.deltaX, 1.5)
+        XCTAssertEqual(decoded.deltaY, -2.25)
+    }
+
     func testBackgroundFillStyleRoundTripsAndSupportsSchemeOverrides() throws {
         let base = GamepadRGBAColor(red: 0.06, green: 0.07, blue: 0.12, alpha: 1)
         let gradient = GamepadFillStyle.gradient(GamepadGradientFill.defaultValue(baseColor: base).normalized)

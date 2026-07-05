@@ -223,12 +223,25 @@ public enum ButtonPressState: String, Codable, Sendable {
     case up
 }
 
+public enum ControllerPointerEventKind: String, Codable, Sendable {
+    case move
+    case scroll
+    case button
+}
+
+public enum ControllerPointerButton: String, Codable, Sendable {
+    case left
+    case right
+    case middle
+}
+
 public enum ControllerMessageType: String, Codable, Sendable {
     case hello
     case pairingRequest = "pairing_request"
     case pairingChallenge = "pairing_challenge"
     case pairingAccepted = "pairing_accepted"
     case button
+    case pointer
     case releaseAll = "release_all"
     case heartbeat
     case ping
@@ -256,6 +269,10 @@ public struct ControllerMessage: Codable, Sendable {
     public var gamepadProfileID: UUID?
     public var defaultGamepadProfileID: UUID?
     public var clientDeviceInfo: ControllerClientDeviceInfo?
+    public var pointerEvent: ControllerPointerEventKind?
+    public var pointerButton: ControllerPointerButton?
+    public var deltaX: Double?
+    public var deltaY: Double?
 
     public init(
         type: ControllerMessageType,
@@ -272,7 +289,11 @@ public struct ControllerMessage: Codable, Sendable {
         gamepadProfiles: [GamepadConfigurationProfile]? = nil,
         gamepadProfileID: UUID? = nil,
         defaultGamepadProfileID: UUID? = nil,
-        clientDeviceInfo: ControllerClientDeviceInfo? = nil
+        clientDeviceInfo: ControllerClientDeviceInfo? = nil,
+        pointerEvent: ControllerPointerEventKind? = nil,
+        pointerButton: ControllerPointerButton? = nil,
+        deltaX: Double? = nil,
+        deltaY: Double? = nil
     ) {
         self.type = type
         self.button = button
@@ -289,6 +310,10 @@ public struct ControllerMessage: Codable, Sendable {
         self.gamepadProfileID = gamepadProfileID
         self.defaultGamepadProfileID = defaultGamepadProfileID
         self.clientDeviceInfo = clientDeviceInfo
+        self.pointerEvent = pointerEvent
+        self.pointerButton = pointerButton
+        self.deltaX = deltaX
+        self.deltaY = deltaY
     }
 }
 
@@ -476,6 +501,11 @@ public enum ControllerWireCodec {
               message.gamepadProfiles == nil,
               message.gamepadProfileID == nil,
               message.defaultGamepadProfileID == nil,
+              message.clientDeviceInfo == nil,
+              message.pointerEvent == nil,
+              message.pointerButton == nil,
+              message.deltaX == nil,
+              message.deltaY == nil,
               let typeCode = message.type.compactWireCode
         else {
             return nil
@@ -572,7 +602,7 @@ private extension ControllerMessageType {
         case .heartbeat: 3
         case .ping: 4
         case .pong: 5
-        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .error: nil
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .pointer, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .error: nil
         }
     }
 

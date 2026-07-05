@@ -14,6 +14,11 @@ struct PocketPadCLI {
     private static let notificationProfileKeyBindingsDataKey = "profileKeyBindingsData"
     private static let defaultEditorCanvasSize = GamepadEditorDeviceCatalog.defaultFrame.screenRect.size
     private static let portraitEditorCanvasSize = GamepadEditorDeviceFrame(spec: GamepadEditorDeviceCatalog.specs[0], orientation: .portrait).screenRect.size
+    private static let trackpadOptionNames = [
+        "--sensitivity", "--cursor-sensitivity", "--pointer-sensitivity",
+        "--scroll-sensitivity", "--tap-to-click", "--two-finger-scroll",
+        "--natural-scrolling", "--natural-scroll"
+    ]
 
     private struct StoredProfileState: Codable {
         var profiles: [GamepadConfigurationProfile]
@@ -122,6 +127,7 @@ struct PocketPadCLI {
         var isLocationLocked: Bool
         var layout: GamepadButtonCustomization
         var joystickMapping: GamepadJoystickMapping?
+        var trackpadSettings: GamepadTrackpadSettings?
     }
 
     private struct DeviceFrameSummary: Codable {
@@ -1116,12 +1122,15 @@ struct PocketPadCLI {
     }
 
     private static func addElement(arguments: [String]) throws {
-        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: pocketpad element add <button|joystick> [options]") }
+        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: pocketpad element add <button|joystick|trackpad> [options]") }
         let kind = try parseCustomControlKind(kindText)
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments)) { customization in
             guard customization.customButtons.count < GamepadCustomization.maximumCustomButtons else { throw CLIError.message("Maximum custom element count reached") }
             if kind == .joystick && customization.customButtons.filter({ $0.normalized.isJoystick }).count >= GamepadCustomization.maximumJoysticks {
                 throw CLIError.message("Maximum joystick count reached")
+            }
+            if kind == .trackpad && customization.customButtons.filter({ $0.normalized.isTrackpad }).count >= GamepadCustomization.maximumTrackpads {
+                throw CLIError.message("Maximum trackpad count reached")
             }
 
             let id = UUID()
@@ -1129,9 +1138,10 @@ struct PocketPadCLI {
             var customButton = GamepadCustomButton(
                 id: id,
                 mappedButton: mapped,
-                label: optionValue("--label", in: arguments) ?? (kind == .joystick ? "Joystick" : "Shape"),
+                label: optionValue("--label", in: arguments) ?? defaultLabel(for: kind),
                 controlKind: kind,
-                joystickMapping: kind == .joystick ? try joystickMapping(from: arguments) : nil
+                joystickMapping: kind == .joystick ? try joystickMapping(from: arguments) : nil,
+                trackpadSettings: kind == .trackpad ? .defaultValue : nil
             )
             try applyLayoutOptions(arguments, to: &customButton.layout)
             if kind == .joystick {
@@ -1139,6 +1149,17 @@ struct PocketPadCLI {
                 customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 1.35 : customButton.layout.widthScale
                 customButton.layout.heightScale = customButton.layout.heightScale == 1.0 ? 1.35 : customButton.layout.heightScale
                 customButton.joystickMapping = try joystickMapping(from: arguments)
+            } else if kind == .trackpad {
+                customButton.layout.shape = customButton.layout.shape ?? .roundedRectangle
+                customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 1.25 : customButton.layout.widthScale
+                customButton.layout.heightScale = customButton.layout.heightScale == 1.0 ? 1.0 : customButton.layout.heightScale
+                if optionValue("--y", in: arguments) == nil && optionValue("--center-y", in: arguments) == nil {
+                    customButton.layout.centerY = 0.58
+                }
+                if optionValue("--corner", in: arguments) == nil && optionValue("--radius", in: arguments) == nil {
+                    customButton.layout.cornerRadius = customButton.layout.cornerRadius ?? 18
+                }
+                customButton.trackpadSettings = try trackpadSettings(from: arguments)
             }
             customization.customButtons.append(customButton)
         }
@@ -1160,10 +1181,18 @@ struct PocketPadCLI {
                 if let label = optionValue("--label", in: arguments) { customization.customButtons[index].label = normalizedLabel(label) }
                 if let mapped = optionValue("--maps-to", in: arguments) { customization.customButtons[index].mappedButton = try parseButton(mapped) }
                 if let kind = optionValue("--kind", in: arguments) { customization.customButtons[index].controlKind = try parseCustomControlKind(kind) }
-                if customization.customButtons[index].controlKind == .joystick || hasAnyOption(["--up", "--down", "--left", "--right"], in: arguments) {
+                let hasJoystickOptions = hasAnyOption(["--up", "--down", "--left", "--right"], in: arguments)
+                let hasTrackpadOptions = hasAnyOption(trackpadOptionNames, in: arguments)
+                if customization.customButtons[index].controlKind == .joystick || hasJoystickOptions {
                     customization.customButtons[index].controlKind = .joystick
                     customization.customButtons[index].joystickMapping = try joystickMapping(from: arguments, fallback: customization.customButtons[index].joystickMapping ?? .movement)
+                    customization.customButtons[index].trackpadSettings = nil
                     customization.customButtons[index].layout.shape = .circle
+                } else if customization.customButtons[index].controlKind == .trackpad || hasTrackpadOptions {
+                    customization.customButtons[index].controlKind = .trackpad
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].layout.shape = customization.customButtons[index].layout.shape ?? .roundedRectangle
+                    customization.customButtons[index].trackpadSettings = try trackpadSettings(from: arguments, fallback: customization.customButtons[index].trackpadSettings ?? .defaultValue)
                 }
                 try applyLayoutOptions(arguments, to: &customization.customButtons[index].layout)
             }
@@ -1225,16 +1254,41 @@ struct PocketPadCLI {
                 customization.setLabel("", for: button)
             case .custom(let id):
                 guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { return }
-                let isJoystick = customization.customButtons[index].normalized.isJoystick
-                customization.customButtons[index].label = isJoystick ? "Joystick" : "Shape"
-                customization.customButtons[index].layout = GamepadButtonCustomization(
-                    centerX: 0.5,
-                    centerY: 0.5,
-                    widthScale: isJoystick ? 1.35 : 1.0,
-                    heightScale: isJoystick ? 1.35 : 1.0,
-                    shape: isJoystick ? .circle : .roundedRectangle
-                )
-                if isJoystick { customization.customButtons[index].joystickMapping = customization.customButtons[index].joystickMapping ?? .movement }
+                let kind = customization.customButtons[index].normalized.controlKind
+                customization.customButtons[index].label = defaultLabel(for: kind)
+                switch kind {
+                case .joystick:
+                    customization.customButtons[index].layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.5,
+                        widthScale: 1.35,
+                        heightScale: 1.35,
+                        shape: .circle
+                    )
+                    customization.customButtons[index].joystickMapping = customization.customButtons[index].joystickMapping ?? .movement
+                    customization.customButtons[index].trackpadSettings = nil
+                case .trackpad:
+                    customization.customButtons[index].layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.58,
+                        widthScale: 1.25,
+                        heightScale: 1.0,
+                        shape: .roundedRectangle,
+                        cornerRadius: 18
+                    )
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].trackpadSettings = .defaultValue
+                case .button:
+                    customization.customButtons[index].layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.5,
+                        widthScale: 1.0,
+                        heightScale: 1.0,
+                        shape: .roundedRectangle
+                    )
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].trackpadSettings = nil
+                }
             }
         }
         print("Reset element \"\(targetText)\".")
@@ -2180,7 +2234,46 @@ struct PocketPadCLI {
         let normalized = normalizedLookup(text)
         if normalized == "shape" { return .button }
         if normalized == "stick" { return .joystick }
+        if normalized == "touchpad" || normalized == "trackpad" || normalized == "cursorpad" { return .trackpad }
         throw CLIError.message("Unknown element kind: \(text)")
+    }
+
+    private static func defaultLabel(for kind: GamepadCustomControlKind) -> String {
+        switch kind {
+        case .button: return "Shape"
+        case .joystick: return "Joystick"
+        case .trackpad: return "Trackpad"
+        }
+    }
+
+    private static func trackpadSettings(
+        from arguments: [String],
+        fallback: GamepadTrackpadSettings = .defaultValue
+    ) throws -> GamepadTrackpadSettings {
+        var settings = fallback.normalized
+        if let value = optionValue("--sensitivity", in: arguments) ?? optionValue("--cursor-sensitivity", in: arguments) ?? optionValue("--pointer-sensitivity", in: arguments) {
+            settings.sensitivity = try parseTrackpadScale(value, option: "sensitivity")
+        }
+        if let value = optionValue("--scroll-sensitivity", in: arguments) {
+            settings.scrollSensitivity = try parseTrackpadScale(value, option: "scroll sensitivity")
+        }
+        if let value = optionValue("--tap-to-click", in: arguments) {
+            settings.tapToClick = try parseBool(value)
+        }
+        if let value = optionValue("--two-finger-scroll", in: arguments) {
+            settings.twoFingerScroll = try parseBool(value)
+        }
+        if let value = optionValue("--natural-scrolling", in: arguments) ?? optionValue("--natural-scroll", in: arguments) {
+            settings.naturalScrolling = try parseBool(value)
+        }
+        return settings.normalized
+    }
+
+    private static func parseTrackpadScale(_ text: String, option: String) throws -> CGFloat {
+        guard let value = Double(text), value.isFinite else {
+            throw CLIError.message("Invalid trackpad \(option): \(text)")
+        }
+        return CGFloat(value)
     }
 
     private static func parseBool(_ text: String) throws -> Bool {
@@ -2339,20 +2432,22 @@ struct PocketPadCLI {
                 isHidden: layout.isHidden,
                 isLocationLocked: layout.isLocationLocked,
                 layout: layout,
-                joystickMapping: nil
+                joystickMapping: nil,
+                trackpadSettings: nil
             )
         }
         summaries += customization.customButtons.map { custom in
             let normalized = custom.normalized
             return ElementSummary(
                 id: normalized.id.uuidString,
-                kind: normalized.isJoystick ? "joystick" : "button",
+                kind: normalized.isJoystick ? "joystick" : (normalized.isTrackpad ? "trackpad" : "button"),
                 mappedButton: normalized.mappedButton,
-                label: normalized.visualLabel(fallback: normalized.mappedButton.displayName),
+                label: normalized.visualLabel(fallback: normalized.isTrackpad ? "Trackpad" : normalized.mappedButton.displayName),
                 isHidden: normalized.layout.isHidden,
                 isLocationLocked: normalized.layout.isLocationLocked,
                 layout: normalized.layout,
-                joystickMapping: normalized.joystickMapping
+                joystickMapping: normalized.joystickMapping,
+                trackpadSettings: normalized.trackpadSettings
             )
         }
         return summaries
@@ -2421,7 +2516,9 @@ struct PocketPadCLI {
             "--fill-tile", "--tile", "--tile-foreground", "--tile-background", "--tile-scale", "--tile-spacing-x", "--tile-spacing-y", "--light-fill-tile", "--dark-fill-tile", "--tile-light", "--tile-dark",
             "--fill-image", "--image", "--image-mode",
             "--corner", "--radius", "--corner-tl", "--corner-tr", "--corner-br", "--corner-bl", "--shadow",
-            "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--hold-ms",
+            "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--sensitivity",
+            "--cursor-sensitivity", "--pointer-sensitivity", "--scroll-sensitivity", "--tap-to-click",
+            "--two-finger-scroll", "--natural-scrolling", "--natural-scroll", "--hold-ms",
             "--step", "--pixels", "--by", "--dx", "--dy", "--canvas", "--canvas-width", "--canvas-height",
             "--device", "--frame", "--size", "--device-size", "--orientation", "--device-orientation"
         ]
@@ -2568,6 +2665,7 @@ struct PocketPadCLI {
           pocketpad element list
           pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#F59E0B' --dark-fill '#78350F'
           pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
+          pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
           pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
           pocketpad element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
           pocketpad element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
