@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreHaptics
 import UniformTypeIdentifiers
 
 struct IOSContentView: View {
@@ -1682,21 +1683,23 @@ private struct GamepadJoystick: View {
 
     private var joystickBase: some View {
         let accentStyle = elementCustomization.accentStyle ?? customization.accentStyle
-        let fillStyle = elementCustomization.buttonFillStyle(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
-        let strokeColor = elementCustomization.buttonStroke(accentStyle: accentStyle, isPressed: !activeDirections.isEmpty, scheme: colorScheme)
         let isActive = !activeDirections.isEmpty
-        let foregroundColor = elementCustomization.buttonForeground(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
+        let presentation = customization.resolvedPresentation(for: elementCustomization, fallbackAccentStyle: accentStyle, controlKind: .joystick, state: isActive ? .active : .normal, scheme: colorScheme)
+        let fillStyle = presentation.fillStyle
+        let strokeColor = presentation.strokeSwiftUIColor
+        let foregroundColor = presentation.foregroundSwiftUIColor
         let knobFillColor = elementCustomization.joystickKnobFill(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
         let knobStrokeColor = elementCustomization.joystickKnobStroke(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
         let knobOffset = CGSize(width: normalizedOffset.width * knobTravelRadius, height: normalizedOffset.height * knobTravelRadius)
 
         return ZStack {
             GamepadFillShapeLayer(shape: Circle(), fillStyle: fillStyle)
-                .overlay(Circle().stroke(strokeColor, lineWidth: activeDirections.isEmpty ? 1 : 2))
+                .overlay(Circle().stroke(strokeColor, lineWidth: presentation.strokeWidth))
                 .shadow(
-                    color: Color.black.opacity((activeDirections.isEmpty ? 0.05 : 0.16) * elementCustomization.shadowStrength),
-                    radius: (activeDirections.isEmpty ? 2 : 4) * max(0.25, elementCustomization.shadowStrength),
-                    y: (activeDirections.isEmpty ? 2 : 3) * elementCustomization.shadowStrength
+                    color: presentation.shadowSwiftUIColor,
+                    radius: presentation.shadowRadius,
+                    x: presentation.shadowX,
+                    y: presentation.shadowY
                 )
 
             Circle()
@@ -1798,18 +1801,20 @@ private struct GamepadTrigger: View {
         let normalizedSettings = settings.normalized
         let accentStyle = elementCustomization.accentStyle ?? customization.accentStyle
         let isPressed = value > normalizedSettings.deadZone
-        let fillStyle = elementCustomization.buttonFillStyle(accentStyle: accentStyle, isPressed: isPressed, scheme: colorScheme)
-        let strokeColor = elementCustomization.buttonStroke(accentStyle: accentStyle, isPressed: isPressed, scheme: colorScheme)
-        let foregroundColor = elementCustomization.buttonForeground(accentStyle: accentStyle, isPressed: isPressed, scheme: colorScheme)
+        let presentation = customization.resolvedPresentation(for: elementCustomization, fallbackAccentStyle: accentStyle, controlKind: .trigger, state: isPressed ? .active : .normal, scheme: colorScheme)
+        let fillStyle = presentation.fillStyle
+        let strokeColor = presentation.strokeSwiftUIColor
+        let foregroundColor = presentation.foregroundSwiftUIColor
         let fillFraction = max(0, min(1, value))
 
         return ZStack(alignment: normalizedSettings.orientation == .vertical ? .bottom : .leading) {
             GamepadFillShapeLayer(shape: Capsule(), fillStyle: fillStyle)
-                .overlay(Capsule().stroke(strokeColor, lineWidth: isPressed ? 2 : 1))
+                .overlay(Capsule().stroke(strokeColor, lineWidth: presentation.strokeWidth))
                 .shadow(
-                    color: Color.black.opacity((isPressed ? 0.16 : 0.05) * elementCustomization.shadowStrength),
-                    radius: (isPressed ? 4 : 2) * max(0.25, elementCustomization.shadowStrength),
-                    y: (isPressed ? 3 : 2) * elementCustomization.shadowStrength
+                    color: presentation.shadowSwiftUIColor,
+                    radius: presentation.shadowRadius,
+                    x: presentation.shadowX,
+                    y: presentation.shadowY
                 )
 
             Capsule()
@@ -1850,6 +1855,137 @@ private struct GamepadTrigger: View {
     }
 }
 
+private final class KeypadHapticPlayer {
+    static let shared = KeypadHapticPlayer()
+
+    private var engine: CHHapticEngine?
+    private var fallbackGenerators: [GamepadHapticStyle: UIImpactFeedbackGenerator] = [:]
+
+    private init() {}
+
+    func prepare(_ feedback: GamepadHapticFeedback) {
+        let feedback = feedback.normalized
+        guard feedback.style != .none else { return }
+        if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
+            try? startEngineIfNeeded()
+        } else {
+            fallbackGenerator(for: feedback.style).prepare()
+        }
+    }
+
+    func play(_ feedback: GamepadHapticFeedback) {
+        let feedback = feedback.normalized
+        guard feedback.style != .none, feedback.intensity > 0 else { return }
+        if CHHapticEngine.capabilitiesForHardware().supportsHaptics, playCoreHaptic(feedback) {
+            return
+        }
+        playFallback(feedback)
+    }
+
+    private func playCoreHaptic(_ feedback: GamepadHapticFeedback) -> Bool {
+        do {
+            try startEngineIfNeeded()
+            let pattern = try CHHapticPattern(events: feedback.coreHapticEvents, parameters: [])
+            let player = try engine?.makePlayer(with: pattern)
+            try player?.start(atTime: CHHapticTimeImmediate)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func startEngineIfNeeded() throws {
+        if engine == nil {
+            let newEngine = try CHHapticEngine()
+            newEngine.stoppedHandler = { [weak self] _ in
+                self?.engine = nil
+            }
+            newEngine.resetHandler = { [weak self] in
+                try? self?.engine?.start()
+            }
+            engine = newEngine
+        }
+        try engine?.start()
+    }
+
+    private func playFallback(_ feedback: GamepadHapticFeedback) {
+        let generator = fallbackGenerator(for: feedback.style)
+        for event in feedback.fallbackImpactSchedule {
+            DispatchQueue.main.asyncAfter(deadline: .now() + event.delay) {
+                generator.impactOccurred(intensity: event.intensity)
+                generator.prepare()
+            }
+        }
+    }
+
+    private func fallbackGenerator(for style: GamepadHapticStyle) -> UIImpactFeedbackGenerator {
+        if let generator = fallbackGenerators[style] { return generator }
+        let generator = UIImpactFeedbackGenerator(style: style.impactFeedbackStyle)
+        fallbackGenerators[style] = generator
+        return generator
+    }
+}
+
+private extension GamepadHapticStyle {
+    var impactFeedbackStyle: UIImpactFeedbackGenerator.FeedbackStyle {
+        switch self {
+        case .none, .light: .light
+        case .medium: .medium
+        case .heavy: .heavy
+        case .soft: .soft
+        case .rigid: .rigid
+        }
+    }
+}
+
+private extension GamepadHapticFeedback {
+    var coreHapticEvents: [CHHapticEvent] {
+        let feedback = normalized
+        let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: Float(feedback.intensity))
+        let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: Float(feedback.sharpness))
+        let parameters = [intensity, sharpness]
+        let duration = TimeInterval(feedback.duration)
+
+        switch feedback.pattern {
+        case .single:
+            return [CHHapticEvent(eventType: .hapticTransient, parameters: parameters, relativeTime: 0)]
+        case .double:
+            let spacing = min(max(duration, 0.045), 0.18)
+            return [
+                CHHapticEvent(eventType: .hapticTransient, parameters: parameters, relativeTime: 0),
+                CHHapticEvent(eventType: .hapticTransient, parameters: parameters, relativeTime: spacing)
+            ]
+        case .pulse:
+            return [CHHapticEvent(eventType: .hapticContinuous, parameters: parameters, relativeTime: 0, duration: max(duration, 0.035))]
+        case .buzz:
+            let buzzDuration = max(duration, 0.08)
+            let accentIntensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: Float(min(1, feedback.intensity * 0.85)))
+            return [
+                CHHapticEvent(eventType: .hapticContinuous, parameters: parameters, relativeTime: 0, duration: buzzDuration),
+                CHHapticEvent(eventType: .hapticTransient, parameters: [accentIntensity, sharpness], relativeTime: 0),
+                CHHapticEvent(eventType: .hapticTransient, parameters: [accentIntensity, sharpness], relativeTime: buzzDuration * 0.55)
+            ]
+        }
+    }
+
+    var fallbackImpactSchedule: [(delay: TimeInterval, intensity: CGFloat)] {
+        let feedback = normalized
+        let duration = TimeInterval(feedback.duration)
+        switch feedback.pattern {
+        case .single, .pulse:
+            return [(0, feedback.intensity)]
+        case .double:
+            return [(0, feedback.intensity), (min(max(duration, 0.045), 0.18), feedback.intensity * 0.85)]
+        case .buzz:
+            let step: TimeInterval = 0.045
+            let count = max(2, min(6, Int(ceil(max(duration, 0.08) / step))))
+            return (0..<count).map { index in
+                (Double(index) * step, feedback.intensity * (index.isMultiple(of: 2) ? 0.92 : 0.68))
+            }
+        }
+    }
+}
+
 private struct GamepadTrackpad: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
@@ -1862,7 +1998,6 @@ private struct GamepadTrackpad: View {
 
     @State private var isActive = false
     @State private var touchCount = 0
-    @State private var haptic = UIImpactFeedbackGenerator(style: .light)
 
     private var normalizedSettings: GamepadTrackpadSettings {
         settings.normalized
@@ -1915,18 +2050,20 @@ private struct GamepadTrackpad: View {
     }
 
     private var trackpadSurface: some View {
-        let fillStyle = elementCustomization.buttonFillStyle(accentStyle: resolvedAccentStyle, isPressed: isActive, scheme: colorScheme)
-        let strokeColor = elementCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: isActive, scheme: colorScheme)
-        let foregroundColor = elementCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: isActive, scheme: colorScheme)
+        let presentation = customization.resolvedPresentation(for: elementCustomization, fallbackAccentStyle: resolvedAccentStyle, controlKind: .trackpad, state: isActive ? .active : .normal, scheme: colorScheme)
+        let fillStyle = presentation.fillStyle
+        let strokeColor = presentation.strokeSwiftUIColor
+        let foregroundColor = presentation.foregroundSwiftUIColor
         let shape = UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
 
         return ZStack {
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
-                .overlay(shape.stroke(strokeColor, lineWidth: isActive ? 2 : 1))
+                .overlay(shape.stroke(strokeColor, lineWidth: presentation.strokeWidth))
                 .shadow(
-                    color: Color.black.opacity((isActive ? 0.16 : 0.05) * elementCustomization.shadowStrength),
-                    radius: (isActive ? 4 : 2) * max(0.25, elementCustomization.shadowStrength),
-                    y: (isActive ? 3 : 2) * elementCustomization.shadowStrength
+                    color: presentation.shadowSwiftUIColor,
+                    radius: presentation.shadowRadius,
+                    x: presentation.shadowX,
+                    y: presentation.shadowY
                 )
 
             RoundedRectangle(cornerRadius: max(8, min(size.width, size.height) * 0.08), style: .continuous)
@@ -1984,16 +2121,16 @@ private struct GamepadTrackpad: View {
 
     private func scheduleTapHaptic() {
         guard isKeypadHapticsEnabled else { return }
-        let haptic = haptic
+        let feedback = customization.resolvedPresentation(for: elementCustomization, fallbackAccentStyle: resolvedAccentStyle, controlKind: .trackpad, state: .active, scheme: colorScheme).hapticFeedback
         DispatchQueue.main.async {
-            haptic.impactOccurred(intensity: 0.35)
-            haptic.prepare()
+            KeypadHapticPlayer.shared.play(feedback)
         }
     }
 
     private func prepareHapticIfNeeded() {
         guard isKeypadHapticsEnabled else { return }
-        haptic.prepare()
+        let feedback = customization.resolvedPresentation(for: elementCustomization, fallbackAccentStyle: resolvedAccentStyle, controlKind: .trackpad, state: .normal, scheme: colorScheme).hapticFeedback
+        KeypadHapticPlayer.shared.prepare(feedback)
     }
 }
 
@@ -2009,7 +2146,6 @@ private struct GamepadButton: View {
     let customization: GamepadCustomization
 
     @State private var isPressed = false
-    @State private var haptic = UIImpactFeedbackGenerator(style: .light)
 
     private var title: String {
         labelOverride ?? customization.visualLabel(for: button)
@@ -2017,26 +2153,32 @@ private struct GamepadButton: View {
 
     var body: some View {
         let hitSize = ControllerLayoutMetrics.hitSize(for: size)
+        let presentation = resolvedPresentation
 
         ZStack {
             ZStack {
-                buttonBackground
+                buttonBackground(presentation: presentation)
                     .shadow(
-                        color: Color.black.opacity((isPressed ? 0.16 : 0.04) * resolvedShadowStrength),
-                        radius: (isPressed ? 2 : 1) * max(0.25, resolvedShadowStrength),
-                        y: (isPressed ? 1 : 2) * resolvedShadowStrength
+                        color: presentation.shadowSwiftUIColor,
+                        radius: presentation.shadowRadius,
+                        x: presentation.shadowX,
+                        y: presentation.shadowY
                     )
+                    .overlay {
+                        if let glowColor = presentation.glowSwiftUIColor, presentation.glowRadius > 0 {
+                            buttonBackground(presentation: presentation)
+                                .blur(radius: presentation.glowRadius)
+                                .foregroundStyle(glowColor)
+                                .opacity(0.68)
+                                .allowsHitTesting(false)
+                        }
+                    }
 
-                if customization.showsButtonLabels {
-                    Text(title)
-                        .geistTypography(title.count <= 2 ? .heading32 : .button16)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.55)
-                        .foregroundStyle(resolvedButtonCustomization.buttonForeground(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme))
-                        .padding(.horizontal, 4)
-                }
+                buttonContent(presentation: presentation)
             }
-            .scaleEffect(isPressed ? 0.96 : 1)
+            .opacity(presentation.opacity)
+            .blur(radius: presentation.blurRadius)
+            .scaleEffect(presentation.scale)
             .allowsHitTesting(false)
             .frame(width: size.width, height: size.height)
 
@@ -2080,11 +2222,20 @@ private struct GamepadButton: View {
         resolvedButtonCustomization.shadowStrength
     }
 
+    private var resolvedPresentation: GamepadResolvedControlPresentation {
+        customization.resolvedPresentation(
+            for: resolvedButtonCustomization,
+            fallbackAccentStyle: resolvedAccentStyle,
+            state: isPressed ? .pressed : .normal,
+            scheme: colorScheme
+        )
+    }
+
     @ViewBuilder
-    private var buttonBackground: some View {
-        let fillStyle = resolvedButtonCustomization.buttonFillStyle(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme)
-        let strokeColor = resolvedButtonCustomization.buttonStroke(accentStyle: resolvedAccentStyle, isPressed: isPressed, scheme: colorScheme)
-        let lineWidth: CGFloat = isPressed ? 2 : 1
+    private func buttonBackground(presentation: GamepadResolvedControlPresentation) -> some View {
+        let fillStyle = presentation.fillStyle
+        let strokeColor = presentation.strokeSwiftUIColor
+        let lineWidth: CGFloat = presentation.strokeWidth
 
         switch resolvedShape {
         case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
@@ -2099,6 +2250,60 @@ private struct GamepadButton: View {
             let shape = GamepadStarButtonShape(points: 5)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+        }
+    }
+
+    @ViewBuilder
+    private func buttonContent(presentation: GamepadResolvedControlPresentation) -> some View {
+        if let icon = presentation.icon {
+            controlIcon(icon, presentation: presentation)
+                .padding(.horizontal, 4)
+        }
+
+        if customization.showsButtonLabels && (presentation.icon?.placement != .center || title.count <= 2) {
+            Text(title)
+                .geistTypography(title.count <= 2 ? .heading32 : .button16)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+                .foregroundStyle(presentation.foregroundSwiftUIColor)
+                .padding(.horizontal, 4)
+                .offset(y: presentation.icon?.placement == .top ? size.height * 0.18 : 0)
+        }
+    }
+
+    @ViewBuilder
+    private func controlIcon(_ icon: GamepadControlIcon, presentation: GamepadResolvedControlPresentation) -> some View {
+        let tint = icon.tintColor?.swiftUIColor ?? presentation.foregroundSwiftUIColor
+        let baseSize = max(12, min(size.width, size.height) * 0.34 * icon.scale)
+        switch icon.source {
+        case .sfSymbol:
+            Image(systemName: icon.value)
+                .font(.system(size: baseSize, weight: .semibold))
+                .symbolRenderingMode(icon.renderingMode == .multicolor ? .multicolor : .monochrome)
+                .foregroundStyle(tint)
+                .offset(iconOffset(for: icon.placement))
+        case .text:
+            Text(icon.value)
+                .font(.system(size: baseSize, weight: .semibold, design: .rounded))
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .offset(iconOffset(for: icon.placement))
+        case .asset:
+            Text("▧")
+                .font(.system(size: baseSize, weight: .semibold))
+                .foregroundStyle(tint.opacity(0.72))
+                .offset(iconOffset(for: icon.placement))
+        }
+    }
+
+    private func iconOffset(for placement: GamepadControlIconPlacement) -> CGSize {
+        switch placement {
+        case .leading: CGSize(width: -size.width * 0.20, height: 0)
+        case .trailing: CGSize(width: size.width * 0.20, height: 0)
+        case .top: CGSize(width: 0, height: -size.height * 0.18)
+        case .bottom: CGSize(width: 0, height: size.height * 0.18)
+        case .center, .background: .zero
         }
     }
 
@@ -2118,15 +2323,14 @@ private struct GamepadButton: View {
 
     private func schedulePressHaptic() {
         guard isKeypadHapticsEnabled else { return }
-        let haptic = haptic
+        let feedback = resolvedPresentation.hapticFeedback
         DispatchQueue.main.async {
-            haptic.impactOccurred(intensity: 0.45)
-            haptic.prepare()
+            KeypadHapticPlayer.shared.play(feedback)
         }
     }
 
     private func prepareHapticIfNeeded() {
         guard isKeypadHapticsEnabled else { return }
-        haptic.prepare()
+        KeypadHapticPlayer.shared.prepare(resolvedPresentation.hapticFeedback)
     }
 }

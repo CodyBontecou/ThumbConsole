@@ -68,6 +68,11 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
     public var accentStyle: GamepadAccentStyle?
     public var fillColor: GamepadRGBAColor?
     public var joystickKnobColor: GamepadRGBAColor?
+    public var styleID: String?
+    public var visualStyle: GamepadControlVisualStyle?
+    public var icon: GamepadControlIcon?
+    public var hapticStyle: GamepadHapticStyle?
+    public var hapticFeedback: GamepadHapticFeedback?
     public var cornerRadius: CGFloat?
     public var shadowStrength: CGFloat?
     public var isHidden: Bool?
@@ -91,6 +96,11 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         accentStyle: GamepadAccentStyle? = nil,
         fillColor: GamepadRGBAColor? = nil,
         joystickKnobColor: GamepadRGBAColor? = nil,
+        styleID: String? = nil,
+        visualStyle: GamepadControlVisualStyle? = nil,
+        icon: GamepadControlIcon? = nil,
+        hapticStyle: GamepadHapticStyle? = nil,
+        hapticFeedback: GamepadHapticFeedback? = nil,
         cornerRadius: CGFloat? = nil,
         shadowStrength: CGFloat? = nil,
         isHidden: Bool? = nil,
@@ -113,6 +123,11 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         self.accentStyle = accentStyle
         self.fillColor = fillColor
         self.joystickKnobColor = joystickKnobColor
+        self.styleID = styleID
+        self.visualStyle = visualStyle
+        self.icon = icon
+        self.hapticStyle = hapticStyle
+        self.hapticFeedback = hapticFeedback
         self.cornerRadius = cornerRadius
         self.shadowStrength = shadowStrength
         self.isHidden = isHidden
@@ -148,6 +163,12 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle)
         fillColor = Self.decodeFillColor(from: container)
         joystickKnobColor = Self.decodeJoystickKnobColor(from: container)
+        styleID = try container.decodeIfPresent(String.self, forKey: .styleID)
+        visualStyle = try Self.decodeVisualStyle(from: container)
+        icon = try Self.decodeIcon(from: container)
+        hapticStyle = try container.decodeIfPresent(GamepadHapticStyle.self, forKey: .hapticStyle)
+        hapticFeedback = try Self.decodeHapticFeedback(from: container, hapticStyle: hapticStyle)
+        if hapticStyle == nil { hapticStyle = hapticFeedback?.style }
         cornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
         shadowStrength = try container.decodeIfPresent(CGFloat.self, forKey: .shadowStrength)
         isHidden = try container.decodeIfPresent(Bool.self, forKey: .isHidden)
@@ -174,6 +195,11 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         try container.encodeIfPresent(accentStyle, forKey: .accentStyle)
         try container.encodeIfPresent(fillColor, forKey: .fillColor)
         try container.encodeIfPresent(joystickKnobColor, forKey: .joystickKnobColor)
+        try container.encodeIfPresent(styleID, forKey: .styleID)
+        try container.encodeIfPresent(visualStyle?.normalized, forKey: .visualStyle)
+        try container.encodeIfPresent(icon?.normalized, forKey: .icon)
+        try container.encodeIfPresent(hapticStyle, forKey: .hapticStyle)
+        try container.encodeIfPresent(hapticFeedback?.normalized, forKey: .hapticFeedback)
         try container.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
         try container.encodeIfPresent(shadowStrength, forKey: .shadowStrength)
         try container.encodeIfPresent(isHidden, forKey: .isHidden)
@@ -210,6 +236,99 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
             }
         }
 
+        return nil
+    }
+
+    private static func decodeVisualStyle(from container: KeyedDecodingContainer<CodingKeys>) throws -> GamepadControlVisualStyle? {
+        if let explicit = try container.decodeIfPresent(GamepadControlVisualStyle.self, forKey: .visualStyle) {
+            return explicit.normalized
+        }
+
+        var normal = GamepadControlStateStyle.empty
+        if let strokeColor = decodeHexColor(from: container, keys: [.stroke, .strokeColor]) {
+            normal.strokeColor = strokeColor
+        }
+        if let foregroundColor = decodeHexColor(from: container, keys: [.foreground, .foregroundColor, .textColor]) {
+            normal.foregroundColor = foregroundColor
+        }
+        if let strokeWidth = try container.decodeIfPresent(CGFloat.self, forKey: .strokeWidth) {
+            normal.strokeWidth = strokeWidth
+        }
+        if let glowColor = decodeHexColor(from: container, keys: [.glow, .glowColor]) {
+            normal.glowColor = glowColor
+        }
+        if let glowRadius = try container.decodeIfPresent(CGFloat.self, forKey: .glowRadius) {
+            normal.glowRadius = glowRadius
+        }
+        if let opacity = try container.decodeIfPresent(CGFloat.self, forKey: .opacity) {
+            normal.opacity = opacity
+        }
+
+        var pressed: GamepadControlStateStyle?
+        if let pressedFill = decodeHexColor(from: container, keys: [.pressedFill, .pressedColor]) {
+            pressed = GamepadControlStateStyle(fillStyle: .solid(pressedFill))
+        }
+
+        let style = GamepadControlVisualStyle(normal: normal, pressed: pressed)
+        return style.normalized
+    }
+
+    private static func decodeIcon(from container: KeyedDecodingContainer<CodingKeys>) throws -> GamepadControlIcon? {
+        if let explicit = try container.decodeIfPresent(GamepadControlIcon.self, forKey: .icon) {
+            return explicit.normalized
+        }
+        if let symbol = try container.decodeIfPresent(String.self, forKey: .sfSymbol) {
+            return GamepadControlIcon.sfSymbol(symbol).normalized
+        }
+        if let text = try container.decodeIfPresent(String.self, forKey: .iconText) {
+            return GamepadControlIcon.text(text).normalized
+        }
+        if let shorthand = try container.decodeIfPresent(String.self, forKey: .iconName) {
+            if shorthand.hasPrefix("sf:") {
+                return GamepadControlIcon.sfSymbol(String(shorthand.dropFirst(3))).normalized
+            }
+            if shorthand.hasPrefix("text:") {
+                return GamepadControlIcon.text(String(shorthand.dropFirst(5))).normalized
+            }
+            return GamepadControlIcon.sfSymbol(shorthand).normalized
+        }
+        return nil
+    }
+
+    private static func decodeHapticFeedback(from container: KeyedDecodingContainer<CodingKeys>, hapticStyle: GamepadHapticStyle?) throws -> GamepadHapticFeedback? {
+        if var explicit = try container.decodeIfPresent(GamepadHapticFeedback.self, forKey: .hapticFeedback) {
+            if let hapticStyle { explicit.style = hapticStyle }
+            return explicit.normalized
+        }
+
+        let pattern = try container.decodeIfPresent(GamepadHapticPattern.self, forKey: .hapticPattern)
+        let intensity = try container.decodeIfPresent(CGFloat.self, forKey: .hapticIntensity)
+            ?? container.decodeIfPresent(CGFloat.self, forKey: .hapticStrength)
+        let sharpness = try container.decodeIfPresent(CGFloat.self, forKey: .hapticSharpness)
+        let duration = try container.decodeIfPresent(CGFloat.self, forKey: .hapticDuration)
+            ?? container.decodeIfPresent(CGFloat.self, forKey: .hapticDurationMS).map { $0 / 1_000 }
+
+        guard hapticStyle != nil || pattern != nil || intensity != nil || sharpness != nil || duration != nil else {
+            return nil
+        }
+
+        var feedback = GamepadHapticFeedback(style: hapticStyle ?? .light)
+        if let pattern { feedback.pattern = pattern }
+        if let intensity { feedback.intensity = intensity }
+        if let sharpness { feedback.sharpness = sharpness }
+        if let duration { feedback.duration = duration }
+        return feedback.normalized
+    }
+
+    private static func decodeHexColor(from container: KeyedDecodingContainer<CodingKeys>, keys: [CodingKeys]) -> GamepadRGBAColor? {
+        for key in keys {
+            if let color = try? container.decodeIfPresent(GamepadRGBAColor.self, forKey: key) {
+                return color
+            }
+            if let hexString = try? container.decodeIfPresent(String.self, forKey: key), let color = GamepadRGBAColor(hexString: hexString) {
+                return color
+            }
+        }
         return nil
     }
 
@@ -295,6 +414,32 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         case thumbFill
         case joystickThumbFill
         case joystickKnobFill
+        case styleID
+        case visualStyle
+        case icon
+        case iconName
+        case sfSymbol
+        case iconText
+        case hapticStyle
+        case hapticFeedback
+        case hapticPattern
+        case hapticIntensity
+        case hapticStrength
+        case hapticSharpness
+        case hapticDuration
+        case hapticDurationMS
+        case stroke
+        case strokeColor
+        case strokeWidth
+        case foreground
+        case foregroundColor
+        case textColor
+        case glow
+        case glowColor
+        case glowRadius
+        case pressedFill
+        case pressedColor
+        case opacity
         case cornerRadius
         case shadowStrength
         case isHidden
@@ -442,6 +587,11 @@ private struct GeneratedControlDefinition {
     var shape: GamepadButtonShapeStyle
     var fillColor: GamepadRGBAColor?
     var joystickKnobColor: GamepadRGBAColor?
+    var styleID: String?
+    var visualStyle: GamepadControlVisualStyle?
+    var icon: GamepadControlIcon?
+    var hapticStyle: GamepadHapticStyle?
+    var hapticFeedback: GamepadHapticFeedback?
     var accentStyle: GamepadAccentStyle?
     var cornerRadius: CGFloat?
     var shadowStrength: CGFloat?
@@ -465,6 +615,11 @@ private struct GeneratedControlDefinition {
         fill: String? = nil,
         fillColor: GamepadRGBAColor? = nil,
         joystickKnobColor: GamepadRGBAColor? = nil,
+        styleID: String? = nil,
+        visualStyle: GamepadControlVisualStyle? = nil,
+        icon: GamepadControlIcon? = nil,
+        hapticStyle: GamepadHapticStyle? = nil,
+        hapticFeedback: GamepadHapticFeedback? = nil,
         accentStyle: GamepadAccentStyle? = nil,
         cornerRadius: CGFloat? = nil,
         shadowStrength: CGFloat? = nil,
@@ -485,6 +640,11 @@ private struct GeneratedControlDefinition {
         self.shape = shape
         self.fillColor = fillColor ?? fill.flatMap { GamepadRGBAColor(hexString: $0) }
         self.joystickKnobColor = joystickKnobColor
+        self.styleID = styleID
+        self.visualStyle = visualStyle
+        self.icon = icon
+        self.hapticStyle = hapticStyle
+        self.hapticFeedback = hapticFeedback
         self.accentStyle = accentStyle
         self.cornerRadius = cornerRadius
         self.shadowStrength = shadowStrength
@@ -526,6 +686,11 @@ private enum GeneratedProfileBuilder {
                 accentStyle: control.accentStyle ?? control.role.accentStyle,
                 fillColor: control.fillColor ?? control.role.fillColor,
                 joystickKnobColor: control.joystickKnobColor,
+                styleID: control.styleID,
+                visualStyle: control.visualStyle,
+                icon: control.icon,
+                hapticStyle: control.hapticStyle,
+                hapticFeedback: control.hapticFeedback,
                 cornerRadius: control.cornerRadius ?? resolvedCornerRadius(for: control.shape),
                 shadowStrength: control.shadowStrength ?? (control.role == .primary ? 1.25 : 1.0),
                 isLocationLocked: control.isLocationLocked ?? false,
@@ -624,6 +789,11 @@ private enum AgentSpecTemplate {
                     shape: controlSpec.shape ?? defaults.shape,
                     fillColor: controlSpec.fillColor,
                     joystickKnobColor: controlSpec.joystickKnobColor,
+                    styleID: controlSpec.styleID,
+                    visualStyle: controlSpec.visualStyle,
+                    icon: controlSpec.icon,
+                    hapticStyle: controlSpec.hapticStyle,
+                    hapticFeedback: controlSpec.hapticFeedback,
                     accentStyle: controlSpec.accentStyle,
                     cornerRadius: controlSpec.cornerRadius ?? (controlKind == .trackpad ? 18 : nil),
                     shadowStrength: controlSpec.shadowStrength,

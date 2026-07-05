@@ -204,6 +204,14 @@ struct PocketPadCLI {
             try device(arguments: rest)
         case "element", "control", "controls":
             try element(arguments: rest)
+        case "style", "styles":
+            try style(arguments: rest)
+        case "layer", "layers":
+            try layer(arguments: rest)
+        case "group", "groups":
+            try group(arguments: rest)
+        case "asset", "assets":
+            try asset(arguments: rest)
         case "status", "diagnostics":
             try printRuntimeStatus(json: rest.contains("--json"))
         case "latency":
@@ -1170,6 +1178,442 @@ struct PocketPadCLI {
         try persistStore(store)
     }
 
+    // MARK: - Styles / layers / groups / assets
+
+    private static func style(arguments: [String]) throws {
+        guard let subcommand = arguments.first else { throw CLIError.message("Missing style subcommand") }
+        let rest = Array(arguments.dropFirst())
+        switch subcommand {
+        case "list", "ls":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            let styles = profile.customization.styleLibrary.normalized.styles
+            if rest.contains("--json") {
+                try printJSON(styles)
+            } else if styles.isEmpty {
+                print("No styles saved for \"\(profile.name)\".")
+            } else {
+                for style in styles { print("\(style.id)\t\(style.name)") }
+            }
+        case "show":
+            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad style show <style-id>") }
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            guard let token = profile.customization.styleLibrary.style(id: id) else { throw CLIError.message("Style not found: \(id)") }
+            try printJSON(token)
+        case "create", "new", "set":
+            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad style create <name> [--id ID] [--fill #RRGGBB]") }
+            let id = optionValue("--id", in: rest) ?? slug(name)
+            let token = try makeStyleToken(id: id, name: name, arguments: rest)
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                var library = customization.styleLibrary.normalized
+                library.styles.removeAll { $0.id == token.id }
+                library.styles.append(token)
+                customization.styleLibrary = library.normalized
+            }
+            print("Saved style \"\(token.name)\" (\(token.id)).")
+        case "apply":
+            let positional = positionals(in: rest)
+            guard positional.count >= 2 else { throw CLIError.message("Usage: pocketpad style apply <style-id> <element>") }
+            let styleID = positional[0]
+            let targetText = positional[1]
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                guard customization.styleLibrary.style(id: styleID) != nil else { throw CLIError.message("Style not found: \(styleID)") }
+                let target = try resolveElementTarget(targetText, in: customization)
+                try mutateLayout(for: target, in: &customization) { layout in
+                    layout.styleID = styleID
+                }
+            }
+            print("Applied style \"\(styleID)\" to \"\(targetText)\".")
+        case "detach", "clear":
+            guard let targetText = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad style detach <element>") }
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                let target = try resolveElementTarget(targetText, in: customization)
+                try mutateLayout(for: target, in: &customization) { layout in
+                    layout.styleID = nil
+                }
+            }
+            print("Detached style from \"\(targetText)\".")
+        case "delete", "rm":
+            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad style delete <style-id>") }
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                customization.styleLibrary.styles.removeAll { $0.id == id }
+                for button in GameButton.allCases {
+                    var layout = customization.buttonCustomization(for: button)
+                    if layout.styleID == id {
+                        layout.styleID = nil
+                        customization.setButtonCustomization(layout, for: button)
+                    }
+                }
+                for index in customization.customButtons.indices where customization.customButtons[index].layout.styleID == id {
+                    customization.customButtons[index].layout.styleID = nil
+                }
+            }
+            print("Deleted style \"\(id)\".")
+        case "export":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            try writeJSON(profile.customization.styleLibrary.normalized, to: optionValue("--output", in: rest) ?? optionValue("-o", in: rest))
+        case "import":
+            guard let path = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad style import <style-library.json>") }
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let library = try JSONDecoder().decode(GamepadStyleLibrary.self, from: data).normalized
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { $0.styleLibrary = library }
+            print("Imported style library.")
+        default:
+            throw CLIError.message("Unknown style subcommand: \(subcommand)")
+        }
+    }
+
+    private static func layer(arguments: [String]) throws {
+        guard let subcommand = arguments.first else { throw CLIError.message("Missing layer subcommand") }
+        let rest = Array(arguments.dropFirst())
+        switch subcommand {
+        case "list", "ls":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            let order = profile.customization.orderedControlIdentitiesForDesign
+            if rest.contains("--json") {
+                try printJSON(order.map { layerSummary(identity: $0, customization: profile.customization) })
+            } else {
+                for (index, identity) in order.enumerated() {
+                    let summary = layerSummary(identity: identity, customization: profile.customization)
+                    print("\(index)\t\(summary.id)\t\(summary.label)\t\(summary.kind)")
+                }
+            }
+        case "move":
+            let positional = positionals(in: rest)
+            guard let targetText = positional.first else { throw CLIError.message("Usage: pocketpad layer move <element> --to INDEX") }
+            let toIndex = try optionValue("--to", in: rest).map(parseInteger)
+            let beforeText = optionValue("--before", in: rest)
+            let afterText = optionValue("--after", in: rest)
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                let target = try resolveElementTarget(targetText, in: customization)
+                let layerIdentity = identity(for: target)
+                if let toIndex {
+                    customization.moveLayer(layerIdentity, to: toIndex)
+                } else if let beforeText {
+                    let before = identity(for: try resolveElementTarget(beforeText, in: customization))
+                    let order = customization.orderedControlIdentitiesForDesign
+                    customization.moveLayer(layerIdentity, to: order.firstIndex(of: before) ?? 0)
+                } else if let afterText {
+                    let after = identity(for: try resolveElementTarget(afterText, in: customization))
+                    let order = customization.orderedControlIdentitiesForDesign
+                    customization.moveLayer(layerIdentity, to: (order.firstIndex(of: after) ?? order.count - 1) + 1)
+                } else {
+                    throw CLIError.message("layer move needs --to, --before, or --after")
+                }
+            }
+            print("Moved layer \"\(targetText)\".")
+        case "bring-forward", "forward":
+            try mutateLayer(rest) { $0.bringLayerForward($1) }
+        case "send-backward", "backward":
+            try mutateLayer(rest) { $0.sendLayerBackward($1) }
+        case "front", "bring-front":
+            try mutateLayer(rest) { $0.bringLayerToFront($1) }
+        case "back", "send-back":
+            try mutateLayer(rest) { $0.sendLayerToBack($1) }
+        default:
+            throw CLIError.message("Unknown layer subcommand: \(subcommand)")
+        }
+    }
+
+    private static func group(arguments: [String]) throws {
+        guard let subcommand = arguments.first else { throw CLIError.message("Missing group subcommand") }
+        let rest = Array(arguments.dropFirst())
+        switch subcommand {
+        case "list", "ls":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            let groups = profile.customization.designMetadata?.groups ?? []
+            if rest.contains("--json") { try printJSON(groups) } else { groups.forEach { print("\($0.id.uuidString)\t\($0.name)\t\($0.children.count) elements") } }
+        case "create", "new":
+            let positional = positionals(in: rest)
+            guard let name = positional.first, positional.count >= 2 else { throw CLIError.message("Usage: pocketpad group create <name> <element>...") }
+            let targets = Array(positional.dropFirst())
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                let children = try targets.map { identity(for: try resolveElementTarget($0, in: customization)) }
+                var metadata = customization.designMetadata ?? .empty
+                metadata.groups.append(GamepadLayerGroup(name: name, children: children))
+                customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+            }
+            print("Created group \"\(name)\".")
+        case "ungroup", "delete", "rm":
+            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad group ungroup <group-name-or-id>") }
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                var metadata = customization.designMetadata ?? .empty
+                metadata.groups.removeAll { groupMatches($0, target: target) }
+                customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+            }
+            print("Removed group \"\(target)\".")
+        case "hide", "show", "lock", "unlock":
+            guard let targetName = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad group \(subcommand) <group-name-or-id>") }
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                var metadata = customization.designMetadata ?? .empty
+                guard let index = metadata.groups.firstIndex(where: { groupMatches($0, target: targetName) }) else { throw CLIError.message("Group not found: \(targetName)") }
+                let hidden = subcommand == "hide" ? true : (subcommand == "show" ? false : metadata.groups[index].isHidden)
+                let locked = subcommand == "lock" ? true : (subcommand == "unlock" ? false : metadata.groups[index].isLocked)
+                metadata.groups[index].isHidden = hidden
+                metadata.groups[index].isLocked = locked
+                for child in metadata.groups[index].children {
+                    try mutateLayout(for: target(for: child), in: &customization) { layout in
+                        layout.isHidden = hidden
+                        layout.isLocationLocked = locked
+                    }
+                }
+                customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+            }
+            print("Updated group \"\(targetName)\".")
+        default:
+            throw CLIError.message("Unknown group subcommand: \(subcommand)")
+        }
+    }
+
+    private static func asset(arguments: [String]) throws {
+        guard let subcommand = arguments.first else { throw CLIError.message("Missing asset subcommand") }
+        let rest = Array(arguments.dropFirst())
+        switch subcommand {
+        case "list", "ls":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            let assets = profile.customization.assetLibrary.normalized.assets
+            if rest.contains("--json") { try printJSON(assets) } else { assets.forEach { print("\($0.id)\t\($0.name)\t\($0.role.rawValue)\t\($0.byteCount) bytes") } }
+        case "import":
+            guard let path = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad asset import <path> [--name NAME] [--role background|icon|texture]") }
+            let url = URL(fileURLWithPath: path)
+            let data = try Data(contentsOf: url)
+            guard data.count <= GamepadAsset.maximumStoredBytes else { throw CLIError.message("Assets must be under \(GamepadAsset.maximumStoredBytes) bytes") }
+            let name = optionValue("--name", in: rest) ?? url.deletingPathExtension().lastPathComponent
+            let role = try optionValue("--role", in: rest).map(parseAssetRole) ?? .reference
+            let asset = GamepadAsset(name: name, fileName: url.lastPathComponent, contentType: contentType(for: url), data: data, role: role)
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                var library = customization.assetLibrary.normalized
+                library.assets.append(asset)
+                customization.assetLibrary = library.normalized
+            }
+            print("Imported asset \"\(name)\".")
+        case "remove", "delete", "rm":
+            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad asset remove <asset-id>") }
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+                customization.assetLibrary.assets.removeAll { $0.id == id }
+            }
+            print("Removed asset \"\(id)\".")
+        default:
+            throw CLIError.message("Unknown asset subcommand: \(subcommand)")
+        }
+    }
+
+    private struct LayerSummary: Codable {
+        var id: String
+        var kind: String
+        var label: String
+        var isHidden: Bool
+        var isLocked: Bool
+    }
+
+    private static func layerSummary(identity: GamepadControlIdentity, customization: GamepadCustomization) -> LayerSummary {
+        switch identity {
+        case .builtin(let button):
+            let layout = customization.buttonCustomization(for: button)
+            return LayerSummary(id: identity.id, kind: "button", label: customization.visualLabel(for: button), isHidden: layout.isHidden, isLocked: layout.isLocationLocked)
+        case .custom(let id):
+            let custom = customization.customButtons.first { $0.id == id }?.normalized
+            return LayerSummary(id: identity.id, kind: custom?.controlKind.rawValue ?? "custom", label: custom?.label ?? id.uuidString, isHidden: custom?.layout.isHidden ?? false, isLocked: custom?.layout.isLocationLocked ?? false)
+        }
+    }
+
+    private static func makeStyleToken(id: String, name: String, arguments: [String]) throws -> GamepadStyleToken {
+        var layout = GamepadButtonCustomization.defaultValue
+        try applyRichVisualOptions(arguments, to: &layout)
+        if let fill = optionValue("--fill", in: arguments) ?? optionValue("--color", in: arguments) {
+            var style = layout.visualStyle ?? .empty
+            var normal = style.normal
+            normal.fillStyle = .solid(try parseRGBAColor(fill))
+            style.normal = normal
+            layout.visualStyle = style
+        }
+        let icon = try parseIconOption(arguments)
+        let haptic = try parseHapticFeedbackOptions(arguments, existing: nil)
+        var visualStyle = layout.visualStyle ?? .empty
+        if let icon { visualStyle.icon = icon }
+        if let haptic {
+            visualStyle.hapticStyle = haptic.style
+            visualStyle.hapticFeedback = haptic
+        }
+        guard let token = GamepadStyleToken(id: id, name: name, visualStyle: visualStyle).normalized else { throw CLIError.message("Style needs at least one visual property") }
+        return token
+    }
+
+    private static func applyRichVisualOptions(_ arguments: [String], to layout: inout GamepadButtonCustomization) throws {
+        var style = layout.visualStyle ?? .empty
+        var normal = style.normal
+        if let stroke = optionValue("--stroke", in: arguments) ?? optionValue("--stroke-color", in: arguments) { normal.strokeColor = try parseRGBAColor(stroke) }
+        if let foreground = optionValue("--foreground", in: arguments) ?? optionValue("--foreground-color", in: arguments) ?? optionValue("--text-color", in: arguments) { normal.foregroundColor = try parseRGBAColor(foreground) }
+        if let value = optionValue("--stroke-width", in: arguments), let width = Double(value) { normal.strokeWidth = CGFloat(width) }
+        if let glow = optionValue("--glow", in: arguments) ?? optionValue("--glow-color", in: arguments) { normal.glowColor = try parseRGBAColor(glow) }
+        if let value = optionValue("--glow-radius", in: arguments), let radius = Double(value) { normal.glowRadius = CGFloat(radius) }
+        if let value = optionValue("--opacity", in: arguments), let opacity = parseOpacityIfPresent(value) { normal.opacity = opacity }
+        if let value = optionValue("--press-scale", in: arguments) ?? optionValue("--scale-on-press", in: arguments), let scale = Double(value) {
+            var pressed = style.pressed ?? .empty
+            pressed.scale = CGFloat(scale)
+            style.pressed = pressed
+        }
+        if let fill = optionValue("--pressed-fill", in: arguments) ?? optionValue("--pressed-color", in: arguments) {
+            var pressed = style.pressed ?? .empty
+            pressed.fillStyle = .solid(try parseRGBAColor(fill))
+            style.pressed = pressed
+        }
+        if normal != style.normal { style.normal = normal }
+        layout.visualStyle = style.normalized
+    }
+
+    private static func mutateLayer(_ arguments: [String], mutate: (inout GamepadCustomization, GamepadControlIdentity) -> Void) throws {
+        guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing layer element") }
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments)) { customization in
+            let identity = identity(for: try resolveElementTarget(targetText, in: customization))
+            mutate(&customization, identity)
+        }
+        print("Updated layer \"\(targetText)\".")
+    }
+
+    private static func mutateLayout(for target: ElementTarget, in customization: inout GamepadCustomization, mutate: (inout GamepadButtonCustomization) throws -> Void) throws {
+        switch target {
+        case .builtin(let button):
+            var layout = customization.buttonCustomization(for: button)
+            try mutate(&layout)
+            customization.setButtonCustomization(layout, for: button)
+        case .custom(let id):
+            guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { throw CLIError.message("Custom element not found") }
+            try mutate(&customization.customButtons[index].layout)
+        }
+    }
+
+    private static func identity(for target: ElementTarget) -> GamepadControlIdentity {
+        switch target {
+        case .builtin(let button): .builtin(button)
+        case .custom(let id): .custom(id)
+        }
+    }
+
+    private static func target(for identity: GamepadControlIdentity) -> ElementTarget {
+        switch identity {
+        case .builtin(let button): .builtin(button)
+        case .custom(let id): .custom(id)
+        }
+    }
+
+    private static func groupMatches(_ group: GamepadLayerGroup, target: String) -> Bool {
+        group.id.uuidString.lowercased() == target.lowercased() || normalizedLookup(group.name) == normalizedLookup(target)
+    }
+
+    private static func parseInteger(_ value: String) throws -> Int {
+        guard let integer = Int(value) else { throw CLIError.message("Expected integer, got \(value)") }
+        return integer
+    }
+
+    private static func slug(_ value: String) -> String {
+        let scalars = value.lowercased().unicodeScalars.map { scalar -> UnicodeScalar in
+            if CharacterSet.alphanumerics.contains(scalar) { return scalar }
+            return UnicodeScalar("-")
+        }
+        let collapsed = String(String.UnicodeScalarView(scalars)).replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
+        return GamepadStyleToken.normalizedIdentifier(collapsed).isEmpty ? UUID().uuidString : GamepadStyleToken.normalizedIdentifier(collapsed)
+    }
+
+    private static func parseHapticStyle(_ value: String) throws -> GamepadHapticStyle {
+        let normalized = normalizedLookup(value)
+        guard let style = GamepadHapticStyle.allCases.first(where: { normalizedLookup($0.rawValue) == normalized || normalizedLookup($0.displayName) == normalized }) else {
+            throw CLIError.message("Unknown haptic style: \(value)")
+        }
+        return style
+    }
+
+    private static func parseHapticPattern(_ value: String) throws -> GamepadHapticPattern {
+        let normalized = normalizedLookup(value)
+        guard let pattern = GamepadHapticPattern.allCases.first(where: { normalizedLookup($0.rawValue) == normalized || normalizedLookup($0.displayName) == normalized }) else {
+            throw CLIError.message("Unknown haptic pattern: \(value)")
+        }
+        return pattern
+    }
+
+    private static func parseHapticFeedbackOptions(_ arguments: [String], existing: GamepadHapticFeedback?) throws -> GamepadHapticFeedback? {
+        let style = try optionValue("--haptic", in: arguments).map(parseHapticStyle)
+        let pattern = try (optionValue("--haptic-pattern", in: arguments) ?? optionValue("--haptic-rhythm", in: arguments)).map(parseHapticPattern)
+        let intensity = try (optionValue("--haptic-intensity", in: arguments) ?? optionValue("--haptic-strength", in: arguments)).map { try parseHapticUnitInterval($0, option: "--haptic-intensity") }
+        let sharpness = try optionValue("--haptic-sharpness", in: arguments).map { try parseHapticUnitInterval($0, option: "--haptic-sharpness") }
+        let duration = try (optionValue("--haptic-duration", in: arguments) ?? optionValue("--haptic-duration-ms", in: arguments)).map(parseHapticDuration)
+
+        guard style != nil || pattern != nil || intensity != nil || sharpness != nil || duration != nil else { return nil }
+
+        var feedback = existing ?? GamepadHapticFeedback(style: style ?? .light)
+        if let style {
+            let hadAdvancedOverrides = existing != nil
+            feedback.style = style
+            if !hadAdvancedOverrides && intensity == nil { feedback.intensity = style.defaultIntensity }
+            if !hadAdvancedOverrides && sharpness == nil { feedback.sharpness = style.defaultSharpness }
+        }
+        if let pattern { feedback.pattern = pattern }
+        if let intensity { feedback.intensity = intensity }
+        if let sharpness { feedback.sharpness = sharpness }
+        if let duration { feedback.duration = duration }
+        return feedback.normalized
+    }
+
+    private static func setHapticFeedback(_ feedback: GamepadHapticFeedback, in layout: inout GamepadButtonCustomization) {
+        let normalized = feedback.normalized
+        if normalized.isDefault {
+            layout.hapticStyle = nil
+            layout.hapticFeedback = nil
+        } else {
+            layout.hapticStyle = normalized.style
+            layout.hapticFeedback = normalized
+        }
+    }
+
+    private static func parseHapticUnitInterval(_ value: String, option: String) throws -> CGFloat {
+        guard let parsed = parseOpacityIfPresent(value) else { throw CLIError.message("Invalid \(option): \(value)") }
+        return parsed
+    }
+
+    private static func parseHapticDuration(_ value: String) throws -> CGFloat {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let seconds: Double?
+        if trimmed.hasSuffix("ms") {
+            seconds = Double(trimmed.dropLast(2)).map { $0 / 1_000 }
+        } else if trimmed.hasSuffix("s") {
+            seconds = Double(trimmed.dropLast())
+        } else if let raw = Double(trimmed) {
+            seconds = raw > 1 ? raw / 1_000 : raw
+        } else {
+            seconds = nil
+        }
+        guard let seconds, seconds.isFinite else { throw CLIError.message("Invalid --haptic-duration: \(value)") }
+        return CGFloat(seconds)
+    }
+
+    private static func parseIconOption(_ arguments: [String]) throws -> GamepadControlIcon? {
+        guard let value = optionValue("--icon", in: arguments) ?? optionValue("--sf-symbol", in: arguments) ?? optionValue("--icon-text", in: arguments) else { return nil }
+        if value.hasPrefix("text:") { return GamepadControlIcon.text(String(value.dropFirst(5))).normalized }
+        if value.hasPrefix("sf:") { return GamepadControlIcon.sfSymbol(String(value.dropFirst(3))).normalized }
+        if arguments.contains("--icon-text") { return GamepadControlIcon.text(value).normalized }
+        return GamepadControlIcon.sfSymbol(value).normalized
+    }
+
+    private static func parseAssetRole(_ value: String) throws -> GamepadAssetRole {
+        guard let role = GamepadAssetRole(rawValue: normalizedLookup(value)) else { throw CLIError.message("Unknown asset role: \(value)") }
+        return role
+    }
+
+    private static func contentType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "png": "image/png"
+        case "jpg", "jpeg": "image/jpeg"
+        case "gif": "image/gif"
+        case "svg": "image/svg+xml"
+        default: "application/octet-stream"
+        }
+    }
+
     // MARK: - Device frames
 
     private static func device(arguments: [String]) throws {
@@ -1669,6 +2113,27 @@ struct PocketPadCLI {
             color.alpha = opacity
             setLayoutFillColor(color, isDark: true, in: &layout)
         }
+        if let styleID = optionValue("--style", in: arguments) ?? optionValue("--style-id", in: arguments) {
+            layout.styleID = styleID
+        }
+        if arguments.contains("--clear-style") || arguments.contains("--detach-style") {
+            layout.styleID = nil
+        }
+        if let icon = try parseIconOption(arguments) {
+            layout.icon = icon
+        }
+        if arguments.contains("--clear-icon") {
+            layout.icon = nil
+        }
+        let existingHapticFeedback = layout.hapticFeedback ?? layout.hapticStyle.map { GamepadHapticFeedback(style: $0) }
+        if let haptic = try parseHapticFeedbackOptions(arguments, existing: existingHapticFeedback) {
+            setHapticFeedback(haptic, in: &layout)
+        }
+        if arguments.contains("--clear-haptic") {
+            layout.hapticStyle = nil
+            layout.hapticFeedback = nil
+        }
+        try applyRichVisualOptions(arguments, to: &layout)
         if let value = optionValue("--corner", in: arguments) ?? optionValue("--radius", in: arguments), let radius = Double(value) {
             layout.shape = .roundedRectangle
             layout.cornerRadius = CGFloat(radius)
@@ -3024,7 +3489,12 @@ struct PocketPadCLI {
             "--cursor-sensitivity", "--pointer-sensitivity", "--scroll-sensitivity", "--tap-to-click",
             "--two-finger-scroll", "--natural-scrolling", "--natural-scroll", "--digital", "--digital-button", "--digital-threshold", "--hold-ms",
             "--step", "--pixels", "--by", "--dx", "--dy", "--canvas", "--canvas-width", "--canvas-height",
-            "--device", "--frame", "--size", "--device-size", "--orientation", "--device-orientation"
+            "--device", "--frame", "--size", "--device-size", "--orientation", "--device-orientation",
+            "--id", "--style", "--style-id", "--icon", "--sf-symbol", "--icon-text", "--haptic",
+            "--haptic-pattern", "--haptic-rhythm", "--haptic-intensity", "--haptic-strength", "--haptic-sharpness", "--haptic-duration", "--haptic-duration-ms",
+            "--stroke", "--stroke-color", "--stroke-width", "--foreground", "--foreground-color", "--text-color",
+            "--glow", "--glow-color", "--glow-radius", "--pressed-fill", "--pressed-color", "--press-scale", "--scale-on-press",
+            "--to", "--before", "--after", "--role"
         ]
         for argument in arguments {
             if skipNext {
@@ -3181,7 +3651,14 @@ struct PocketPadCLI {
           pocketpad element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
           pocketpad element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
           pocketpad element set jump --fill-image ./button-texture.png --image-mode fill
+          pocketpad element set focus --icon sf:sparkles --haptic medium --haptic-pattern double --haptic-intensity 75% --haptic-duration 70ms --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9'
           pocketpad element nudge jump right --step 10 --canvas iphone-17-pro-landscape
+          pocketpad style create Soul --fill '#F8FAFC' --stroke '#38BDF8' --pressed-fill '#0EA5E9' --icon sf:sparkles
+          pocketpad style apply soul focus
+          pocketpad layer list
+          pocketpad layer front focus
+          pocketpad group create Actions jump attack dash focus
+          pocketpad asset import ./icon.png --role icon --name SoulOrb
 
         Runtime:
           pocketpad app open|quit

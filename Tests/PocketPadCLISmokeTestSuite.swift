@@ -223,6 +223,100 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(generated.keyBindings[trackpad.mappedButton]?.key, "Space")
     }
 
+    func testDesignMetadataLayerOrderControlsResolvedZOrder() throws {
+        var customization = GamepadCustomization.defaultValue
+        customization.addCustomButton(id: UUID(uuidString: "00000000-0000-0000-0000-00000000CAFE")!, mappedTo: .custom1)
+        customization.designMetadata = GamepadDesignMetadata(
+            layerOrder: [.custom(UUID(uuidString: "00000000-0000-0000-0000-00000000CAFE")!), .builtin(.jump)]
+        )
+
+        let controls = customization.normalized.resolvedControls(in: CGSize(width: 874, height: 402))
+        let jumpIndex = controls.firstIndex { $0.id == .builtin(.jump) }
+        let customIndex = controls.firstIndex { $0.id == .custom(UUID(uuidString: "00000000-0000-0000-0000-00000000CAFE")!) }
+        XCTAssertNotNil(jumpIndex)
+        XCTAssertNotNil(customIndex)
+        XCTAssertLessThan(customIndex!, jumpIndex!)
+    }
+
+    func testStyleTokenPresentationOverridesLegacyAppearance() throws {
+        let style = GamepadStyleToken(
+            id: "soul-orb",
+            name: "Soul Orb",
+            visualStyle: GamepadControlVisualStyle(
+                normal: GamepadControlStateStyle(
+                    fillStyle: .solid(GamepadRGBAColor(hexString: "#F8FAFC")!),
+                    strokeColor: GamepadRGBAColor(hexString: "#38BDF8")!,
+                    strokeWidth: 3,
+                    glowColor: GamepadRGBAColor(hexString: "#0EA5E9")!,
+                    glowRadius: 12
+                ),
+                pressed: GamepadControlStateStyle(fillStyle: .solid(GamepadRGBAColor(hexString: "#0EA5E9")!)),
+                icon: .sfSymbol("circle.hexagongrid.fill"),
+                hapticStyle: .medium
+            )
+        )
+        var layout = GamepadButtonCustomization(fillColor: GamepadRGBAColor(hexString: "#111827")!, styleID: "soul-orb")
+        var customization = GamepadCustomization.defaultValue
+        customization.styleLibrary = GamepadStyleLibrary(styles: [style])
+        customization.setButtonCustomization(layout, for: .focus)
+
+        let control = customization.resolvedControls(in: CGSize(width: 874, height: 402)).first { $0.id == .builtin(.focus) }!
+        let normal = customization.resolvedPresentation(for: control, state: .normal, scheme: .dark)
+        XCTAssertEqual(normal.fillStyle.representativeColor, GamepadRGBAColor(hexString: "#F8FAFC")!.normalized)
+        XCTAssertEqual(normal.strokeColor, GamepadRGBAColor(hexString: "#38BDF8")!.normalized)
+        XCTAssertEqual(normal.strokeWidth, CGFloat(3))
+        XCTAssertEqual(normal.icon?.value, "circle.hexagongrid.fill")
+        XCTAssertEqual(normal.hapticStyle, .medium)
+        XCTAssertEqual(normal.hapticFeedback.style, .medium)
+        XCTAssertEqual(normal.hapticFeedback.pattern, .single)
+
+        let pressed = customization.resolvedPresentation(for: control, state: .pressed, scheme: .dark)
+        XCTAssertEqual(pressed.fillStyle.representativeColor, GamepadRGBAColor(hexString: "#0EA5E9")!.normalized)
+
+        let data = try JSONEncoder().encode(customization.normalized)
+        let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data).normalized
+        XCTAssertEqual(decoded.styleLibrary.styles.first?.id, "soul-orb")
+        layout = decoded.buttonCustomization(for: .focus)
+        XCTAssertEqual(layout.styleID, "soul-orb")
+    }
+
+    func testAgentRichStyleSpecGeneratesIconAndPressedFill() throws {
+        let json = """
+        {
+          "gameName": "Rich Style Test",
+          "controls": [
+            {
+              "label": "Focus",
+              "key": "F",
+              "button": "focus",
+              "fill": "#111827",
+              "pressedFill": "#38BDF8",
+              "stroke": "#F8FAFC",
+              "strokeWidth": 2,
+              "sfSymbol": "sparkles",
+              "hapticStyle": "heavy",
+              "hapticPattern": "double",
+              "hapticIntensity": 0.73,
+              "hapticSharpness": 0.88,
+              "hapticDurationMS": 90
+            }
+          ]
+        }
+        """
+
+        let spec = try JSONDecoder().decode(AgentKeypadSpec.self, from: Data(json.utf8))
+        let generated = GameKeypadGenerator.generate(from: spec)
+        let layout = generated.profile.customization.buttonCustomization(for: .focus)
+        XCTAssertEqual(layout.icon?.value, "sparkles")
+        XCTAssertEqual(layout.hapticStyle, .heavy)
+        XCTAssertEqual(layout.hapticFeedback?.pattern, .double)
+        XCTAssertEqual(layout.hapticFeedback?.intensity ?? 0, CGFloat(0.73), accuracy: 0.0001)
+        XCTAssertEqual(layout.hapticFeedback?.sharpness ?? 0, CGFloat(0.88), accuracy: 0.0001)
+        XCTAssertEqual(layout.hapticFeedback?.duration ?? 0, CGFloat(0.09), accuracy: 0.0001)
+        XCTAssertEqual(layout.visualStyle?.normal.strokeWidth, Optional(CGFloat(2)))
+        XCTAssertEqual(layout.visualStyle?.pressed?.fillStyle?.representativeColor, GamepadRGBAColor(hexString: "#38BDF8")!.normalized)
+    }
+
     func testPointerMessageRoundTripsThroughJSONCodec() throws {
         let message = ControllerMessage(
             type: .pointer,

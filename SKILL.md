@@ -122,6 +122,8 @@ Control fields:
 | `accentStyle` | optional | `monochrome`, `blue`, `green`, `purple`, `pink`, `amber`. |
 | `fill`, `fillHex`, `color`, `fillColor` | optional | Hex fill color like `#7C3AED`, or `fillColor` object. |
 | `thumbFill`, `thumbColor`, `knobColor`, `joystickThumbFill`, `joystickKnobFill`, `joystickKnobColor` | optional | Hex color for a joystick's moving thumb/knob. |
+| `styleID`, `visualStyle`, `pressedFill`, `stroke`, `strokeWidth`, `foreground`, `glow`, `glowRadius`, `opacity` | optional | Rich design styling fields for reusable/editor-quality appearances. |
+| `icon`, `iconName`, `sfSymbol`, `iconText`, `hapticStyle` | optional | SF Symbol/text icon and per-control haptic style. |
 | `cornerRadius` | optional | Rounded-rectangle corner radius. |
 | `shadowStrength` | optional | Shadow multiplier `0`–`2`. |
 | `isHidden` | optional | Hide this control. |
@@ -244,17 +246,22 @@ Element-level controls:
 "$POCKETPAD_CLI" element add trackpad --label Trackpad --x 0.50 --y 0.58 --width 1.25 --sensitivity 1.2 --scroll-sensitivity 0.85 --tap-to-click true
 "$POCKETPAD_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
 "$POCKETPAD_CLI" element set "Right Stick" --thumb-fill '#22C55E'
+"$POCKETPAD_CLI" element set focus --icon sf:sparkles --haptic medium --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9' --glow-radius 12
 "$POCKETPAD_CLI" element set jump --lock
 "$POCKETPAD_CLI" element set pause --hide
 "$POCKETPAD_CLI" element reset jump
 "$POCKETPAD_CLI" element delete custom1
 ```
 
-Appearance flags:
+Appearance/design flags:
 
 - `customization set --appearance system|light|dark` saves the selected setup's runtime appearance preference.
 - `element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'` saves separate button fills for both palettes.
 - `--fill '#RRGGBB'` remains the shared/legacy fill for both palettes; `--clear-light-fill`, `--clear-dark-fill`, and `--clear-fill` remove custom colors.
+- `style list|create|show|apply|detach|delete|export|import` manages reusable style tokens.
+- `layer list|move|front|back|bring-forward|send-backward` manages z-order/layer order.
+- `group list|create|ungroup|hide|show|lock|unlock` stores editor groups and can apply group visibility/lock to child controls.
+- `asset import|list|remove` stores profile-local design assets for future icon/background workflows.
 
 ## Runtime Mac helper commands
 

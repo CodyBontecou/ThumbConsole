@@ -485,16 +485,14 @@ enum GamepadLayoutPreviewRenderer {
         in context: CGContext,
         annotateIssues: Bool
     ) {
-        let layout = control.layoutCustomization
-        let accent = layout.accentStyle ?? customization.accentStyle
-        let fill = layout.buttonFillStyle(accentStyle: accent, isPressed: false, scheme: .dark).representativeColor
-        let stroke = GamepadRGBAColor(color: layout.buttonStroke(accentStyle: accent, isPressed: false, scheme: .dark), fallback: .defaultValue)
-        let foreground = GamepadRGBAColor(color: layout.buttonForeground(accentStyle: accent, isPressed: false, scheme: .dark), fallback: GamepadRGBAColor(red: 1, green: 1, blue: 1, alpha: 1))
+        let presentation = customization.resolvedPresentation(for: control, state: .normal, scheme: .dark)
+        let fill = presentation.fillStyle.representativeColor
+        let foreground = presentation.foregroundColor
 
         context.saveGState()
-        context.setFillColor(cgColor(fill))
-        context.setStrokeColor(cgColor(stroke))
-        context.setLineWidth(1)
+        context.setFillColor(cgColor(fill, alphaMultiplier: presentation.opacity))
+        context.setStrokeColor(cgColor(presentation.strokeColor))
+        context.setLineWidth(presentation.strokeWidth)
 
         addPath(for: control, in: context)
         context.drawPath(using: .fillStroke)
@@ -507,6 +505,10 @@ enum GamepadLayoutPreviewRenderer {
 
         if annotateIssues, problemIDs.contains(control.id.id) {
             drawFrameOutline(control.frame.insetBy(dx: -2, dy: -2), in: context, color: .systemRed, dashed: false, lineWidth: 2)
+        }
+
+        if let icon = presentation.icon {
+            drawIcon(icon, in: control.frame, foreground: foreground, context: context)
         }
 
         if customization.showsButtonLabels {
@@ -548,6 +550,41 @@ enum GamepadLayoutPreviewRenderer {
         context.setFillColor(cgColor(foreground, alphaMultiplier: 0.28))
         context.addPath(CGPath(roundedRect: CGRect(x: control.center.x - pillWidth / 2, y: pillY, width: pillWidth, height: pillHeight), cornerWidth: pillHeight / 2, cornerHeight: pillHeight / 2, transform: nil))
         context.fillPath()
+        context.restoreGState()
+    }
+
+    private static func drawIcon(_ icon: GamepadControlIcon, in frame: CGRect, foreground: GamepadRGBAColor, context: CGContext) {
+        let text: String
+        switch icon.source {
+        case .sfSymbol:
+            text = "◉"
+        case .text:
+            text = icon.value
+        case .asset:
+            text = "▧"
+        }
+        let color = icon.tintColor ?? foreground
+        let fontSize = max(10, min(frame.width, frame.height) * 0.34 * icon.scale)
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
+                .foregroundColor: nsColor(color)
+            ]
+        )
+        let size = attributed.size()
+        let offset: CGPoint = switch icon.placement {
+        case .leading: CGPoint(x: -frame.width * 0.20, y: 0)
+        case .trailing: CGPoint(x: frame.width * 0.20, y: 0)
+        case .top: CGPoint(x: 0, y: -frame.height * 0.18)
+        case .bottom: CGPoint(x: 0, y: frame.height * 0.18)
+        case .center, .background: .zero
+        }
+        let rect = CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height)
+        context.saveGState()
+        context.translateBy(x: frame.midX + offset.x, y: frame.midY + offset.y)
+        context.scaleBy(x: 1, y: -1)
+        attributed.draw(in: rect)
         context.restoreGState()
     }
 

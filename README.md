@@ -85,6 +85,11 @@ pocketpad customization set --background-gradient '#101014,#4338CA' --gradient-a
 pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
 pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
 pocketpad element set "Right Stick" --thumb-fill '#22C55E'
+pocketpad style create Soul --fill '#F8FAFC' --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9' --glow-radius 12 --icon sf:sparkles --haptic medium --haptic-pattern double --haptic-intensity 75%
+pocketpad style apply soul focus
+pocketpad layer front focus
+pocketpad group create Actions jump attack dash focus
+pocketpad asset import ./orb.png --role icon --name SoulOrb
 ```
 
 When PocketPad Mac is running, CLI profile/customization/binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone. Runtime commands are also available:
@@ -128,6 +133,8 @@ Each setup stores its own keypad-level preferences. Select a setup in the Keypad
 
 Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder. Select a joystick and edit **Fill → Thumbstick** to recolor the moving thumb separately from the joystick base; the CLI equivalent is `pocketpad element set "Right Stick" --thumb-fill '#22C55E'` (or light/dark variants such as `--light-thumb-fill`).
 
+The Keypad editor now has a foundational design layer: a layer-ordered component list, grid/snap preferences saved in the profile, reusable style tokens, per-control icons/haptics, copy/paste style, basic alignment/distribution, and style-aware preview rendering. Per-control haptics include style, pattern/rhythm, intensity, sharpness, and duration; iPhone haptics are still device-wide, so these distinguish controls by feel rather than screen location. The same data is scriptable with `pocketpad style`, `pocketpad layer`, `pocketpad group`, `pocketpad asset`, and richer `pocketpad element set` options such as `--style`, `--icon`, `--haptic`, `--haptic-pattern`, `--haptic-intensity`, `--stroke`, `--glow`, and `--pressed-fill`.
+
 Layouts can also include a trackpad component via **Layout tools → Add Trackpad** or `pocketpad element add trackpad`. The trackpad sends relative cursor movement to the Mac, supports tap-to-click, two-finger right click, two-finger scroll, natural-scroll inversion, and per-component cursor/scroll sensitivity. Pointer events use the paired realtime channel and the macOS helper injects them with Accessibility-approved `CGEvent` mouse and scroll events.
 
 ### iPhone device frames
@@ -167,7 +174,7 @@ Use **Default** for a single button or **Reset All** to restore the starter keyp
 - Only sends key events on state transitions.
 - Button frames use a compact 14-byte binary payload. After pairing, iOS sends those frames over authenticated UDP for lower latency and mirrors them over WebSocket so packet loss still recovers through the reliable path.
 - iOS and macOS WebSocket connections set TCP `noDelay` to avoid Nagle delays on small input packets.
-- iOS uses a keypad-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons and joysticks, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, supports optional lightweight press haptics, and skips per-input send callbacks and live status publishes during use.
+- iOS uses a keypad-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons and joysticks, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, supports optional per-control Core Haptics/impact feedback, and skips per-input send callbacks and live status publishes during use.
 - macOS handles received button events on a user-interactive realtime queue, accepts the first authenticated UDP stream for the paired iPhone, silently drops stale mirrored frames, recovers transport-proven missing-up and missing-down edges, and posts key events before UI/debug updates.
 - macOS throttles input debug/status publishing so UI work does not compete with key injection.
 - During physical tap testing, the Mac debug panel shows missing transport frames, recovered duplicate-down edges, and ignored duplicate/orphan input edges separately.
