@@ -4617,7 +4617,10 @@ private struct GeistSegmentedPicker<Option: Hashable>: View {
                 let isSelected = option == selection
 
                 Button {
-                    selection = option
+                    guard selection != option else { return }
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selection = option
+                    }
                 } label: {
                     Text(label(option))
                         .geistTypography(.button14)
@@ -4961,9 +4964,29 @@ private struct GamepadEditorDeviceFrameView: View {
     }
 }
 
+private enum GamepadInspectorAccordionSection: Hashable {
+    case output
+    case selectedElementIdentity
+    case selectedElementArrangement
+    case selectedElementStyle
+    case selectedElementHaptic
+    case selectedElementFill
+    case selectedElementPosition
+    case selectedElementLayout
+    case selectedElementCorners
+    case selectedElementEffects
+    case keypadIdentity
+    case keypadDevice
+    case keypadAppearance
+    case keypadBackground
+    case keypadEditor
+    case keypadComponents
+}
+
 struct GamepadCustomizationEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Binding private var customization: GamepadCustomization
 
     private let showsPreview: Bool
@@ -4988,6 +5011,7 @@ struct GamepadCustomizationEditor: View {
     private static let defaultDeviceFrame: GamepadEditorDeviceFrame = GamepadEditorDeviceCatalog.defaultFrame
     private static let canvasZoomMin: CGFloat = 0.5
     private static let canvasZoomMax: CGFloat = 2.25
+    private static let deviceFrameSpringAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.08)
 
     @State private var selectedControlID: GamepadControlIdentity
     @State private var selectedControlIDs: Set<GamepadControlIdentity>
@@ -5001,7 +5025,10 @@ struct GamepadCustomizationEditor: View {
     @State private var configurationSidebarDragStart: CGFloat?
     @State private var inspectorSidebarDragStart: CGFloat?
     @State private var canvasZoomGestureStart: CGFloat?
+    @State private var expandedInspectorSections: Set<GamepadInspectorAccordionSection> = []
     @State private var currentCanvasLayoutSize = GamepadCustomizationEditor.defaultDeviceFrame.screenRect.size
+    @State private var deviceFrameMotionRotationDegrees: Double = 0
+    @State private var deviceFrameMotionOffset: CGSize = .zero
     @State private var activeCanvasTool: GamepadCanvasTool = .select
     @State private var isFillColorPopoverPresented = false
     @State private var isJoystickKnobColorPopoverPresented = false
@@ -5098,6 +5125,10 @@ struct GamepadCustomizationEditor: View {
             get: { editorColorScheme },
             set: { editingColorSchemeRawValue = $0.rawValue }
         )
+    }
+
+    private var deviceFrameAnimation: Animation? {
+        accessibilityReduceMotion ? .easeInOut(duration: 0.16) : Self.deviceFrameSpringAnimation
     }
 
     var body: some View {
@@ -5685,6 +5716,7 @@ struct GamepadCustomizationEditor: View {
                 viewportWidth: viewportWidth,
                 viewportHeight: viewportHeight
             )
+            .animation(deviceFrameAnimation, value: deviceFrame.id)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Geist.color(.background100, scheme: colorScheme))
             .onAppear {
@@ -5744,6 +5776,8 @@ struct GamepadCustomizationEditor: View {
                         .frame(width: deviceWidth, height: deviceHeight)
                 }
                 .frame(width: deviceWidth, height: deviceHeight, alignment: .topLeading)
+                .rotationEffect(.degrees(deviceFrameMotionRotationDegrees))
+                .offset(deviceFrameMotionOffset)
             }
             .frame(width: max(viewportWidth, outerWidth), height: max(viewportHeight, outerHeight))
         }
@@ -6047,24 +6081,49 @@ struct GamepadCustomizationEditor: View {
     @ViewBuilder
     private var selectedElementInspector: some View {
         if selectedControlIsEditable {
-            VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            VStack(alignment: .leading, spacing: 0) {
                 if let profileOutputModeContent {
-                    profileOutputModeContent()
+                    inspectorAccordionSection(.output, title: "Output") {
+                        profileOutputModeContent()
+                    }
                     Divider()
                 }
-                selectedElementIdentitySection
+
+                inspectorAccordionSection(.selectedElementIdentity, title: "Element", subtitle: selectedControlTitle) {
+                    selectedElementIdentitySection
+                }
                 Divider()
-                selectedElementArrangementSection
+                inspectorAccordionSection(.selectedElementArrangement, title: "Layer & Arrangement") {
+                    selectedElementArrangementSection
+                }
                 Divider()
-                selectedElementStyleFoundationSection
+                inspectorAccordionSection(.selectedElementStyle, title: "Reusable Style") {
+                    selectedElementStyleFoundationSection
+                }
                 Divider()
-                selectedElementColorSection
+                inspectorAccordionSection(.selectedElementHaptic, title: "Haptic") {
+                    selectedElementHapticControls
+                }
                 Divider()
-                selectedElementSizeSection
+                inspectorAccordionSection(.selectedElementFill, title: "Fill") {
+                    selectedElementColorSection
+                }
                 Divider()
-                selectedElementRadiusSection
+                inspectorAccordionSection(.selectedElementPosition, title: "Position") {
+                    selectedElementPositionControls
+                }
                 Divider()
-                selectedElementEffectsSection
+                inspectorAccordionSection(.selectedElementLayout, title: "Layout") {
+                    selectedElementLayoutControls
+                }
+                Divider()
+                inspectorAccordionSection(.selectedElementCorners, title: "Corners") {
+                    selectedElementRadiusSection
+                }
+                Divider()
+                inspectorAccordionSection(.selectedElementEffects, title: "Effects") {
+                    selectedElementEffectsSection
+                }
             }
         } else {
             keypadLevelInspector
@@ -6072,44 +6131,111 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var keypadLevelInspector: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
-            keypadIdentitySection
+        VStack(alignment: .leading, spacing: 0) {
+            if let profileOutputModeContent {
+                inspectorAccordionSection(.output, title: "Output") {
+                    profileOutputModeContent()
+                }
+                Divider()
+            }
+
+            inspectorAccordionSection(.keypadIdentity, title: "Keypad", subtitle: selectedProfile?.name ?? "Current Setup") {
+                keypadIdentitySection
+            }
             Divider()
-            keypadDeviceSection
+            inspectorAccordionSection(.keypadDevice, title: "Device & Canvas", subtitle: activeDeviceFrame.displayName) {
+                keypadDeviceSection
+            }
             Divider()
-            keypadAppearanceSection
+            inspectorAccordionSection(.keypadAppearance, title: "Appearance") {
+                keypadAppearanceSection
+            }
             Divider()
-            keypadBackgroundSection
+            inspectorAccordionSection(.keypadBackground, title: "Device Background") {
+                keypadBackgroundSection
+            }
             Divider()
-            keypadEditorFoundationSection
+            inspectorAccordionSection(.keypadEditor, title: "Editor Grid") {
+                keypadEditorFoundationSection
+            }
             Divider()
-            keypadComponentsHintSection
+            inspectorAccordionSection(.keypadComponents, title: componentListItems.isEmpty ? "Blank setup" : "Component editing") {
+                keypadComponentsHintSection
+            }
+        }
+    }
+
+    private func inspectorAccordionSection<Content: View>(
+        _ section: GamepadInspectorAccordionSection,
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let isExpanded = expandedInspectorSections.contains(section)
+
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                toggleInspectorAccordionSection(section)
+            } label: {
+                HStack(alignment: .center, spacing: Geist.Spacing.s2) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        .frame(width: 14, height: 18)
+
+                    VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                        Text(title)
+                            .geistTypography(.heading14)
+                            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                        if let subtitle, !subtitle.isEmpty {
+                            Text(subtitle)
+                                .geistTypography(.copy13)
+                                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                                .lineLimit(2)
+                        }
+                    }
+
+                    Spacer(minLength: Geist.Spacing.s2)
+                }
+                .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+                .padding(.vertical, Geist.Spacing.s2)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("\(isExpanded ? "Collapse" : "Expand") \(title) inspector section"))
+            .accessibilityValue(Text(isExpanded ? "Expanded" : "Collapsed"))
+            .help(isExpanded ? "Hide \(title) options" : "Show \(title) options")
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                    content()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, Geist.Spacing.s4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func toggleInspectorAccordionSection(_ section: GamepadInspectorAccordionSection) {
+        let animation: Animation? = accessibilityReduceMotion ? nil : .easeInOut(duration: 0.16)
+        withAnimation(animation) {
+            if expandedInspectorSections.contains(section) {
+                expandedInspectorSections.remove(section)
+            } else {
+                expandedInspectorSections.insert(section)
+            }
         }
     }
 
     private var keypadIdentitySection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                    Text("Keypad")
-                        .geistTypography(.heading14)
-                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    Text(selectedProfile?.name ?? "Current Setup")
-                        .geistTypography(.copy13)
-                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                        .lineLimit(2)
-                }
-
-                Spacer()
-
+            HStack {
+                Spacer(minLength: Geist.Spacing.s2)
                 defaultProfileButton
             }
 
             selectedSetupNameEditor
-
-            if let profileOutputModeContent {
-                profileOutputModeContent()
-            }
         }
     }
 
@@ -6117,10 +6243,6 @@ struct GamepadCustomizationEditor: View {
         let frame = activeDeviceFrame
 
         return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Device & Canvas")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
             Menu {
                 if let connectedDeviceFrame {
                     Button {
@@ -6194,10 +6316,6 @@ struct GamepadCustomizationEditor: View {
 
     private var keypadAppearanceSection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Appearance")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                 Text("Saved Mode")
                     .geistTypography(.label13)
@@ -6234,40 +6352,10 @@ struct GamepadCustomizationEditor: View {
         let schemeName = Self.displayName(for: editingScheme)
 
         return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            HStack(alignment: .center, spacing: Geist.Spacing.s2) {
-                VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                    Text("Device Background")
-                        .geistTypography(.heading14)
-                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    Text(usesCustomColor ? "Custom \(schemeName.lowercased()) background" : "Using the default \(schemeName.lowercased()) background")
-                        .geistTypography(.copy13)
-                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                }
-
-                Spacer(minLength: Geist.Spacing.s2)
-
-                Button {
-                    isBackgroundColorPopoverPresented = true
-                } label: {
-                    Image(systemName: "circle.grid.2x2")
-                        .font(.system(size: 15, weight: .medium))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                .accessibilityLabel("Open background fill settings")
-
-                Button {
-                    isBackgroundColorPopoverPresented = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .regular))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                .accessibilityLabel("Configure background fill")
-            }
+            Text(usesCustomColor ? "Custom \(schemeName.lowercased()) background" : "Using the default \(schemeName.lowercased()) background")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
 
             backgroundColorRow(
                 colorValue: colorValue,
@@ -6290,10 +6378,6 @@ struct GamepadCustomizationEditor: View {
 
     private var keypadEditorFoundationSection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Editor Grid")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
             GeistCheckboxToggle(title: "Show grid", isOn: gridShowsBinding)
             GeistCheckboxToggle(title: "Snap to grid", isOn: gridSnapBinding)
             GeistCheckboxToggle(title: "Snap to objects", isOn: objectSnapBinding)
@@ -6309,37 +6393,23 @@ struct GamepadCustomizationEditor: View {
     private var keypadComponentsHintSection: some View {
         let isBlankSetup = componentListItems.isEmpty
 
-        return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text(isBlankSetup ? "Blank setup" : "Component editing")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-            Text(isBlankSetup ? "Draw a shape on the canvas, add a joystick, trigger, or trackpad, or choose Layout tools → Show Default Controls to add keypad components." : "Select a component on the canvas or from the components list to edit its label, shortcut, fill, size, and shape.")
-                .geistTypography(.copy13)
-                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Geist.Spacing.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-        )
+        return Text(isBlankSetup ? "Draw a shape on the canvas, add a joystick, trigger, or trackpad, or choose Layout tools → Show Default Controls to add keypad components." : "Select a component on the canvas or from the components list to edit its label, shortcut, fill, size, and shape.")
+            .geistTypography(.copy13)
+            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(Geist.Spacing.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+            )
     }
 
     private var selectedElementIdentitySection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                    Text("Element")
-                        .geistTypography(.heading14)
-                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    Text(selectedControlTitle)
-                        .geistTypography(.copy13)
-                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                }
-
-                Spacer()
+            HStack {
+                Spacer(minLength: Geist.Spacing.s2)
 
                 Button("Reset") {
                     resetSelectedControl()
@@ -6369,10 +6439,6 @@ struct GamepadCustomizationEditor: View {
 
     private var selectedElementArrangementSection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Layer & Arrangement")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Geist.Spacing.s2) {
                 Button("Back") { sendLayerToBack(selectedControlID) }
                     .geistButtonStyle(.secondary, size: .small)
@@ -6412,10 +6478,6 @@ struct GamepadCustomizationEditor: View {
 
     private var selectedElementStyleFoundationSection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Reusable Style")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
             HStack(spacing: Geist.Spacing.s2) {
                 Button("Copy Style") { copySelectedElementStyle() }
                     .geistButtonStyle(.secondary, size: .small)
@@ -6437,8 +6499,6 @@ struct GamepadCustomizationEditor: View {
 
             TextField("SF Symbol or text icon", text: iconTextBinding(for: selectedControlID))
                 .geistInput(size: .small)
-
-            selectedElementHapticControls
         }
     }
 
@@ -6446,7 +6506,7 @@ struct GamepadCustomizationEditor: View {
         let feedback = hapticFeedbackValue(for: selectedControlID)
         return VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
             HStack(spacing: Geist.Spacing.s3) {
-                Text("Haptic")
+                Text("Style")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 Spacer()
@@ -6491,13 +6551,6 @@ struct GamepadCustomizationEditor: View {
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Geist.Spacing.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-        )
     }
 
     @ViewBuilder
@@ -6532,36 +6585,6 @@ struct GamepadCustomizationEditor: View {
         let schemeName = Self.displayName(for: editingScheme)
 
         return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            HStack(alignment: .center, spacing: Geist.Spacing.s2) {
-                Text("Fill")
-                    .geistTypography(.heading14)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
-                Spacer(minLength: Geist.Spacing.s2)
-
-                Button {
-                    isFillColorPopoverPresented = true
-                } label: {
-                    Image(systemName: "circle.grid.2x2")
-                        .font(.system(size: 15, weight: .medium))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                .accessibilityLabel("Open fill color settings")
-
-                Button {
-                    isFillColorPopoverPresented = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .regular))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                .accessibilityLabel("Configure fill color")
-            }
-
             fillColorRow(
                 colorValue: colorValue,
                 hexValue: fillColorHexPlainBinding(for: selectedControlID, scheme: editingScheme),
@@ -7456,10 +7479,6 @@ struct GamepadCustomizationEditor: View {
 
     private var selectedElementPositionControls: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Position")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                 Text("Position (pt)")
                     .geistTypography(.label13)
@@ -7493,10 +7512,6 @@ struct GamepadCustomizationEditor: View {
 
     private var selectedElementLayoutControls: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Layout")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                 Text("Dimensions (pt)")
                     .geistTypography(.label13)
@@ -7537,10 +7552,6 @@ struct GamepadCustomizationEditor: View {
 
     private var selectedElementRadiusSection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Corners")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
             GamepadShapeSegmentedPicker(selection: shapeBinding(for: selectedControlID))
 
             if shapeValue(for: selectedControlID).usesEditableCornerRadii {
@@ -7574,9 +7585,6 @@ struct GamepadCustomizationEditor: View {
 
     private var selectedElementEffectsSection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            Text("Effects")
-                .geistTypography(.heading14)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
             valueSlider(
                 title: "Shadow",
                 value: shadowStrengthBinding(for: selectedControlID),
@@ -8025,13 +8033,53 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func setDeviceFrame(_ frame: GamepadEditorDeviceFrame) {
-        didChooseDeviceFrameManually = true
-        deviceFrameRawValue = frame.id
-        if frame.orientation != selectedProfileOrientation {
-            switchSelectedProfileOrientation(to: frame.orientation, deviceFrame: frame)
+        let animatesOrientationChange = frame.orientation != activeDeviceFrame.orientation
+        let applyFrameChange = {
+            didChooseDeviceFrameManually = true
+            deviceFrameRawValue = frame.id
+            if frame.orientation != selectedProfileOrientation {
+                switchSelectedProfileOrientation(to: frame.orientation, deviceFrame: frame)
+            } else {
+                update { $0.deviceCanvas = GamepadDeviceCanvas(frameID: frame.id) }
+                noteCanvasLayoutSize(width: frame.screenRect.width, height: frame.screenRect.height)
+            }
+        }
+
+        if animatesOrientationChange {
+            prepareDeviceFrameMotion(toward: frame.orientation)
+            withAnimation(deviceFrameAnimation) {
+                applyFrameChange()
+            }
+            settleDeviceFrameMotion()
         } else {
-            update { $0.deviceCanvas = GamepadDeviceCanvas(frameID: frame.id) }
-            noteCanvasLayoutSize(width: frame.screenRect.width, height: frame.screenRect.height)
+            applyFrameChange()
+        }
+    }
+
+    private func prepareDeviceFrameMotion(toward orientation: GamepadEditorDeviceOrientation) {
+        guard !accessibilityReduceMotion else {
+            deviceFrameMotionRotationDegrees = 0
+            deviceFrameMotionOffset = .zero
+            return
+        }
+
+        let direction: CGFloat = orientation == .landscape ? 1 : -1
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            deviceFrameMotionRotationDegrees = Double(direction * -4)
+            deviceFrameMotionOffset = CGSize(width: direction * 10, height: orientation == .landscape ? -6 : 6)
+        }
+    }
+
+    private func settleDeviceFrameMotion() {
+        guard !accessibilityReduceMotion else { return }
+        let animation = deviceFrameAnimation
+        DispatchQueue.main.async {
+            withAnimation(animation) {
+                deviceFrameMotionRotationDegrees = 0
+                deviceFrameMotionOffset = .zero
+            }
         }
     }
 

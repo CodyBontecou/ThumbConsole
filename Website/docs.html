@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PocketPad Docs — Setup, pairing, keypad editor, and CLI</title>
+  <meta name="description" content="PocketPad documentation for pairing iPhone and Mac, setting permissions, customizing keypad profiles, recording shortcuts, using controller output, and automating with the CLI.">
+  <meta name="theme-color" content="#f4efe5">
+  <meta property="og:title" content="PocketPad Docs">
+  <meta property="og:description" content="Complete setup and customization guide for PocketPad on macOS and iOS.">
+  <meta property="og:type" content="article">
+  <meta property="og:image" content="/assets/app-icon.png">
+  <link rel="icon" href="/assets/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/app-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="docs-page">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="PocketPad home">
+      <span class="brand-mark">PP</span>
+      <span>PocketPad</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="/">Home</a>
+      <a href="/#screens">Screens</a>
+      <a href="/docs.html">Docs</a>
+      <a class="nav-cta" href="/#waitlist">Waitlist</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="docs-hero section-shell">
+      <div>
+        <p class="eyebrow">documentation</p>
+        <h1>PocketPad app guide.</h1>
+        <p class="lede">Everything needed to set up PocketPad, connect your iPhone to your Mac, customize keypad layouts, bind shortcuts, and use the CLI.</p>
+        <div class="hero-actions">
+          <a class="pixel-button" href="#getting-started">start setup</a>
+          <a class="pixel-button pixel-button-secondary" href="#keypad-editor">learn editor</a>
+        </div>
+      </div>
+
+      <div class="docs-hero-art" aria-label="PocketPad screenshots">
+        <figure class="docs-floating-shot editor-shot">
+          <img src="/assets/screenshots/keypad-editor.png" alt="PocketPad Mac keypad editor showing a layout canvas and inspectors">
+        </figure>
+        <figure class="docs-floating-shot phone-shot">
+          <div class="iphone-frame-stage">
+            <img class="iphone-screen-shot" src="/assets/screenshots/controller-landscape.png" alt="PocketPad iPhone landscape keypad">
+            <img class="iphone-frame-art" src="/assets/iphone-17-pro-landscape.png" alt="" aria-hidden="true">
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <section class="docs-layout section-shell">
+      <aside class="docs-toc" aria-label="Documentation sections">
+        <strong>Contents</strong>
+        <a href="#overview">Overview</a>
+        <a href="#requirements">Requirements</a>
+        <a href="#getting-started">Getting started</a>
+        <a href="#mac-app">Mac app</a>
+        <a href="#ios-app">iOS app</a>
+        <a href="#keypad-editor">Keypad editor</a>
+        <a href="#outputs">Outputs</a>
+        <a href="#cli">CLI</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+        <a href="#safety">Safety</a>
+        <a href="#faq">FAQ</a>
+      </aside>
+
+      <article class="docs-copy">
+        <section id="overview" class="doc-section">
+          <p class="eyebrow">overview</p>
+          <h2>What PocketPad does</h2>
+          <p>PocketPad turns an iPhone into a programmable control surface for a Mac. The macOS helper hosts a local pairing server, stores keypad profiles, and sends keyboard, pointer, or virtual gamepad output to the focused app. The iOS app displays the synced keypad and sends low-latency button, joystick, trigger, and trackpad input over your local network.</p>
+
+          <div class="doc-card-grid three">
+            <div class="doc-card">
+              <span>macOS</span>
+              <h3>Helper + editor</h3>
+              <p>Grant Accessibility, pair iPhones, manage profiles, record shortcuts, and edit each keypad visually.</p>
+            </div>
+            <div class="doc-card">
+              <span>iOS</span>
+              <h3>Touch controller</h3>
+              <p>Use synced profiles, switch setups, export keypads, toggle haptics, and make quick freeform layout edits.</p>
+            </div>
+            <div class="doc-card">
+              <span>CLI</span>
+              <h3>Scriptable parity</h3>
+              <p>Generate, import, export, select, bind, inspect, and test keypads from the terminal.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="requirements" class="doc-section">
+          <p class="eyebrow">requirements</p>
+          <h2>What you need</h2>
+          <ul class="doc-checklist">
+            <li><strong>macOS 14 or newer</strong> running PocketPad Mac.</li>
+            <li><strong>iOS 17 or newer</strong> running PocketPad on iPhone.</li>
+            <li><strong>Same local network</strong> for Smart Connect, QR pairing, and realtime input.</li>
+            <li><strong>Accessibility permission on Mac</strong> so PocketPad can inject keyboard and pointer events.</li>
+            <li><strong>Local Network permission</strong> if iOS or macOS prompts for it.</li>
+            <li><strong>Camera permission on iPhone</strong> only if you scan the Mac QR code.</li>
+          </ul>
+        </section>
+
+        <section id="getting-started" class="doc-section">
+          <p class="eyebrow">setup</p>
+          <h2>First-run setup</h2>
+          <ol class="doc-steps">
+            <li>
+              <strong>Open PocketPad Mac.</strong>
+              <p>The Home screen shows readiness for Accessibility, the helper server, and iPhone pairing. A first-run setup guide walks through the same steps.</p>
+            </li>
+            <li>
+              <strong>Enable Accessibility.</strong>
+              <p>Click <em>Request Accessibility Permission</em> or <em>Open Accessibility Settings</em>, then enable PocketPad Mac in System Settings → Privacy &amp; Security → Accessibility.</p>
+            </li>
+            <li>
+              <strong>Open PocketPad on iPhone.</strong>
+              <p>The iOS onboarding explains Local Network and Camera prompts. Tap Smart Connect, or use Scan Mac QR Code if this is the first pairing.</p>
+            </li>
+            <li>
+              <strong>Pair securely.</strong>
+              <p>Scan the QR code on the Mac, or manually enter a displayed <code>ws://&lt;mac-ip&gt;:&lt;port&gt;</code> address. If prompted, type the six-digit code shown on PocketPad Mac.</p>
+            </li>
+            <li>
+              <strong>Focus the target Mac app.</strong>
+              <p>After pairing, PocketPad controls whichever Mac app is currently focused. Use Release All if a key ever feels stuck.</p>
+            </li>
+          </ol>
+        </section>
+
+        <section id="mac-app" class="doc-section with-media">
+          <div>
+            <p class="eyebrow">mac app</p>
+            <h2>Home, Keypad, and Settings</h2>
+            <p>The Mac app is the source of truth for saved keypads and bindings. It runs the server, displays QR and manual pairing information, previews the active keypad, and exposes diagnostics.</p>
+            <h3>Home</h3>
+            <p>Use Home to check readiness, copy the pairing code, scan QR from the iPhone, switch profiles, make a setup the default, and perform quick local shortcut tests.</p>
+            <h3>Keypad</h3>
+            <p>Use Keypad to visually edit layouts, manage profiles, record shortcuts, configure output mode, and sync changes to the connected iPhone.</p>
+            <h3>Settings</h3>
+            <p>Use Settings for appearance defaults, input diagnostics, local addresses, server restart/stop, and advanced connection troubleshooting.</p>
+          </div>
+          <figure class="doc-media-card">
+            <img src="/assets/screenshots/keypad-editor.png" alt="PocketPad Mac Keypad editor">
+            <figcaption>Mac Keypad editor with setup list, canvas, and inspector.</figcaption>
+          </figure>
+        </section>
+
+        <section id="ios-app" class="doc-section with-media flip">
+          <div>
+            <p class="eyebrow">ios app</p>
+            <h2>Connection screen and controller screen</h2>
+            <p>The iOS app starts on a connection screen unless it can reconnect to a trusted Mac or show a saved keypad offline.</p>
+            <h3>Connection screen</h3>
+            <p>Use Smart Connect for remembered Macs, scan a Mac QR code for first-time pairing, or manually enter host and port. You can also view the last synced keypad when offline.</p>
+            <h3>Controller screen</h3>
+            <p>The top bar shows connection status, the active keypad setup, edit lock, haptics and appearance settings, export actions, and Disconnect. Swipe down from the top edge if the bar is hidden.</p>
+            <h3>Offline saved keypad</h3>
+            <p>After a successful sync, iPhone can display saved profiles even when PocketPad Mac is closed. Input only controls the Mac while connected.</p>
+          </div>
+          <figure class="doc-media-card portrait-card">
+            <img src="/assets/screenshots/controller-portrait.png" alt="PocketPad iPhone portrait keypad">
+            <figcaption>Portrait keypad with synced controls and top bar actions.</figcaption>
+          </figure>
+        </section>
+
+        <section id="keypad-editor" class="doc-section">
+          <p class="eyebrow">editor</p>
+          <h2>Build a keypad setup</h2>
+          <p>A setup is a saved profile containing layout, output mode, bindings, colors, haptics, style tokens, assets, and per-orientation variants. Edits on Mac save automatically and sync to the paired iPhone.</p>
+
+          <div class="doc-card-grid two">
+            <div class="doc-card">
+              <span>profiles</span>
+              <h3>Setups and templates</h3>
+              <p>Create, duplicate, delete, switch, import, export, and mark defaults. The active setup is sent to the iPhone and can be changed from either device.</p>
+            </div>
+            <div class="doc-card">
+              <span>canvas</span>
+              <h3>Device frames</h3>
+              <p>Match the editor to the connected iPhone, choose any supported iPhone display class, or use a custom canvas size. Portrait and landscape variants are saved separately.</p>
+            </div>
+            <div class="doc-card">
+              <span>layout</span>
+              <h3>Controls and grid</h3>
+              <p>Add buttons, joysticks, triggers, and trackpads. Drag on the canvas, nudge, align, distribute, layer, group, and use snap/grid preferences for precision.</p>
+            </div>
+            <div class="doc-card">
+              <span>design</span>
+              <h3>Styles and haptics</h3>
+              <p>Customize fills, strokes, pressed states, icons, glows, reusable style tokens, background fills, gradients, image fills, and per-control haptic patterns.</p>
+            </div>
+          </div>
+
+          <h3>Typical editor workflow</h3>
+          <ol class="doc-steps compact">
+            <li><strong>Choose a setup.</strong><p>Start from the default keypad, install a template, or generate/import a profile.</p></li>
+            <li><strong>Pick the device canvas.</strong><p>Use the connected iPhone frame or choose a model and orientation manually.</p></li>
+            <li><strong>Place controls.</strong><p>Add controls, resize them, and test hit targets with the preview.</p></li>
+            <li><strong>Record outputs.</strong><p>Select a control, click the shortcut field, press the desired Mac keystroke sequence, and pause to save.</p></li>
+            <li><strong>Sync and test.</strong><p>Connect the iPhone, focus the target Mac app, and press controls. Use Release All if you change apps mid-press.</p></li>
+          </ol>
+        </section>
+
+        <section id="outputs" class="doc-section">
+          <p class="eyebrow">outputs</p>
+          <h2>Keyboard, pointer, and controller output</h2>
+          <p>PocketPad can send multiple kinds of output depending on the selected profile and binding.</p>
+
+          <div class="doc-table" role="table" aria-label="PocketPad output modes">
+            <div role="row"><strong role="columnheader">Mode</strong><strong role="columnheader">Use it for</strong><strong role="columnheader">Notes</strong></div>
+            <div role="row"><span role="cell">Keyboard</span><span role="cell">Shortcuts, game keys, terminal workflows, app commands</span><span role="cell">Requires macOS Accessibility.</span></div>
+            <div role="row"><span role="cell">Pointer</span><span role="cell">Trackpad movement, clicking, right click, scrolling</span><span role="cell">Trackpad controls inject CGEvent mouse and scroll events.</span></div>
+            <div role="row"><span role="cell">Controller</span><span role="cell">Games that recognize a system gamepad</span><span role="cell">Virtual controller requires Apple-granted virtual HID entitlement.</span></div>
+            <div role="row"><span role="cell">Custom</span><span role="cell">Mixed keyboard + gamepad + pointer profiles</span><span role="cell">Bind each element or element part to the output you need.</span></div>
+          </div>
+
+          <h3>Shortcut recording tips</h3>
+          <ul>
+            <li>Press <kbd>Control</kbd> + <kbd>B</kbd> to save a modifier combo like <code>⌃B</code>.</li>
+            <li>Press a combo, release it, then press another key to create prefix sequences such as <code>⌃B H</code>.</li>
+            <li>Modifier-only shortcuts save when you press and release the modifier key.</li>
+            <li>Use Default for one control or Reset All to restore starter bindings.</li>
+          </ul>
+        </section>
+
+        <section id="cli" class="doc-section">
+          <p class="eyebrow">cli</p>
+          <h2>Script PocketPad with <code>pocketpad</code></h2>
+          <p>The CLI mirrors the saved-configuration features in the Mac Keypad editor and adds runtime helper commands for automation and debugging.</p>
+
+          <pre><code>pocketpad profile list --ids
+pocketpad template list
+pocketpad template install snes --name "SNES Browser Controls" --default
+pocketpad profile export --all -o pocketpad-profiles.json
+pocketpad profile import pocketpad-profiles.json
+pocketpad binding set focus --sequence 'Control+B,H'
+pocketpad output mode keyboard
+pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
+pocketpad element set jump --label A --shape circle --width 1.2 --height 1.2</code></pre>
+
+          <h3>Runtime helper commands</h3>
+          <pre><code>pocketpad app open
+pocketpad status --json
+pocketpad server restart
+pocketpad pairing payload
+pocketpad accessibility status
+pocketpad test tap jump
+pocketpad release-all</code></pre>
+
+          <p>When PocketPad Mac is running, CLI profile, customization, and binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone.</p>
+        </section>
+
+        <section id="troubleshooting" class="doc-section">
+          <p class="eyebrow">troubleshooting</p>
+          <h2>Fix common setup issues</h2>
+
+          <details open>
+            <summary>Smart Connect does not find my Mac</summary>
+            <p>Make sure both devices are on the same Wi‑Fi network, PocketPad Mac is running, Local Network permission is allowed, and the Mac helper shows a local address. Use QR pairing as a fallback.</p>
+          </details>
+          <details>
+            <summary>QR pairing fails</summary>
+            <p>Confirm the iPhone camera permission is allowed. If the code still fails, manually enter one of the Mac helper's <code>ws://</code> addresses and use the six-digit code shown on Mac.</p>
+          </details>
+          <details>
+            <summary>Buttons press but nothing happens on Mac</summary>
+            <p>Re-check Accessibility permission for PocketPad Mac, then refresh the permission status in the app. Also confirm the target Mac app is focused.</p>
+          </details>
+          <details>
+            <summary>A key feels stuck</summary>
+            <p>Tap Release All in the iPhone settings menu, the Mac Home quick actions, or run <code>pocketpad release-all</code>. PocketPad also releases held keys on disconnect, server stop, app background, and heartbeat timeout.</p>
+          </details>
+          <details>
+            <summary>The virtual gamepad does not appear in games</summary>
+            <p>Keyboard and pointer output work in normal builds. System-visible virtual controller output requires the app to be signed with Apple's <code>com.apple.developer.hid.virtual.device</code> entitlement.</p>
+          </details>
+        </section>
+
+        <section id="safety" class="doc-section">
+          <p class="eyebrow">safety</p>
+          <h2>Local, authenticated, and recoverable input</h2>
+          <ul>
+            <li>Pairing uses a six-digit setup challenge and trusted reconnect token.</li>
+            <li>Input travels over the local network; Smart Connect advertises as <code>_pocketpad._tcp</code>.</li>
+            <li>Button state transitions use compact authenticated UDP frames with WebSocket mirroring for recovery.</li>
+            <li>macOS releases held keys after heartbeat timeout, disconnect, server stop, manual Release All, and app quit.</li>
+            <li>iOS sends a best-effort Release All when disconnecting, backgrounding, or becoming inactive.</li>
+          </ul>
+        </section>
+
+        <section id="faq" class="doc-section">
+          <p class="eyebrow">faq</p>
+          <h2>Frequently asked questions</h2>
+          <details open>
+            <summary>Is PocketPad only for games?</summary>
+            <p>No. It works well for games, but it is also useful for terminal shortcuts, tmux prefixes, Cursor commands, window management, browser actions, and any Mac app that accepts keyboard or pointer input.</p>
+          </details>
+          <details>
+            <summary>Can I use it without the Mac app open?</summary>
+            <p>The iPhone can view saved keypads offline, but controlling the Mac requires PocketPad Mac to be running and connected.</p>
+          </details>
+          <details>
+            <summary>Can I back up my layouts?</summary>
+            <p>Yes. Export keypads as JSON from iPhone or use <code>pocketpad profile export --all</code> from the CLI. Imports use the same versioned PocketPad keypad configuration envelope.</p>
+          </details>
+          <details>
+            <summary>Can I make game-specific profiles?</summary>
+            <p>Yes. Install templates, generate a profile from a known game, or create an agent-provided JSON spec and import it with the CLI.</p>
+          </details>
+        </section>
+      </article>
+    </section>
+  </main>
+
+  <footer class="site-footer section-shell">
+    <span>© <span id="year">2026</span> PocketPad</span>
+    <span class="footer-links"><a href="/">home</a><a href="/privacy.html">privacy</a></span>
+  </footer>
+
+  <script src="/script.js" defer></script>
+</body>
+</html>

@@ -4,7 +4,8 @@ Pixel-art landing page for PocketPad with a Cloudflare Pages Function that saves
 
 ## Files
 
-- `index.html` / `styles.css` / `script.js` — static landing page.
+- `index.html` / `styles.css` / `script.js` — static landing page, screenshot gallery, and launch-list form.
+- `docs.html` — comprehensive PocketPad documentation for setup, pairing, editor workflows, outputs, CLI, troubleshooting, and safety behavior.
 - `functions/api/subscribe.js` — Cloudflare Pages Function for `POST /api/subscribe`.
 - `schema.sql` — D1 table and indexes.
 - `wrangler.toml` — Pages + D1 binding config. Replace the placeholder `database_id` before deploy.
