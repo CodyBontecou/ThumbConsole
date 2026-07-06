@@ -1,6 +1,47 @@
 import Foundation
 import CoreGraphics
 
+public struct KeypadKeyboardStrokeBinding: Codable, Equatable, Hashable, Sendable {
+    public var keyCode: UInt16
+    public var modifiersRawValue: UInt8
+
+    public init(keyCode: UInt16, modifiersRawValue: UInt8 = 0) {
+        self.keyCode = keyCode
+        self.modifiersRawValue = modifiersRawValue
+    }
+}
+
+public struct KeypadKeyboardBinding: Codable, Equatable, Hashable, Sendable {
+    public var keyCode: UInt16
+    public var modifiersRawValue: UInt8
+    public var sequence: [KeypadKeyboardStrokeBinding]?
+
+    public init(keyCode: UInt16, modifiersRawValue: UInt8 = 0, sequence: [KeypadKeyboardStrokeBinding]? = nil) {
+        self.keyCode = keyCode
+        self.modifiersRawValue = modifiersRawValue
+        self.sequence = sequence
+    }
+
+    public var strokes: [KeypadKeyboardStrokeBinding] {
+        if let sequence, !sequence.isEmpty { return sequence }
+        return [KeypadKeyboardStrokeBinding(keyCode: keyCode, modifiersRawValue: modifiersRawValue)]
+    }
+}
+
+public struct KeypadElementOutputBinding: Codable, Equatable, Hashable, Sendable {
+    public var keyboard: KeypadKeyboardBinding?
+    public var gamepadButtons: Set<VirtualGamepadButton>
+
+    public init(keyboard: KeypadKeyboardBinding? = nil, gamepadButtons: Set<VirtualGamepadButton> = []) {
+        self.keyboard = keyboard
+        self.gamepadButtons = gamepadButtons
+    }
+
+    public var isEmpty: Bool {
+        keyboard == nil && gamepadButtons.isEmpty
+    }
+}
+
 public enum VirtualGamepadButton: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case south
     case east

@@ -445,7 +445,10 @@ struct PocketPadCLI {
             var store = loadStore()
             let source = try resolveProfile(target, in: store)
             let duplicateName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "\(source.name) Copy" : name
-            let duplicate = GamepadConfigurationProfile(name: duplicateName, customization: source.customization, outputMode: source.outputMode)
+            var duplicate = source.normalized
+            duplicate.id = UUID()
+            duplicate.name = duplicateName
+            duplicate.updatedAt = Date.currentMilliseconds
             store.profiles.append(duplicate)
             store.activeProfileID = duplicate.id
             store.profileKeyBindings[duplicate.id.uuidString] = store.profileKeyBindings[source.id.uuidString] ?? rawBindings(DefaultKeypadKeyMap.defaultBindings)
@@ -471,6 +474,8 @@ struct PocketPadCLI {
             var store = loadStore()
             let index = try resolveProfileIndex(target, in: store)
             store.profiles[index].customization = GamepadCustomization.defaultValue
+            store.profiles[index].landscapeCustomization = nil
+            store.profiles[index].portraitCustomization = nil
             store.profiles[index].updatedAt = Date.currentMilliseconds
             try persistStore(store)
             print("Reset profile \"\(store.profiles[index].name)\" to the default keypad layout.")
@@ -845,6 +850,7 @@ struct PocketPadCLI {
                 outputs[button] = output
             }
         }
+        syncElementOutputs(in: &store.profiles[profileIndex], outputs: outputs)
         store.profileOutputBindings[profileID] = rawOutputBindings(outputs)
         try persistStore(store)
     }
@@ -910,13 +916,13 @@ struct PocketPadCLI {
         let profileID = store.profiles[index].id.uuidString
         let keyboardBindings = decodedBindings(store.profileKeyBindings[profileID]) ?? DefaultKeypadKeyMap.defaultBindings
         let storedOutputs = decodedOutputBindings(store.profileOutputBindings[profileID]) ?? outputBindings(from: keyboardBindings)
-        store.profileOutputBindings[profileID] = rawOutputBindings(
-            effectiveOutputBindings(
-                for: mode,
-                keyBindings: keyboardBindings,
-                customOutputBindings: storedOutputs
-            )
+        let effectiveOutputs = effectiveOutputBindings(
+            for: mode,
+            keyBindings: keyboardBindings,
+            customOutputBindings: storedOutputs
         )
+        store.profileOutputBindings[profileID] = rawOutputBindings(effectiveOutputs)
+        syncElementOutputs(in: &store.profiles[index], outputs: effectiveOutputs)
         try persistStore(store)
         print("Set \"\(store.profiles[index].name)\" output mode to \(mode.displayName).")
     }
@@ -983,6 +989,7 @@ struct PocketPadCLI {
         }
         store.profiles[profileIndex].outputMode = outputMode
         store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
+        syncElementOutputs(in: &store.profiles[profileIndex], outputs: outputs)
         store.profileOutputBindings[profileID] = rawOutputBindings(outputs)
         if outputMode == .keyboard {
             store.profileKeyBindings[profileID] = rawBindings(outputs.keyboardBindings)
@@ -1000,6 +1007,33 @@ struct PocketPadCLI {
         try persistStore(store)
     }
 
+    private static func syncElementOutputs(in profile: inout GamepadConfigurationProfile, outputs: [GameButton: MacControlOutputBinding]) {
+        func update(_ customization: inout GamepadCustomization) {
+            var normalizedCustomization = customization.normalized
+            for button in GameButton.allCases {
+                let matchingCustomIDs = Set(normalizedCustomization.customButtons.filter { $0.mappedButton == button }.map(\.id))
+                let sharedBinding = outputs[button]?.sharedBinding
+                for index in normalizedCustomization.elements.indices {
+                    let element = normalizedCustomization.elements[index]
+                    guard element.builtInButton == button || element.legacySlot == button || matchingCustomIDs.contains(element.id) else { continue }
+                    normalizedCustomization.elements[index].setOutputBinding(sharedBinding, for: .primary)
+                }
+            }
+            customization = normalizedCustomization.normalized
+        }
+
+        update(&profile.customization)
+        if var landscapeCustomization = profile.landscapeCustomization {
+            update(&landscapeCustomization)
+            profile.landscapeCustomization = landscapeCustomization
+        }
+        if var portraitCustomization = profile.portraitCustomization {
+            update(&portraitCustomization)
+            profile.portraitCustomization = portraitCustomization
+        }
+        profile.updatedAt = Date.currentMilliseconds
+    }
+
     // MARK: - Customization
 
     private static func customization(arguments: [String]) throws {
@@ -1009,24 +1043,24 @@ struct PocketPadCLI {
         case "show":
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            try printJSON(profile.customization)
+            try printJSON(customization(for: profile, arguments: rest))
         case "export":
             let outputPath = optionValue("--output", in: rest) ?? optionValue("-o", in: rest)
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            try writeJSON(profile.customization, to: outputPath)
+            try writeJSON(customization(for: profile, arguments: rest), to: outputPath)
         case "import":
             guard let path = firstPositional(in: rest) else { throw CLIError.message("Missing customization JSON path") }
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
             let customization = try JSONDecoder().decode(GamepadCustomization.self, from: data)
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { $0 = customization }
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { $0 = customization }
             print("Imported customization.")
         case "validate", "check", "lint":
             try validateLayout(arguments: rest)
         case "preview", "render":
             try previewLayout(arguments: rest)
         case "set":
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 if let layout = optionValue("--layout", in: rest) { customization.layoutMode = try parseLayoutMode(layout) }
                 if let scale = optionValue("--scale", in: rest) ?? optionValue("--control-scale", in: rest) { customization.controlScale = try parseControlScale(scale) }
                 if let appearance = optionValue("--appearance", in: rest) ?? optionValue("--color-scheme", in: rest) ?? optionValue("--scheme", in: rest) { customization.colorSchemePreference = try parseColorSchemePreference(appearance) }
@@ -1084,7 +1118,7 @@ struct PocketPadCLI {
             }
             print("Updated customization.")
         case "reset":
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { $0 = .defaultValue }
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { $0 = .defaultValue }
             print("Reset customization.")
         default:
             throw CLIError.message("Unknown customization subcommand: \(subcommand)")
@@ -1094,8 +1128,9 @@ struct PocketPadCLI {
     private static func validateLayout(arguments: [String]) throws {
         let store = loadStore()
         let profile = try resolveProfile(layoutProfileTarget(in: arguments), in: store)
-        let canvasSize = try parseLayoutCanvasSize(arguments, fallback: profile.customization.deviceCanvas.editorDeviceFrame.screenRect.size)
-        let report = profile.customization.layoutQualityReport(profileName: profile.name, canvasSize: canvasSize)
+        let resolvedCustomization = try customization(for: profile, arguments: arguments)
+        let canvasSize = try parseLayoutCanvasSize(arguments, fallback: resolvedCustomization.deviceCanvas.editorDeviceFrame.screenRect.size)
+        let report = resolvedCustomization.layoutQualityReport(profileName: profile.name, canvasSize: canvasSize)
 
         if arguments.contains("--json") {
             try printJSON(report)
@@ -1113,20 +1148,21 @@ struct PocketPadCLI {
     private static func previewLayout(arguments: [String]) throws {
         let store = loadStore()
         let profile = try resolveProfile(layoutProfileTarget(in: arguments), in: store)
-        let canvasSize = try parseLayoutCanvasSize(arguments, fallback: profile.customization.deviceCanvas.editorDeviceFrame.screenRect.size)
+        let resolvedCustomization = try customization(for: profile, arguments: arguments)
+        let canvasSize = try parseLayoutCanvasSize(arguments, fallback: resolvedCustomization.deviceCanvas.editorDeviceFrame.screenRect.size)
         let outputPath = optionValue("--output", in: arguments) ?? optionValue("-o", in: arguments) ?? optionValue("--path", in: arguments) ?? "pocketpad-layout-preview.png"
         let scale = try parsePreviewScale(arguments)
 
 #if os(macOS)
         try GamepadLayoutPreviewRenderer.writePNG(
-            customization: profile.customization,
+            customization: resolvedCustomization,
             profileName: profile.name,
             canvasSize: canvasSize,
             outputURL: URL(fileURLWithPath: outputPath),
             scale: scale,
             annotateIssues: !arguments.contains("--no-annotations")
         )
-        let report = profile.customization.layoutQualityReport(profileName: profile.name, canvasSize: canvasSize)
+        let report = resolvedCustomization.layoutQualityReport(profileName: profile.name, canvasSize: canvasSize)
         if arguments.contains("--json") {
             try printJSON(report)
         } else {
@@ -1183,7 +1219,7 @@ struct PocketPadCLI {
         let profileName = report.profileName ?? "active"
         print("Layout validation for \"\(profileName)\": \(report.statusText)")
         print("Canvas: \(formatPixels(CGFloat(report.canvas.width)))×\(formatPixels(CGFloat(report.canvas.height))) pt")
-        print("Controls: \(report.summary.controlCount), errors: \(report.summary.errorCount), warnings: \(report.summary.warningCount)")
+        print("Elements: \(report.summary.controlCount), errors: \(report.summary.errorCount), warnings: \(report.summary.warningCount)")
         print("Usage: width \(formatPercentage(report.summary.layoutWidthCoverage)), height \(formatPercentage(report.summary.layoutHeightCoverage)), bottom unused \(formatPercentage(report.summary.bottomUnusedRatio))")
         if report.issues.isEmpty {
             print("No layout issues found.")
@@ -1219,12 +1255,32 @@ struct PocketPadCLI {
         }
     }
 
-    private static func mutateCustomization(profileTarget: String?, mutate: (inout GamepadCustomization) throws -> Void) throws {
+    private static func customizationVariant(in arguments: [String]) throws -> GamepadEditorDeviceOrientation? {
+        guard let value = optionValue("--variant", in: arguments) ?? optionValue("--layout-variant", in: arguments) else { return nil }
+        return try parseDeviceOrientation(value)
+    }
+
+    private static func customization(for profile: GamepadConfigurationProfile, arguments: [String]) throws -> GamepadCustomization {
+        if let variant = try customizationVariant(in: arguments) {
+            return profile.customization(for: variant)
+        }
+        return profile.customization
+    }
+
+    private static func mutateCustomization(profileTarget: String?, variant: GamepadEditorDeviceOrientation? = nil, mutate: (inout GamepadCustomization) throws -> Void) throws {
         var store = loadStore()
         let index = try resolveProfileIndex(profileTarget, in: store)
-        var customization = store.profiles[index].customization
+        var customization = variant.map { store.profiles[index].customization(for: $0) } ?? store.profiles[index].customization
         try mutate(&customization)
-        store.profiles[index].customization = customization.normalized
+        let normalizedCustomization = customization.normalized
+        if let variant {
+            store.profiles[index].setCustomization(normalizedCustomization, for: variant)
+        } else {
+            store.profiles[index].setCustomization(
+                normalizedCustomization,
+                for: normalizedCustomization.deviceCanvas.editorDeviceFrame.orientation
+            )
+        }
         store.profiles[index].updatedAt = Date.currentMilliseconds
         try persistStore(store)
     }
@@ -1683,7 +1739,7 @@ struct PocketPadCLI {
         case "show", "current":
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let frame = profile.customization.deviceCanvas.editorDeviceFrame
+            let frame = try customization(for: profile, arguments: rest).deviceCanvas.editorDeviceFrame
             if rest.contains("--json") {
                 try printJSON(deviceFrameSummary(frame))
             } else {
@@ -1699,13 +1755,13 @@ struct PocketPadCLI {
             let orientationText = optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)
             let orientation = try orientationText.map(parseDeviceOrientation)
             let frame = try resolveDeviceFrameTarget(target, arguments: rest, preferredOrientation: orientation)
-            try saveEditorDeviceFrame(frame, profileTarget: optionValue("--profile", in: rest))
+            try saveEditorDeviceFrame(frame, profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest))
             print("Selected device frame for profile: \(frame.displayName) (\(formatSize(frame.screenRect.size)) pt)")
         default:
             let orientationText = optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)
             let orientation = try orientationText.map(parseDeviceOrientation)
             if let frame = GamepadEditorDeviceCatalog.frame(matching: subcommand, preferredOrientation: orientation) {
-                try saveEditorDeviceFrame(frame, profileTarget: optionValue("--profile", in: rest))
+                try saveEditorDeviceFrame(frame, profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest))
                 print("Selected device frame for profile: \(frame.displayName) (\(formatSize(frame.screenRect.size)) pt)")
             } else {
                 throw CLIError.message("Unknown device subcommand: \(subcommand)")
@@ -1713,8 +1769,8 @@ struct PocketPadCLI {
         }
     }
 
-    private static func saveEditorDeviceFrame(_ frame: GamepadEditorDeviceFrame, profileTarget: String?) throws {
-        try mutateCustomization(profileTarget: profileTarget) { customization in
+    private static func saveEditorDeviceFrame(_ frame: GamepadEditorDeviceFrame, profileTarget: String?, variant: GamepadEditorDeviceOrientation? = nil) throws {
+        try mutateCustomization(profileTarget: profileTarget, variant: variant) { customization in
             customization.deviceCanvas = GamepadDeviceCanvas(frameID: frame.id)
         }
 
@@ -1789,7 +1845,7 @@ struct PocketPadCLI {
         )
     }
 
-    // MARK: - Elements / controls
+    // MARK: - Elements
 
     private static func element(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing element subcommand") }
@@ -1798,7 +1854,7 @@ struct PocketPadCLI {
         case "list", "ls":
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let summaries = elementSummaries(for: profile.customization)
+            let summaries = elementSummaries(for: try customization(for: profile, arguments: rest))
             if rest.contains("--json") {
                 try printJSON(summaries)
             } else {
@@ -1824,7 +1880,7 @@ struct PocketPadCLI {
     private static func addElement(arguments: [String]) throws {
         guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: pocketpad element add <button|joystick|trigger|trackpad> [options]") }
         let kind = try parseCustomControlKind(kindText)
-        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments)) { customization in
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             guard customization.customButtons.count < GamepadCustomization.maximumCustomButtons else { throw CLIError.message("Maximum custom element count reached") }
             if kind == .joystick && customization.customButtons.filter({ $0.normalized.isJoystick }).count >= GamepadCustomization.maximumJoysticks {
                 throw CLIError.message("Maximum joystick count reached")
@@ -1890,7 +1946,7 @@ struct PocketPadCLI {
 
     private static func setElement(arguments: [String]) throws {
         guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing element id, button, or label") }
-        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments)) { customization in
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             let target = try resolveElementTarget(targetText, in: customization)
             switch target {
             case .builtin(let button):
@@ -1946,18 +2002,28 @@ struct PocketPadCLI {
 
         var store = loadStore()
         let profileIndex = try resolveProfileIndex(optionValue("--profile", in: arguments), in: store)
-        let target = try resolveElementTarget(targetText, in: store.profiles[profileIndex].customization)
+        let variant = try customizationVariant(in: arguments)
+        let sourceCustomization = variant.map { store.profiles[profileIndex].customization(for: $0) } ?? store.profiles[profileIndex].customization
+        let target = try resolveElementTarget(targetText, in: sourceCustomization)
         let identity: GamepadControlIdentity = switch target {
         case .builtin(let button): .builtin(button)
         case .custom(let id): .custom(id)
         }
 
-        guard let nudgedCustomization = store.profiles[profileIndex].customization.nudgedControls([identity], by: translation, in: canvasSize) else {
+        guard let nudgedCustomization = sourceCustomization.nudgedControls([identity], by: translation, in: canvasSize) else {
             print("Element \"\(targetText)\" could not move.")
             return
         }
 
-        store.profiles[profileIndex].customization = nudgedCustomization.normalized
+        let normalizedNudgedCustomization = nudgedCustomization.normalized
+        if let variant {
+            store.profiles[profileIndex].setCustomization(normalizedNudgedCustomization, for: variant)
+        } else {
+            store.profiles[profileIndex].setCustomization(
+                normalizedNudgedCustomization,
+                for: normalizedNudgedCustomization.deviceCanvas.editorDeviceFrame.orientation
+            )
+        }
         store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
         try persistStore(store)
         print("Nudged element \"\(targetText)\" by \(formatPixels(translation.width))px, \(formatPixels(translation.height))px.")
@@ -1965,7 +2031,7 @@ struct PocketPadCLI {
 
     private static func deleteElement(arguments: [String]) throws {
         guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing element id, button, or label") }
-        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments)) { customization in
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             let target = try resolveElementTarget(targetText, in: customization)
             switch target {
             case .builtin(let button):
@@ -1981,7 +2047,7 @@ struct PocketPadCLI {
 
     private static func resetElement(arguments: [String]) throws {
         guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing element id, button, or label") }
-        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments)) { customization in
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             let target = try resolveElementTarget(targetText, in: customization)
             switch target {
             case .builtin(let button):
@@ -3540,7 +3606,7 @@ struct PocketPadCLI {
             "--cursor-sensitivity", "--pointer-sensitivity", "--scroll-sensitivity", "--tap-to-click",
             "--two-finger-scroll", "--natural-scrolling", "--natural-scroll", "--digital", "--digital-button", "--digital-threshold", "--hold-ms",
             "--step", "--pixels", "--by", "--dx", "--dy", "--canvas", "--canvas-width", "--canvas-height",
-            "--device", "--frame", "--size", "--device-size", "--orientation", "--device-orientation",
+            "--device", "--frame", "--size", "--device-size", "--orientation", "--device-orientation", "--variant", "--layout-variant",
             "--id", "--style", "--style-id", "--icon", "--sf-symbol", "--icon-text", "--haptic",
             "--haptic-pattern", "--haptic-rhythm", "--haptic-intensity", "--haptic-strength", "--haptic-sharpness", "--haptic-duration", "--haptic-duration-ms",
             "--stroke", "--stroke-color", "--stroke-width", "--foreground", "--foreground-color", "--text-color",
@@ -3575,6 +3641,11 @@ struct PocketPadCLI {
         let deviceFrame = profile.customization.deviceCanvas.editorDeviceFrame
         print("Appearance: \(profile.customization.colorSchemePreference.rawValue)")
         print("Device: \(deviceFrame.displayName) (\(formatSize(deviceFrame.screenRect.size)) pt)")
+        let variants = [
+            profile.landscapeCustomization == nil ? nil : "landscape",
+            profile.portraitCustomization == nil ? nil : "portrait"
+        ].compactMap { $0 }.joined(separator: ", ")
+        print("Orientation variants: \(variants.isEmpty ? "none" : variants)")
         let lightBackground = profile.customization.keypadBackgroundFillStyle(scheme: .light)
         let darkBackground = profile.customization.keypadBackgroundFillStyle(scheme: .dark)
         print("Background: light \(lightBackground.displayName) \(lightBackground.representativeColor.hexString), dark \(darkBackground.displayName) \(darkBackground.representativeColor.hexString)")
@@ -3691,9 +3762,10 @@ struct PocketPadCLI {
           pocketpad customization set --appearance dark --device iphone-17-pro --background '#101014'
           pocketpad customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
           pocketpad customization set --device iphone-17-pro --orientation landscape
-          pocketpad customization export -o customization.json
-          pocketpad layout validate [PROFILE|--profile PROFILE] [--json|--strict]
-          pocketpad layout preview [PROFILE|--profile PROFILE] -o preview.png [--canvas iphone-17-pro-landscape]
+          pocketpad customization set --variant portrait --device iphone-17-pro --orientation portrait
+          pocketpad customization export -o customization.json [--variant portrait|landscape]
+          pocketpad layout validate [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--json|--strict]
+          pocketpad layout preview [PROFILE|--profile PROFILE] -o preview.png [--variant portrait|landscape] [--canvas iphone-17-pro-landscape]
           pocketpad device list
           pocketpad device set iphone-17-pro --orientation landscape
           pocketpad device set custom --size 844x390
@@ -3702,7 +3774,7 @@ struct PocketPadCLI {
           pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
           pocketpad element add trigger --target left --orientation horizontal --sensitivity 1.2
           pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
-          pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
+          pocketpad element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
           pocketpad element set "Right Stick" --thumb-fill '#22C55E'
           pocketpad element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
           pocketpad element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'

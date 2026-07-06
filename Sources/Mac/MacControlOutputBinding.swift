@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 struct MacControlOutputBinding: Codable, Equatable, Hashable, Sendable {
@@ -43,8 +44,48 @@ struct MacControlOutputBinding: Codable, Equatable, Hashable, Sendable {
         MacControlOutputBinding(keyboard: binding)
     }
 
+    init(shared binding: KeypadElementOutputBinding) {
+        self.keyboard = binding.keyboard.map(MacKeyBinding.init(shared:))
+        self.gamepadButtons = binding.gamepadButtons
+    }
+
+    var sharedBinding: KeypadElementOutputBinding {
+        KeypadElementOutputBinding(
+            keyboard: keyboard?.sharedBinding,
+            gamepadButtons: gamepadButtons
+        )
+    }
+
     static func gamepadButton(_ button: VirtualGamepadButton) -> MacControlOutputBinding {
         MacControlOutputBinding(gamepadButtons: [button])
+    }
+}
+
+extension MacKeyStroke {
+    init(shared stroke: KeypadKeyboardStrokeBinding) {
+        self.init(keyCode: CGKeyCode(stroke.keyCode), modifiers: MacKeyModifiers(rawValue: stroke.modifiersRawValue))
+    }
+
+    var sharedBinding: KeypadKeyboardStrokeBinding {
+        KeypadKeyboardStrokeBinding(keyCode: UInt16(keyCode), modifiersRawValue: modifiers.rawValue)
+    }
+}
+
+extension MacKeyBinding {
+    init(shared binding: KeypadKeyboardBinding) {
+        self.init(strokes: binding.strokes.map(MacKeyStroke.init(shared:)))
+    }
+
+    var sharedBinding: KeypadKeyboardBinding {
+        let sharedStrokes = strokes.map(\.sharedBinding)
+        if sharedStrokes.count > 1 {
+            return KeypadKeyboardBinding(
+                keyCode: sharedStrokes[0].keyCode,
+                modifiersRawValue: sharedStrokes[0].modifiersRawValue,
+                sequence: sharedStrokes
+            )
+        }
+        return KeypadKeyboardBinding(keyCode: UInt16(keyCode), modifiersRawValue: modifiers.rawValue)
     }
 }
 

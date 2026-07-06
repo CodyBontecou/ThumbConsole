@@ -657,14 +657,16 @@ private struct ControllerPadView: View {
     var body: some View {
         GeometryReader { proxy in
             let isLandscape = proxy.size.width >= proxy.size.height
-            let keypadColorScheme = client.gamepadCustomization.resolvedColorScheme(system: colorScheme)
+            let orientation: GamepadEditorDeviceOrientation = isLandscape ? .landscape : .portrait
+            let activeCustomization = client.selectedGamepadProfile?.customization(for: orientation) ?? client.gamepadCustomization
+            let keypadColorScheme = activeCustomization.resolvedColorScheme(system: colorScheme)
 
             ZStack(alignment: .top) {
                 Group {
                     if isLandscape {
-                        landscapeControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+                        landscapeControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets, customization: activeCustomization)
                     } else {
-                        portraitControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+                        portraitControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets, customization: activeCustomization)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -681,12 +683,16 @@ private struct ControllerPadView: View {
             .background {
                 GamepadFillShapeLayer(
                     shape: Rectangle(),
-                    fillStyle: client.gamepadCustomization.keypadBackgroundFillStyle(scheme: keypadColorScheme)
+                    fillStyle: activeCustomization.keypadBackgroundFillStyle(scheme: keypadColorScheme)
                 )
                 .ignoresSafeArea()
             }
             .environment(\.colorScheme, keypadColorScheme)
             .frame(width: proxy.size.width, height: proxy.size.height)
+            .onChange(of: isLandscape) { _, _ in
+                TouchCaptureUIView.deactivateAllRegisteredTouches()
+                client.releaseAll()
+            }
         }
         .environment(\.keypadHapticsEnabled, isKeypadHapticsEnabled)
         .onAppear {
@@ -696,6 +702,10 @@ private struct ControllerPadView: View {
             isTopBarVisible = !isConnected
         }
         .onChange(of: client.gamepadCustomization) { _, _ in
+            TouchCaptureUIView.deactivateAllRegisteredTouches()
+            client.releaseAll()
+        }
+        .onChange(of: client.gamepadProfiles) { _, _ in
             TouchCaptureUIView.deactivateAllRegisteredTouches()
             client.releaseAll()
         }
@@ -715,11 +725,9 @@ private struct ControllerPadView: View {
     }
 
     @ViewBuilder
-    private func landscapeControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
-        let customization = client.gamepadCustomization
-
+    private func landscapeControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization) -> some View {
         if customization.usesFreeformLayout {
-            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets)
+            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets, customization: customization)
         } else {
             let metrics = LandscapeControllerMetrics(
                 size: size,
@@ -753,11 +761,9 @@ private struct ControllerPadView: View {
     }
 
     @ViewBuilder
-    private func portraitControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
-        let customization = client.gamepadCustomization
-
+    private func portraitControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization) -> some View {
         if customization.usesFreeformLayout {
-            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets)
+            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets, customization: customization)
         } else {
             let scale = customization.controlScale.multiplier
             let usableWidth = max(300, size.width - Geist.Spacing.s8)
@@ -813,10 +819,10 @@ private struct ControllerPadView: View {
         }
     }
 
-    private func freeformControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
+    private func freeformControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization) -> some View {
         let isLandscape = size.width >= size.height
 
-        return GamepadFreeformControllerCanvas(customization: client.gamepadCustomization)
+        return GamepadFreeformControllerCanvas(customization: customization)
             .padding(.leading, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s2))
             .padding(.trailing, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s2))
             .padding(.bottom, max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2))
@@ -1556,6 +1562,7 @@ private struct GamepadFreeformControllerCanvas: View {
                 ForEach(controls) { control in
                     if control.isJoystick, let joystickMapping = control.joystickMapping {
                         GamepadJoystick(
+                            elementID: control.elementID,
                             mapping: joystickMapping,
                             outputSettings: control.joystickOutputSettings ?? .defaultValue,
                             label: control.label,
@@ -1567,6 +1574,7 @@ private struct GamepadFreeformControllerCanvas: View {
                         .position(control.center)
                     } else if control.isTrigger, let triggerSettings = control.triggerSettings {
                         GamepadTrigger(
+                            elementID: control.elementID,
                             mappedButton: control.mappedButton,
                             label: control.label,
                             size: control.size,
@@ -1588,6 +1596,7 @@ private struct GamepadFreeformControllerCanvas: View {
                         .position(control.center)
                     } else {
                         GamepadButton(
+                            elementID: control.elementID,
                             button: control.mappedButton,
                             size: control.size,
                             shape: control.shape,
@@ -1661,6 +1670,7 @@ private struct ActionButtonsView: View {
 private struct GamepadJoystick: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    let elementID: UUID?
     let mapping: GamepadJoystickMapping
     let outputSettings: GamepadJoystickOutputSettings
     let label: String
@@ -1778,7 +1788,15 @@ private struct GamepadJoystick: View {
 
     private func handleDirectionEdge(_ direction: GamepadJoystickDirection, pressed: Bool, pressIdentifier: UInt64) {
         guard outputSettings.normalized.sendsDigitalDirections else { return }
-        client.setButton(mapping[direction], pressed: pressed, pressIdentifier: pressIdentifier)
+        if let elementID {
+            client.setElementInput(
+                KeypadElementInputID(elementID: elementID, part: KeypadElementInputPart(direction: direction)),
+                pressed: pressed,
+                pressIdentifier: pressIdentifier
+            )
+        } else {
+            client.setButton(mapping[direction], pressed: pressed, pressIdentifier: pressIdentifier)
+        }
     }
 
     private func handleVectorChanged(_ vector: CGVector) {
@@ -1793,6 +1811,7 @@ private struct GamepadJoystick: View {
 private struct GamepadTrigger: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    let elementID: UUID?
     let mappedButton: GameButton
     let label: String
     let size: CGSize
@@ -1873,11 +1892,22 @@ private struct GamepadTrigger: View {
         let shouldPress = transformed >= normalizedSettings.digitalThreshold
         if shouldPress != isDigitalPressed {
             isDigitalPressed = shouldPress
-            client.setButton(mappedButton, pressed: shouldPress)
+            sendDigitalPress(shouldPress)
         }
         if !isActive, isDigitalPressed {
             isDigitalPressed = false
-            client.setButton(mappedButton, pressed: false)
+            sendDigitalPress(false)
+        }
+    }
+
+    private func sendDigitalPress(_ pressed: Bool) {
+        if let elementID {
+            client.setElementInput(
+                KeypadElementInputID(elementID: elementID, part: .triggerDigital),
+                pressed: pressed
+            )
+        } else {
+            client.setButton(mappedButton, pressed: pressed)
         }
     }
 }
@@ -2165,6 +2195,7 @@ private struct GamepadButton: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.keypadHapticsEnabled) private var isKeypadHapticsEnabled
+    var elementID: UUID? = nil
     let button: GameButton
     let size: CGSize
     var shape: GamepadButtonShapeStyle = .roundedRectangle
@@ -2348,7 +2379,15 @@ private struct GamepadButton: View {
         // The UIKit touch view is authoritative for press edges. Send every edge to
         // ControllerClient before consulting SwiftUI state so fast taps cannot lose a
         // release through a stale render closure.
-        client.setButton(button, pressed: pressed, pressIdentifier: pressIdentifier)
+        if let elementID {
+            client.setElementInput(
+                KeypadElementInputID(elementID: elementID, part: .primary),
+                pressed: pressed,
+                pressIdentifier: pressIdentifier
+            )
+        } else {
+            client.setButton(button, pressed: pressed, pressIdentifier: pressIdentifier)
+        }
 
         guard isActive != isPressed else { return }
         isPressed = isActive

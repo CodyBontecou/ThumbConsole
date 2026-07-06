@@ -31,6 +31,51 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(decoded.defaultProfileID, profile.id)
     }
 
+    func testKeypadConfigurationNormalizesLegacyButtonsIntoElements() throws {
+        var customization = GamepadCustomization.defaultValue.normalized
+        XCTAssertFalse(customization.elements.isEmpty)
+        XCTAssertNotNil(customization.elements.first { $0.builtInButton == .pause })
+        XCTAssertEqual(customization.elements.first { $0.builtInButton == .pause }?.legacySlot, .pause)
+
+        customization.addCustomButton()
+        var added = try XCTUnwrap(customization.normalized.elements.first { $0.builtInButton == nil && $0.kind == .button })
+        XCTAssertNil(added.legacySlot)
+
+        customization = GamepadCustomization.blankCanvas
+        customization.addJoystick()
+        added = try XCTUnwrap(customization.normalized.elements.first { $0.kind == .joystick })
+        XCTAssertNil(added.legacySlot)
+
+        customization = GamepadCustomization.blankCanvas
+        customization.addTrigger()
+        added = try XCTUnwrap(customization.normalized.elements.first { $0.kind == .trigger })
+        XCTAssertNil(added.legacySlot)
+
+        customization = GamepadCustomization.blankCanvas
+        customization.addTrackpad()
+        added = try XCTUnwrap(customization.normalized.elements.first { $0.kind == .trackpad })
+        XCTAssertNil(added.legacySlot)
+    }
+
+    func testElementInputMessageRoundTrips() throws {
+        let elementID = UUID(uuidString: "00000000-0000-0000-0000-00000000E1E1")!
+        let message = ControllerMessage(
+            type: .elementInput,
+            elementID: elementID,
+            elementPart: .primary,
+            state: .down,
+            timestamp: ControllerWireCodec.inputSequenceTimestamp(for: 42, pressIdentifier: 7)
+        )
+        let data = try ControllerWireCodec.encode(message, using: JSONEncoder())
+        let decoded = try ControllerWireCodec.decode(data, using: JSONDecoder())
+        XCTAssertEqual(decoded.type, .elementInput)
+        XCTAssertEqual(decoded.elementID, elementID)
+        XCTAssertEqual(decoded.elementPart, .primary)
+        XCTAssertEqual(decoded.state, .down)
+        XCTAssertEqual(ControllerWireCodec.inputSequenceNumber(from: decoded), 42)
+        XCTAssertEqual(ControllerWireCodec.inputPressIdentifier(from: decoded), 7)
+    }
+
     func testKeypadProfileOutputModeDefaultsToKeyboardAndPreservesLegacyBindings() throws {
         let newProfile = GamepadConfigurationProfile(name: "Keyboard Setup", customization: .defaultValue)
         XCTAssertEqual(newProfile.outputMode, .keyboard)

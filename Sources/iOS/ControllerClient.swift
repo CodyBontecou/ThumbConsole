@@ -20,6 +20,7 @@ private final class ControllerInputTransport {
         identifier: "PocketPadInputMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
     )
+    private let encoder = JSONEncoder()
 
     // Keep TCP close behind UDP so packet-loss recovery stays below a tight
     // action-game frame budget while the UDP fast path still wins normal races.
@@ -115,6 +116,56 @@ private final class ControllerInputTransport {
         return true
     }
 
+    @discardableResult
+    func sendElementInput(
+        _ input: KeypadElementInputID,
+        state: ButtonPressState,
+        pressIdentifier: UInt64?
+    ) -> Bool {
+        guard let snapshot = makeButtonSendSnapshot() else { return false }
+
+        let messageContext = binaryMessageContext
+        let sendQueue = networkQueue
+        let encoder = encoder
+        sendQueue.async {
+            let message = ControllerMessage(
+                type: .elementInput,
+                elementID: input.elementID,
+                elementPart: input.part,
+                state: state,
+                timestamp: ControllerWireCodec.inputSequenceTimestamp(
+                    for: snapshot.sequenceNumber,
+                    pressIdentifier: pressIdentifier
+                )
+            )
+            guard let data = try? ControllerWireCodec.encode(message, using: encoder) else { return }
+
+            if let datagramConnection = snapshot.datagramConnection {
+                datagramConnection.send(
+                    content: data,
+                    contentContext: .defaultMessage,
+                    isComplete: true,
+                    completion: .idempotent
+                )
+                Self.sendReliableMirror(
+                    data,
+                    on: snapshot.reliableConnection,
+                    context: messageContext,
+                    queue: sendQueue
+                )
+            } else {
+                snapshot.reliableConnection.send(
+                    content: data,
+                    contentContext: messageContext,
+                    isComplete: true,
+                    completion: .idempotent
+                )
+            }
+        }
+
+        return true
+    }
+
     private func makeButtonSendSnapshot() -> ButtonSendSnapshot? {
         lock.lock()
         defer { lock.unlock() }
@@ -152,6 +203,59 @@ private final class ControllerInputTransport {
                 completion: .idempotent
             )
         }
+    }
+}
+
+private struct ControllerActiveElementInputPress: Equatable, Sendable {
+    var input: KeypadElementInputID
+    var pressIdentifier: UInt64?
+}
+
+private struct ControllerActiveElementInputState: Equatable, Sendable {
+    private var identifiedPressesByInput: [KeypadElementInputID: Set<UInt64>] = [:]
+    private var anonymousPressCountsByInput: [KeypadElementInputID: Int] = [:]
+
+    var activePresses: [ControllerActiveElementInputPress] {
+        var presses: [ControllerActiveElementInputPress] = []
+        for input in Set(identifiedPressesByInput.keys).union(anonymousPressCountsByInput.keys).sorted(by: { $0.storageKey < $1.storageKey }) {
+            for identifier in (identifiedPressesByInput[input] ?? []).sorted() {
+                presses.append(.init(input: input, pressIdentifier: identifier))
+            }
+            let anonymousCount = anonymousPressCountsByInput[input] ?? 0
+            for _ in 0..<anonymousCount {
+                presses.append(.init(input: input, pressIdentifier: nil))
+            }
+        }
+        return presses
+    }
+
+    var isEmpty: Bool {
+        identifiedPressesByInput.isEmpty && anonymousPressCountsByInput.isEmpty
+    }
+
+    mutating func record(input: KeypadElementInputID, state: ButtonPressState, pressIdentifier: UInt64?) {
+        switch state {
+        case .down:
+            if let pressIdentifier {
+                identifiedPressesByInput[input, default: []].insert(pressIdentifier)
+            } else {
+                anonymousPressCountsByInput[input, default: 0] += 1
+            }
+        case .up:
+            if let pressIdentifier {
+                guard var identifiers = identifiedPressesByInput[input] else { return }
+                identifiers.remove(pressIdentifier)
+                identifiedPressesByInput[input] = identifiers.isEmpty ? nil : identifiers
+            } else {
+                guard let count = anonymousPressCountsByInput[input], count > 0 else { return }
+                anonymousPressCountsByInput[input] = count == 1 ? nil : count - 1
+            }
+        }
+    }
+
+    mutating func removeAll() {
+        identifiedPressesByInput.removeAll()
+        anonymousPressCountsByInput.removeAll()
     }
 }
 
@@ -202,6 +306,7 @@ final class ControllerClient: ObservableObject {
     private var lastSentEventUpdateTask: Task<Void, Never>?
     private var pendingLastSentEvent = "None"
     private var activeInputState = ControllerActiveInputState()
+    private var activeElementInputState = ControllerActiveElementInputState()
     private var activeStickValues: [VirtualGamepadStick: CGVector] = [:]
     private var activeTriggerValues: [VirtualGamepadTrigger: Double] = [:]
     private var lastAnalogSendUptimeByKey: [String: UInt64] = [:]
@@ -387,6 +492,7 @@ final class ControllerClient: ObservableObject {
             releaseAll()
         }
         activeInputState.removeAll()
+        activeElementInputState.removeAll()
         activeStickValues.removeAll()
         activeTriggerValues.removeAll()
         lastAnalogSendUptimeByKey.removeAll()
@@ -422,6 +528,16 @@ final class ControllerClient: ObservableObject {
         activeInputState.record(button: button, state: state, pressIdentifier: pressIdentifier)
         if Self.liveInputStatusUpdatesEnabled {
             updateLastSentEvent("\(button.rawValue) \(state.rawValue)")
+        }
+    }
+
+    func setElementInput(_ input: KeypadElementInputID, pressed: Bool, pressIdentifier: UInt64? = nil) {
+        guard isConnected else { return }
+        let state: ButtonPressState = pressed ? .down : .up
+        guard inputTransport.sendElementInput(input, state: state, pressIdentifier: pressIdentifier) else { return }
+        activeElementInputState.record(input: input, state: state, pressIdentifier: pressIdentifier)
+        if Self.liveInputStatusUpdatesEnabled {
+            updateLastSentEvent("\(input.storageKey) \(state.rawValue)")
         }
     }
 
@@ -519,6 +635,7 @@ final class ControllerClient: ObservableObject {
 
     func releaseAll() {
         activeInputState.removeAll()
+        activeElementInputState.removeAll()
         activeStickValues.removeAll()
         activeTriggerValues.removeAll()
         lastAnalogSendUptimeByKey.removeAll()
@@ -662,6 +779,7 @@ final class ControllerClient: ObservableObject {
             guard connection === stateConnection else { return }
             inputTransport.disconnect()
             activeInputState.removeAll()
+            activeElementInputState.removeAll()
             activeStickValues.removeAll()
             activeTriggerValues.removeAll()
             lastAnalogSendUptimeByKey.removeAll()
@@ -739,12 +857,20 @@ final class ControllerClient: ObservableObject {
 
     private func resendActiveInputs() {
         guard isConnected,
-              !activeInputState.isEmpty || !activeStickValues.isEmpty || !activeTriggerValues.isEmpty
+              !activeInputState.isEmpty || !activeElementInputState.isEmpty || !activeStickValues.isEmpty || !activeTriggerValues.isEmpty
         else { return }
 
         for activePress in activeInputState.activePresses {
             _ = inputTransport.sendButton(
                 activePress.button,
+                state: .down,
+                pressIdentifier: activePress.pressIdentifier
+            )
+        }
+
+        for activePress in activeElementInputState.activePresses {
+            _ = inputTransport.sendElementInput(
+                activePress.input,
                 state: .down,
                 pressIdentifier: activePress.pressIdentifier
             )
@@ -1065,6 +1191,7 @@ final class ControllerClient: ObservableObject {
         guard connection === failedConnection else { return }
         inputTransport.disconnect()
         activeInputState.removeAll()
+        activeElementInputState.removeAll()
         activeStickValues.removeAll()
         activeTriggerValues.removeAll()
         lastAnalogSendUptimeByKey.removeAll()

@@ -87,6 +87,7 @@ final class MacControllerServer: ObservableObject {
     private var heartbeatTimer: Timer?
     private var heartbeatTimedOut = false
     private var inputPressedButtons: Set<GameButton> = []
+    private var inputPressedElementInputs: Set<KeypadElementInputID> = []
     private var profileKeyBindings: [UUID: [GameButton: MacKeyBinding]] = [:]
     private var profileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]] = [:]
     private var realtimeKeyBindings: [GameButton: MacKeyBinding]
@@ -104,6 +105,7 @@ final class MacControllerServer: ObservableObject {
     private var lastAccessibilityRefresh = Date.distantPast
     private var activeBindings: [GameButton: MacKeyBinding] = [:]
     private var activeOutputBindings: [GameButton: MacControlOutputBinding] = [:]
+    private var activeElementOutputBindings: [KeypadElementInputID: MacControlOutputBinding] = [:]
     private var heldBindingCounts: [MacKeyBinding: Int] = [:]
     private var heldGamepadButtonCounts: [VirtualGamepadButton: Int] = [:]
     private var lastAnalogSequenceNumberByKey: [String: UInt64] = [:]
@@ -117,7 +119,8 @@ final class MacControllerServer: ObservableObject {
     }
     private struct PendingButtonMessage {
         let message: ControllerMessage
-        let button: GameButton
+        let button: GameButton?
+        let elementInput: KeypadElementInputID?
         let state: ButtonPressState
         let source: String
     }
@@ -133,6 +136,8 @@ final class MacControllerServer: ObservableObject {
     private var activePressLastSeenByButton: [GameButton: [UInt64: UInt64]] = [:]
     private var anonymousPressCountsByButton: [GameButton: Int] = [:]
     private var anonymousPressLastSeenByButton: [GameButton: UInt64] = [:]
+    private var activePressIdentifiersByElementInput: [KeypadElementInputID: Set<UInt64>] = [:]
+    private var anonymousPressCountsByElementInput: [KeypadElementInputID: Int] = [:]
     private var buttonSequenceTracker = ButtonSequenceTracker()
     private var pendingButtonMessagesBySequence: [UInt64: PendingButtonMessage] = [:]
     private var buttonReorderFlushWorkItem: DispatchWorkItem?
@@ -496,15 +501,22 @@ final class MacControllerServer: ObservableObject {
         if mode == .keyboard {
             outputBindings = Self.outputBindings(from: keyBindings)
         }
+        applyElementOutputBinding(outputBindings[button], forLegacyButton: button)
         profileKeyBindings[activeGamepadProfileID] = keyBindings
         profileOutputBindings[activeGamepadProfileID] = outputBindings
         let realtimeOutputs = outputBindings
+        let updatedProfiles = gamepadProfiles
+        let updatedCustomization = gamepadCustomization
         syncOnNetworkQueue {
             releaseIfPressedOnNetworkQueue(button)
             realtimeKeyBindings[button] = binding
             realtimeOutputBindings = realtimeOutputs
+            realtimeGamepadCustomization = updatedCustomization
+            realtimeGamepadProfiles = updatedProfiles
             sendGamepadProfileStateOnNetworkQueue()
         }
+        persistGamepadProfileState()
+        GamepadCustomizationPersistence.save(gamepadCustomization)
         saveKeyBindings()
         saveProfileKeyBindings()
         saveOutputBindings()
@@ -543,9 +555,14 @@ final class MacControllerServer: ObservableObject {
         releaseAll(reason: "Switch output mode")
         gamepadProfiles = profiles
         outputBindings = nextOutputBindings
+        for button in GameButton.allCases {
+            applyElementOutputBinding(nextOutputBindings[button], forLegacyButton: button)
+        }
+        profiles = gamepadProfiles
         profileKeyBindings[activeGamepadProfileID] = keyBindings
         profileOutputBindings[activeGamepadProfileID] = nextOutputBindings
         persistGamepadProfileState()
+        GamepadCustomizationPersistence.save(gamepadCustomization)
         saveKeyBindings()
         saveProfileKeyBindings()
         saveOutputBindings()
@@ -557,6 +574,7 @@ final class MacControllerServer: ObservableObject {
             self.realtimeOutputMode = mode
             self.realtimeOutputBindings = nextOutputBindings
             self.realtimeKeyBindings = activeKeyBindings
+            self.realtimeGamepadCustomization = self.gamepadCustomization
             self.realtimeGamepadProfiles = profiles
             self.sendGamepadProfileStateOnNetworkQueue()
         }
@@ -573,17 +591,22 @@ final class MacControllerServer: ObservableObject {
             keyBindings[button] = nil
         }
         setActiveProfileOutputMode(.custom)
+        applyElementOutputBinding(binding.isEmpty ? nil : binding, forLegacyButton: button)
         profileKeyBindings[activeGamepadProfileID] = keyBindings
         profileOutputBindings[activeGamepadProfileID] = outputBindings
         let updatedProfiles = gamepadProfiles
+        let updatedCustomization = gamepadCustomization
         syncOnNetworkQueue {
             releaseIfPressedOnNetworkQueue(button)
             realtimeOutputMode = .custom
             realtimeOutputBindings[button] = binding.isEmpty ? nil : binding
             realtimeKeyBindings = keyBindings
+            realtimeGamepadCustomization = updatedCustomization
             realtimeGamepadProfiles = updatedProfiles
             sendGamepadProfileStateOnNetworkQueue()
         }
+        persistGamepadProfileState()
+        GamepadCustomizationPersistence.save(gamepadCustomization)
         saveKeyBindings()
         saveProfileKeyBindings()
         saveOutputBindings()
@@ -600,6 +623,38 @@ final class MacControllerServer: ObservableObject {
         gamepadProfiles[activeProfileIndex].updatedAt = Date.currentMilliseconds
     }
 
+    private func applyElementOutputBinding(_ binding: MacControlOutputBinding?, forLegacyButton button: GameButton) {
+        guard let activeProfileIndex = gamepadProfiles.firstIndex(where: { $0.id == activeGamepadProfileID }) else { return }
+        let sharedBinding = binding?.sharedBinding
+
+        func update(_ customization: inout GamepadCustomization) {
+            var normalizedCustomization = customization.normalized
+            let matchingCustomIDs = Set(normalizedCustomization.customButtons.filter { $0.mappedButton == button }.map(\.id))
+            var didChange = false
+            for index in normalizedCustomization.elements.indices {
+                let element = normalizedCustomization.elements[index]
+                guard element.builtInButton == button || element.legacySlot == button || matchingCustomIDs.contains(element.id) else { continue }
+                normalizedCustomization.elements[index].setOutputBinding(sharedBinding, for: .primary)
+                didChange = true
+            }
+            if didChange {
+                customization = normalizedCustomization.normalized
+            }
+        }
+
+        update(&gamepadProfiles[activeProfileIndex].customization)
+        if var landscapeCustomization = gamepadProfiles[activeProfileIndex].landscapeCustomization {
+            update(&landscapeCustomization)
+            gamepadProfiles[activeProfileIndex].landscapeCustomization = landscapeCustomization
+        }
+        if var portraitCustomization = gamepadProfiles[activeProfileIndex].portraitCustomization {
+            update(&portraitCustomization)
+            gamepadProfiles[activeProfileIndex].portraitCustomization = portraitCustomization
+        }
+        gamepadProfiles[activeProfileIndex].updatedAt = Date.currentMilliseconds
+        gamepadCustomization = gamepadProfiles[activeProfileIndex].customization(for: gamepadCustomization.deviceCanvas.editorDeviceFrame.orientation)
+    }
+
     func resetKeyBinding(_ button: GameButton) {
         guard let defaultBinding = DefaultMacControlOutputMap.defaultBinding(for: button) else { return }
         setOutputBinding(defaultBinding, for: button, reason: "Reset output for \(button.displayName)")
@@ -609,17 +664,24 @@ final class MacControllerServer: ObservableObject {
         outputBindings = DefaultMacControlOutputMap.defaultBindings
         keyBindings = outputBindings.keyboardBindings
         setActiveProfileOutputMode(.keyboard)
+        for button in GameButton.allCases {
+            applyElementOutputBinding(outputBindings[button], forLegacyButton: button)
+        }
         profileKeyBindings[activeGamepadProfileID] = keyBindings
         profileOutputBindings[activeGamepadProfileID] = outputBindings
         let updatedProfiles = gamepadProfiles
+        let updatedCustomization = gamepadCustomization
         syncOnNetworkQueue {
             releaseAllOnNetworkQueue(reason: "Reset all outputs")
             realtimeOutputMode = .keyboard
             realtimeKeyBindings = keyBindings
             realtimeOutputBindings = outputBindings
+            realtimeGamepadCustomization = updatedCustomization
             realtimeGamepadProfiles = updatedProfiles
             sendGamepadProfileStateOnNetworkQueue()
         }
+        persistGamepadProfileState()
+        GamepadCustomizationPersistence.save(gamepadCustomization)
         saveKeyBindings()
         saveProfileKeyBindings()
         saveOutputBindings()
@@ -637,7 +699,10 @@ final class MacControllerServer: ObservableObject {
 
         gamepadCustomization = normalizedCustomization
         if let activeProfileIndex = gamepadProfiles.firstIndex(where: { $0.id == activeGamepadProfileID }) {
-            gamepadProfiles[activeProfileIndex].customization = normalizedCustomization
+            gamepadProfiles[activeProfileIndex].setCustomization(
+                normalizedCustomization,
+                for: normalizedCustomization.deviceCanvas.editorDeviceFrame.orientation
+            )
             gamepadProfiles[activeProfileIndex].updatedAt = Date.currentMilliseconds
             persistGamepadProfileState()
         }
@@ -974,7 +1039,7 @@ final class MacControllerServer: ObservableObject {
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
         lastAnalogSequenceNumberByKey.removeAll()
 
-        guard !inputPressedButtons.isEmpty || !heldBindingCounts.isEmpty || !heldGamepadButtonCounts.isEmpty || !activePointerButtons.isEmpty else {
+        guard !inputPressedButtons.isEmpty || !inputPressedElementInputs.isEmpty || !heldBindingCounts.isEmpty || !heldGamepadButtonCounts.isEmpty || !activePointerButtons.isEmpty else {
             virtualGamepadInjector.reset()
             return
         }
@@ -988,8 +1053,10 @@ final class MacControllerServer: ObservableObject {
         heldGamepadButtonCounts.removeAll()
         activeBindings.removeAll()
         activeOutputBindings.removeAll()
+        activeElementOutputBindings.removeAll()
         activePointerButtons.removeAll()
         inputPressedButtons.removeAll()
+        inputPressedElementInputs.removeAll()
         virtualGamepadInjector.reset()
         publishControllerDebug(event: reason, pressedButtons: [], immediately: true)
         logDebug("release_all reason=\(reason) pressed=[]")
@@ -1187,11 +1254,14 @@ final class MacControllerServer: ObservableObject {
             return
         }
 
-        publishClientActivity(from: pairedConnection, force: message.type != .button && message.type != .pointer)
+        publishClientActivity(from: pairedConnection, force: message.type != .button && message.type != .elementInput && message.type != .pointer)
 
         switch message.type {
         case .button:
             handleButtonMessageOnNetworkQueue(message, source: "iPhone UDP")
+
+        case .elementInput:
+            handleElementInputMessageOnNetworkQueue(message, source: "iPhone UDP")
 
         case .pointer:
             handlePointerMessageOnNetworkQueue(message, source: "iPhone UDP")
@@ -1262,7 +1332,7 @@ final class MacControllerServer: ObservableObject {
         let isPairedConnection = pairedConnection === connection
 
         if isPairedConnection {
-            publishClientActivity(from: connection, force: message.type != .button && message.type != .pointer)
+            publishClientActivity(from: connection, force: message.type != .button && message.type != .elementInput && message.type != .pointer)
         }
 
         switch message.type {
@@ -1305,6 +1375,13 @@ final class MacControllerServer: ObservableObject {
                 return
             }
             handleButtonMessageOnNetworkQueue(message, source: "iPhone")
+
+        case .elementInput:
+            guard isPairedConnection else {
+                logDebug("ignored_unpaired_message type=element_input")
+                return
+            }
+            handleElementInputMessageOnNetworkQueue(message, source: "iPhone")
 
         case .pointer:
             guard isPairedConnection else {
@@ -1684,6 +1761,175 @@ final class MacControllerServer: ObservableObject {
         return true
     }
 
+    private func handleElementInputMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
+        guard let elementID = message.elementID,
+              let state = message.state
+        else {
+            publishControllerDebug(event: "Ignored malformed element input", immediately: true)
+            return
+        }
+
+        let input = KeypadElementInputID(elementID: elementID, part: message.elementPart ?? .primary)
+        if let sequenceNumber = ControllerWireCodec.inputSequenceNumber(from: message),
+           shouldTemporarilyBufferButtonMessage(sequenceNumber: sequenceNumber)
+        {
+            bufferElementInputMessage(
+                message,
+                input: input,
+                state: state,
+                source: source,
+                sequenceNumber: sequenceNumber
+            )
+            return
+        }
+
+        processElementInputMessageOnNetworkQueue(message, input: input, state: state, source: source)
+        drainPendingButtonMessagesOnNetworkQueue()
+        cancelButtonReorderFlushIfIdle()
+    }
+
+    private func processElementInputMessageOnNetworkQueue(
+        _ message: ControllerMessage,
+        input: KeypadElementInputID,
+        state: ButtonPressState,
+        source: String
+    ) {
+        let inspection = buttonSequenceTracker.inspect(message)
+        if inspection.isOutOfOrderOrReset,
+           let expectedSequence = inspection.expectedSequence,
+           let receivedSequence = inspection.receivedSequence
+        {
+            logInputEvent("element_input_sequence_stale expected=\(expectedSequence) received=\(receivedSequence) input=\(input.storageKey) state=\(state.rawValue)")
+            return
+        }
+        if inspection.missedFrameBeforeButton,
+           let expectedSequence = inspection.expectedSequence,
+           let receivedSequence = inspection.receivedSequence
+        {
+            logDebug("element_input_sequence_gap expected=\(expectedSequence) received=\(receivedSequence) missed=\(inspection.missedFrameCount) input=\(input.storageKey) state=\(state.rawValue)")
+        }
+
+        handleElementInputOnNetworkQueue(
+            input,
+            state: state,
+            source: source,
+            pressIdentifier: ControllerWireCodec.inputPressIdentifier(from: message)
+        )
+    }
+
+    private func handleElementInputOnNetworkQueue(
+        _ input: KeypadElementInputID,
+        state: ButtonPressState,
+        source: String,
+        pressIdentifier: UInt64?
+    ) {
+        switch state {
+        case .down:
+            if recordElementPressBeganOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
+                handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source)
+            }
+        case .up:
+            switch recordElementPressEndedOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
+            case .shouldReleaseKey:
+                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source)
+            case .stillHeld:
+                break
+            case .orphan:
+                logDebug("ignored_element_input_edge reason=orphan_up input=\(input.storageKey) state=\(state.rawValue)")
+            }
+        }
+    }
+
+    private func handleElementInputEdgeOnNetworkQueue(_ input: KeypadElementInputID, state: ButtonPressState, source: String) {
+        guard let baseOutput = elementOutputBindingOnNetworkQueue(for: input), !baseOutput.isEmpty else { return }
+
+        switch state {
+        case .down:
+            guard !inputPressedElementInputs.contains(input) else { return }
+            let effectiveOutput = baseOutput.withAdditionalModifiers(activeModifierKeysOnNetworkQueue())
+            activeElementOutputBindings[input] = effectiveOutput
+            activateOutput(effectiveOutput)
+            inputPressedElementInputs.insert(input)
+            let label = elementDebugLabelOnNetworkQueue(for: input)
+            publishControllerDebug(event: "\(source): \(label) down (\(effectiveOutput.displayName))", pressedButtons: inputPressedButtons)
+            logInputEvent("element_input source=\(source) input=\(input.storageKey) state=down binding=\(effectiveOutput.displayName)")
+
+        case .up:
+            guard inputPressedElementInputs.contains(input) else { return }
+            let releasedOutput = activeElementOutputBindings.removeValue(forKey: input) ?? baseOutput
+            deactivateOutput(releasedOutput)
+            inputPressedElementInputs.remove(input)
+            let label = elementDebugLabelOnNetworkQueue(for: input)
+            publishControllerDebug(event: "\(source): \(label) up (\(releasedOutput.displayName))", pressedButtons: inputPressedButtons)
+            logInputEvent("element_input source=\(source) input=\(input.storageKey) state=up binding=\(releasedOutput.displayName)")
+        }
+    }
+
+    private func elementOutputBindingOnNetworkQueue(for input: KeypadElementInputID) -> MacControlOutputBinding? {
+        guard let element = realtimeGamepadCustomization.element(for: input.elementID) else { return nil }
+        if let directOutput = element.outputBinding(for: input.part) {
+            return MacControlOutputBinding(shared: directOutput)
+        }
+        guard let legacyButton = legacyButton(for: input.part, element: element) else { return nil }
+        return realtimeOutputBindings[legacyButton] ?? realtimeKeyBindings[legacyButton].map { MacControlOutputBinding.keyboard($0) }
+    }
+
+    private func legacyButton(for part: KeypadElementInputPart, element: KeypadElement) -> GameButton? {
+        switch part {
+        case .primary, .triggerDigital:
+            return element.legacySlot
+        case .joystickUp:
+            return element.joystickMapping?.up
+        case .joystickDown:
+            return element.joystickMapping?.down
+        case .joystickLeft:
+            return element.joystickMapping?.left
+        case .joystickRight:
+            return element.joystickMapping?.right
+        }
+    }
+
+    private func elementDebugLabelOnNetworkQueue(for input: KeypadElementInputID) -> String {
+        guard let element = realtimeGamepadCustomization.element(for: input.elementID) else { return input.storageKey }
+        return input.part == .primary ? element.label : "\(element.label) \(input.part.displayName)"
+    }
+
+    private func recordElementPressBeganOnNetworkQueue(
+        _ input: KeypadElementInputID,
+        pressIdentifier: UInt64?
+    ) -> Bool {
+        let wasPressed = hasElementPressOnNetworkQueue(input)
+        if let pressIdentifier {
+            var identifiers = activePressIdentifiersByElementInput[input, default: []]
+            let inserted = identifiers.insert(pressIdentifier).inserted
+            activePressIdentifiersByElementInput[input] = identifiers
+            return inserted && !wasPressed
+        }
+        if (anonymousPressCountsByElementInput[input] ?? 0) > 0 { return false }
+        anonymousPressCountsByElementInput[input] = 1
+        return !wasPressed
+    }
+
+    private func recordElementPressEndedOnNetworkQueue(
+        _ input: KeypadElementInputID,
+        pressIdentifier: UInt64?
+    ) -> PhysicalButtonReleaseResult {
+        guard hasElementPressOnNetworkQueue(input) else { return .orphan }
+        if let pressIdentifier {
+            guard var identifiers = activePressIdentifiersByElementInput[input], identifiers.remove(pressIdentifier) != nil else { return .orphan }
+            activePressIdentifiersByElementInput[input] = identifiers.isEmpty ? nil : identifiers
+        } else {
+            guard let count = anonymousPressCountsByElementInput[input], count > 0 else { return .orphan }
+            anonymousPressCountsByElementInput[input] = count == 1 ? nil : count - 1
+        }
+        return hasElementPressOnNetworkQueue(input) ? .stillHeld : .shouldReleaseKey
+    }
+
+    private func hasElementPressOnNetworkQueue(_ input: KeypadElementInputID) -> Bool {
+        activePressIdentifiersByElementInput[input]?.isEmpty == false
+            || (anonymousPressCountsByElementInput[input] ?? 0) > 0
+    }
+
     private func handleButtonMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
         guard let button = message.button, let state = message.state else {
             publishControllerDebug(event: "Ignored malformed button event", immediately: true)
@@ -1743,6 +1989,26 @@ final class MacControllerServer: ObservableObject {
             pendingButtonMessagesBySequence[sequenceNumber] = PendingButtonMessage(
                 message: message,
                 button: button,
+                elementInput: nil,
+                state: state,
+                source: source
+            )
+        }
+        scheduleButtonReorderFlushIfNeeded()
+    }
+
+    private func bufferElementInputMessage(
+        _ message: ControllerMessage,
+        input: KeypadElementInputID,
+        state: ButtonPressState,
+        source: String,
+        sequenceNumber: UInt64
+    ) {
+        if pendingButtonMessagesBySequence[sequenceNumber] == nil {
+            pendingButtonMessagesBySequence[sequenceNumber] = PendingButtonMessage(
+                message: message,
+                button: nil,
+                elementInput: input,
                 state: state,
                 source: source
             )
@@ -1774,6 +2040,24 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
+    private func processPendingButtonMessageOnNetworkQueue(_ pending: PendingButtonMessage) {
+        if let button = pending.button {
+            processButtonMessageOnNetworkQueue(
+                pending.message,
+                button: button,
+                state: pending.state,
+                source: pending.source
+            )
+        } else if let input = pending.elementInput {
+            processElementInputMessageOnNetworkQueue(
+                pending.message,
+                input: input,
+                state: pending.state,
+                source: pending.source
+            )
+        }
+    }
+
     private func drainPendingButtonMessagesOnNetworkQueue(flushOldestGap: Bool = false) {
         var didFlushGap = false
 
@@ -1781,12 +2065,7 @@ final class MacControllerServer: ObservableObject {
             if let expectedSequence = buttonSequenceTracker.nextExpectedSequenceNumber,
                let pending = pendingButtonMessagesBySequence.removeValue(forKey: expectedSequence)
             {
-                processButtonMessageOnNetworkQueue(
-                    pending.message,
-                    button: pending.button,
-                    state: pending.state,
-                    source: pending.source
-                )
+                processPendingButtonMessageOnNetworkQueue(pending)
                 continue
             }
 
@@ -1798,12 +2077,7 @@ final class MacControllerServer: ObservableObject {
             }
 
             didFlushGap = true
-            processButtonMessageOnNetworkQueue(
-                pending.message,
-                button: pending.button,
-                state: pending.state,
-                source: pending.source
-            )
+            processPendingButtonMessageOnNetworkQueue(pending)
         }
     }
 
@@ -1935,6 +2209,8 @@ final class MacControllerServer: ObservableObject {
         activePressLastSeenByButton.removeAll()
         anonymousPressCountsByButton.removeAll()
         anonymousPressLastSeenByButton.removeAll()
+        activePressIdentifiersByElementInput.removeAll()
+        anonymousPressCountsByElementInput.removeAll()
     }
 
     private func recordPhysicalPressBeganOnNetworkQueue(
@@ -2270,6 +2546,8 @@ final class MacControllerServer: ObservableObject {
         profiles.map { profile in
             var clientProfile = profile
             clientProfile.customization = gamepadCustomizationForClient(profile.customization)
+            clientProfile.landscapeCustomization = profile.landscapeCustomization.map(gamepadCustomizationForClient)
+            clientProfile.portraitCustomization = profile.portraitCustomization.map(gamepadCustomizationForClient)
             return clientProfile.normalized
         }
     }

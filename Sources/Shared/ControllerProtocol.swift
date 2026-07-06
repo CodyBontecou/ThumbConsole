@@ -32,8 +32,8 @@ public enum GameButton: String, Codable, CaseIterable, Identifiable, Hashable, S
         case .attack: "Action 2"
         case .dash: "Action 3"
         case .focus: "Action 4"
-        case .map: "Utility 1"
-        case .pause: "Utility 2"
+        case .map: "Menu"
+        case .pause: "Pause"
         case .custom1: "Custom Key 1"
         case .custom2: "Custom Key 2"
         case .custom3: "Custom Key 3"
@@ -51,6 +51,66 @@ public enum GameButton: String, Codable, CaseIterable, Identifiable, Hashable, S
 
     static var customSlots: [GameButton] {
         [.custom1, .custom2, .custom3, .custom4, .custom5, .custom6, .custom7, .custom8]
+    }
+}
+
+public enum KeypadElementInputPart: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
+    case primary
+    case joystickUp = "joystick_up"
+    case joystickDown = "joystick_down"
+    case joystickLeft = "joystick_left"
+    case joystickRight = "joystick_right"
+    case triggerDigital = "trigger_digital"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .primary: "Press"
+        case .joystickUp: "Joystick Up"
+        case .joystickDown: "Joystick Down"
+        case .joystickLeft: "Joystick Left"
+        case .joystickRight: "Joystick Right"
+        case .triggerDigital: "Trigger Press"
+        }
+    }
+
+    public init(direction: GamepadJoystickDirection) {
+        switch direction {
+        case .up: self = .joystickUp
+        case .down: self = .joystickDown
+        case .left: self = .joystickLeft
+        case .right: self = .joystickRight
+        }
+    }
+}
+
+public struct KeypadElementInputID: Codable, Hashable, Identifiable, Sendable {
+    public var elementID: UUID
+    public var part: KeypadElementInputPart
+
+    public init(elementID: UUID, part: KeypadElementInputPart = .primary) {
+        self.elementID = elementID
+        self.part = part
+    }
+
+    public var id: String { storageKey }
+
+    public var storageKey: String {
+        part == .primary ? elementID.uuidString : "\(elementID.uuidString)#\(part.rawValue)"
+    }
+
+    public init?(storageKey: String) {
+        let pieces = storageKey.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let first = pieces.first,
+              let id = UUID(uuidString: String(first))
+        else { return nil }
+        elementID = id
+        if pieces.count > 1 {
+            part = KeypadElementInputPart(rawValue: String(pieces[1])) ?? .primary
+        } else {
+            part = .primary
+        }
     }
 }
 
@@ -271,6 +331,7 @@ public enum ControllerMessageType: String, Codable, Sendable {
     case pairingChallenge = "pairing_challenge"
     case pairingAccepted = "pairing_accepted"
     case button
+    case elementInput = "element_input"
     case pointer
     case gamepadAnalog = "gamepad_analog"
     case releaseAll = "release_all"
@@ -287,6 +348,8 @@ public enum ControllerMessageType: String, Codable, Sendable {
 public struct ControllerMessage: Codable, Sendable {
     public var type: ControllerMessageType
     public var button: GameButton?
+    public var elementID: UUID?
+    public var elementPart: KeypadElementInputPart?
     public var state: ButtonPressState?
     public var timestamp: Int64
     public var pairingCode: String?
@@ -314,6 +377,8 @@ public struct ControllerMessage: Codable, Sendable {
     public init(
         type: ControllerMessageType,
         button: GameButton? = nil,
+        elementID: UUID? = nil,
+        elementPart: KeypadElementInputPart? = nil,
         state: ButtonPressState? = nil,
         timestamp: Int64 = Date.currentMilliseconds,
         pairingCode: String? = nil,
@@ -340,6 +405,8 @@ public struct ControllerMessage: Codable, Sendable {
     ) {
         self.type = type
         self.button = button
+        self.elementID = elementID
+        self.elementPart = elementPart
         self.state = state
         self.timestamp = timestamp
         self.pairingCode = pairingCode
@@ -519,8 +586,19 @@ public enum ControllerWireCodec {
         )
     }
 
+    public static func inputSequenceTimestamp(
+        for sequenceNumber: UInt64,
+        pressIdentifier: UInt64? = nil
+    ) -> Int64 {
+        buttonSequenceTimestamp(for: sequenceNumber, pressIdentifier: pressIdentifier)
+    }
+
     public static func buttonSequenceNumber(from message: ControllerMessage) -> UInt64? {
-        guard message.type == .button else { return nil }
+        inputSequenceNumber(from: message)
+    }
+
+    public static func inputSequenceNumber(from message: ControllerMessage) -> UInt64? {
+        guard message.type == .button || message.type == .elementInput else { return nil }
 
         let timestampBits = UInt64(bitPattern: message.timestamp)
         guard timestampBits & buttonSequenceMarker == buttonSequenceMarker else { return nil }
@@ -530,7 +608,11 @@ public enum ControllerWireCodec {
     }
 
     public static func buttonPressIdentifier(from message: ControllerMessage) -> UInt64? {
-        guard message.type == .button else { return nil }
+        inputPressIdentifier(from: message)
+    }
+
+    public static func inputPressIdentifier(from message: ControllerMessage) -> UInt64? {
+        guard message.type == .button || message.type == .elementInput else { return nil }
 
         let timestampBits = UInt64(bitPattern: message.timestamp)
         guard timestampBits & buttonSequenceMarker == buttonSequenceMarker else { return nil }
@@ -546,6 +628,8 @@ public enum ControllerWireCodec {
               message.realtimeToken == nil,
               message.authToken == nil,
               message.serverID == nil,
+              message.elementID == nil,
+              message.elementPart == nil,
               message.gamepadCustomization == nil,
               message.gamepadProfiles == nil,
               message.gamepadProfileID == nil,
@@ -657,7 +741,7 @@ private extension ControllerMessageType {
         case .heartbeat: 3
         case .ping: 4
         case .pong: 5
-        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .error: nil
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .elementInput, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .error: nil
         }
     }
 

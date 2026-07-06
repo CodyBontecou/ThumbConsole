@@ -166,7 +166,7 @@ struct MacContentView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
 
-                    Text("\(activeProfileControlCount) controls • \(server.gamepadProfiles.count) saved setups")
+                    Text("\(activeProfileControlCount) elements • \(server.gamepadProfiles.count) saved setups")
                         .geistTypography(.copy13)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                         .lineLimit(1)
@@ -580,7 +580,7 @@ struct MacContentView: View {
 
     private var activeKeypadPreview: some View {
         MacKeypadMiniPreview(
-            customization: activeGamepadProfile?.customization ?? server.gamepadCustomization,
+            customization: activeGamepadProfile?.customization(for: .landscape) ?? server.gamepadCustomization,
             defaultLabelProvider: { button in
                 server.recordedShortcutLabel(for: button)
             }
@@ -594,7 +594,7 @@ struct MacContentView: View {
                     .geistTypography(.heading24)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .lineLimit(2)
-                Text("\(activeProfileControlCount) controls • \(server.gamepadProfiles.count) saved setups")
+                Text("\(activeProfileControlCount) elements • \(server.gamepadProfiles.count) saved setups")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             }
@@ -941,7 +941,7 @@ struct MacContentView: View {
     }
 
     private var activeProfileControlCount: Int {
-        let customization = activeGamepadProfile?.customization ?? server.gamepadCustomization
+        let customization = activeGamepadProfile?.customization(for: .landscape) ?? server.gamepadCustomization
         return customization.resolvedControls(
             in: CGSize(width: 874, height: 402),
             defaultLabelProvider: { button in server.recordedShortcutLabel(for: button) }
@@ -949,7 +949,7 @@ struct MacContentView: View {
     }
 
     private var activeKeypadPreviewAspectRatio: CGFloat {
-        let screenSize = (activeGamepadProfile?.customization ?? server.gamepadCustomization)
+        let screenSize = (activeGamepadProfile?.customization(for: .landscape) ?? server.gamepadCustomization)
             .deviceCanvas.editorDeviceFrame.screenRect.size
         return max(1.35, screenSize.width / max(screenSize.height, 1))
     }
@@ -1481,7 +1481,7 @@ struct MacContentView: View {
                 DiagnosticRow(title: "Ignored Input Edges", value: "\(server.ignoredButtonEdges)")
                 DiagnosticRow(title: "Recovered Input Edges", value: "\(server.recoveredButtonEdges)")
                 DiagnosticRow(title: "Last Event", value: server.lastReceivedEvent)
-                DiagnosticRow(title: "Pressed Controls", value: pressedButtonsText)
+                DiagnosticRow(title: "Pressed Inputs", value: pressedButtonsText)
             }
             .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
             .overlay(

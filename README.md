@@ -141,12 +141,13 @@ Layouts can also include a trackpad component via **Layout tools → Add Trackpa
 
 The Keypad editor can preview layouts inside every iPhone display class PocketPad supports on iOS 17+, from iPhone XS/XR and SE 2/3 through the iPhone 17 family. The editor uses a vector device frame plus the real logical screen size for each model, so keypad placement matches the phone display instead of relying on a single bundled PNG.
 
-When an iPhone connects, it sends its device metrics to the Mac helper. If you have not manually chosen a frame, the editor auto-selects the connected phone's matching canvas. You can switch frames manually from the keypad inspector, the canvas device menu, or the CLI:
+When an iPhone connects, it sends its device metrics to the Mac helper. If you have not manually chosen a frame, the editor auto-selects the connected phone's matching canvas. Each setup can now save separate portrait and landscape designs; changing the canvas orientation in the editor edits that orientation's variant, and the iPhone swaps variants automatically as it rotates. You can switch frames manually from the keypad inspector, the canvas device menu, or the CLI:
 
 ```bash
 pocketpad device list
 pocketpad device show
 pocketpad device set iphone-17-pro --orientation landscape
+pocketpad device set iphone-17-pro --orientation portrait --variant portrait
 pocketpad device set custom --size 844x390
 pocketpad customization set --light-background '#FFFFFF' --dark-background '#050505'
 pocketpad customization set --background-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
