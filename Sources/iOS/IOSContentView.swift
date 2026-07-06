@@ -1223,15 +1223,17 @@ private struct ControllerTopBarDrawer<Content: View>: View {
     }
 
     private var revealHandle: some View {
-        VStack(spacing: 3) {
+        let visualOpacity = isVisible ? 1.0 : 0.0
+
+        return VStack(spacing: 3) {
             RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                .fill(Geist.color(.grayAlpha700, scheme: colorScheme))
+                .fill(Geist.color(.grayAlpha700, scheme: colorScheme).opacity(visualOpacity))
                 .frame(width: isVisible ? 36 : 56, height: 5)
 
             if !isVisible && !collapsedTitle.isEmpty {
                 Text(collapsedTitle)
                     .geistTypography(.label12)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme).opacity(visualOpacity))
                     .transition(.opacity)
             }
         }
@@ -1239,12 +1241,12 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         .padding(.vertical, Geist.Spacing.s2)
         .background(
             Capsule()
-                .fill(Geist.color(.background100, scheme: colorScheme).opacity(isVisible ? 0.74 : 0.94))
+                .fill(Geist.color(.background100, scheme: colorScheme).opacity(isVisible ? 0.74 : 0))
         )
         .overlay(
             Capsule()
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                .opacity(isVisible ? 0 : 1)
+                .opacity(0)
         )
         .contentShape(Capsule())
         .onTapGesture {
@@ -1602,12 +1604,24 @@ private struct GamepadFreeformControllerCanvas: View {
     var onCustomizationChanged: (GamepadCustomization, Bool) -> Void = { _, _ in }
 
     @State private var activeDrag: IOSKeypadControlEditDragState?
+    @State private var activeResize: IOSKeypadControlResizeState?
+    @State private var activeRotation: IOSKeypadControlRotationState?
+    @State private var selectedControlID: GamepadControlIdentity?
 
     var body: some View {
         GeometryReader { proxy in
             let controls = customization.resolvedControls(in: proxy.size)
 
             ZStack {
+                if isEditingLayout {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            clearEditSelection()
+                        }
+                }
+
                 ForEach(controls) { control in
                     renderedControl(control)
                         .allowsHitTesting(!isEditingLayout)
@@ -1617,7 +1631,11 @@ private struct GamepadFreeformControllerCanvas: View {
 
                 if isEditingLayout {
                     ForEach(controls) { control in
-                        editOverlay(for: control, canvasSize: proxy.size)
+                        editOverlay(
+                            for: control,
+                            canvasSize: proxy.size,
+                            isSelected: selectedControlID == control.id
+                        )
                     }
                 }
             }
@@ -1626,12 +1644,19 @@ private struct GamepadFreeformControllerCanvas: View {
         }
         .onChange(of: isEditingLayout) { _, isEditing in
             if !isEditing {
-                activeDrag = nil
+                clearEditSelection()
             }
         }
         .onDisappear {
-            activeDrag = nil
+            clearEditSelection()
         }
+    }
+
+    private func clearEditSelection() {
+        activeDrag = nil
+        activeResize = nil
+        activeRotation = nil
+        selectedControlID = nil
     }
 
     @ViewBuilder
@@ -1677,49 +1702,143 @@ private struct GamepadFreeformControllerCanvas: View {
         }
     }
 
-    private func editOverlay(for control: GamepadResolvedControl, canvasSize: CGSize) -> some View {
+    private func editOverlay(for control: GamepadResolvedControl, canvasSize: CGSize, isSelected: Bool) -> some View {
+        let chromeOutset: CGFloat = isSelected ? 12 : 6
+        let minimumTouchSize: CGFloat = isSelected ? 52 : 44
         let overlaySize = CGSize(
-            width: max(48, control.size.width + 28),
-            height: max(48, control.size.height + 28)
+            width: max(minimumTouchSize, control.size.width + chromeOutset),
+            height: max(minimumTouchSize, control.size.height + chromeOutset)
         )
-        let cornerRadius = min(22, max(12, min(overlaySize.width, overlaySize.height) * 0.18))
+        let cornerRadius = min(16, max(8, min(overlaySize.width, overlaySize.height) * 0.12))
         let tint = control.isLocationLocked ? Geist.color(.gray900, scheme: colorScheme) : Geist.color(.blue900, scheme: colorScheme)
-        let strokeStyle = StrokeStyle(lineWidth: control.isLocationLocked ? 1.5 : 2, dash: control.isLocationLocked ? [5, 4] : [])
+        let strokeStyle = StrokeStyle(
+            lineWidth: isSelected && !control.isLocationLocked ? 1.75 : 1,
+            dash: control.isLocationLocked ? [4, 4] : []
+        )
 
         return ZStack(alignment: .topTrailing) {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.white.opacity(0.001))
 
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(tint.opacity(control.isLocationLocked ? 0.55 : 0.9), style: strokeStyle)
+                .stroke(tint.opacity(control.isLocationLocked ? 0.45 : (isSelected ? 0.95 : 0.38)), style: strokeStyle)
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(tint.opacity(control.isLocationLocked ? 0.04 : 0.08))
+                        .fill(tint.opacity(control.isLocationLocked ? 0.025 : (isSelected ? 0.055 : 0.018)))
                 )
 
-            Image(systemName: control.isLocationLocked ? "lock.fill" : "arrow.up.and.down.and.arrow.left.and.right")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(tint)
-                .padding(5)
-                .background(Geist.color(.background100, scheme: colorScheme), in: Circle())
-                .overlay(Circle().stroke(tint.opacity(0.28), lineWidth: 1))
-                .offset(x: 6, y: -6)
+            if control.isLocationLocked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(tint)
+                    .padding(4)
+                    .background(Geist.color(.background100, scheme: colorScheme).opacity(0.9), in: Circle())
+                    .overlay(Circle().stroke(tint.opacity(0.2), lineWidth: 1))
+                    .offset(x: 5, y: -5)
+            }
+
+            if isSelected && !control.isLocationLocked {
+                selectedEditHandles(for: control, overlaySize: overlaySize, canvasSize: canvasSize)
+            }
         }
         .frame(width: overlaySize.width, height: overlaySize.height)
         .contentShape(Rectangle())
         .gesture(editDragGesture(for: control, canvasSize: canvasSize))
+        .rotationEffect(.degrees(control.rotationDegrees))
         .position(control.center)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(control.isLocationLocked ? "\(control.label) locked" : "Move \(control.label)")
-        .accessibilityHint(control.isLocationLocked ? "This control is locked in the Mac keypad editor." : "Drag to reposition this keypad control.")
+        .accessibilityLabel(control.isLocationLocked ? "\(control.label) locked" : "Edit \(control.label)")
+        .accessibilityHint(control.isLocationLocked ? "This control is locked in the Mac keypad editor." : "Drag to move. Select it to drag the corner handles to resize or the rotate handle above it to rotate.")
+    }
+
+    private func selectedEditHandles(for control: GamepadResolvedControl, overlaySize: CGSize, canvasSize: CGSize) -> some View {
+        ZStack {
+            Capsule()
+                .fill(Geist.color(.blue700, scheme: colorScheme).opacity(0.45))
+                .frame(width: 1.5, height: 10)
+                .position(x: overlaySize.width / 2, y: 2)
+
+            rotationHandle(for: control)
+                .position(x: overlaySize.width / 2, y: -8)
+
+            ForEach(IOSKeypadResizeHandleCorner.allCases) { corner in
+                resizeHandle(corner, for: control, canvasSize: canvasSize)
+                    .position(handlePosition(for: corner, in: overlaySize))
+            }
+        }
+        .frame(width: overlaySize.width, height: overlaySize.height)
+    }
+
+    private func resizeHandle(_ corner: IOSKeypadResizeHandleCorner, for control: GamepadResolvedControl, canvasSize: CGSize) -> some View {
+        ZStack {
+            Circle()
+                .fill(Geist.color(.blue700, scheme: colorScheme))
+                .overlay(
+                    Circle()
+                        .stroke(Geist.color(.background100, scheme: colorScheme), lineWidth: 1.25)
+                )
+                .frame(width: 10, height: 10)
+        }
+        .frame(width: 34, height: 34)
+        .contentShape(Rectangle())
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named("iOSKeypadLayoutCanvas"))
+                .onChanged { value in
+                    updateResize(corner, value: value, control: control, canvasSize: canvasSize)
+                }
+                .onEnded { value in
+                    finishResize(value, control: control, canvasSize: canvasSize)
+                }
+        )
+        .accessibilityLabel(Text(corner.accessibilityLabel))
+        .accessibilityHint(Text("Drag to resize this keypad control"))
+    }
+
+    private func rotationHandle(for control: GamepadResolvedControl) -> some View {
+        Image(systemName: "arrow.clockwise")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(Geist.color(.blue700, scheme: colorScheme), in: Circle())
+            .overlay(Circle().stroke(Geist.color(.background100, scheme: colorScheme), lineWidth: 1.25))
+            .contentShape(Circle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("iOSKeypadLayoutCanvas"))
+                    .onChanged { value in
+                        updateRotation(value, control: control)
+                    }
+                    .onEnded { value in
+                        finishRotation(value, control: control)
+                    }
+            )
+            .accessibilityLabel(Text("Rotate \(control.label)"))
+            .accessibilityHint(Text("Drag around the selected control to rotate it"))
+    }
+
+    private func handlePosition(for corner: IOSKeypadResizeHandleCorner, in size: CGSize) -> CGPoint {
+        let inset: CGFloat = 4
+        switch corner {
+        case .topLeading:
+            return CGPoint(x: inset, y: inset)
+        case .topTrailing:
+            return CGPoint(x: size.width - inset, y: inset)
+        case .bottomTrailing:
+            return CGPoint(x: size.width - inset, y: size.height - inset)
+        case .bottomLeading:
+            return CGPoint(x: inset, y: size.height - inset)
+        }
     }
 
     private func editDragGesture(for control: GamepadResolvedControl, canvasSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named("iOSKeypadLayoutCanvas"))
             .onChanged { value in
-                guard isEditingLayout, !control.isLocationLocked else { return }
+                guard isEditingLayout else { return }
+                selectedControlID = control.id
+                guard !control.isLocationLocked else { return }
 
                 if activeDrag?.identity != control.id {
+                    activeResize = nil
+                    activeRotation = nil
                     activeDrag = IOSKeypadControlEditDragState(
                         identity: control.id,
                         startCustomization: customization
@@ -1758,12 +1877,365 @@ private struct GamepadFreeformControllerCanvas: View {
                 }
             }
     }
+
+    private func updateResize(
+        _ corner: IOSKeypadResizeHandleCorner,
+        value: DragGesture.Value,
+        control: GamepadResolvedControl,
+        canvasSize: CGSize
+    ) {
+        guard isEditingLayout else { return }
+        selectedControlID = control.id
+        guard !control.isLocationLocked else { return }
+
+        if activeResize?.identity != control.id || activeResize?.corner != corner {
+            activeDrag = nil
+            activeRotation = nil
+            activeResize = IOSKeypadControlResizeState(
+                identity: control.id,
+                corner: corner,
+                startCustomization: customization,
+                startCenter: control.center,
+                startSize: control.size,
+                startWidthScale: control.layoutCustomization.widthScale,
+                startHeightScale: control.layoutCustomization.heightScale
+            )
+        }
+
+        guard var resizeState = activeResize,
+              resizeState.identity == control.id,
+              resizeState.corner == corner,
+              let nextCustomization = resizedCustomization(from: resizeState, translation: value.translation, in: canvasSize)
+        else { return }
+
+        resizeState.didResize = true
+        activeResize = resizeState
+        onCustomizationChanged(nextCustomization, false)
+    }
+
+    private func finishResize(_ value: DragGesture.Value, control: GamepadResolvedControl, canvasSize: CGSize) {
+        guard let resizeState = activeResize,
+              resizeState.identity == control.id
+        else { return }
+
+        defer { activeResize = nil }
+
+        if let finalCustomization = resizedCustomization(from: resizeState, translation: value.translation, in: canvasSize) {
+            onCustomizationChanged(finalCustomization, true)
+        } else if resizeState.didResize {
+            onCustomizationChanged(customization, true)
+        }
+    }
+
+    private func resizedCustomization(
+        from resizeState: IOSKeypadControlResizeState,
+        translation: CGSize,
+        in canvasSize: CGSize
+    ) -> GamepadCustomization? {
+        guard canvasSize.width > 1,
+              canvasSize.height > 1,
+              abs(translation.width) > 0.001 || abs(translation.height) > 0.001
+        else { return nil }
+
+        let baseWidth = max(1, resizeState.startSize.width / max(resizeState.startWidthScale, 0.001))
+        let baseHeight = max(1, resizeState.startSize.height / max(resizeState.startHeightScale, 0.001))
+        let minSize = CGSize(
+            width: GamepadButtonCustomization.minimumDimension(forBaseDimension: baseWidth),
+            height: GamepadButtonCustomization.minimumDimension(forBaseDimension: baseHeight)
+        )
+        let maxSize = CGSize(
+            width: min(canvasSize.width, baseWidth * GamepadButtonCustomization.maximumScale),
+            height: min(canvasSize.height, baseHeight * GamepadButtonCustomization.maximumScale)
+        )
+        let startRect = CGRect(
+            x: resizeState.startCenter.x - resizeState.startSize.width / 2,
+            y: resizeState.startCenter.y - resizeState.startSize.height / 2,
+            width: resizeState.startSize.width,
+            height: resizeState.startSize.height
+        )
+        let existingFrames = resizeState.startCustomization.iosExistingControlFrames(
+            excluding: resizeState.identity,
+            canvasSize: canvasSize
+        )
+        let resizedRect = Self.resizedFrameAvoidingOverlaps(
+            from: startRect,
+            corner: resizeState.corner,
+            translation: translation,
+            minSize: minSize,
+            maxSize: maxSize,
+            canvasSize: canvasSize,
+            avoiding: existingFrames
+        )
+        guard Self.rectDidChange(from: startRect, to: resizedRect) else { return nil }
+
+        let nextCenter = CGPoint(x: resizedRect.midX, y: resizedRect.midY)
+        return resizeState.startCustomization.iosUpdatingControlLayout(for: resizeState.identity) { layout in
+            layout.widthScale = resizedRect.width / baseWidth
+            layout.heightScale = resizedRect.height / baseHeight
+            layout.centerX = nextCenter.x / max(canvasSize.width, 1)
+            layout.centerY = nextCenter.y / max(canvasSize.height, 1)
+        }
+    }
+
+    private func updateRotation(_ value: DragGesture.Value, control: GamepadResolvedControl) {
+        guard isEditingLayout else { return }
+        selectedControlID = control.id
+        guard !control.isLocationLocked else { return }
+
+        let pointerAngle = Self.angleInDegrees(from: control.center, to: value.location)
+        if activeRotation?.identity != control.id {
+            activeDrag = nil
+            activeResize = nil
+            activeRotation = IOSKeypadControlRotationState(
+                identity: control.id,
+                startCustomization: customization,
+                startCenter: control.center,
+                startRotationDegrees: control.layoutCustomization.rotationDegrees,
+                startPointerAngleDegrees: pointerAngle
+            )
+        }
+
+        guard var rotationState = activeRotation,
+              rotationState.identity == control.id,
+              let nextCustomization = rotatedCustomization(from: rotationState, pointerLocation: value.location)
+        else { return }
+
+        rotationState.didRotate = true
+        activeRotation = rotationState
+        onCustomizationChanged(nextCustomization, false)
+    }
+
+    private func finishRotation(_ value: DragGesture.Value, control: GamepadResolvedControl) {
+        guard let rotationState = activeRotation,
+              rotationState.identity == control.id
+        else { return }
+
+        defer { activeRotation = nil }
+
+        if let finalCustomization = rotatedCustomization(from: rotationState, pointerLocation: value.location) {
+            onCustomizationChanged(finalCustomization, true)
+        } else if rotationState.didRotate {
+            onCustomizationChanged(customization, true)
+        }
+    }
+
+    private func rotatedCustomization(
+        from rotationState: IOSKeypadControlRotationState,
+        pointerLocation: CGPoint
+    ) -> GamepadCustomization? {
+        let pointerAngle = Self.angleInDegrees(from: rotationState.startCenter, to: pointerLocation)
+        let delta = GamepadButtonCustomization.normalizedRotationDegrees(pointerAngle - rotationState.startPointerAngleDegrees)
+        let nextRotation = GamepadButtonCustomization.normalizedRotationDegrees(rotationState.startRotationDegrees + delta)
+
+        return rotationState.startCustomization.iosUpdatingControlLayout(for: rotationState.identity) { layout in
+            layout.rotationDegrees = nextRotation
+        }
+    }
+
+    private static func resizedFrameAvoidingOverlaps(
+        from rect: CGRect,
+        corner: IOSKeypadResizeHandleCorner,
+        translation: CGSize,
+        minSize: CGSize,
+        maxSize: CGSize,
+        canvasSize: CGSize,
+        avoiding existingFrames: [CGRect]
+    ) -> CGRect {
+        let desiredFrame = resizedFrame(
+            from: rect,
+            corner: corner,
+            translation: translation,
+            minSize: minSize,
+            maxSize: maxSize,
+            canvasSize: canvasSize
+        )
+        guard GamepadLayoutResolver.frameOverlapsAny(desiredFrame, avoiding: existingFrames) else {
+            return desiredFrame
+        }
+
+        var lowerBound: CGFloat = 0
+        var upperBound: CGFloat = 1
+        var bestFrame = rect
+
+        for _ in 0..<12 {
+            let fraction = (lowerBound + upperBound) / 2
+            let candidateTranslation = CGSize(
+                width: translation.width * fraction,
+                height: translation.height * fraction
+            )
+            let candidateFrame = resizedFrame(
+                from: rect,
+                corner: corner,
+                translation: candidateTranslation,
+                minSize: minSize,
+                maxSize: maxSize,
+                canvasSize: canvasSize
+            )
+
+            if GamepadLayoutResolver.frameOverlapsAny(candidateFrame, avoiding: existingFrames) {
+                upperBound = fraction
+            } else {
+                bestFrame = candidateFrame
+                lowerBound = fraction
+            }
+        }
+
+        return bestFrame
+    }
+
+    private static func resizedFrame(
+        from rect: CGRect,
+        corner: IOSKeypadResizeHandleCorner,
+        translation: CGSize,
+        minSize: CGSize,
+        maxSize: CGSize,
+        canvasSize: CGSize
+    ) -> CGRect {
+        var minX = rect.minX
+        var maxX = rect.maxX
+        var minY = rect.minY
+        var maxY = rect.maxY
+
+        switch corner {
+        case .topLeading:
+            minX += translation.width
+            minY += translation.height
+        case .topTrailing:
+            maxX += translation.width
+            minY += translation.height
+        case .bottomTrailing:
+            maxX += translation.width
+            maxY += translation.height
+        case .bottomLeading:
+            minX += translation.width
+            maxY += translation.height
+        }
+
+        if corner.movesLeadingEdge {
+            minX = GamepadButtonCustomization.clamp(minX, lower: 0, upper: maxX - minSize.width)
+            let width = GamepadButtonCustomization.clamp(maxX - minX, lower: minSize.width, upper: maxSize.width)
+            minX = maxX - width
+        } else {
+            maxX = GamepadButtonCustomization.clamp(maxX, lower: minX + minSize.width, upper: canvasSize.width)
+            let width = GamepadButtonCustomization.clamp(maxX - minX, lower: minSize.width, upper: maxSize.width)
+            maxX = minX + width
+        }
+
+        if corner.movesTopEdge {
+            minY = GamepadButtonCustomization.clamp(minY, lower: 0, upper: maxY - minSize.height)
+            let height = GamepadButtonCustomization.clamp(maxY - minY, lower: minSize.height, upper: maxSize.height)
+            minY = maxY - height
+        } else {
+            maxY = GamepadButtonCustomization.clamp(maxY, lower: minY + minSize.height, upper: canvasSize.height)
+            let height = GamepadButtonCustomization.clamp(maxY - minY, lower: minSize.height, upper: maxSize.height)
+            maxY = minY + height
+        }
+
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    private static func rectDidChange(from original: CGRect, to updated: CGRect) -> Bool {
+        abs(original.minX - updated.minX) > 0.1
+            || abs(original.minY - updated.minY) > 0.1
+            || abs(original.width - updated.width) > 0.1
+            || abs(original.height - updated.height) > 0.1
+    }
+
+    private static func angleInDegrees(from center: CGPoint, to point: CGPoint) -> CGFloat {
+        atan2(point.y - center.y, point.x - center.x) * 180 / .pi
+    }
 }
 
 private struct IOSKeypadControlEditDragState {
     let identity: GamepadControlIdentity
     let startCustomization: GamepadCustomization
     var didMove = false
+}
+
+private struct IOSKeypadControlResizeState {
+    let identity: GamepadControlIdentity
+    let corner: IOSKeypadResizeHandleCorner
+    let startCustomization: GamepadCustomization
+    let startCenter: CGPoint
+    let startSize: CGSize
+    let startWidthScale: CGFloat
+    let startHeightScale: CGFloat
+    var didResize = false
+}
+
+private struct IOSKeypadControlRotationState {
+    let identity: GamepadControlIdentity
+    let startCustomization: GamepadCustomization
+    let startCenter: CGPoint
+    let startRotationDegrees: CGFloat
+    let startPointerAngleDegrees: CGFloat
+    var didRotate = false
+}
+
+private enum IOSKeypadResizeHandleCorner: CaseIterable, Identifiable {
+    case topLeading
+    case topTrailing
+    case bottomTrailing
+    case bottomLeading
+
+    var id: String {
+        switch self {
+        case .topLeading: "topLeading"
+        case .topTrailing: "topTrailing"
+        case .bottomTrailing: "bottomTrailing"
+        case .bottomLeading: "bottomLeading"
+        }
+    }
+
+    var movesLeadingEdge: Bool {
+        switch self {
+        case .topLeading, .bottomLeading: true
+        case .topTrailing, .bottomTrailing: false
+        }
+    }
+
+    var movesTopEdge: Bool {
+        switch self {
+        case .topLeading, .topTrailing: true
+        case .bottomLeading, .bottomTrailing: false
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .topLeading: "Resize from top left"
+        case .topTrailing: "Resize from top right"
+        case .bottomTrailing: "Resize from bottom right"
+        case .bottomLeading: "Resize from bottom left"
+        }
+    }
+}
+
+private extension GamepadCustomization {
+    func iosExistingControlFrames(excluding identity: GamepadControlIdentity, canvasSize: CGSize) -> [CGRect] {
+        resolvedControls(in: canvasSize).compactMap { control in
+            control.id == identity ? nil : control.frame
+        }
+    }
+
+    func iosUpdatingControlLayout(
+        for identity: GamepadControlIdentity,
+        _ mutate: (inout GamepadButtonCustomization) -> Void
+    ) -> GamepadCustomization? {
+        var next = self
+        switch identity {
+        case .builtin(let button):
+            var layout = next.buttonCustomization(for: button)
+            mutate(&layout)
+            next.setButtonCustomization(layout, for: button)
+        case .custom(let id):
+            guard let index = next.customButtons.firstIndex(where: { $0.id == id }) else { return nil }
+            mutate(&next.customButtons[index].layout)
+        }
+
+        let normalizedNext = next.normalized
+        return normalizedNext == normalized ? nil : normalizedNext
+    }
 }
 
 private struct DPadView: View {
