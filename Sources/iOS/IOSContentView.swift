@@ -646,7 +646,6 @@ private struct ControllerPadView: View {
     @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
     @State private var isTopBarVisible = true
     @State private var isExportingKeypadConfiguration = false
-    @State private var keypadExportStatus: String?
     @State private var isEditingKeypadLayout = false
 
     let onShowConnectionPage: (() -> Void)?
@@ -717,14 +716,7 @@ private struct ControllerPadView: View {
             document: keypadExportDocument,
             contentType: .json,
             defaultFilename: keypadExportFilename
-        ) { result in
-            switch result {
-            case .success:
-                keypadExportStatus = "Keypad JSON saved"
-            case .failure(let error):
-                keypadExportStatus = "Export failed: \(error.localizedDescription)"
-            }
-        }
+        ) { _ in }
     }
 
     @ViewBuilder
@@ -830,11 +822,6 @@ private struct ControllerPadView: View {
             isEditingLayout: isEditingKeypadLayout
         ) { nextCustomization, isFinal in
             client.updateSelectedKeypadLayout(nextCustomization, orientation: orientation, sendsToMac: isFinal)
-            keypadExportStatus = if isFinal {
-                client.isConnected ? "Keypad layout saved to Mac" : "Keypad layout saved on iPhone"
-            } else {
-                "Editing keypad layout…"
-            }
         }
         .padding(.leading, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s2))
         .padding(.trailing, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s2))
@@ -900,9 +887,8 @@ private struct ControllerPadView: View {
                 keypadProfileMenu
             }
 
-            keypadEditModeButton(isCompact: false)
+            keypadEditModeButton
             keypadSettingsMenu
-            statusDetailText
 
             Spacer(minLength: Geist.Spacing.s2)
 
@@ -924,7 +910,7 @@ private struct ControllerPadView: View {
 
             Spacer(minLength: 0)
 
-            keypadEditModeButton(isCompact: true)
+            keypadEditModeButton
             keypadSettingsMenu
             homeButton
             connectionActionButton(isCompact: true)
@@ -941,28 +927,16 @@ private struct ControllerPadView: View {
         )
     }
 
-    private var statusDetailText: some View {
-        Text(controllerStatusDetail)
-            .geistTypography(.label12Mono)
-            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-    }
-
-    private func keypadEditModeButton(isCompact: Bool) -> some View {
+    private var keypadEditModeButton: some View {
         Button {
             toggleKeypadLayoutEditing()
         } label: {
-            if isCompact {
-                Image(systemName: isEditingKeypadLayout ? "lock.fill" : "slider.horizontal.3")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 28)
-            } else {
-                Label(isEditingKeypadLayout ? "Lock Layout" : "Edit Layout", systemImage: isEditingKeypadLayout ? "lock.fill" : "slider.horizontal.3")
-            }
+            Image(systemName: isEditingKeypadLayout ? "lock.open.fill" : "lock.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 28)
         }
         .geistButtonStyle(isEditingKeypadLayout ? .primary : .secondary, size: .small)
-        .accessibilityLabel(isEditingKeypadLayout ? "Lock keypad layout" : "Edit keypad layout")
+        .accessibilityLabel(isEditingKeypadLayout ? "Lock keypad layout" : "Unlock keypad layout")
         .accessibilityHint(isEditingKeypadLayout ? "Stops moving controls and keeps the saved layout." : "Lets you drag keypad controls to new positions.")
     }
 
@@ -991,11 +965,11 @@ private struct ControllerPadView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .frame(width: 28)
                 } else {
-                    Text("Disconnect iPhone")
+                    Text("Disconnect")
                 }
             }
             .geistButtonStyle(.error, size: .small)
-            .accessibilityLabel("Disconnect iPhone")
+            .accessibilityLabel("Disconnect")
         } else {
             Button {
                 onShowConnectionPage?()
@@ -1021,7 +995,6 @@ private struct ControllerPadView: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             isEditingKeypadLayout = willEdit
         }
-        keypadExportStatus = willEdit ? "Drag controls to move them" : "Keypad layout locked"
     }
 
     private func showConnectionPage() {
@@ -1055,30 +1028,6 @@ private struct ControllerPadView: View {
         case .connecting, .pairingCodeRequired: .warning
         case .failed, .disconnected: .neutral
         }
-    }
-
-    private var controllerStatusDetail: String {
-        if let keypadExportStatus {
-            return keypadExportStatus
-        }
-
-        if client.isConnected {
-            return client.lastSentEvent
-        }
-
-        if case .failed = client.state, let error = client.lastError {
-            return error
-        }
-
-        if let smartConnectStatus = client.smartConnectStatus {
-            return smartConnectStatus
-        }
-
-        if let macName = client.savedKeypadMacName {
-            return "Saved from \(macName)"
-        }
-
-        return "Saved on this iPhone"
     }
 
     private var keypadExportDocument: PocketPadKeypadConfigurationJSONDocument {
@@ -1167,7 +1116,6 @@ private struct ControllerPadView: View {
         .disabled(client.isSelectedGamepadProfileDefault)
 
         Button {
-            keypadExportStatus = "Choose where to save keypad JSON"
             isExportingKeypadConfiguration = true
         } label: {
             Label("Export Keypads as JSON", systemImage: "square.and.arrow.up")
