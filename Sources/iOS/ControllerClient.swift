@@ -669,6 +669,35 @@ final class ControllerClient: ObservableObject {
         updateLastSentEvent("default keypad saved", immediately: true)
     }
 
+    func updateSelectedKeypadLayout(
+        _ customization: GamepadCustomization,
+        orientation: GamepadEditorDeviceOrientation,
+        sendsToMac: Bool
+    ) {
+        let stampedCustomization = Self.customization(customization, matching: orientation).stampedForLocalUpdate
+        var updatedProfiles = gamepadProfiles
+        if let index = updatedProfiles.firstIndex(where: { $0.id == selectedGamepadProfileID }) {
+            updatedProfiles[index].setCustomization(stampedCustomization, for: orientation)
+            updatedProfiles[index].updatedAt = Date.currentMilliseconds
+            gamepadProfiles = updatedProfiles
+        }
+
+        applyLocalGamepadCustomization(stampedCustomization)
+        persistGamepadProfiles()
+        markSavedKeypadSnapshotAvailable()
+
+        guard sendsToMac else { return }
+        send(
+            .init(
+                type: .gamepadCustomization,
+                timestamp: 0,
+                gamepadCustomization: stampedCustomization,
+                gamepadProfileID: selectedGamepadProfileID
+            )
+        )
+        updateLastSentEvent(isConnected ? "keypad layout saved" : "keypad layout saved locally", immediately: true)
+    }
+
     func setKeypadColorSchemePreference(_ preference: GamepadColorSchemePreference) {
         var nextCustomization = gamepadCustomization
         guard nextCustomization.colorSchemePreference != preference else { return }
@@ -682,8 +711,26 @@ final class ControllerClient: ObservableObject {
 
         applyLocalGamepadCustomization(stampedCustomization)
         persistGamepadProfiles()
-        send(.init(type: .gamepadCustomization, timestamp: 0, gamepadCustomization: stampedCustomization))
+        send(
+            .init(
+                type: .gamepadCustomization,
+                timestamp: 0,
+                gamepadCustomization: stampedCustomization,
+                gamepadProfileID: selectedGamepadProfileID
+            )
+        )
         updateLastSentEvent("keypad appearance: \(preference.displayName)", immediately: true)
+    }
+
+    private static func customization(_ customization: GamepadCustomization, matching orientation: GamepadEditorDeviceOrientation) -> GamepadCustomization {
+        var nextCustomization = customization.normalized
+        let frame = nextCustomization.deviceCanvas.editorDeviceFrame
+        if frame.orientation != orientation {
+            nextCustomization.deviceCanvas = GamepadDeviceCanvas(
+                frameID: GamepadEditorDeviceFrame(spec: frame.spec, orientation: orientation).id
+            )
+        }
+        return nextCustomization.normalized
     }
 
     private func applyLocalGamepadCustomization(_ customization: GamepadCustomization) {

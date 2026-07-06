@@ -104,7 +104,7 @@ public enum GamepadAccentStyle: String, Codable, CaseIterable, Identifiable, Sen
         case .green: "Green"
         case .purple: "Purple"
         case .pink: "Pink"
-        case .amber: "Amber"
+        case .amber: "Slate"
         }
     }
 }
@@ -174,13 +174,62 @@ public struct GamepadRGBAColor: Codable, Equatable, Sendable {
     public static let defaultValue = GamepadRGBAColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1)
 
     var normalized: GamepadRGBAColor {
-        GamepadRGBAColor(
+        let clamped = GamepadRGBAColor(
             red: Self.clamp(red),
             green: Self.clamp(green),
             blue: Self.clamp(blue),
             alpha: Self.clamp(alpha)
         )
+        return Self.replacingLegacyAmberWithGreyscale(clamped)
     }
+
+    private static func replacingLegacyAmberWithGreyscale(_ color: GamepadRGBAColor) -> GamepadRGBAColor {
+        let key = hexKey(red: color.red, green: color.green, blue: color.blue)
+        guard let replacementHex = legacyAmberGreyscaleHexes[key],
+              let replacement = GamepadRGBAColor(hexString: replacementHex, alpha: color.alpha)
+        else {
+            return color
+        }
+        return replacement
+    }
+
+    private static func hexKey(red: CGFloat, green: CGFloat, blue: CGFloat) -> String {
+        String(
+            format: "#%02X%02X%02X",
+            Int((Self.clamp(red) * 255).rounded()),
+            Int((Self.clamp(green) * 255).rounded()),
+            Int((Self.clamp(blue) * 255).rounded())
+        )
+    }
+
+    private static let legacyAmberGreyscaleHexes: [String: String] = [
+        "#FFF6DE": "#F5F5F5",
+        "#FFF4CF": "#F5F5F5",
+        "#FFF1C1": "#F5F5F5",
+        "#FFDC73": "#D4D4D4",
+        "#FFC543": "#D4D4D4",
+        "#FFA600": "#A3A3A3",
+        "#FFAE00": "#A3A3A3",
+        "#FF9300": "#737373",
+        "#AA4D00": "#525252",
+        "#561900": "#262626",
+        "#2A1700": "#1A1A1A",
+        "#361900": "#1F1F1F",
+        "#502800": "#292929",
+        "#5B3000": "#2E2E2E",
+        "#703E00": "#454545",
+        "#ED9A00": "#878787",
+        "#FFF3D5": "#EDEDED",
+        "#FDE68A": "#E5E7EB",
+        "#D97706": "#9CA3AF",
+        "#78350F": "#374151",
+        "#FCD34D": "#F3F4F6",
+        "#F59E0B": "#D1D5DB",
+        "#451A03": "#111827",
+        "#FACC15": "#D1D5DB",
+        "#F97316": "#9CA3AF",
+        "#EAB308": "#D1D5DB"
+    ]
 
     var swiftUIColor: Color {
         Color(.sRGB, red: Double(normalized.red), green: Double(normalized.green), blue: Double(normalized.blue), opacity: Double(normalized.alpha))
@@ -3053,13 +3102,8 @@ extension GamepadAccentStyle {
 
     func buttonForeground(isPressed: Bool, scheme: ColorScheme) -> Color {
         if isPressed {
-            switch self {
-            case .amber:
-                scheme == .dark ? Color.black : Geist.color(.background100, scheme: scheme)
-            default:
-                Geist.color(.background100, scheme: scheme)
-            }
-        } else if self == .monochrome {
+            Geist.color(.background100, scheme: scheme)
+        } else if self == .monochrome || self == .amber {
             Geist.color(.gray1000, scheme: scheme)
         } else {
             strongColor(scheme: scheme)
@@ -3067,7 +3111,7 @@ extension GamepadAccentStyle {
     }
 
     func buttonStroke(isPressed: Bool, scheme: ColorScheme) -> Color {
-        if self == .monochrome {
+        if self == .monochrome || self == .amber {
             return isPressed ? Geist.color(.grayAlpha600, scheme: scheme) : Geist.color(.grayAlpha400, scheme: scheme)
         }
         return isPressed ? strongColor(scheme: scheme) : borderColor(scheme: scheme)
@@ -3080,7 +3124,7 @@ extension GamepadAccentStyle {
         case .green: Geist.color(.green100, scheme: scheme)
         case .purple: Geist.color(.purple100, scheme: scheme)
         case .pink: Geist.color(.pink100, scheme: scheme)
-        case .amber: Geist.color(.amber100, scheme: scheme)
+        case .amber: Geist.color(.gray100, scheme: scheme)
         }
     }
 
@@ -3091,7 +3135,7 @@ extension GamepadAccentStyle {
         case .green: Geist.color(.green900, scheme: scheme)
         case .purple: Geist.color(.purple900, scheme: scheme)
         case .pink: Geist.color(.pink900, scheme: scheme)
-        case .amber: Geist.color(.amber900, scheme: scheme)
+        case .amber: Geist.color(.gray1000, scheme: scheme)
         }
     }
 
@@ -3102,7 +3146,7 @@ extension GamepadAccentStyle {
         case .green: Geist.color(.green400, scheme: scheme)
         case .purple: Geist.color(.purple400, scheme: scheme)
         case .pink: Geist.color(.pink400, scheme: scheme)
-        case .amber: Geist.color(.amber400, scheme: scheme)
+        case .amber: Geist.color(.grayAlpha400, scheme: scheme)
         }
     }
 }
@@ -3385,7 +3429,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         setDPad(in: &customization, centerX: 0.17, centerY: 0.54, scale: 0.58, fill: dPadFill)
         setButton(.focus, label: "X", in: &customization, x: 0.84, y: 0.36, width: 0.58, height: 0.58, shape: .circle, fill: "#4F46E5")
         setButton(.dash, label: "A", in: &customization, x: 0.93, y: 0.55, width: 0.58, height: 0.58, shape: .circle, fill: "#DC2626")
-        setButton(.jump, label: "B", in: &customization, x: 0.84, y: 0.74, width: 0.58, height: 0.58, shape: .circle, fill: "#EAB308")
+        setButton(.jump, label: "B", in: &customization, x: 0.84, y: 0.74, width: 0.58, height: 0.58, shape: .circle, fill: "#D1D5DB")
         setButton(.attack, label: "Y", in: &customization, x: 0.75, y: 0.55, width: 0.58, height: 0.58, shape: .circle, fill: "#16A34A")
         setButton(.map, label: "Select", in: &customization, x: 0.43, y: 0.82, width: 0.48, height: 0.44, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
         setButton(.pause, label: "Start", in: &customization, x: 0.57, y: 0.82, width: 0.44, height: 0.44, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
@@ -3397,11 +3441,11 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
     }
 
     private static func nintendo64Customization() -> GamepadCustomization {
-        var customization = baseCustomization(accentStyle: .amber)
+        var customization = baseCustomization(accentStyle: .monochrome)
         let dPadFill = "#202124"
         let stickFill = "#111827"
         let shoulderFill = "#374151"
-        let cButtonFill = "#FACC15"
+        let cButtonFill = "#D1D5DB"
 
         setDPad(in: &customization, centerX: 0.15, centerY: 0.58, scale: 0.46, fill: dPadFill)
         addJoystick(label: "Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.32, y: 0.63, scale: 0.82, fill: stickFill)
@@ -3426,7 +3470,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         let stickFill = "#111827"
         let dPadFill = "#1F2937"
         let utilityFill = "#4B5563"
-        let cStickFill = "#F59E0B"
+        let cStickFill = "#6B7280"
 
         addJoystick(label: "Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.27, y: 0.46, scale: 0.82, fill: stickFill)
         setDPad(in: &customization, centerX: 0.19, centerY: 0.75, scale: 0.44, fill: dPadFill)
@@ -3488,7 +3532,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
     }
 
     private static func genesisSixButtonCustomization() -> GamepadCustomization {
-        var customization = baseCustomization(accentStyle: .amber, controlScale: .standard)
+        var customization = baseCustomization(accentStyle: .monochrome, controlScale: .standard)
         let dPadFill = "#202124"
         let faceFill = "#111827"
         let utilityFill = "#374151"
@@ -3540,7 +3584,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         addJoystick(label: "Stick", mappedButton: .up, mapping: .movement, in: &customization, x: 0.18, y: 0.44, scale: 0.72, fill: shellFill)
         setDPad(in: &customization, centerX: 0.33, centerY: 0.72, scale: 0.48, fill: shellFill)
 
-        setButton(.focus, label: "Y", in: &customization, x: 0.84, y: 0.32, width: 0.58, height: 0.58, shape: .circle, fill: "#FACC15")
+        setButton(.focus, label: "Y", in: &customization, x: 0.84, y: 0.32, width: 0.58, height: 0.58, shape: .circle, fill: "#D1D5DB")
         setButton(.dash, label: "B", in: &customization, x: 0.93, y: 0.50, width: 0.58, height: 0.58, shape: .circle, fill: "#EF4444")
         setButton(.jump, label: "A", in: &customization, x: 0.84, y: 0.68, width: 0.58, height: 0.58, shape: .circle, fill: "#22C55E")
         setButton(.attack, label: "X", in: &customization, x: 0.75, y: 0.50, width: 0.58, height: 0.58, shape: .circle, fill: "#3B82F6")
@@ -3553,7 +3597,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
     }
 
     private static func arcadeStickCustomization() -> GamepadCustomization {
-        var customization = baseCustomization(accentStyle: .amber, controlScale: .standard)
+        var customization = baseCustomization(accentStyle: .monochrome, controlScale: .standard)
         let stickFill = "#111827"
         let utilityFill = "#374151"
 
@@ -3563,8 +3607,8 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         setButton(.pause, label: "Start", in: &customization, x: 0.52, y: 0.20, width: 0.52, height: 0.38, shape: .capsule, fill: utilityFill, shadowStrength: 0.75)
 
         setButton(.jump, label: "B1", in: &customization, x: 0.60, y: 0.39, width: 0.60, height: 0.60, shape: .circle, fill: "#EF4444", shadowStrength: 1.25)
-        setButton(.attack, label: "B2", in: &customization, x: 0.71, y: 0.36, width: 0.60, height: 0.60, shape: .circle, fill: "#F97316", shadowStrength: 1.25)
-        setButton(.dash, label: "B3", in: &customization, x: 0.82, y: 0.36, width: 0.60, height: 0.60, shape: .circle, fill: "#EAB308", shadowStrength: 1.25)
+        setButton(.attack, label: "B2", in: &customization, x: 0.71, y: 0.36, width: 0.60, height: 0.60, shape: .circle, fill: "#9CA3AF", shadowStrength: 1.25)
+        setButton(.dash, label: "B3", in: &customization, x: 0.82, y: 0.36, width: 0.60, height: 0.60, shape: .circle, fill: "#D1D5DB", shadowStrength: 1.25)
         setButton(.focus, label: "B4", in: &customization, x: 0.93, y: 0.39, width: 0.60, height: 0.60, shape: .circle, fill: "#22C55E", shadowStrength: 1.25)
         addButton(mappedTo: .custom1, label: "B5", in: &customization, x: 0.57, y: 0.62, width: 0.60, height: 0.60, shape: .circle, fill: "#3B82F6")
         addButton(mappedTo: .custom2, label: "B6", in: &customization, x: 0.68, y: 0.59, width: 0.60, height: 0.60, shape: .circle, fill: "#6366F1")
@@ -3631,7 +3675,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         setDPad(in: &customization, centerX: 0.34, centerY: 0.70, scale: 0.52, fill: darkFill)
         addJoystick(label: "R Stick", mappedButton: .custom1, mapping: .secondary, in: &customization, x: 0.64, y: 0.74, scale: 0.72, fill: darkFill)
 
-        setButton(.focus, label: "Y", in: &customization, x: 0.84, y: 0.32, width: 0.58, height: 0.58, shape: .circle, fill: "#EAB308")
+        setButton(.focus, label: "Y", in: &customization, x: 0.84, y: 0.32, width: 0.58, height: 0.58, shape: .circle, fill: "#D1D5DB")
         setButton(.dash, label: "B", in: &customization, x: 0.93, y: 0.50, width: 0.58, height: 0.58, shape: .circle, fill: "#EF4444")
         setButton(.jump, label: "A", in: &customization, x: 0.84, y: 0.68, width: 0.58, height: 0.58, shape: .circle, fill: "#22C55E")
         setButton(.attack, label: "X", in: &customization, x: 0.75, y: 0.50, width: 0.58, height: 0.58, shape: .circle, fill: "#3B82F6")
@@ -3903,7 +3947,7 @@ enum GamepadConfigurationProfilePersistence {
             dualStick.customButtons[jumpIndex].layout.centerY = 0.78
             dualStick.customButtons[jumpIndex].layout.widthScale = 1.08
             dualStick.customButtons[jumpIndex].layout.heightScale = 1.08
-            dualStick.customButtons[jumpIndex].layout.accentStyle = .amber
+            dualStick.customButtons[jumpIndex].layout.accentStyle = .monochrome
         }
         dualStick.addCustomButton(mappedTo: .attack)
         if let actionIndex = dualStick.customButtons.indices.last {
@@ -5303,7 +5347,7 @@ struct GamepadCustomizationEditor: View {
                         if profile.id == defaultProfileID {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Geist.color(.amber700, scheme: colorScheme))
+                                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                                 .help("Default setup")
                         }
 
@@ -5545,7 +5589,7 @@ struct GamepadCustomizationEditor: View {
                 if profile.id == defaultProfileID {
                     Image(systemName: "star.fill")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Geist.color(.amber700, scheme: colorScheme))
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 }
             }
             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
@@ -8002,7 +8046,7 @@ struct GamepadCustomizationEditor: View {
         if connectedDeviceFrame.orientation != selectedProfileOrientation {
             switchSelectedProfileOrientation(to: connectedDeviceFrame.orientation, deviceFrame: connectedDeviceFrame)
         } else {
-            update { $0.deviceCanvas = GamepadDeviceCanvas(frameID: connectedDeviceFrame.id) }
+            update(registersUndo: false) { $0.deviceCanvas = GamepadDeviceCanvas(frameID: connectedDeviceFrame.id) }
             noteCanvasLayoutSize(width: connectedDeviceFrame.screenRect.width, height: connectedDeviceFrame.screenRect.height)
         }
     }
@@ -9944,10 +9988,14 @@ struct GamepadCustomizationEditor: View {
         }
     }
 
-    private func update(_ mutate: (inout GamepadCustomization) -> Void) {
+    private func update(
+        actionName: String = "Edit Keypad",
+        registersUndo: Bool = true,
+        _ mutate: (inout GamepadCustomization) -> Void
+    ) {
         var next = customization
         mutate(&next)
-        applyCustomization(next)
+        applyCustomization(next, undoActionName: registersUndo ? actionName : nil)
     }
 
     private func applyCustomization(
@@ -10325,7 +10373,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func resetActiveConfiguration() {
-        applyCustomization(.defaultValue)
+        applyCustomization(.defaultValue, undoActionName: "Reset Keypad")
         selectComponent(.builtin(.jump))
         onReset?()
     }
@@ -12242,6 +12290,10 @@ private struct GamepadLayoutDesigner: View {
                                 }
 
                                 dragState.didMove = true
+                                if !dragState.didRegisterUndo {
+                                    onBeginUndoableChange(dragState.snapshots.count > 1 ? "Move Selection" : "Move Key")
+                                    dragState.didRegisterUndo = true
+                                }
                                 activeDrag = dragState
 
                                 let translation = CGSize(
@@ -12681,6 +12733,8 @@ private struct GamepadLayoutDesigner: View {
             activeTool = .select
             return
         }
+
+        onBeginUndoableChange("Add Shape")
 
         let id = UUID()
         var next = customization
@@ -13415,9 +13469,15 @@ private struct GamepadLayoutDesigner: View {
             activeRadiusDrag = GamepadControlRadiusDragState(identity: control.id, startRadius: min(currentRadii.averageRadius, maximumVisualRadius))
         }
 
-        guard let activeRadiusDrag else { return }
+        guard var radiusDrag = activeRadiusDrag else { return }
         let diagonalDelta = (value.translation.width + value.translation.height) / 2 / max(displayScale, 0.001)
-        let nextRadius = Self.clamp(activeRadiusDrag.startRadius + diagonalDelta, lower: GamepadButtonCustomization.minimumCornerRadius, upper: maximumVisualRadius)
+        let nextRadius = Self.clamp(radiusDrag.startRadius + diagonalDelta, lower: GamepadButtonCustomization.minimumCornerRadius, upper: maximumVisualRadius)
+        guard abs(nextRadius - currentRadii.averageRadius) > 0.05 else { return }
+        if !radiusDrag.didRegisterUndo {
+            onBeginUndoableChange("Round Corners")
+            radiusDrag.didRegisterUndo = true
+            activeRadiusDrag = radiusDrag
+        }
 
         updateLayoutCustomization(for: control.id) { layout in
             if control.shape.usesDynamicEditableCornerRadiusDefault {
@@ -13516,6 +13576,7 @@ private struct GamepadControlDragState {
     let identity: GamepadControlIdentity
     let snapshots: [GamepadControlDragSnapshot]
     var didMove = false
+    var didRegisterUndo = false
 }
 
 private struct GamepadControlResizeState {
@@ -13538,6 +13599,7 @@ private struct GamepadControlRotationState {
 private struct GamepadControlRadiusDragState {
     let identity: GamepadControlIdentity
     let startRadius: CGFloat
+    var didRegisterUndo = false
 }
 
 private struct GamepadGroupResizeControlState {

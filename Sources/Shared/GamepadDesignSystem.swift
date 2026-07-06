@@ -903,7 +903,7 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
     public var description: String {
         switch self {
         case .cavernGlow:
-            "A marketable dark-fantasy action theme with misty cave gradients, pale glyph buttons, cyan soul glows, parchment utility controls, pressed states, icons, and tactile haptics."
+            "A marketable dark-fantasy action theme with misty cave gradients, pale glyph buttons, cyan soul glows, slate utility controls, pressed states, icons, and tactile haptics."
         }
     }
 
@@ -1096,17 +1096,17 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
             ),
             styleToken(
                 id: "cavern-parchment",
-                name: "Parchment Utility",
-                fill: .gradient(gradient(angle: 18, stops: [(0, "#FDE68A", 1), (0.58, "#D97706", 1), (1, "#78350F", 1)])),
-                foreground: "#1C1205",
-                stroke: "#FCD34D",
+                name: "Slate Utility",
+                fill: .gradient(gradient(angle: 18, stops: [(0, "#E5E7EB", 1), (0.58, "#9CA3AF", 1), (1, "#374151", 1)])),
+                foreground: "#111827",
+                stroke: "#F3F4F6",
                 strokeWidth: 1.6,
-                pressedFill: .solid(color("#F59E0B")),
-                shadow: "#451A03",
+                pressedFill: .solid(color("#D1D5DB")),
+                shadow: "#111827",
                 shadowAlpha: 0.42,
                 shadowRadius: 12,
                 shadowY: 7,
-                glow: "#F59E0B",
+                glow: "#D1D5DB",
                 glowAlpha: 0.32,
                 glowRadius: 10,
                 haptic: GamepadHapticFeedback(style: .light, pattern: .double, intensity: 0.40, sharpness: 0.36, duration: 0.05)

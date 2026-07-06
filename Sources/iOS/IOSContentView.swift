@@ -86,7 +86,7 @@ private enum GeistInterfaceTone {
         switch self {
         case .neutral: Geist.color(.gray900, scheme: scheme)
         case .success: Geist.color(.blue900, scheme: scheme)
-        case .warning: Geist.color(.amber900, scheme: scheme)
+        case .warning: Geist.color(.gray1000, scheme: scheme)
         case .error: Geist.color(.red900, scheme: scheme)
         case .accent: Geist.color(.blue900, scheme: scheme)
         }
@@ -96,7 +96,7 @@ private enum GeistInterfaceTone {
         switch self {
         case .neutral: Geist.color(.gray100, scheme: scheme)
         case .success: Geist.color(.blue100, scheme: scheme)
-        case .warning: Geist.color(.amber100, scheme: scheme)
+        case .warning: Geist.color(.gray100, scheme: scheme)
         case .error: Geist.color(.red100, scheme: scheme)
         case .accent: Geist.color(.blue100, scheme: scheme)
         }
@@ -106,7 +106,7 @@ private enum GeistInterfaceTone {
         switch self {
         case .neutral: Geist.color(.grayAlpha400, scheme: scheme)
         case .success: Geist.color(.blue400, scheme: scheme)
-        case .warning: Geist.color(.amber400, scheme: scheme)
+        case .warning: Geist.color(.grayAlpha600, scheme: scheme)
         case .error: Geist.color(.red400, scheme: scheme)
         case .accent: Geist.color(.blue400, scheme: scheme)
         }
@@ -647,6 +647,7 @@ private struct ControllerPadView: View {
     @State private var isTopBarVisible = true
     @State private var isExportingKeypadConfiguration = false
     @State private var keypadExportStatus: String?
+    @State private var isEditingKeypadLayout = false
 
     let onShowConnectionPage: (() -> Void)?
 
@@ -664,9 +665,9 @@ private struct ControllerPadView: View {
             ZStack(alignment: .top) {
                 Group {
                     if isLandscape {
-                        landscapeControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets, customization: activeCustomization)
+                        landscapeControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets, customization: activeCustomization, orientation: orientation)
                     } else {
-                        portraitControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets, customization: activeCustomization)
+                        portraitControllerLayout(size: proxy.size, safeAreaInsets: proxy.safeAreaInsets, customization: activeCustomization, orientation: orientation)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -702,10 +703,12 @@ private struct ControllerPadView: View {
             isTopBarVisible = !isConnected
         }
         .onChange(of: client.gamepadCustomization) { _, _ in
+            guard !isEditingKeypadLayout else { return }
             TouchCaptureUIView.deactivateAllRegisteredTouches()
             client.releaseAll()
         }
         .onChange(of: client.gamepadProfiles) { _, _ in
+            guard !isEditingKeypadLayout else { return }
             TouchCaptureUIView.deactivateAllRegisteredTouches()
             client.releaseAll()
         }
@@ -725,9 +728,9 @@ private struct ControllerPadView: View {
     }
 
     @ViewBuilder
-    private func landscapeControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization) -> some View {
-        if customization.usesFreeformLayout {
-            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets, customization: customization)
+    private func landscapeControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization, orientation: GamepadEditorDeviceOrientation) -> some View {
+        if isEditingKeypadLayout || customization.usesFreeformLayout {
+            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets, customization: customization, orientation: orientation)
         } else {
             let metrics = LandscapeControllerMetrics(
                 size: size,
@@ -761,9 +764,9 @@ private struct ControllerPadView: View {
     }
 
     @ViewBuilder
-    private func portraitControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization) -> some View {
-        if customization.usesFreeformLayout {
-            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets, customization: customization)
+    private func portraitControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization, orientation: GamepadEditorDeviceOrientation) -> some View {
+        if isEditingKeypadLayout || customization.usesFreeformLayout {
+            freeformControllerLayout(size: size, safeAreaInsets: safeAreaInsets, customization: customization, orientation: orientation)
         } else {
             let scale = customization.controlScale.multiplier
             let usableWidth = max(300, size.width - Geist.Spacing.s8)
@@ -819,17 +822,29 @@ private struct ControllerPadView: View {
         }
     }
 
-    private func freeformControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization) -> some View {
+    private func freeformControllerLayout(size: CGSize, safeAreaInsets: EdgeInsets, customization: GamepadCustomization, orientation: GamepadEditorDeviceOrientation) -> some View {
         let isLandscape = size.width >= size.height
 
-        return GamepadFreeformControllerCanvas(customization: customization)
-            .padding(.leading, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s2))
-            .padding(.trailing, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s2))
-            .padding(.bottom, max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay {
+        return GamepadFreeformControllerCanvas(
+            customization: customization,
+            isEditingLayout: isEditingKeypadLayout
+        ) { nextCustomization, isFinal in
+            client.updateSelectedKeypadLayout(nextCustomization, orientation: orientation, sendsToMac: isFinal)
+            keypadExportStatus = if isFinal {
+                client.isConnected ? "Keypad layout saved to Mac" : "Keypad layout saved on iPhone"
+            } else {
+                "Editing keypad layout…"
+            }
+        }
+        .padding(.leading, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s2))
+        .padding(.trailing, max(isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4, safeAreaInsets.trailing + Geist.Spacing.s2))
+        .padding(.bottom, max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            if !isEditingKeypadLayout {
                 TouchRoutingView()
             }
+        }
     }
 
     private func landscapeDPad(metrics: LandscapeControllerMetrics, customization: GamepadCustomization) -> some View {
@@ -885,6 +900,7 @@ private struct ControllerPadView: View {
                 keypadProfileMenu
             }
 
+            keypadEditModeButton(isCompact: false)
             keypadSettingsMenu
             statusDetailText
 
@@ -908,6 +924,7 @@ private struct ControllerPadView: View {
 
             Spacer(minLength: 0)
 
+            keypadEditModeButton(isCompact: true)
             keypadSettingsMenu
             homeButton
             connectionActionButton(isCompact: true)
@@ -930,6 +947,23 @@ private struct ControllerPadView: View {
             .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
+    }
+
+    private func keypadEditModeButton(isCompact: Bool) -> some View {
+        Button {
+            toggleKeypadLayoutEditing()
+        } label: {
+            if isCompact {
+                Image(systemName: isEditingKeypadLayout ? "lock.fill" : "slider.horizontal.3")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 28)
+            } else {
+                Label(isEditingKeypadLayout ? "Lock Layout" : "Edit Layout", systemImage: isEditingKeypadLayout ? "lock.fill" : "slider.horizontal.3")
+            }
+        }
+        .geistButtonStyle(isEditingKeypadLayout ? .primary : .secondary, size: .small)
+        .accessibilityLabel(isEditingKeypadLayout ? "Lock keypad layout" : "Edit keypad layout")
+        .accessibilityHint(isEditingKeypadLayout ? "Stops moving controls and keeps the saved layout." : "Lets you drag keypad controls to new positions.")
     }
 
     private var homeButton: some View {
@@ -978,6 +1012,16 @@ private struct ControllerPadView: View {
             .disabled(onShowConnectionPage == nil)
             .accessibilityLabel("Connect Mac")
         }
+    }
+
+    private func toggleKeypadLayoutEditing() {
+        TouchCaptureUIView.deactivateAllRegisteredTouches()
+        client.releaseAll()
+        let willEdit = !isEditingKeypadLayout
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+            isEditingKeypadLayout = willEdit
+        }
+        keypadExportStatus = willEdit ? "Drag controls to move them" : "Keypad layout locked"
     }
 
     private func showConnectionPage() {
@@ -1552,7 +1596,12 @@ private enum ControllerLayoutMetrics {
 }
 
 private struct GamepadFreeformControllerCanvas: View {
+    @Environment(\.colorScheme) private var colorScheme
     let customization: GamepadCustomization
+    var isEditingLayout = false
+    var onCustomizationChanged: (GamepadCustomization, Bool) -> Void = { _, _ in }
+
+    @State private var activeDrag: IOSKeypadControlEditDragState?
 
     var body: some View {
         GeometryReader { proxy in
@@ -1560,58 +1609,161 @@ private struct GamepadFreeformControllerCanvas: View {
 
             ZStack {
                 ForEach(controls) { control in
-                    if control.isJoystick, let joystickMapping = control.joystickMapping {
-                        GamepadJoystick(
-                            elementID: control.elementID,
-                            mapping: joystickMapping,
-                            outputSettings: control.joystickOutputSettings ?? .defaultValue,
-                            label: control.label,
-                            size: control.size,
-                            elementCustomization: control.layoutCustomization,
-                            customization: customization
-                        )
+                    renderedControl(control)
+                        .allowsHitTesting(!isEditingLayout)
                         .rotationEffect(.degrees(control.rotationDegrees))
                         .position(control.center)
-                    } else if control.isTrigger, let triggerSettings = control.triggerSettings {
-                        GamepadTrigger(
-                            elementID: control.elementID,
-                            mappedButton: control.mappedButton,
-                            label: control.label,
-                            size: control.size,
-                            elementCustomization: control.layoutCustomization,
-                            settings: triggerSettings,
-                            customization: customization
-                        )
-                        .rotationEffect(.degrees(control.rotationDegrees))
-                        .position(control.center)
-                    } else if control.isTrackpad {
-                        GamepadTrackpad(
-                            label: control.label,
-                            size: control.size,
-                            elementCustomization: control.layoutCustomization,
-                            settings: control.trackpadSettings ?? .defaultValue,
-                            customization: customization
-                        )
-                        .rotationEffect(.degrees(control.rotationDegrees))
-                        .position(control.center)
-                    } else {
-                        GamepadButton(
-                            elementID: control.elementID,
-                            button: control.mappedButton,
-                            size: control.size,
-                            shape: control.shape,
-                            labelOverride: control.label,
-                            elementCustomization: control.layoutCustomization,
-                            customization: customization
-                        )
-                        .rotationEffect(.degrees(control.rotationDegrees))
-                        .position(control.center)
+                }
+
+                if isEditingLayout {
+                    ForEach(controls) { control in
+                        editOverlay(for: control, canvasSize: proxy.size)
                     }
                 }
             }
+            .coordinateSpace(name: "iOSKeypadLayoutCanvas")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onChange(of: isEditingLayout) { _, isEditing in
+            if !isEditing {
+                activeDrag = nil
+            }
+        }
+        .onDisappear {
+            activeDrag = nil
+        }
     }
+
+    @ViewBuilder
+    private func renderedControl(_ control: GamepadResolvedControl) -> some View {
+        if control.isJoystick, let joystickMapping = control.joystickMapping {
+            GamepadJoystick(
+                elementID: control.elementID,
+                mapping: joystickMapping,
+                outputSettings: control.joystickOutputSettings ?? .defaultValue,
+                label: control.label,
+                size: control.size,
+                elementCustomization: control.layoutCustomization,
+                customization: customization
+            )
+        } else if control.isTrigger, let triggerSettings = control.triggerSettings {
+            GamepadTrigger(
+                elementID: control.elementID,
+                mappedButton: control.mappedButton,
+                label: control.label,
+                size: control.size,
+                elementCustomization: control.layoutCustomization,
+                settings: triggerSettings,
+                customization: customization
+            )
+        } else if control.isTrackpad {
+            GamepadTrackpad(
+                label: control.label,
+                size: control.size,
+                elementCustomization: control.layoutCustomization,
+                settings: control.trackpadSettings ?? .defaultValue,
+                customization: customization
+            )
+        } else {
+            GamepadButton(
+                elementID: control.elementID,
+                button: control.mappedButton,
+                size: control.size,
+                shape: control.shape,
+                labelOverride: control.label,
+                elementCustomization: control.layoutCustomization,
+                customization: customization
+            )
+        }
+    }
+
+    private func editOverlay(for control: GamepadResolvedControl, canvasSize: CGSize) -> some View {
+        let overlaySize = CGSize(
+            width: max(48, control.size.width + 28),
+            height: max(48, control.size.height + 28)
+        )
+        let cornerRadius = min(22, max(12, min(overlaySize.width, overlaySize.height) * 0.18))
+        let tint = control.isLocationLocked ? Geist.color(.gray900, scheme: colorScheme) : Geist.color(.blue900, scheme: colorScheme)
+        let strokeStyle = StrokeStyle(lineWidth: control.isLocationLocked ? 1.5 : 2, dash: control.isLocationLocked ? [5, 4] : [])
+
+        return ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.001))
+
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(tint.opacity(control.isLocationLocked ? 0.55 : 0.9), style: strokeStyle)
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(tint.opacity(control.isLocationLocked ? 0.04 : 0.08))
+                )
+
+            Image(systemName: control.isLocationLocked ? "lock.fill" : "arrow.up.and.down.and.arrow.left.and.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(tint)
+                .padding(5)
+                .background(Geist.color(.background100, scheme: colorScheme), in: Circle())
+                .overlay(Circle().stroke(tint.opacity(0.28), lineWidth: 1))
+                .offset(x: 6, y: -6)
+        }
+        .frame(width: overlaySize.width, height: overlaySize.height)
+        .contentShape(Rectangle())
+        .gesture(editDragGesture(for: control, canvasSize: canvasSize))
+        .position(control.center)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(control.isLocationLocked ? "\(control.label) locked" : "Move \(control.label)")
+        .accessibilityHint(control.isLocationLocked ? "This control is locked in the Mac keypad editor." : "Drag to reposition this keypad control.")
+    }
+
+    private func editDragGesture(for control: GamepadResolvedControl, canvasSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("iOSKeypadLayoutCanvas"))
+            .onChanged { value in
+                guard isEditingLayout, !control.isLocationLocked else { return }
+
+                if activeDrag?.identity != control.id {
+                    activeDrag = IOSKeypadControlEditDragState(
+                        identity: control.id,
+                        startCustomization: customization
+                    )
+                }
+
+                guard var dragState = activeDrag,
+                      dragState.identity == control.id,
+                      let nextCustomization = dragState.startCustomization.nudgedControls(
+                        [control.id],
+                        by: value.translation,
+                        in: canvasSize
+                      )
+                else { return }
+
+                dragState.didMove = true
+                activeDrag = dragState
+                onCustomizationChanged(nextCustomization, false)
+            }
+            .onEnded { value in
+                guard isEditingLayout,
+                      let dragState = activeDrag,
+                      dragState.identity == control.id
+                else { return }
+
+                defer { activeDrag = nil }
+
+                if let finalCustomization = dragState.startCustomization.nudgedControls(
+                    [control.id],
+                    by: value.translation,
+                    in: canvasSize
+                ) {
+                    onCustomizationChanged(finalCustomization, true)
+                } else if dragState.didMove {
+                    onCustomizationChanged(customization, true)
+                }
+            }
+    }
+}
+
+private struct IOSKeypadControlEditDragState {
+    let identity: GamepadControlIdentity
+    let startCustomization: GamepadCustomization
+    var didMove = false
 }
 
 private struct DPadView: View {

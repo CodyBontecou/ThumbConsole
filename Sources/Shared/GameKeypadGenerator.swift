@@ -559,7 +559,7 @@ private enum KeypadRole {
         case .secondary:
             GamepadRGBAColor(hexString: "#0EA5E9") ?? .defaultValue
         case .utility:
-            GamepadRGBAColor(hexString: "#F59E0B") ?? .defaultValue
+            GamepadRGBAColor(hexString: "#6B7280") ?? .defaultValue
         case .system:
             GamepadRGBAColor(hexString: "#374151") ?? .defaultValue
         }
@@ -570,7 +570,7 @@ private enum KeypadRole {
         case .movement, .system: .monochrome
         case .primary: .purple
         case .secondary: .blue
-        case .utility: .amber
+        case .utility: .monochrome
         }
     }
 }
@@ -1020,7 +1020,7 @@ private enum HollowKnightTemplate {
             confidence: .high,
             notes: [
                 "Uses Hollow Knight's default keyboard bindings: Arrow keys for movement, Z jump, X attack, C dash, A focus/cast.",
-                "Applies the Cavern Glow theme: dark cave gradient background, pale glyph controls, cyan Soul glow, parchment utility buttons, pressed states, icons, and per-control haptics.",
+                "Applies the Cavern Glow theme: dark cave gradient background, pale glyph controls, cyan Soul glow, slate utility buttons, pressed states, icons, and per-control haptics.",
                 "The theme is inspired by dark-fantasy metroidvania controls without bundling copyrighted game art."
             ],
             controlScale: .compact,

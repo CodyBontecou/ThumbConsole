@@ -35,6 +35,17 @@ final class MacControllerServer: ObservableObject {
         return String(decoding: data, as: UTF8.self)
     }
 
+    struct EditorUndoSnapshot: Equatable {
+        var keyBindings: [GameButton: MacKeyBinding]
+        var outputBindings: [GameButton: MacControlOutputBinding]
+        var gamepadCustomization: GamepadCustomization
+        var gamepadProfiles: [GamepadConfigurationProfile]
+        var activeGamepadProfileID: UUID
+        var defaultGamepadProfileID: UUID
+        var profileKeyBindings: [UUID: [GameButton: MacKeyBinding]]
+        var profileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]]
+    }
+
     private let networkQueue = DispatchQueue(label: "PocketPad.NetworkServer", qos: .userInteractive)
     private let networkQueueKey = DispatchSpecificKey<Bool>()
     private let decoder = JSONDecoder()
@@ -466,6 +477,68 @@ final class MacControllerServer: ObservableObject {
 
     var activeGamepadOutputMode: GamepadProfileOutputMode {
         gamepadProfiles.first { $0.id == activeGamepadProfileID }?.outputMode ?? .keyboard
+    }
+
+    func editorUndoSnapshot() -> EditorUndoSnapshot {
+        EditorUndoSnapshot(
+            keyBindings: keyBindings,
+            outputBindings: outputBindings,
+            gamepadCustomization: gamepadCustomization,
+            gamepadProfiles: gamepadProfiles,
+            activeGamepadProfileID: activeGamepadProfileID,
+            defaultGamepadProfileID: defaultGamepadProfileID,
+            profileKeyBindings: profileKeyBindings,
+            profileOutputBindings: profileOutputBindings
+        )
+    }
+
+    func restoreEditorUndoSnapshot(_ snapshot: EditorUndoSnapshot, reason: String) {
+        releaseAll(reason: reason)
+
+        let state = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: snapshot.gamepadProfiles,
+            activeProfileID: snapshot.activeGamepadProfileID,
+            defaultProfileID: snapshot.defaultGamepadProfileID,
+            fallbackCustomization: snapshot.gamepadCustomization
+        )
+        let activeOrientation = snapshot.gamepadCustomization.deviceCanvas.editorDeviceFrame.orientation
+        let restoredCustomization = (state.activeProfile?.customization(for: activeOrientation) ?? snapshot.gamepadCustomization).normalized.stampedForLocalUpdate
+
+        keyBindings = snapshot.keyBindings
+        outputBindings = snapshot.outputBindings
+        gamepadProfiles = state.profiles
+        activeGamepadProfileID = state.activeProfileID
+        defaultGamepadProfileID = state.defaultProfileID
+        gamepadCustomization = restoredCustomization
+        profileKeyBindings = snapshot.profileKeyBindings
+        profileOutputBindings = snapshot.profileOutputBindings
+        profileKeyBindings[activeGamepadProfileID] = keyBindings
+        profileOutputBindings[activeGamepadProfileID] = outputBindings
+        pruneProfileKeyBindings()
+
+        persistGamepadProfileState()
+        GamepadCustomizationPersistence.save(restoredCustomization)
+        saveKeyBindings()
+        saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
+        lastReceivedEvent = reason
+
+        let restoredProfiles = gamepadProfiles
+        let restoredOutputMode = activeGamepadOutputMode
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            self.realtimeKeyBindings = snapshot.keyBindings
+            self.realtimeOutputBindings = snapshot.outputBindings
+            self.realtimeGamepadCustomization = restoredCustomization
+            self.realtimeGamepadProfiles = restoredProfiles
+            self.realtimeActiveGamepadProfileID = state.activeProfileID
+            self.realtimeDefaultGamepadProfileID = state.defaultProfileID
+            self.realtimeOutputMode = restoredOutputMode
+            self.sendGamepadProfileStateOnNetworkQueue()
+        }
+        refreshVirtualGamepadMaterialization(reason: "editor_undo", publish: false)
+        publishRuntimeStatus()
     }
 
     func keyLabel(for button: GameButton) -> String {
@@ -1423,16 +1496,19 @@ final class MacControllerServer: ObservableObject {
                 sendGamepadCustomizationOnNetworkQueue(realtimeGamepadCustomization)
                 return
             }
-            let preference = clientCustomization.colorSchemePreference
+            let profileID = message.gamepadProfileID
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                var nextCustomization = self.gamepadCustomization
-                nextCustomization.colorSchemePreference = preference
-                self.setGamepadCustomization(nextCustomization)
-                self.lastReceivedEvent = "Updated keypad appearance from iPhone"
+                if let profileID,
+                   profileID != self.activeGamepadProfileID,
+                   self.gamepadProfiles.contains(where: { $0.id == profileID }) {
+                    self.selectGamepadProfile(profileID, source: "iphone")
+                }
+                self.setGamepadCustomization(clientCustomization)
+                self.lastReceivedEvent = "Updated keypad layout from iPhone"
                 self.publishRuntimeStatus()
             }
-            logDebug("gamepad_appearance_updated source=iphone preference=\(preference.rawValue)")
+            logDebug("gamepad_customization_updated source=iphone profile=\(profileID?.uuidString ?? "active")")
 
         case .gamepadProfileSelection:
             guard isPairedConnection, let profileID = message.gamepadProfileID else { return }

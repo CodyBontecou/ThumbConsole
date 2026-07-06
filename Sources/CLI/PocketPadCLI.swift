@@ -3649,7 +3649,7 @@ struct PocketPadCLI {
         let lightBackground = profile.customization.keypadBackgroundFillStyle(scheme: .light)
         let darkBackground = profile.customization.keypadBackgroundFillStyle(scheme: .dark)
         print("Background: light \(lightBackground.displayName) \(lightBackground.representativeColor.hexString), dark \(darkBackground.displayName) \(darkBackground.representativeColor.hexString)")
-        print("Accent: \(profile.customization.accentStyle.rawValue)")
+        print("Accent: \(profile.customization.accentStyle.displayName)")
         print("Labels: \(profile.customization.showsButtonLabels ? "shown" : "hidden")")
         print("Custom elements: \(profile.customization.customButtons.count)")
     }
@@ -3770,7 +3770,7 @@ struct PocketPadCLI {
           pocketpad device set iphone-17-pro --orientation landscape
           pocketpad device set custom --size 844x390
           pocketpad element list
-          pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#F59E0B' --dark-fill '#78350F'
+          pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#6B7280' --dark-fill '#374151'
           pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
           pocketpad element add trigger --target left --orientation horizontal --sensitivity 1.2
           pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true

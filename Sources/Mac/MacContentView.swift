@@ -442,7 +442,7 @@ struct MacContentView: View {
         .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                .stroke(Geist.color(.amber400, scheme: colorScheme), lineWidth: 1)
+                .stroke(Geist.color(.grayAlpha600, scheme: colorScheme), lineWidth: 1)
         )
     }
 
@@ -1586,7 +1586,7 @@ private enum MacInterfaceTone {
         switch self {
         case .neutral: Geist.color(.gray900, scheme: scheme)
         case .success: Geist.color(.blue900, scheme: scheme)
-        case .warning: Geist.color(.amber900, scheme: scheme)
+        case .warning: Geist.color(.gray1000, scheme: scheme)
         case .error: Geist.color(.red900, scheme: scheme)
         }
     }
@@ -1595,7 +1595,7 @@ private enum MacInterfaceTone {
         switch self {
         case .neutral: Geist.color(.gray100, scheme: scheme)
         case .success: Geist.color(.blue100, scheme: scheme)
-        case .warning: Geist.color(.amber100, scheme: scheme)
+        case .warning: Geist.color(.gray100, scheme: scheme)
         case .error: Geist.color(.red100, scheme: scheme)
         }
     }
@@ -1604,7 +1604,7 @@ private enum MacInterfaceTone {
         switch self {
         case .neutral: Geist.color(.grayAlpha400, scheme: scheme)
         case .success: Geist.color(.blue400, scheme: scheme)
-        case .warning: Geist.color(.amber400, scheme: scheme)
+        case .warning: Geist.color(.grayAlpha600, scheme: scheme)
         case .error: Geist.color(.red400, scheme: scheme)
         }
     }
@@ -1954,14 +1954,69 @@ private struct TestKeyButton: View {
     }
 }
 
+private final class MacGamepadEditorUndoTarget {}
+
+private func registerMacGamepadUndoSnapshot(
+    _ snapshot: MacControllerServer.EditorUndoSnapshot,
+    undoManager: UndoManager?,
+    undoTarget: MacGamepadEditorUndoTarget,
+    server: MacControllerServer,
+    actionName: String
+) {
+    guard let undoManager else { return }
+    undoManager.registerUndo(withTarget: undoTarget) { _ in
+        let redoSnapshot = server.editorUndoSnapshot()
+        server.restoreEditorUndoSnapshot(snapshot, reason: actionName)
+        registerMacGamepadUndoSnapshot(
+            redoSnapshot,
+            undoManager: undoManager,
+            undoTarget: undoTarget,
+            server: server,
+            actionName: actionName
+        )
+    }
+    undoManager.setActionName(actionName)
+}
+
+private func performUndoableMacGamepadChange(
+    undoManager: UndoManager?,
+    undoTarget: MacGamepadEditorUndoTarget,
+    server: MacControllerServer,
+    actionName: String,
+    change: () -> Void
+) {
+    let snapshot = server.editorUndoSnapshot()
+    change()
+    if server.editorUndoSnapshot() != snapshot {
+        registerMacGamepadUndoSnapshot(
+            snapshot,
+            undoManager: undoManager,
+            undoTarget: undoTarget,
+            server: server,
+            actionName: actionName
+        )
+    }
+}
+
 private struct MacGamepadOutputModeInspector: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.undoManager) private var undoManager
+    @State private var undoTarget = MacGamepadEditorUndoTarget()
 
     private var outputModeBinding: Binding<GamepadProfileOutputMode> {
         Binding(
             get: { server.activeGamepadOutputMode },
-            set: { server.setOutputMode($0) }
+            set: { mode in
+                performUndoableMacGamepadChange(
+                    undoManager: undoManager,
+                    undoTarget: undoTarget,
+                    server: server,
+                    actionName: "Change Output Mode"
+                ) {
+                    server.setOutputMode(mode)
+                }
+            }
         )
     }
 
@@ -1989,12 +2044,23 @@ private struct MacGamepadOutputModeInspector: View {
 private struct MacGamepadSelectedKeyBindingInspector: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.undoManager) private var undoManager
+    @State private var undoTarget = MacGamepadEditorUndoTarget()
     let button: GameButton
 
     private var gamepadButtonSelection: Binding<VirtualGamepadButton?> {
         Binding(
             get: { server.gamepadButtonBinding(for: button) },
-            set: { server.setGamepadButtonBinding($0, for: button) }
+            set: { gamepadButton in
+                performUndoableMacGamepadChange(
+                    undoManager: undoManager,
+                    undoTarget: undoTarget,
+                    server: server,
+                    actionName: "Change Gamepad Output"
+                ) {
+                    server.setGamepadButtonBinding(gamepadButton, for: button)
+                }
+            }
         )
     }
 
@@ -2008,7 +2074,14 @@ private struct MacGamepadSelectedKeyBindingInspector: View {
                 Spacer(minLength: Geist.Spacing.s2)
 
                 Button("Default") {
-                    server.resetKeyBinding(button)
+                    performUndoableMacGamepadChange(
+                        undoManager: undoManager,
+                        undoTarget: undoTarget,
+                        server: server,
+                        actionName: "Reset Shortcut"
+                    ) {
+                        server.resetKeyBinding(button)
+                    }
                 }
                 .geistButtonStyle(.tertiary, size: .small)
                 .disabled(server.isDefaultBinding(for: button))
@@ -2109,6 +2182,8 @@ private struct MacGamepadKeyBindingsInspector: View {
 private struct MacKeyBindingRecorderField: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.undoManager) private var undoManager
+    @State private var undoTarget = MacGamepadEditorUndoTarget()
 
     let button: GameButton
     @State private var isRecording = false
@@ -2255,7 +2330,14 @@ private struct MacKeyBindingRecorderField: View {
             return
         }
 
-        server.setKeyBinding(MacKeyBinding(strokes: strokesToSave), for: button)
+        performUndoableMacGamepadChange(
+            undoManager: undoManager,
+            undoTarget: undoTarget,
+            server: server,
+            actionName: "Record Shortcut"
+        ) {
+            server.setKeyBinding(MacKeyBinding(strokes: strokesToSave), for: button)
+        }
         stopRecording()
     }
 

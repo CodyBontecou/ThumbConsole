@@ -435,7 +435,7 @@ enum GamepadLayoutPreviewRenderer {
         if annotateIssues {
             for control in report.controls where control.displacement > 1 {
                 guard let requested = requestedByID[control.id] else { continue }
-                drawFrameOutline(requested.frame, in: context, color: NSColor.systemOrange.withAlphaComponent(0.74), dashed: true, lineWidth: 1.5)
+                drawFrameOutline(requested.frame, in: context, color: NSColor.systemGray.withAlphaComponent(0.74), dashed: true, lineWidth: 1.5)
             }
         }
 
@@ -530,7 +530,7 @@ enum GamepadLayoutPreviewRenderer {
 
     private static func drawBorder(in context: CGContext, canvasSize: CGSize, report: GamepadLayoutQualityReport) {
         context.saveGState()
-        let color: NSColor = report.hasErrors ? .systemRed : (report.hasWarnings ? .systemOrange : .systemGreen)
+        let color: NSColor = report.hasErrors ? .systemRed : (report.hasWarnings ? .systemGray : .systemGreen)
         context.setStrokeColor(color.withAlphaComponent(0.60).cgColor)
         context.setLineWidth(2)
         context.stroke(CGRect(origin: .zero, size: canvasSize).insetBy(dx: 1, dy: 1))
