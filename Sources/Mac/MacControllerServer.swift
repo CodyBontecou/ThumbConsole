@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import Network
@@ -148,7 +149,9 @@ final class MacControllerServer: ObservableObject {
     private var anonymousPressCountsByButton: [GameButton: Int] = [:]
     private var anonymousPressLastSeenByButton: [GameButton: UInt64] = [:]
     private var activePressIdentifiersByElementInput: [KeypadElementInputID: Set<UInt64>] = [:]
+    private var activePressLastSeenByElementInput: [KeypadElementInputID: [UInt64: UInt64]] = [:]
     private var anonymousPressCountsByElementInput: [KeypadElementInputID: Int] = [:]
+    private var anonymousPressLastSeenByElementInput: [KeypadElementInputID: UInt64] = [:]
     private var buttonSequenceTracker = ButtonSequenceTracker()
     private var pendingButtonMessagesBySequence: [UInt64: PendingButtonMessage] = [:]
     private var buttonReorderFlushWorkItem: DispatchWorkItem?
@@ -925,6 +928,42 @@ final class MacControllerServer: ObservableObject {
         publishRuntimeStatus()
     }
 
+    func launchAttachedApplication(for profileID: UUID? = nil, source: String = "mac") {
+        let targetProfileID = profileID ?? activeGamepadProfileID
+        guard let profile = gamepadProfiles.first(where: { $0.id == targetProfileID }) else {
+            lastReceivedEvent = "No keypad setup found for launch"
+            publishRuntimeStatus()
+            return
+        }
+        guard let launchTarget = profile.launchTarget else {
+            lastReceivedEvent = "No application attached to \(profile.name)"
+            publishRuntimeStatus()
+            return
+        }
+        guard let applicationURL = launchTarget.resolvedApplicationURL() else {
+            lastReceivedEvent = "Couldn’t find \(launchTarget.displayName)"
+            publishRuntimeStatus()
+            return
+        }
+
+        releaseAll(reason: "Launch attached application")
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration) { [weak self] _, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    self.lastReceivedEvent = "Couldn’t launch \(launchTarget.displayName): \(error.localizedDescription)"
+                    self.logDebug("launch_application_failed source=\(source) profile=\(profile.id.uuidString) error=\(error.localizedDescription)")
+                } else {
+                    self.lastReceivedEvent = "Launched \(launchTarget.displayName)"
+                    self.logDebug("launch_application source=\(source) profile=\(profile.id.uuidString) bundle=\(launchTarget.bundleIdentifier ?? "")")
+                }
+                self.publishRuntimeStatus()
+            }
+        }
+    }
+
     private func persistGamepadProfileState() {
         GamepadConfigurationProfilePersistence.save(
             gamepadProfiles,
@@ -1522,6 +1561,13 @@ final class MacControllerServer: ObservableObject {
                 self?.setDefaultGamepadProfile(profileID, source: "iphone")
             }
 
+        case .launchProfileTarget:
+            guard isPairedConnection else { return }
+            let profileID = message.gamepadProfileID
+            DispatchQueue.main.async { [weak self] in
+                self?.launchAttachedApplication(for: profileID, source: "iphone")
+            }
+
         case .gamepadProfiles:
             guard isPairedConnection else { return }
             sendGamepadProfileStateOnNetworkQueue()
@@ -1889,6 +1935,7 @@ final class MacControllerServer: ObservableObject {
             input,
             state: state,
             source: source,
+            sequenceInspection: inspection,
             pressIdentifier: ControllerWireCodec.inputPressIdentifier(from: message)
         )
     }
@@ -1897,21 +1944,55 @@ final class MacControllerServer: ObservableObject {
         _ input: KeypadElementInputID,
         state: ButtonPressState,
         source: String,
+        sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64?
     ) {
+        if sequenceInspection.isOutOfOrderOrReset, sequenceInspection.hasSequence {
+            return
+        }
+
         switch state {
         case .down:
+            if hasElementPressOnNetworkQueue(input),
+               sequenceInspection.missedFrameBeforeButton
+            {
+                if hasIdentifiedElementPressOnNetworkQueue(input, pressIdentifier: pressIdentifier)
+                    || (pressIdentifier == nil && (anonymousPressCountsByElementInput[input] ?? 0) > 0)
+                {
+                    refreshElementPressSeenOnNetworkQueue(input, pressIdentifier: pressIdentifier)
+                    logDebug("element_input_refresh_after_gap input=\(input.storageKey) pressIdentifier=\(pressIdentifier.map(String.init) ?? "nil")")
+                    return
+                }
+
+                logDebug("recovered_element_input_edge reason=missing_release_before_down input=\(input.storageKey) state=\(state.rawValue)")
+                resetElementHoldsOnNetworkQueue(for: input, keeping: pressIdentifier)
+                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source)
+                handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source)
+                return
+            }
+
             if recordElementPressBeganOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
                 handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source)
             }
+
         case .up:
             switch recordElementPressEndedOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
             case .shouldReleaseKey:
                 handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source)
+
             case .stillHeld:
                 break
+
             case .orphan:
-                logDebug("ignored_element_input_edge reason=orphan_up input=\(input.storageKey) state=\(state.rawValue)")
+                if sequenceInspection.missedFrameBeforeButton,
+                   !hasElementPressOnNetworkQueue(input)
+                {
+                    logDebug("recovered_element_input_edge reason=missing_down_before_up input=\(input.storageKey) state=\(state.rawValue)")
+                    handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source)
+                    handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source)
+                } else {
+                    logDebug("ignored_element_input_edge reason=orphan_up input=\(input.storageKey) state=\(state.rawValue)")
+                }
             }
         }
     }
@@ -1975,12 +2056,17 @@ final class MacControllerServer: ObservableObject {
         pressIdentifier: UInt64?
     ) -> Bool {
         let wasPressed = hasElementPressOnNetworkQueue(input)
+        let now = DispatchTime.now().uptimeNanoseconds
+
         if let pressIdentifier {
+            activePressLastSeenByElementInput[input, default: [:]][pressIdentifier] = now
             var identifiers = activePressIdentifiersByElementInput[input, default: []]
             let inserted = identifiers.insert(pressIdentifier).inserted
             activePressIdentifiersByElementInput[input] = identifiers
             return inserted && !wasPressed
         }
+
+        anonymousPressLastSeenByElementInput[input] = now
         if (anonymousPressCountsByElementInput[input] ?? 0) > 0 { return false }
         anonymousPressCountsByElementInput[input] = 1
         return !wasPressed
@@ -1994,9 +2080,15 @@ final class MacControllerServer: ObservableObject {
         if let pressIdentifier {
             guard var identifiers = activePressIdentifiersByElementInput[input], identifiers.remove(pressIdentifier) != nil else { return .orphan }
             activePressIdentifiersByElementInput[input] = identifiers.isEmpty ? nil : identifiers
+            removeElementLastSeenOnNetworkQueue(input, pressIdentifier: pressIdentifier)
         } else {
             guard let count = anonymousPressCountsByElementInput[input], count > 0 else { return .orphan }
-            anonymousPressCountsByElementInput[input] = count == 1 ? nil : count - 1
+            if count == 1 {
+                anonymousPressCountsByElementInput[input] = nil
+                anonymousPressLastSeenByElementInput[input] = nil
+            } else {
+                anonymousPressCountsByElementInput[input] = count - 1
+            }
         }
         return hasElementPressOnNetworkQueue(input) ? .stillHeld : .shouldReleaseKey
     }
@@ -2004,6 +2096,54 @@ final class MacControllerServer: ObservableObject {
     private func hasElementPressOnNetworkQueue(_ input: KeypadElementInputID) -> Bool {
         activePressIdentifiersByElementInput[input]?.isEmpty == false
             || (anonymousPressCountsByElementInput[input] ?? 0) > 0
+    }
+
+    private func hasIdentifiedElementPressOnNetworkQueue(
+        _ input: KeypadElementInputID,
+        pressIdentifier: UInt64?
+    ) -> Bool {
+        guard let pressIdentifier else { return false }
+        return activePressIdentifiersByElementInput[input]?.contains(pressIdentifier) == true
+    }
+
+    private func refreshElementPressSeenOnNetworkQueue(
+        _ input: KeypadElementInputID,
+        pressIdentifier: UInt64?
+    ) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if let pressIdentifier,
+           activePressIdentifiersByElementInput[input]?.contains(pressIdentifier) == true
+        {
+            activePressLastSeenByElementInput[input, default: [:]][pressIdentifier] = now
+        } else if pressIdentifier == nil,
+                  (anonymousPressCountsByElementInput[input] ?? 0) > 0
+        {
+            anonymousPressLastSeenByElementInput[input] = now
+        }
+    }
+
+    private func resetElementHoldsOnNetworkQueue(
+        for input: KeypadElementInputID,
+        keeping pressIdentifier: UInt64?
+    ) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if let pressIdentifier {
+            activePressIdentifiersByElementInput[input] = [pressIdentifier]
+            activePressLastSeenByElementInput[input] = [pressIdentifier: now]
+            anonymousPressCountsByElementInput[input] = nil
+            anonymousPressLastSeenByElementInput[input] = nil
+        } else {
+            activePressIdentifiersByElementInput[input] = nil
+            activePressLastSeenByElementInput[input] = nil
+            anonymousPressCountsByElementInput[input] = 1
+            anonymousPressLastSeenByElementInput[input] = now
+        }
+    }
+
+    private func removeElementLastSeenOnNetworkQueue(_ input: KeypadElementInputID, pressIdentifier: UInt64) {
+        guard var lastSeenByIdentifier = activePressLastSeenByElementInput[input] else { return }
+        lastSeenByIdentifier[pressIdentifier] = nil
+        activePressLastSeenByElementInput[input] = lastSeenByIdentifier.isEmpty ? nil : lastSeenByIdentifier
     }
 
     private func handleButtonMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
@@ -2286,7 +2426,9 @@ final class MacControllerServer: ObservableObject {
         anonymousPressCountsByButton.removeAll()
         anonymousPressLastSeenByButton.removeAll()
         activePressIdentifiersByElementInput.removeAll()
+        activePressLastSeenByElementInput.removeAll()
         anonymousPressCountsByElementInput.removeAll()
+        anonymousPressLastSeenByElementInput.removeAll()
     }
 
     private func recordPhysicalPressBeganOnNetworkQueue(
@@ -2415,6 +2557,7 @@ final class MacControllerServer: ObservableObject {
 
         let now = DispatchTime.now().uptimeNanoseconds
         var buttonsNeedingRelease: [GameButton] = []
+        var elementInputsNeedingRelease: [KeypadElementInputID] = []
 
         for button in GameButton.allCases {
             var didExpireHold = false
@@ -2459,9 +2602,60 @@ final class MacControllerServer: ObservableObject {
             }
         }
 
+        let trackedElementInputs = Set(activePressIdentifiersByElementInput.keys)
+            .union(anonymousPressCountsByElementInput.keys)
+
+        for input in trackedElementInputs {
+            var didExpireHold = false
+
+            if var identifiers = activePressIdentifiersByElementInput[input],
+               let lastSeenByIdentifier = activePressLastSeenByElementInput[input]
+            {
+                let expiredIdentifiers = identifiers.filter { identifier in
+                    guard let lastSeen = lastSeenByIdentifier[identifier], now >= lastSeen else { return false }
+                    return now - lastSeen > Self.physicalHoldRefreshTimeoutNanoseconds
+                }
+
+                if !expiredIdentifiers.isEmpty {
+                    didExpireHold = true
+                    var nextLastSeenByIdentifier = lastSeenByIdentifier
+                    for identifier in expiredIdentifiers {
+                        identifiers.remove(identifier)
+                        nextLastSeenByIdentifier[identifier] = nil
+                    }
+
+                    activePressIdentifiersByElementInput[input] = identifiers.isEmpty ? nil : identifiers
+                    nextLastSeenByIdentifier = nextLastSeenByIdentifier.filter { identifiers.contains($0.key) }
+                    activePressLastSeenByElementInput[input] = nextLastSeenByIdentifier.isEmpty ? nil : nextLastSeenByIdentifier
+                }
+            }
+
+            if let lastSeen = anonymousPressLastSeenByElementInput[input],
+               now >= lastSeen,
+               now - lastSeen > Self.physicalHoldRefreshTimeoutNanoseconds,
+               (anonymousPressCountsByElementInput[input] ?? 0) > 0
+            {
+                didExpireHold = true
+                anonymousPressCountsByElementInput[input] = nil
+                anonymousPressLastSeenByElementInput[input] = nil
+            }
+
+            if didExpireHold,
+               !hasElementPressOnNetworkQueue(input),
+               inputPressedElementInputs.contains(input)
+            {
+                elementInputsNeedingRelease.append(input)
+            }
+        }
+
         for button in buttonsNeedingRelease {
             noteRecoveredButtonEdge(button: button, state: .up, reason: "stale_hold_timeout")
             handleButtonOnNetworkQueue(button, state: .up, source: "Stale hold timeout")
+        }
+
+        for input in elementInputsNeedingRelease {
+            logDebug("recovered_element_input_edge reason=stale_hold_timeout input=\(input.storageKey) state=up")
+            handleElementInputEdgeOnNetworkQueue(input, state: .up, source: "Stale hold timeout")
         }
     }
 

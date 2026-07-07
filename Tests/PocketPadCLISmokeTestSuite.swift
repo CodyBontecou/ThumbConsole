@@ -91,6 +91,30 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(legacyProfile.outputMode, .custom)
     }
 
+    func testKeypadProfileLaunchTargetRoundTrips() throws {
+        let iconData = Data([0x89, 0x50, 0x4E, 0x47])
+        let target = GamepadProfileLaunchTarget(
+            displayName: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            filePath: "/Applications/Safari.app",
+            iconPNGData: iconData,
+            attachedAt: 123_456
+        )
+        let profile = GamepadConfigurationProfile(
+            name: "Browser Setup",
+            customization: .defaultValue,
+            launchTarget: target
+        )
+
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(GamepadConfigurationProfile.self, from: data)
+        XCTAssertEqual(decoded.launchTarget?.displayName, "Safari")
+        XCTAssertEqual(decoded.launchTarget?.bundleIdentifier, "com.apple.Safari")
+        XCTAssertEqual(decoded.launchTarget?.filePath, "/Applications/Safari.app")
+        XCTAssertEqual(decoded.launchTarget?.iconPNGData, iconData)
+        XCTAssertEqual(decoded.launchTarget?.attachedAt, 123_456)
+    }
+
     func testKeypadConfigurationExportFilenameSanitizesProfileNames() {
         XCTAssertEqual(
             PocketPadKeypadConfigurationExport.suggestedFilename(activeProfileName: "My Arcade / Setup"),

@@ -3178,6 +3178,169 @@ public enum GamepadProfileOutputMode: String, Codable, CaseIterable, Identifiabl
     }
 }
 
+private extension String {
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+public struct GamepadProfileLaunchTarget: Codable, Equatable, Sendable {
+    public enum TargetKind: String, Codable, Sendable {
+        case application
+    }
+
+    public var kind: TargetKind
+    public var displayName: String
+    public static let maximumIconBytes = 200_000
+
+    public var bundleIdentifier: String?
+    public var filePath: String?
+    public var bookmarkData: Data?
+    public var iconPNGData: Data?
+    public var attachedAt: Int64
+
+    public init(
+        kind: TargetKind = .application,
+        displayName: String,
+        bundleIdentifier: String? = nil,
+        filePath: String? = nil,
+        bookmarkData: Data? = nil,
+        iconPNGData: Data? = nil,
+        attachedAt: Int64 = Date.currentMilliseconds
+    ) {
+        self.kind = kind
+        self.displayName = displayName
+        self.bundleIdentifier = bundleIdentifier
+        self.filePath = filePath
+        self.bookmarkData = bookmarkData
+        self.iconPNGData = iconPNGData
+        self.attachedAt = attachedAt
+    }
+
+    public var normalized: GamepadProfileLaunchTarget {
+        var copy = self
+        let trimmedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.displayName = trimmedDisplayName.isEmpty ? "Application" : trimmedDisplayName
+        copy.bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+        copy.filePath = filePath?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+        if let iconPNGData, iconPNGData.count <= Self.maximumIconBytes {
+            copy.iconPNGData = iconPNGData
+        } else {
+            copy.iconPNGData = nil
+        }
+#if os(macOS)
+        if copy.iconPNGData == nil, let applicationURL = copy.resolvedApplicationURL() {
+            copy.iconPNGData = Self.applicationIconPNGData(for: applicationURL)
+        }
+#endif
+        return copy
+    }
+
+    var detailText: String {
+        if let bundleIdentifier = bundleIdentifier?.nilIfBlank {
+            return bundleIdentifier
+        }
+        if let filePath = filePath?.nilIfBlank {
+            return (filePath as NSString).abbreviatingWithTildeInPath
+        }
+        return "Mac application"
+    }
+}
+
+#if os(macOS)
+extension GamepadProfileLaunchTarget {
+    static func application(url: URL, bookmarkData: Data? = nil) -> GamepadProfileLaunchTarget {
+        let standardizedURL = url.standardizedFileURL
+        let bundle = Bundle(url: standardizedURL)
+        let bundleDisplayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        let bundleName = bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+        let displayName = bundleDisplayName?.nilIfBlank
+            ?? bundleName?.nilIfBlank
+            ?? standardizedURL.deletingPathExtension().lastPathComponent
+
+        return GamepadProfileLaunchTarget(
+            kind: .application,
+            displayName: displayName,
+            bundleIdentifier: bundle?.bundleIdentifier?.nilIfBlank,
+            filePath: standardizedURL.path,
+            bookmarkData: bookmarkData,
+            iconPNGData: applicationIconPNGData(for: standardizedURL)
+        ).normalized
+    }
+
+    static func applicationIconPNGData(for url: URL) -> Data? {
+        let pixelSize = 128
+        let image = NSWorkspace.shared.icon(forFile: url.path)
+        let targetSize = NSSize(width: pixelSize, height: pixelSize)
+        guard let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelSize,
+            pixelsHigh: pixelSize,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return nil
+        }
+        representation.size = targetSize
+
+        NSGraphicsContext.saveGraphicsState()
+        guard let context = NSGraphicsContext(bitmapImageRep: representation) else {
+            NSGraphicsContext.restoreGraphicsState()
+            return nil
+        }
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .high
+        image.draw(
+            in: NSRect(origin: .zero, size: targetSize),
+            from: NSRect(origin: .zero, size: image.size == .zero ? targetSize : image.size),
+            operation: .copy,
+            fraction: 1
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let data = representation.representation(using: .png, properties: [:]),
+              data.count <= maximumIconBytes
+        else {
+            return nil
+        }
+        return data
+    }
+
+    func resolvedApplicationURL() -> URL? {
+        if let bookmarkData {
+            var isStale = false
+            if let bookmarkedURL = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                return bookmarkedURL
+            }
+        }
+
+        if let filePath = filePath?.nilIfBlank {
+            let fileURL = URL(fileURLWithPath: (filePath as NSString).expandingTildeInPath)
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                return fileURL
+            }
+        }
+
+        if let bundleIdentifier = bundleIdentifier?.nilIfBlank {
+            return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        }
+
+        return nil
+    }
+}
+#endif
+
 public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
@@ -3187,6 +3350,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     public var landscapeCustomization: GamepadCustomization?
     public var portraitCustomization: GamepadCustomization?
     public var outputMode: GamepadProfileOutputMode
+    public var launchTarget: GamepadProfileLaunchTarget?
     public var updatedAt: Int64
 
     public init(
@@ -3196,6 +3360,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         landscapeCustomization: GamepadCustomization? = nil,
         portraitCustomization: GamepadCustomization? = nil,
         outputMode: GamepadProfileOutputMode = .keyboard,
+        launchTarget: GamepadProfileLaunchTarget? = nil,
         updatedAt: Int64 = Date.currentMilliseconds
     ) {
         self.id = id
@@ -3204,6 +3369,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         self.landscapeCustomization = landscapeCustomization?.normalized
         self.portraitCustomization = portraitCustomization?.normalized
         self.outputMode = outputMode
+        self.launchTarget = launchTarget?.normalized
         self.updatedAt = updatedAt
     }
 
@@ -3218,6 +3384,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         // to the profile, not inside it. Treat legacy profiles as custom so any
         // existing mixed keyboard/controller bindings keep working after migration.
         outputMode = try container.decodeIfPresent(GamepadProfileOutputMode.self, forKey: .outputMode) ?? .custom
+        launchTarget = try container.decodeIfPresent(GamepadProfileLaunchTarget.self, forKey: .launchTarget)?.normalized
         updatedAt = try container.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? Date.currentMilliseconds
     }
 
@@ -3229,6 +3396,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         try container.encodeIfPresent(landscapeCustomization?.normalized, forKey: .landscapeCustomization)
         try container.encodeIfPresent(portraitCustomization?.normalized, forKey: .portraitCustomization)
         try container.encode(outputMode, forKey: .outputMode)
+        try container.encodeIfPresent(launchTarget?.normalized, forKey: .launchTarget)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 
@@ -3239,6 +3407,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         copy.customization = customization.normalized
         copy.landscapeCustomization = landscapeCustomization?.normalized
         copy.portraitCustomization = portraitCustomization?.normalized
+        copy.launchTarget = launchTarget?.normalized
         return copy
     }
 
@@ -3290,6 +3459,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         case landscapeCustomization
         case portraitCustomization
         case outputMode
+        case launchTarget
         case updatedAt
     }
 }
@@ -4976,6 +5146,7 @@ private enum GamepadInspectorAccordionSection: Hashable {
     case selectedElementCorners
     case selectedElementEffects
     case keypadIdentity
+    case keypadApplication
     case keypadDevice
     case keypadAppearance
     case keypadBackground
@@ -4995,6 +5166,7 @@ struct GamepadCustomizationEditor: View {
     private let externalDefaultProfileID: UUID?
     private let onReset: (() -> Void)?
     private let onProfilesChanged: (([GamepadConfigurationProfile], UUID, UUID) -> Void)?
+    private let onLaunchProfileTarget: ((UUID) -> Void)?
     private let defaultLabelProvider: ((GameButton) -> String?)?
     private let profileOutputModeContent: (() -> AnyView)?
     private let selectedKeyBindingContent: ((GameButton) -> AnyView)?
@@ -5013,12 +5185,15 @@ struct GamepadCustomizationEditor: View {
     private static let canvasZoomMax: CGFloat = 2.25
     private static let deviceFrameSpringAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.08)
     private static let deviceFrameMotionSettleDelay: TimeInterval = 0.12
+    private static let profileDragUTType = UTType(exportedAs: "com.codybontecou.pocketpad.profile-selection")
 
     @State private var selectedControlID: GamepadControlIdentity
     @State private var selectedControlIDs: Set<GamepadControlIdentity>
     @State private var isControlSelectionActive: Bool
     @State private var profiles: [GamepadConfigurationProfile]
     @State private var selectedProfileID: UUID
+    @State private var selectedProfileIDs: Set<UUID>
+    @State private var draggingProfileIDs: [UUID]
     @State private var defaultProfileID: UUID
     @State private var selectedProfileOrientation: GamepadEditorDeviceOrientation
     @State private var isSelectedProfileExpanded: Bool
@@ -5039,6 +5214,7 @@ struct GamepadCustomizationEditor: View {
     @State private var fillImageImportError: String?
     @State private var fillColorPickerHue: CGFloat = 0
     @State private var copiedElementStyle: GamepadButtonCustomization?
+    @State private var attachedApplicationStatus: String?
     @State private var undoTarget = GamepadEditorUndoTarget()
     @FocusState private var isProfileNameFieldFocused: Bool
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
@@ -5056,6 +5232,7 @@ struct GamepadCustomizationEditor: View {
         initialDefaultProfileID: UUID? = nil,
         onReset: (() -> Void)? = nil,
         onProfilesChanged: (([GamepadConfigurationProfile], UUID, UUID) -> Void)? = nil,
+        onLaunchProfileTarget: ((UUID) -> Void)? = nil,
         defaultLabelProvider: ((GameButton) -> String?)? = nil,
         profileOutputModeContent: (() -> AnyView)? = nil,
         selectedKeyBindingContent: ((GameButton) -> AnyView)? = nil,
@@ -5082,6 +5259,7 @@ struct GamepadCustomizationEditor: View {
         self.externalDefaultProfileID = initialDefaultProfileID
         self.onReset = onReset
         self.onProfilesChanged = onProfilesChanged
+        self.onLaunchProfileTarget = onLaunchProfileTarget
         self.defaultLabelProvider = defaultLabelProvider
         self.profileOutputModeContent = profileOutputModeContent
         self.selectedKeyBindingContent = selectedKeyBindingContent
@@ -5091,6 +5269,8 @@ struct GamepadCustomizationEditor: View {
         self._isControlSelectionActive = State(initialValue: false)
         self._profiles = State(initialValue: loadedProfiles.profiles)
         self._selectedProfileID = State(initialValue: loadedProfiles.activeProfileID)
+        self._selectedProfileIDs = State(initialValue: [loadedProfiles.activeProfileID])
+        self._draggingProfileIDs = State(initialValue: [])
         self._defaultProfileID = State(initialValue: loadedProfiles.defaultProfileID)
         self._selectedProfileOrientation = State(initialValue: loadedProfiles.activeProfile?.customization.deviceCanvas.editorDeviceFrame.orientation ?? .landscape)
         self._isSelectedProfileExpanded = State(initialValue: true)
@@ -5275,6 +5455,15 @@ struct GamepadCustomizationEditor: View {
                     }
                 }
                 .padding(Geist.Spacing.s3)
+                .onDrop(
+                    of: [Self.profileDragUTType],
+                    delegate: GamepadProfileDropDelegate(
+                        targetProfileID: nil,
+                        draggingProfileIDs: $draggingProfileIDs,
+                        onMove: moveDraggedProfiles,
+                        onDropEnded: finishProfileDrag
+                    )
+                )
             }
         }
         .background(Geist.color(.background200, scheme: colorScheme))
@@ -5307,6 +5496,15 @@ struct GamepadCustomizationEditor: View {
                     }
                 }
                 .padding(.vertical, 1)
+                .onDrop(
+                    of: [Self.profileDragUTType],
+                    delegate: GamepadProfileDropDelegate(
+                        targetProfileID: nil,
+                        draggingProfileIDs: $draggingProfileIDs,
+                        onMove: moveDraggedProfiles,
+                        onDropEnded: finishProfileDrag
+                    )
+                )
             }
 
             selectedSetupNameEditor
@@ -5343,13 +5541,14 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private func profileRow(_ profile: GamepadConfigurationProfile) -> some View {
-        let isSelected = profile.id == selectedProfileID
-        let isExpanded = isSelected && isSelectedProfileExpanded
+        let isActive = profile.id == selectedProfileID
+        let isSelected = selectedProfileIDs.contains(profile.id)
+        let isExpanded = isActive && isSelectedProfileExpanded
 
         VStack(alignment: .leading, spacing: isExpanded ? Geist.Spacing.s2 : 0) {
             HStack(spacing: 0) {
                 Button {
-                    toggleProfileRow(profile, isSelected: isSelected)
+                    toggleProfileRow(profile, isSelected: isActive)
                 } label: {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .bold))
@@ -5362,11 +5561,11 @@ struct GamepadCustomizationEditor: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("\(isExpanded ? "Collapse" : "Expand") \(profile.name) setup details"))
-                .accessibilityHint(Text(profileDisclosureAccessibilityHint(isSelected: isSelected, isExpanded: isExpanded)))
+                .accessibilityHint(Text(profileDisclosureAccessibilityHint(isSelected: isActive, isExpanded: isExpanded)))
                 .help(isExpanded ? "Hide setup details" : "Show setup details")
 
                 Button {
-                    selectProfile(profile, expandsDetails: false)
+                    handleProfileClick(profile, expandsDetails: false)
                 } label: {
                     HStack(spacing: Geist.Spacing.s2) {
                         Text(profile.name)
@@ -5376,17 +5575,25 @@ struct GamepadCustomizationEditor: View {
 
                         Spacer(minLength: Geist.Spacing.s1)
 
+                        if profile.launchTarget != nil {
+                            Image(systemName: "app.badge.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                                .help("Attached application")
+                        }
+
                         if profile.id == defaultProfileID {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                                .help("Default setup")
+                                .help("Default")
                         }
 
-                        if isSelected {
+                        if isActive {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                                .help("Active")
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
@@ -5396,16 +5603,16 @@ struct GamepadCustomizationEditor: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("\(profile.name) keypad setup"))
-                .accessibilityHint(Text(profileRowAccessibilityHint(isSelected: isSelected, isExpanded: isExpanded)))
+                .accessibilityHint(Text(profileRowAccessibilityHint(isSelected: isActive, isExpanded: isExpanded)))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                    .fill(isSelected ? Geist.color(.background100, scheme: colorScheme) : Color.clear)
+                    .fill(profileSelectionFill(isActive: isActive, isSelected: isSelected))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                    .stroke(isSelected ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isSelected ? 1.5 : 1)
+                    .stroke(profileSelectionStroke(isActive: isActive, isSelected: isSelected), lineWidth: isSelected ? 1.5 : 1)
             )
 
             if isExpanded {
@@ -5421,28 +5628,53 @@ struct GamepadCustomizationEditor: View {
         .contextMenu {
             profileContextMenu(for: profile)
         }
+        .onDrag {
+            profileDragItemProvider(for: profile)
+        }
+        .onDrop(
+            of: [Self.profileDragUTType],
+            delegate: GamepadProfileDropDelegate(
+                targetProfileID: profile.id,
+                draggingProfileIDs: $draggingProfileIDs,
+                onMove: moveDraggedProfiles,
+                onDropEnded: finishProfileDrag
+            )
+        )
     }
 
     @ViewBuilder
     private func profileContextMenu(for profile: GamepadConfigurationProfile) -> some View {
-        Button {
-            beginRenamingProfile(profile)
-        } label: {
-            Label("Rename", systemImage: "pencil")
+        let contextIDs = profileContextSelectionIDs(for: profile)
+        let count = contextIDs.count
+
+        if count == 1 {
+            Button {
+                beginRenamingProfile(profile)
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+
+            Button {
+                duplicateProfile(profile)
+            } label: {
+                Label("Duplicate", systemImage: "doc.on.doc")
+            }
+        } else {
+            Button {
+                duplicateProfiles(ids: contextIDs)
+            } label: {
+                Label("Duplicate \(count) Setups", systemImage: "doc.on.doc")
+            }
         }
 
-        Button {
-            duplicateProfile(profile)
-        } label: {
-            Label("Duplicate", systemImage: "doc.on.doc")
-        }
+        Divider()
 
         Button(role: .destructive) {
-            deleteProfile(profile)
+            deleteProfiles(contextIDs)
         } label: {
-            Label("Delete", systemImage: "trash")
+            Label(count == 1 ? "Delete" : "Delete \(count) Setups", systemImage: "trash")
         }
-        .disabled(profiles.count <= 1)
+        .disabled(!canDeleteProfiles(contextIDs))
     }
 
     private var selectedSetupNameEditor: some View {
@@ -5608,20 +5840,36 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private func profileChip(_ profile: GamepadConfigurationProfile) -> some View {
-        let isSelected = profile.id == selectedProfileID
+        let isActive = profile.id == selectedProfileID
+        let isSelected = selectedProfileIDs.contains(profile.id)
 
         Button {
-            selectProfile(profile)
+            handleProfileClick(profile)
         } label: {
             HStack(spacing: Geist.Spacing.s1) {
                 Text(profile.name)
                     .geistTypography(.heading14)
                     .lineLimit(1)
 
+                if profile.launchTarget != nil {
+                    Image(systemName: "app.badge.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                        .help("Attached application")
+                }
+
                 if profile.id == defaultProfileID {
                     Image(systemName: "star.fill")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                        .help("Default")
+                }
+
+                if isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                        .help("Active")
                 }
             }
             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
@@ -5629,17 +5877,29 @@ struct GamepadCustomizationEditor: View {
             .frame(width: 148, height: 58, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                    .fill(isSelected ? Geist.color(.gray100, scheme: colorScheme) : Geist.color(.background100, scheme: colorScheme))
+                    .fill(profileSelectionFill(isActive: isActive, isSelected: isSelected, defaultFill: Geist.color(.background100, scheme: colorScheme)))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                    .stroke(isSelected ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isSelected ? 1.5 : 1)
+                    .stroke(profileSelectionStroke(isActive: isActive, isSelected: isSelected), lineWidth: isSelected ? 1.5 : 1)
             )
         }
         .buttonStyle(.plain)
         .contextMenu {
             profileContextMenu(for: profile)
         }
+        .onDrag {
+            profileDragItemProvider(for: profile)
+        }
+        .onDrop(
+            of: [Self.profileDragUTType],
+            delegate: GamepadProfileDropDelegate(
+                targetProfileID: profile.id,
+                draggingProfileIDs: $draggingProfileIDs,
+                onMove: moveDraggedProfiles,
+                onDropEnded: finishProfileDrag
+            )
+        )
     }
 
     private var configurationFooter: some View {
@@ -5674,21 +5934,24 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private var profileManagementButtons: some View {
+        let selectedCount = selectedProfileIDs.count
+
         Button("Rename") {
             beginRenamingSelectedProfile()
         }
         .geistButtonStyle(.secondary, size: .small)
+        .disabled(selectedCount != 1)
 
-        Button("Duplicate") {
-            duplicateProfile()
+        Button(selectedCount > 1 ? "Duplicate Selected" : "Duplicate") {
+            duplicateProfiles(ids: selectedProfileIDs)
         }
         .geistButtonStyle(.secondary, size: .small)
 
-        Button("Delete") {
-            deleteSelectedProfile()
+        Button(selectedCount > 1 ? "Delete Selected" : "Delete") {
+            deleteProfiles(selectedProfileIDs)
         }
         .geistButtonStyle(.tertiary, size: .small)
-        .disabled(profiles.count <= 1)
+        .disabled(!canDeleteProfiles(selectedProfileIDs))
     }
 
     private var canvasStage: some View {
@@ -6144,6 +6407,12 @@ struct GamepadCustomizationEditor: View {
                 keypadIdentitySection
             }
             Divider()
+#if os(macOS)
+            inspectorAccordionSection(.keypadApplication, title: "Attached Application", subtitle: selectedProfile?.launchTarget?.displayName ?? "None") {
+                attachedApplicationSection
+            }
+            Divider()
+#endif
             inspectorAccordionSection(.keypadDevice, title: "Device & Canvas", subtitle: activeDeviceFrame.displayName) {
                 keypadDeviceSection
             }
@@ -6246,6 +6515,201 @@ struct GamepadCustomizationEditor: View {
             selectedSetupNameEditor
         }
     }
+
+#if os(macOS)
+    private var attachedApplicationSection: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Attach a Mac application to this setup so the paired iPhone can launch or refocus it from the keypad.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let launchTarget = selectedProfile?.launchTarget {
+                HStack(alignment: .center, spacing: Geist.Spacing.s3) {
+                    attachedApplicationIcon(for: launchTarget)
+
+                    VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                        Text(launchTarget.displayName)
+                            .geistTypography(.heading14)
+                            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                            .lineLimit(1)
+                        Text(launchTarget.detailText)
+                            .geistTypography(.copy13)
+                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: Geist.Spacing.s2)
+                }
+                .padding(Geist.Spacing.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                        .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                )
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Geist.Spacing.s2) {
+                        attachedApplicationButtons(hasLaunchTarget: true)
+                    }
+                    VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                        attachedApplicationButtons(hasLaunchTarget: true)
+                    }
+                }
+            } else {
+                Text("No application is attached to this setup yet.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                attachedApplicationButtons(hasLaunchTarget: false)
+            }
+
+            if let attachedApplicationStatus {
+                Text(attachedApplicationStatus)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func attachedApplicationButtons(hasLaunchTarget: Bool) -> some View {
+        Button {
+            chooseApplicationForSelectedProfile()
+        } label: {
+            Label(hasLaunchTarget ? "Change…" : "Choose Application…", systemImage: "folder")
+        }
+        .geistButtonStyle(.secondary, size: .small)
+
+        if hasLaunchTarget {
+            Button {
+                launchSelectedProfileApplication()
+            } label: {
+                Label("Launch", systemImage: "play.fill")
+            }
+            .geistButtonStyle(.secondary, size: .small)
+
+            Button {
+                revealSelectedProfileApplication()
+            } label: {
+                Label("Reveal", systemImage: "finder")
+            }
+            .geistButtonStyle(.tertiary, size: .small)
+
+            Button {
+                clearSelectedProfileApplication()
+            } label: {
+                Label("Remove", systemImage: "xmark.circle")
+            }
+            .geistButtonStyle(.tertiary, size: .small)
+        }
+    }
+
+    @ViewBuilder
+    private func attachedApplicationIcon(for launchTarget: GamepadProfileLaunchTarget) -> some View {
+        if let data = launchTarget.iconPNGData, let image = NSImage(data: data) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        } else if let url = launchTarget.resolvedApplicationURL() {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        } else {
+            Image(systemName: "app.dashed")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(width: 32, height: 32)
+        }
+    }
+
+    private func chooseApplicationForSelectedProfile() {
+        commitSelectedProfileNameDraft()
+        let panel = NSOpenPanel()
+        panel.title = "Choose Application"
+        panel.message = "Choose the Mac application to attach to this keypad setup."
+        panel.prompt = "Attach"
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.resolvesAliases = true
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        attachApplication(url)
+    }
+
+    private func attachApplication(_ url: URL) {
+        guard let index = profiles.firstIndex(where: { $0.id == selectedProfileID }) else { return }
+        let bookmarkData = try? url.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        let launchTarget = GamepadProfileLaunchTarget.application(url: url, bookmarkData: bookmarkData)
+        var profile = profiles[index]
+        profile.launchTarget = launchTarget
+        profile.updatedAt = Date.currentMilliseconds
+        profiles[index] = profile.normalized
+        attachedApplicationStatus = "Attached \(launchTarget.displayName)."
+        persistProfiles()
+    }
+
+    private func clearSelectedProfileApplication() {
+        guard let index = profiles.firstIndex(where: { $0.id == selectedProfileID }) else { return }
+        let name = profiles[index].launchTarget?.displayName ?? "application"
+        profiles[index].launchTarget = nil
+        profiles[index].updatedAt = Date.currentMilliseconds
+        attachedApplicationStatus = "Removed \(name)."
+        persistProfiles()
+    }
+
+    private func launchSelectedProfileApplication() {
+        guard let profile = selectedProfile,
+              let launchTarget = profile.launchTarget
+        else { return }
+
+        if let onLaunchProfileTarget {
+            onLaunchProfileTarget(profile.id)
+            attachedApplicationStatus = "Sent launch request for \(launchTarget.displayName)."
+            return
+        }
+
+        guard let url = launchTarget.resolvedApplicationURL() else {
+            attachedApplicationStatus = "Couldn’t find \(launchTarget.displayName). Choose the application again."
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+            DispatchQueue.main.async {
+                if let error {
+                    attachedApplicationStatus = "Couldn’t launch \(launchTarget.displayName): \(error.localizedDescription)"
+                } else {
+                    attachedApplicationStatus = "Launched \(launchTarget.displayName)."
+                }
+            }
+        }
+    }
+
+    private func revealSelectedProfileApplication() {
+        guard let launchTarget = selectedProfile?.launchTarget else { return }
+        guard let url = launchTarget.resolvedApplicationURL() else {
+            attachedApplicationStatus = "Couldn’t find \(launchTarget.displayName). Choose the application again."
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+#endif
 
     private var keypadDeviceSection: some View {
         let frame = activeDeviceFrame
@@ -10142,6 +10606,7 @@ struct GamepadCustomizationEditor: View {
     private func selectNewProfile(_ profile: GamepadConfigurationProfile) {
         profiles.append(profile)
         selectedProfileID = profile.id
+        selectedProfileIDs = [profile.id]
         selectedProfileNameDraft = profile.name
         isSelectedProfileExpanded = true
         selectKeypadInspector()
@@ -10279,7 +10744,9 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func beginRenamingSelectedProfile() {
-        guard let selectedProfile else { return }
+        guard selectedProfileIDs.count == 1,
+              let selectedProfile
+        else { return }
         beginRenamingProfile(selectedProfile)
     }
 
@@ -10287,6 +10754,7 @@ struct GamepadCustomizationEditor: View {
         if profile.id != selectedProfileID {
             selectProfile(profile)
         } else {
+            selectedProfileIDs = [profile.id]
             isSelectedProfileExpanded = true
         }
 
@@ -10316,72 +10784,114 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func duplicateProfile() {
-        commitSelectedProfileNameDraft()
-        guard let selectedProfile else { return }
-        duplicateProfile(selectedProfile)
+        duplicateProfiles(ids: selectedProfileIDs)
     }
 
     private func duplicateProfile(_ profile: GamepadConfigurationProfile) {
-        let isDuplicatingCurrentSelection = profile.id == selectedProfileID
-        if isDuplicatingCurrentSelection {
-            commitSelectedProfileNameDraft()
+        duplicateProfiles(ids: [profile.id])
+    }
+
+    private func duplicateProfiles(ids: Set<UUID>) {
+        commitSelectedProfileNameDraft()
+        let sourceProfiles = profiles.filter { ids.contains($0.id) }
+        guard !sourceProfiles.isEmpty else { return }
+
+        let duplicates = sourceProfiles.map { source -> GamepadConfigurationProfile in
+            var sourceProfile = source.normalized
+            if source.id == selectedProfileID {
+                sourceProfile.setCustomization(customization.normalized, for: selectedProfileOrientation)
+            }
+            var duplicate = sourceProfile.normalized
+            duplicate.id = UUID()
+            duplicate.name = "\(sourceProfile.name) Copy"
+            duplicate.updatedAt = Date.currentMilliseconds
+            return duplicate
         }
 
-        var sourceProfile = profiles.first { $0.id == profile.id } ?? profile
-        let sourceName = sourceProfile.normalized.name
-        if isDuplicatingCurrentSelection {
-            sourceProfile.setCustomization(customization.normalized, for: selectedProfileOrientation)
-        }
-        var duplicate = sourceProfile.normalized
-        duplicate.id = UUID()
-        duplicate.name = "\(sourceName) Copy"
-        duplicate.updatedAt = Date.currentMilliseconds
-        profiles.append(duplicate)
-        selectedProfileID = duplicate.id
-        selectedProfileNameDraft = duplicate.name
+        profiles.append(contentsOf: duplicates)
+        guard let firstDuplicate = duplicates.first else { return }
+        selectedProfileID = firstDuplicate.id
+        selectedProfileIDs = Set(duplicates.map(\.id))
+        selectedProfileNameDraft = firstDuplicate.name
         isSelectedProfileExpanded = true
         selectKeypadInspector()
-        applyCustomization(duplicate.customization(for: selectedProfileOrientation))
+        applyCustomization(firstDuplicate.customization(for: selectedProfileOrientation))
         persistProfiles()
     }
 
     private func deleteSelectedProfile() {
-        guard let selectedProfile else { return }
-        deleteProfile(selectedProfile)
+        deleteProfiles(selectedProfileIDs)
     }
 
     private func deleteProfile(_ profile: GamepadConfigurationProfile) {
+        deleteProfiles([profile.id])
+    }
+
+    private func deleteProfiles(_ ids: Set<UUID>) {
         commitSelectedProfileNameDraft()
-        guard profiles.count > 1,
-              let removedIndex = profiles.firstIndex(where: { $0.id == profile.id })
+        let validProfileIDs = Set(profiles.map(\.id))
+        let removedIDs = ids.intersection(validProfileIDs)
+        guard !removedIDs.isEmpty,
+              let firstRemovedIndex = profiles.firstIndex(where: { removedIDs.contains($0.id) })
         else { return }
 
-        let wasSelectedProfile = profile.id == selectedProfileID
-        let wasDefaultProfile = profile.id == defaultProfileID
-        profiles.remove(at: removedIndex)
+        let removedActiveProfile = removedIDs.contains(selectedProfileID)
+        let removedActiveIndex = removedActiveProfile
+            ? profiles.firstIndex(where: { $0.id == selectedProfileID }) ?? firstRemovedIndex
+            : firstRemovedIndex
+        let removedDefaultProfile = removedIDs.contains(defaultProfileID)
+        let removedEveryProfile = removedIDs.count == profiles.count
+        profiles.removeAll { removedIDs.contains($0.id) }
+        selectedProfileIDs.subtract(removedIDs)
 
-        if wasSelectedProfile {
-            let nextProfile = profiles[min(removedIndex, profiles.count - 1)]
+        if removedEveryProfile {
+            let replacementProfile = GamepadConfigurationProfile(
+                name: "Setup 1",
+                customization: GamepadCustomization.blankCanvas
+            )
+            profiles = [replacementProfile]
+            selectedProfileID = replacementProfile.id
+            selectedProfileIDs = [replacementProfile.id]
+            defaultProfileID = replacementProfile.id
+            selectedProfileNameDraft = replacementProfile.name
+            isSelectedProfileExpanded = true
+            selectKeypadInspector()
+            applyCustomization(replacementProfile.customization(for: selectedProfileOrientation))
+        } else if removedActiveProfile {
+            let nextProfile = profiles[min(removedActiveIndex, profiles.count - 1)]
             selectedProfileID = nextProfile.id
+            selectedProfileIDs.insert(nextProfile.id)
             selectedProfileNameDraft = nextProfile.name
             isSelectedProfileExpanded = true
             selectKeypadInspector()
-            if wasDefaultProfile {
+            if removedDefaultProfile {
                 defaultProfileID = nextProfile.id
             }
             applyCustomization(nextProfile.customization(for: selectedProfileOrientation))
-        } else if wasDefaultProfile {
-            defaultProfileID = selectedProfileID
+        } else {
+            selectedProfileIDs.insert(selectedProfileID)
+            if removedDefaultProfile {
+                defaultProfileID = selectedProfileID
+            }
         }
 
         persistProfiles()
     }
 
     private func selectProfile(_ profile: GamepadConfigurationProfile, expandsDetails: Bool = true) {
+        activateProfile(profile, expandsDetails: expandsDetails, selectionIDs: [profile.id])
+    }
+
+    private func activateProfile(
+        _ profile: GamepadConfigurationProfile,
+        expandsDetails: Bool = true,
+        selectionIDs: Set<UUID>
+    ) {
         commitSelectedProfileNameDraft()
         let nextProfile = profiles.first { $0.id == profile.id } ?? profile
         let wasSelectedProfile = selectedProfileID == nextProfile.id
         selectedProfileID = nextProfile.id
+        selectedProfileIDs = normalizedProfileSelection(selectionIDs, activeID: nextProfile.id)
         selectedProfileNameDraft = nextProfile.name
         if expandsDetails {
             isSelectedProfileExpanded = true
@@ -10391,6 +10901,148 @@ struct GamepadCustomizationEditor: View {
         selectKeypadInspector()
         applyCustomization(nextProfile.customization(for: selectedProfileOrientation))
         persistProfiles()
+    }
+
+    private func handleProfileClick(_ profile: GamepadConfigurationProfile, expandsDetails: Bool = true) {
+        if isCommandProfileSelectionModifierActive {
+            toggleProfileSelection(profile)
+        } else {
+            selectProfile(profile, expandsDetails: expandsDetails)
+        }
+    }
+
+    private func toggleProfileSelection(_ profile: GamepadConfigurationProfile) {
+        commitSelectedProfileNameDraft()
+        let validProfileIDs = Set(profiles.map(\.id))
+        guard validProfileIDs.contains(profile.id) else { return }
+
+        if selectedProfileIDs.contains(profile.id) {
+            guard selectedProfileIDs.count > 1 else { return }
+            var nextSelection = selectedProfileIDs
+            nextSelection.remove(profile.id)
+            if profile.id == selectedProfileID,
+               let nextProfile = profiles.first(where: { nextSelection.contains($0.id) }) {
+                activateProfile(nextProfile, expandsDetails: false, selectionIDs: nextSelection)
+            } else {
+                selectedProfileIDs = normalizedProfileSelection(nextSelection, activeID: selectedProfileID)
+            }
+        } else {
+            selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs.union([profile.id]), activeID: selectedProfileID)
+        }
+    }
+
+    private var isCommandProfileSelectionModifierActive: Bool {
+#if os(macOS)
+        let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return flags.contains(.command)
+#else
+        return false
+#endif
+    }
+
+    private func normalizedProfileSelection(_ ids: Set<UUID>, activeID: UUID) -> Set<UUID> {
+        let validProfileIDs = Set(profiles.map(\.id))
+        var selection = ids.intersection(validProfileIDs)
+        if validProfileIDs.contains(activeID) {
+            selection.insert(activeID)
+        }
+        if selection.isEmpty, let fallbackID = profiles.first?.id {
+            selection.insert(fallbackID)
+        }
+        return selection
+    }
+
+    private func profileContextSelectionIDs(for profile: GamepadConfigurationProfile) -> Set<UUID> {
+        let validSelection = normalizedProfileSelection(selectedProfileIDs, activeID: selectedProfileID)
+        return validSelection.contains(profile.id) ? validSelection : [profile.id]
+    }
+
+    private func canDeleteProfiles(_ ids: Set<UUID>) -> Bool {
+        let validProfileIDs = Set(profiles.map(\.id))
+        let deleteCount = ids.intersection(validProfileIDs).count
+        return deleteCount > 0
+    }
+
+    private func profileSelectionFill(
+        isActive: Bool,
+        isSelected: Bool,
+        defaultFill: Color = .clear
+    ) -> Color {
+        if isActive {
+            return Geist.color(.background100, scheme: colorScheme)
+        }
+        if isSelected {
+            return Geist.color(.gray100, scheme: colorScheme)
+        }
+        return defaultFill
+    }
+
+    private func profileSelectionStroke(isActive: Bool, isSelected: Bool) -> Color {
+        if isActive {
+            return Geist.color(.grayAlpha600, scheme: colorScheme)
+        }
+        if isSelected {
+            return Geist.color(.blue700, scheme: colorScheme)
+        }
+        return Geist.color(.grayAlpha400, scheme: colorScheme)
+    }
+
+    private func profileDragItemProvider(for profile: GamepadConfigurationProfile) -> NSItemProvider {
+        commitSelectedProfileNameDraft()
+        let ids = profileDragIDs(for: profile)
+        draggingProfileIDs = ids
+        let payload = ids.map(\.uuidString).joined(separator: "\n")
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: Self.profileDragUTType.identifier, visibility: .ownProcess) { completion in
+            completion(Data(payload.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+
+    private func profileDragIDs(for profile: GamepadConfigurationProfile) -> [UUID] {
+        if selectedProfileIDs.contains(profile.id) {
+            return profiles.map(\.id).filter { selectedProfileIDs.contains($0) }
+        }
+
+        selectProfile(profile, expandsDetails: false)
+        return [profile.id]
+    }
+
+    private func moveDraggedProfiles(_ movingIDs: [UUID], targetProfileID: UUID?) {
+        var uniqueMovingIDs: [UUID] = []
+        var seenMovingIDs = Set<UUID>()
+        for id in movingIDs where seenMovingIDs.insert(id).inserted {
+            uniqueMovingIDs.append(id)
+        }
+
+        let movingIDSet = Set(uniqueMovingIDs)
+        guard !movingIDSet.isEmpty else { return }
+        if let targetProfileID, movingIDSet.contains(targetProfileID) { return }
+
+        let movingProfiles = profiles.filter { movingIDSet.contains($0.id) }
+        guard !movingProfiles.isEmpty else { return }
+
+        let remainingProfiles = profiles.filter { !movingIDSet.contains($0.id) }
+        let insertionIndex: Int
+        if let targetProfileID,
+           let targetIndex = remainingProfiles.firstIndex(where: { $0.id == targetProfileID }) {
+            insertionIndex = targetIndex
+        } else {
+            insertionIndex = remainingProfiles.count
+        }
+
+        var nextProfiles = remainingProfiles
+        nextProfiles.insert(contentsOf: movingProfiles, at: insertionIndex)
+        guard nextProfiles.map(\.id) != profiles.map(\.id) else { return }
+
+        profiles = nextProfiles
+        selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs.union(movingIDSet), activeID: selectedProfileID)
+        persistProfiles()
+    }
+
+    private func finishProfileDrag() {
+        draggingProfileIDs.removeAll()
     }
 
     private func toggleProfileRow(_ profile: GamepadConfigurationProfile, isSelected: Bool) {
@@ -10464,6 +11116,9 @@ struct GamepadCustomizationEditor: View {
         profiles = state.profiles
         selectedProfileID = state.activeProfileID
         defaultProfileID = state.defaultProfileID
+        selectedProfileIDs = didChangeSelectedProfile
+            ? [state.activeProfileID]
+            : normalizedProfileSelection(selectedProfileIDs, activeID: state.activeProfileID)
         if didChangeSelectedProfile {
             isSelectedProfileExpanded = true
         }
@@ -10487,6 +11142,7 @@ struct GamepadCustomizationEditor: View {
         profiles = state.profiles
         selectedProfileID = state.activeProfileID
         defaultProfileID = state.defaultProfileID
+        selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs, activeID: state.activeProfileID)
         if !isProfileNameFieldFocused {
             syncSelectedProfileNameDraft()
         }
@@ -10496,6 +11152,28 @@ struct GamepadCustomizationEditor: View {
             defaultProfileID: state.defaultProfileID
         )
         onProfilesChanged?(state.profiles, state.activeProfileID, state.defaultProfileID)
+    }
+}
+
+private struct GamepadProfileDropDelegate: DropDelegate {
+    let targetProfileID: UUID?
+    @Binding var draggingProfileIDs: [UUID]
+    let onMove: ([UUID], UUID?) -> Void
+    let onDropEnded: () -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        !draggingProfileIDs.isEmpty
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard !draggingProfileIDs.isEmpty else { return false }
+        onMove(draggingProfileIDs, targetProfileID)
+        onDropEnded()
+        return true
     }
 }
 

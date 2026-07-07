@@ -1340,6 +1340,10 @@ private struct ControllerPadView: View {
                 keypadProfileMenu
             }
 
+            if client.selectedGamepadProfile?.launchTarget != nil {
+                launchProfileTargetButton(isCompact: false)
+            }
+
             keypadEditModeButton
             keypadSettingsMenu
 
@@ -1361,6 +1365,10 @@ private struct ControllerPadView: View {
                 compactKeypadProfileMenu
             }
 
+            if client.selectedGamepadProfile?.launchTarget != nil {
+                launchProfileTargetButton(isCompact: true)
+            }
+
             Spacer(minLength: 0)
 
             keypadEditModeButton
@@ -1378,6 +1386,41 @@ private struct ControllerPadView: View {
             RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
+    }
+
+    private func launchProfileTargetButton(isCompact: Bool) -> some View {
+        Button {
+            client.launchSelectedProfileTarget()
+        } label: {
+            if let launchTarget = client.selectedGamepadProfile?.launchTarget {
+                launchTargetIcon(launchTarget, size: isCompact ? 18 : 20)
+                    .frame(width: 28, height: 28)
+            } else {
+                Image(systemName: "app.badge.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 28)
+            }
+        }
+        .geistButtonStyle(.secondary, size: .small)
+        .disabled(!client.isConnected)
+        .accessibilityLabel("Launch \(client.selectedGamepadProfile?.launchTarget?.displayName ?? "attached application")")
+        .accessibilityHint("Asks the paired Mac to open the application attached to this keypad setup.")
+    }
+
+    @ViewBuilder
+    private func launchTargetIcon(_ launchTarget: GamepadProfileLaunchTarget, size: CGFloat) -> some View {
+        if let data = launchTarget.iconPNGData, let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: max(4, size * 0.22), style: .continuous))
+        } else {
+            Image(systemName: "app.badge.fill")
+                .font(.system(size: size, weight: .semibold))
+                .frame(width: size, height: size)
+        }
     }
 
     private var keypadEditModeButton: some View {
@@ -1552,7 +1595,7 @@ private struct ControllerPadView: View {
             } label: {
                 Label(
                     profile.name,
-                    systemImage: profile.id == client.selectedGamepadProfileID ? "checkmark.circle.fill" : (profile.id == client.defaultGamepadProfileID ? "star.fill" : "rectangle.grid.2x2")
+                    systemImage: profile.id == client.selectedGamepadProfileID ? "checkmark.circle.fill" : (profile.id == client.defaultGamepadProfileID ? "star.fill" : (profile.launchTarget != nil ? "app.badge.fill" : "rectangle.grid.2x2"))
                 )
             }
         }

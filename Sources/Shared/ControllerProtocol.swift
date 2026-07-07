@@ -342,6 +342,7 @@ public enum ControllerMessageType: String, Codable, Sendable {
     case gamepadProfiles = "gamepad_profiles"
     case gamepadProfileSelection = "gamepad_profile_selection"
     case gamepadDefaultProfile = "gamepad_default_profile"
+    case launchProfileTarget = "launch_profile_target"
     case error
 }
 
@@ -741,7 +742,7 @@ private extension ControllerMessageType {
         case .heartbeat: 3
         case .ping: 4
         case .pong: 5
-        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .elementInput, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .error: nil
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .elementInput, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .launchProfileTarget, .error: nil
         }
     }
 

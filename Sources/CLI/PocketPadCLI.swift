@@ -457,17 +457,48 @@ struct PocketPadCLI {
             print("Duplicated \"\(source.name)\" as \"\(duplicate.name)\".")
 
         case "delete", "rm":
-            guard let target = firstPositional(in: rest) else { throw CLIError.message("Missing profile name or id") }
+            let targets = positionals(in: rest)
+            guard !targets.isEmpty else { throw CLIError.message("Missing profile name or id") }
             var store = loadStore()
-            guard store.profiles.count > 1 else { throw CLIError.message("Cannot delete the last remaining profile") }
-            let index = try resolveProfileIndex(target, in: store)
-            let removed = store.profiles.remove(at: index)
-            store.profileKeyBindings[removed.id.uuidString] = nil
-            store.profileOutputBindings[removed.id.uuidString] = nil
-            if store.activeProfileID == removed.id { store.activeProfileID = store.profiles[min(index, store.profiles.count - 1)].id }
-            if store.defaultProfileID == removed.id { store.defaultProfileID = store.activeProfileID }
+            let indexes = try resolveProfileIndexes(targets, in: store)
+            let removedEveryProfile = indexes.count == store.profiles.count
+            let removedIndexSet = Set(indexes)
+            let removedProfiles = indexes.map { store.profiles[$0] }
+            let removedIDs = Set(removedProfiles.map(\.id))
+            let firstRemovedIndex = indexes.min() ?? 0
+            let removedActiveIndex = indexes.first { store.profiles[$0].id == store.activeProfileID } ?? firstRemovedIndex
+            store.profiles.removeAll { removedIDs.contains($0.id) }
+            for removed in removedProfiles {
+                store.profileKeyBindings[removed.id.uuidString] = nil
+                store.profileOutputBindings[removed.id.uuidString] = nil
+            }
+            if removedEveryProfile {
+                let replacementProfile = GamepadConfigurationProfile(
+                    name: "Setup 1",
+                    customization: GamepadCustomization.blankCanvas
+                )
+                store.profiles = [replacementProfile]
+                store.activeProfileID = replacementProfile.id
+                store.defaultProfileID = replacementProfile.id
+                store.profileKeyBindings[replacementProfile.id.uuidString] = rawBindings(DefaultKeypadKeyMap.defaultBindings)
+                store.profileOutputBindings[replacementProfile.id.uuidString] = rawOutputBindings(outputBindings(from: DefaultKeypadKeyMap.defaultBindings))
+            } else {
+                if removedIDs.contains(store.activeProfileID) {
+                    store.activeProfileID = store.profiles[min(removedActiveIndex, store.profiles.count - 1)].id
+                }
+                if removedIDs.contains(store.defaultProfileID) { store.defaultProfileID = store.activeProfileID }
+            }
             try persistStore(store)
-            print("Deleted profile \"\(removed.name)\".")
+            if removedProfiles.count == 1, let removed = removedProfiles.first {
+                let suffix = removedEveryProfile ? " Created a new blank setup." : ""
+                print("Deleted profile \"\(removed.name)\".\(suffix)")
+            } else {
+                let suffix = removedEveryProfile ? " Created a new blank setup." : ""
+                print("Deleted \(removedIndexSet.count) profiles: \(removedProfiles.map(\.name).joined(separator: ", ")).\(suffix)")
+            }
+
+        case "move", "reorder":
+            try moveProfiles(arguments: rest)
 
         case "reset":
             let target = firstPositional(in: rest)
@@ -489,8 +520,71 @@ struct PocketPadCLI {
         case "import":
             try importProfiles(arguments: rest)
 
+        case "attach-app", "attach-application", "app", "application":
+            try attachApplicationToProfile(arguments: rest)
+
+        case "detach-app", "detach-application", "clear-app", "remove-app":
+            try detachApplicationFromProfile(arguments: rest)
+
+        case "launch", "open-app":
+            try launchAttachedApplication(arguments: rest)
+
         default:
             throw CLIError.message("Unknown profile subcommand: \(subcommand)")
+        }
+    }
+
+    private static func moveProfiles(arguments: [String]) throws {
+        let targets = positionals(in: arguments)
+        guard !targets.isEmpty else {
+            throw CLIError.message("Usage: pocketpad profile move <profile> [profile...] --to INDEX|--before PROFILE|--after PROFILE")
+        }
+
+        let toText = optionValue("--to", in: arguments)
+        let beforeText = optionValue("--before", in: arguments)
+        let afterText = optionValue("--after", in: arguments)
+        let destinationCount = [toText, beforeText, afterText].compactMap { $0 }.count
+        guard destinationCount == 1 else {
+            throw CLIError.message("profile move needs exactly one of --to, --before, or --after")
+        }
+
+        var store = loadStore()
+        let movingIndexes = try resolveProfileIndexes(targets, in: store)
+        let movingProfiles = movingIndexes.map { store.profiles[$0] }
+        let movingIDs = Set(movingProfiles.map(\.id))
+        var remainingProfiles = store.profiles.filter { !movingIDs.contains($0.id) }
+
+        let insertionIndex: Int
+        let destinationDescription: String
+        if let toText {
+            let toIndex = try parseInteger(toText)
+            guard toIndex >= 0 && toIndex <= remainingProfiles.count else {
+                throw CLIError.message("Profile move index must be between 0 and \(remainingProfiles.count)")
+            }
+            insertionIndex = toIndex
+            destinationDescription = "to index \(toIndex)"
+        } else if let beforeText {
+            let beforeProfile = try resolveProfile(beforeText, in: store)
+            guard !movingIDs.contains(beforeProfile.id) else { throw CLIError.message("Destination profile cannot be one of the profiles being moved") }
+            insertionIndex = remainingProfiles.firstIndex(where: { $0.id == beforeProfile.id }) ?? 0
+            destinationDescription = "before \"\(beforeProfile.name)\""
+        } else if let afterText {
+            let afterProfile = try resolveProfile(afterText, in: store)
+            guard !movingIDs.contains(afterProfile.id) else { throw CLIError.message("Destination profile cannot be one of the profiles being moved") }
+            insertionIndex = (remainingProfiles.firstIndex(where: { $0.id == afterProfile.id }) ?? (remainingProfiles.count - 1)) + 1
+            destinationDescription = "after \"\(afterProfile.name)\""
+        } else {
+            throw CLIError.message("profile move needs --to, --before, or --after")
+        }
+
+        remainingProfiles.insert(contentsOf: movingProfiles, at: insertionIndex)
+        store.profiles = remainingProfiles
+        try persistStore(store)
+
+        if movingProfiles.count == 1, let moved = movingProfiles.first {
+            print("Moved profile \"\(moved.name)\" \(destinationDescription).")
+        } else {
+            print("Moved \(movingProfiles.count) profiles \(destinationDescription): \(movingProfiles.map(\.name).joined(separator: ", ")).")
         }
     }
 
@@ -668,6 +762,90 @@ struct PocketPadCLI {
         }
         try persistStore(store)
         print("Imported \(importedProfiles.count) profile\(importedProfiles.count == 1 ? "" : "s").")
+    }
+
+    private static func attachApplicationToProfile(arguments: [String]) throws {
+        let profileTarget = optionValue("--profile", in: arguments) ?? firstPositional(in: arguments)
+        let path = optionValue("--path", in: arguments)
+            ?? optionValue("--app", in: arguments)
+            ?? optionValue("--application", in: arguments)
+        let bundleIdentifier = optionValue("--bundle-id", in: arguments)
+            ?? optionValue("--bundle", in: arguments)
+        let applicationURL = try resolveApplicationURL(path: path, bundleIdentifier: bundleIdentifier)
+        let launchTarget = GamepadProfileLaunchTarget.application(url: applicationURL)
+
+        var store = loadStore()
+        let index = try resolveProfileIndex(profileTarget, in: store)
+        store.profiles[index].launchTarget = launchTarget
+        store.profiles[index].updatedAt = Date.currentMilliseconds
+        let profileName = store.profiles[index].name
+        try persistStore(store)
+        print("Attached \"\(launchTarget.displayName)\" to profile \"\(profileName)\".")
+    }
+
+    private static func detachApplicationFromProfile(arguments: [String]) throws {
+        let profileTarget = optionValue("--profile", in: arguments) ?? firstPositional(in: arguments)
+        var store = loadStore()
+        let index = try resolveProfileIndex(profileTarget, in: store)
+        let removedName = store.profiles[index].launchTarget?.displayName
+        store.profiles[index].launchTarget = nil
+        store.profiles[index].updatedAt = Date.currentMilliseconds
+        let profileName = store.profiles[index].name
+        try persistStore(store)
+        if let removedName {
+            print("Removed \"\(removedName)\" from profile \"\(profileName)\".")
+        } else {
+            print("Profile \"\(profileName)\" did not have an attached application.")
+        }
+    }
+
+    private static func launchAttachedApplication(arguments: [String]) throws {
+        let profileTarget = optionValue("--profile", in: arguments) ?? firstPositional(in: arguments)
+        let store = loadStore()
+        let profile = try resolveProfile(profileTarget, in: store)
+        guard let launchTarget = profile.launchTarget else {
+            throw CLIError.message("Profile \"\(profile.name)\" does not have an attached application.")
+        }
+        try openLaunchTarget(launchTarget)
+        print("Launched \"\(launchTarget.displayName)\" from profile \"\(profile.name)\".")
+    }
+
+    private static func resolveApplicationURL(path: String?, bundleIdentifier: String?) throws -> URL {
+        if let path = path?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
+            let expandedPath = (path as NSString).expandingTildeInPath
+            let url = URL(fileURLWithPath: expandedPath).standardizedFileURL
+            var isDirectory = ObjCBool(false)
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                throw CLIError.message("Application not found at path: \(path)")
+            }
+            guard url.pathExtension.lowercased() == "app" || Bundle(url: url)?.bundleIdentifier != nil else {
+                throw CLIError.message("Path must point to a macOS .app bundle: \(path)")
+            }
+            return url
+        }
+
+        if let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !bundleIdentifier.isEmpty {
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
+                throw CLIError.message("No installed application found for bundle id: \(bundleIdentifier)")
+            }
+            return url.standardizedFileURL
+        }
+
+        throw CLIError.message("Usage: pocketpad profile attach-app [PROFILE|--profile PROFILE] --path /Applications/App.app or --bundle-id com.example.App")
+    }
+
+    private static func openLaunchTarget(_ launchTarget: GamepadProfileLaunchTarget) throws {
+        if let applicationURL = launchTarget.resolvedApplicationURL() {
+            try runProcess("/usr/bin/open", arguments: [applicationURL.path])
+            return
+        }
+
+        if let bundleIdentifier = launchTarget.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !bundleIdentifier.isEmpty {
+            try runProcess("/usr/bin/open", arguments: ["-b", bundleIdentifier])
+            return
+        }
+
+        throw CLIError.message("Could not resolve attached application \"\(launchTarget.displayName)\". Reattach it with `pocketpad profile attach-app`.")
     }
 
     // MARK: - Templates
@@ -3078,6 +3256,18 @@ struct PocketPadCLI {
         throw CLIError.message("Profile not found: \(trimmed)")
     }
 
+    private static func resolveProfileIndexes(_ targets: [String], in store: ProfileStore) throws -> [Int] {
+        var indexes: [Int] = []
+        var seenIndexes = Set<Int>()
+        for target in targets {
+            let index = try resolveProfileIndex(target, in: store)
+            if seenIndexes.insert(index).inserted {
+                indexes.append(index)
+            }
+        }
+        return indexes.sorted()
+    }
+
     private static func validProfileID(_ id: UUID, in profiles: [GamepadConfigurationProfile]) -> UUID? {
         profiles.contains(where: { $0.id == id }) ? id : nil
     }
@@ -3586,7 +3776,7 @@ struct PocketPadCLI {
         var skipNext = false
         let optionsWithValues: Set<String> = [
             "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from",
-            "--layout-preview", "--preview-output", "--path", "--image-scale", "--render-scale",
+            "--layout-preview", "--preview-output", "--path", "--app", "--application", "--bundle-id", "--bundle", "--image-scale", "--render-scale",
             "--sequence", "--keyboard", "--key", "--gamepad-button", "--gamepad", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
             "--appearance", "--color-scheme", "--scheme", "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
             "--background", "--bg", "--light-background", "--background-light", "--dark-background", "--background-dark",
@@ -3636,6 +3826,11 @@ struct PocketPadCLI {
         print("Active: \(profile.id == store.activeProfileID ? "yes" : "no")")
         print("Default: \(profile.id == store.defaultProfileID ? "yes" : "no")")
         print("Output: \(profile.outputMode.displayName)")
+        if let launchTarget = profile.launchTarget {
+            print("Attached Application: \(launchTarget.displayName) (\(launchTarget.detailText))")
+        } else {
+            print("Attached Application: none")
+        }
         print("Layout: \(profile.customization.layoutMode.rawValue)")
         print("Scale: \(profile.customization.controlScale.rawValue)")
         let deviceFrame = profile.customization.deviceCanvas.editorDeviceFrame
@@ -3733,8 +3928,13 @@ struct PocketPadCLI {
           pocketpad profile default NAME|UUID
           pocketpad profile rename NAME|UUID NEW_NAME
           pocketpad profile duplicate [NAME|UUID] [NEW_NAME]
-          pocketpad profile delete NAME|UUID
+          pocketpad profile delete NAME|UUID [NAME|UUID ...]
+          pocketpad profile move NAME|UUID [NAME|UUID ...] --to INDEX|--before PROFILE|--after PROFILE
           pocketpad profile reset [NAME|UUID]
+          pocketpad profile attach-app [NAME|UUID|--profile PROFILE] --path /Applications/App.app
+          pocketpad profile attach-app [NAME|UUID|--profile PROFILE] --bundle-id com.example.App
+          pocketpad profile detach-app [NAME|UUID|--profile PROFILE]
+          pocketpad profile launch [NAME|UUID|--profile PROFILE]
           pocketpad profile export [NAME|UUID|--all] [-o file.json]
           pocketpad profile import file.json [--default] [--append]
 

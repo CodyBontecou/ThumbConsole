@@ -669,6 +669,21 @@ final class ControllerClient: ObservableObject {
         updateLastSentEvent("default keypad saved", immediately: true)
     }
 
+    func launchSelectedProfileTarget() {
+        guard isConnected,
+              let profile = selectedGamepadProfile,
+              let launchTarget = profile.launchTarget
+        else { return }
+        send(
+            .init(
+                type: .launchProfileTarget,
+                timestamp: 0,
+                gamepadProfileID: profile.id
+            )
+        )
+        updateLastSentEvent("launch: \(launchTarget.displayName)", immediately: true)
+    }
+
     func updateSelectedKeypadLayout(
         _ customization: GamepadCustomization,
         orientation: GamepadEditorDeviceOrientation,

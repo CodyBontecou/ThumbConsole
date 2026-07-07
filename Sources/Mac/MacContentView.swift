@@ -1101,6 +1101,9 @@ struct MacContentView: View {
                     defaultProfileID: defaultProfileID
                 )
             },
+            onLaunchProfileTarget: { profileID in
+                server.launchAttachedApplication(for: profileID, source: "mac")
+            },
             defaultLabelProvider: { button in
                 server.recordedShortcutLabel(for: button)
             },
@@ -1416,6 +1419,9 @@ struct MacContentView: View {
                     set: { server.setGamepadCustomization($0) }
                 ),
                 onReset: { server.resetGamepadCustomization() },
+                onLaunchProfileTarget: { profileID in
+                    server.launchAttachedApplication(for: profileID, source: "mac")
+                },
                 defaultLabelProvider: { button in
                     server.recordedShortcutLabel(for: button)
                 },

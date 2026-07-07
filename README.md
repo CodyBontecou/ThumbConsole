@@ -76,6 +76,8 @@ The CLI can perform the same saved-configuration work as the macOS **Keypad** ed
 pocketpad profile list --ids
 pocketpad template list
 pocketpad template install snes --name "SNES Browser Controls" --default
+pocketpad profile attach-app "SNES Browser Controls" --path /Applications/OpenEmu.app
+pocketpad profile launch "SNES Browser Controls"
 pocketpad profile export --all -o pocketpad-profiles.json
 pocketpad profile import pocketpad-profiles.json
 pocketpad binding set focus --sequence 'Control+B,H'
@@ -129,7 +131,7 @@ Customize keypad setups from the macOS helper's **Keypad** section or with the C
 
 PocketPad uses its own versioned JSON envelope because there is no broadly adopted interchange format for these multitouch keypad layouts. The current schema is `com.codybontecou.pocketpad.keypad-configuration` version `1`; it stores `profiles`, `activeProfileID`, and `defaultProfileID`. The CLI exports the same envelope and may include macOS-only `profileKeyBindings` so backups preserve shortcut mappings too.
 
-Each setup stores its own keypad-level preferences. Select a setup in the Keypad editor to show the right-side keypad inspector, where you can choose the device canvas, set custom device dimensions, change the iPhone background fill, and toggle System/Light/Dark view modes while editing. Use **Saved Mode** to choose whether that setup follows the device, always uses light mode, or always uses dark mode; per-button light and dark fills and keypad background fills are saved separately with the setup. The same settings are scriptable with `pocketpad customization set --appearance light|dark|system --device iphone-17-pro --background '#101014'`, `pocketpad customization set --background-gradient '#101014,#4338CA'`, and `pocketpad element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'`.
+Each setup stores its own keypad-level preferences. Select a setup in the Keypad editor to show the right-side keypad inspector, where you can choose the device canvas, attach a Mac application with the native file browser, set custom device dimensions, change the iPhone background fill, and toggle System/Light/Dark view modes while editing. Attached applications sync with the setup, including the selected app icon; when the iPhone is connected, the top bar shows that app icon as a button that asks the Mac helper to launch or refocus the pre-approved app. Use **Saved Mode** to choose whether that setup follows the device, always uses light mode, or always uses dark mode; per-button light and dark fills and keypad background fills are saved separately with the setup. The same settings are scriptable with `pocketpad customization set --appearance light|dark|system --device iphone-17-pro --background '#101014'`, `pocketpad customization set --background-gradient '#101014,#4338CA'`, `pocketpad element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'`, and `pocketpad profile attach-app PROFILE --path /Applications/App.app`.
 
 Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder. Select a joystick and edit **Fill → Thumbstick** to recolor the moving thumb separately from the joystick base; the CLI equivalent is `pocketpad element set "Right Stick" --thumb-fill '#22C55E'` (or light/dark variants such as `--light-thumb-fill`).
 
