@@ -6207,14 +6207,21 @@ struct GamepadCustomizationEditor: View {
             .accessibilityValue(Text(isExpanded ? "Expanded" : "Collapsed"))
             .help(isExpanded ? "Hide \(title) options" : "Show \(title) options")
 
-            if isExpanded {
-                VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                    content()
+            // Keep accordion content from sliding through neighboring rows as it
+            // appears/disappears. The height still animates with the section, but
+            // the body only fades inside its own clipped container.
+            ZStack(alignment: .topLeading) {
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                        content()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, Geist.Spacing.s4)
+                    .transition(.opacity)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, Geist.Spacing.s4)
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .clipped()
         }
     }
 
