@@ -5012,6 +5012,7 @@ struct GamepadCustomizationEditor: View {
     private static let canvasZoomMin: CGFloat = 0.5
     private static let canvasZoomMax: CGFloat = 2.25
     private static let deviceFrameSpringAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.08)
+    private static let deviceFrameMotionSettleDelay: TimeInterval = 0.12
 
     @State private var selectedControlID: GamepadControlIdentity
     @State private var selectedControlIDs: Set<GamepadControlIdentity>
@@ -8046,17 +8047,17 @@ struct GamepadCustomizationEditor: View {
         }
 
         if animatesOrientationChange {
-            prepareDeviceFrameMotion(toward: frame.orientation)
             withAnimation(deviceFrameAnimation) {
                 applyFrameChange()
+                applyDeviceFrameMotionKick(toward: frame.orientation)
             }
-            settleDeviceFrameMotion()
+            settleDeviceFrameMotion(after: Self.deviceFrameMotionSettleDelay)
         } else {
             applyFrameChange()
         }
     }
 
-    private func prepareDeviceFrameMotion(toward orientation: GamepadEditorDeviceOrientation) {
+    private func applyDeviceFrameMotionKick(toward orientation: GamepadEditorDeviceOrientation) {
         guard !accessibilityReduceMotion else {
             deviceFrameMotionRotationDegrees = 0
             deviceFrameMotionOffset = .zero
@@ -8064,18 +8065,14 @@ struct GamepadCustomizationEditor: View {
         }
 
         let direction: CGFloat = orientation == .landscape ? 1 : -1
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            deviceFrameMotionRotationDegrees = Double(direction * -4)
-            deviceFrameMotionOffset = CGSize(width: direction * 10, height: orientation == .landscape ? -6 : 6)
-        }
+        deviceFrameMotionRotationDegrees = Double(direction * -4)
+        deviceFrameMotionOffset = CGSize(width: direction * 10, height: orientation == .landscape ? -6 : 6)
     }
 
-    private func settleDeviceFrameMotion() {
+    private func settleDeviceFrameMotion(after delay: TimeInterval = 0) {
         guard !accessibilityReduceMotion else { return }
         let animation = deviceFrameAnimation
-        DispatchQueue.main.async {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             withAnimation(animation) {
                 deviceFrameMotionRotationDegrees = 0
                 deviceFrameMotionOffset = .zero
