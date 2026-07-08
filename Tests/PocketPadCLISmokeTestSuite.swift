@@ -396,6 +396,50 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertLessThan(customIndex!, jumpIndex!)
     }
 
+    func testControlZIndexOverridesLayerOrderForResolvedZOrder() throws {
+        let backID = UUID(uuidString: "00000000-0000-0000-0000-00000000D111")!
+        let frontID = UUID(uuidString: "00000000-0000-0000-0000-00000000D222")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addCustomButton(id: backID, mappedTo: .custom1)
+        customization.addCustomButton(id: frontID, mappedTo: .custom2)
+        customization.customButtons[0].layout.zIndex = 50
+        customization.customButtons[1].layout.zIndex = -10
+        customization.designMetadata = GamepadDesignMetadata(layerOrder: [.custom(backID), .custom(frontID)])
+
+        let controls = customization.normalized.resolvedControls(in: CGSize(width: 874, height: 402))
+        let backIndex = controls.firstIndex { $0.id == .custom(backID) }
+        let frontIndex = controls.firstIndex { $0.id == .custom(frontID) }
+        XCTAssertNotNil(backIndex)
+        XCTAssertNotNil(frontIndex)
+        XCTAssertLessThan(frontIndex!, backIndex!)
+        XCTAssertEqual(GamepadButtonCustomization(zIndex: 250).zIndex, 100)
+        XCTAssertEqual(GamepadButtonCustomization(zIndex: -250).zIndex, -100)
+    }
+
+    func testGroupedLayerOperationsMoveChildrenAsBlock() throws {
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-00000000A111")!
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-00000000B222")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addCustomButton(id: firstID, mappedTo: .custom1)
+        customization.addCustomButton(id: secondID, mappedTo: .custom2)
+        customization.designMetadata = GamepadDesignMetadata(
+            layerOrder: [.custom(firstID), .custom(secondID), .builtin(.jump)],
+            groups: [GamepadLayerGroup(name: "Pair", children: [.custom(firstID), .custom(secondID)])]
+        )
+
+        customization.bringLayersForward([.custom(firstID), .custom(secondID)])
+        XCTAssertEqual(
+            Array(customization.orderedControlIdentitiesForDesign.prefix(3)),
+            [.builtin(.jump), .custom(firstID), .custom(secondID)]
+        )
+
+        customization.sendLayersToBack([.custom(firstID), .custom(secondID)])
+        XCTAssertEqual(
+            Array(customization.orderedControlIdentitiesForDesign.prefix(2)),
+            [.custom(firstID), .custom(secondID)]
+        )
+    }
+
     func testStyleTokenPresentationOverridesLegacyAppearance() throws {
         let style = GamepadStyleToken(
             id: "soul-orb",

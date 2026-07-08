@@ -1724,6 +1724,31 @@ extension GamepadCustomization {
         return allControlIdentitiesForDesign
     }
 
+    var zOrderedControlIdentitiesForDesign: [GamepadControlIdentity] {
+        let baseOrder = orderedControlIdentitiesForDesign
+        let orderLookup = Dictionary(uniqueKeysWithValues: baseOrder.enumerated().map { ($0.element, $0.offset) })
+        return baseOrder.sorted { lhs, rhs in
+            let lhsZIndex = zIndex(for: lhs)
+            let rhsZIndex = zIndex(for: rhs)
+            if lhsZIndex == rhsZIndex {
+                let lhsIndex = orderLookup[lhs] ?? Int.max
+                let rhsIndex = orderLookup[rhs] ?? Int.max
+                if lhsIndex == rhsIndex { return lhs.id < rhs.id }
+                return lhsIndex < rhsIndex
+            }
+            return lhsZIndex < rhsZIndex
+        }
+    }
+
+    func zIndex(for identity: GamepadControlIdentity) -> Int {
+        switch identity {
+        case .builtin(let button):
+            return buttonCustomization(for: button).zIndex
+        case .custom(let id):
+            return customButtons.first { $0.id == id }?.normalized.layout.zIndex ?? 0
+        }
+    }
+
     func resolvedPresentation(
         for control: GamepadResolvedControl,
         state: GamepadControlPresentationState = .normal,
@@ -1797,48 +1822,97 @@ extension GamepadCustomization {
     }
 
     mutating func moveLayer(_ identity: GamepadControlIdentity, to index: Int) {
+        moveLayers([identity], to: index)
+    }
+
+    mutating func moveLayers(_ identities: Set<GamepadControlIdentity>, to index: Int) {
         let controls = allControlIdentitiesForDesign
-        guard controls.contains(identity) else { return }
-        var order = designMetadata?.normalized(availableControls: controls)?.layerOrder ?? controls
-        order.removeAll { $0 == identity }
-        let clampedIndex = min(max(0, index), order.count)
-        order.insert(identity, at: clampedIndex)
-        var metadata = designMetadata ?? .empty
-        metadata.layerOrder = order
-        designMetadata = metadata.normalized(availableControls: controls)
+        let validIdentities = Set(identities.filter { controls.contains($0) })
+        guard !validIdentities.isEmpty else { return }
+
+        let currentOrder = designMetadata?.normalized(availableControls: controls)?.layerOrder ?? controls
+        let moving = currentOrder.filter { validIdentities.contains($0) }
+        guard !moving.isEmpty else { return }
+
+        var remaining = currentOrder.filter { !validIdentities.contains($0) }
+        let clampedIndex = min(max(0, index), remaining.count)
+        remaining.insert(contentsOf: moving, at: clampedIndex)
+        setLayerOrder(remaining)
     }
 
     mutating func bringLayerForward(_ identity: GamepadControlIdentity) {
-        var order = orderedControlIdentitiesForDesign
-        guard let index = order.firstIndex(of: identity), index < order.count - 1 else { return }
-        order.swapAt(index, index + 1)
-        var metadata = designMetadata ?? .empty
-        metadata.layerOrder = order
-        designMetadata = metadata.normalized(availableControls: allControlIdentitiesForDesign)
+        bringLayersForward([identity])
+    }
+
+    mutating func bringLayersForward(_ identities: Set<GamepadControlIdentity>) {
+        let controls = allControlIdentitiesForDesign
+        let validIdentities = Set(identities.filter { controls.contains($0) })
+        guard !validIdentities.isEmpty else { return }
+
+        let currentOrder = orderedControlIdentitiesForDesign
+        guard let lastSelectedIndex = currentOrder.indices.last(where: { validIdentities.contains(currentOrder[$0]) }),
+              let nextUnselectedIndex = currentOrder.indices.first(where: { $0 > lastSelectedIndex && !validIdentities.contains(currentOrder[$0]) })
+        else { return }
+
+        let moving = currentOrder.filter { validIdentities.contains($0) }
+        var remaining = currentOrder.filter { !validIdentities.contains($0) }
+        guard let nextIdentityIndex = remaining.firstIndex(of: currentOrder[nextUnselectedIndex]) else { return }
+        remaining.insert(contentsOf: moving, at: min(nextIdentityIndex + 1, remaining.count))
+        setLayerOrder(remaining)
     }
 
     mutating func sendLayerBackward(_ identity: GamepadControlIdentity) {
-        var order = orderedControlIdentitiesForDesign
-        guard let index = order.firstIndex(of: identity), index > 0 else { return }
-        order.swapAt(index, index - 1)
-        var metadata = designMetadata ?? .empty
-        metadata.layerOrder = order
-        designMetadata = metadata.normalized(availableControls: allControlIdentitiesForDesign)
+        sendLayersBackward([identity])
+    }
+
+    mutating func sendLayersBackward(_ identities: Set<GamepadControlIdentity>) {
+        let controls = allControlIdentitiesForDesign
+        let validIdentities = Set(identities.filter { controls.contains($0) })
+        guard !validIdentities.isEmpty else { return }
+
+        let currentOrder = orderedControlIdentitiesForDesign
+        guard let firstSelectedIndex = currentOrder.indices.first(where: { validIdentities.contains(currentOrder[$0]) }),
+              let previousUnselectedIndex = currentOrder.indices.reversed().first(where: { $0 < firstSelectedIndex && !validIdentities.contains(currentOrder[$0]) })
+        else { return }
+
+        let moving = currentOrder.filter { validIdentities.contains($0) }
+        var remaining = currentOrder.filter { !validIdentities.contains($0) }
+        guard let previousIdentityIndex = remaining.firstIndex(of: currentOrder[previousUnselectedIndex]) else { return }
+        remaining.insert(contentsOf: moving, at: previousIdentityIndex)
+        setLayerOrder(remaining)
     }
 
     mutating func bringLayerToFront(_ identity: GamepadControlIdentity) {
-        var order = orderedControlIdentitiesForDesign.filter { $0 != identity }
-        guard allControlIdentitiesForDesign.contains(identity) else { return }
-        order.append(identity)
-        var metadata = designMetadata ?? .empty
-        metadata.layerOrder = order
-        designMetadata = metadata.normalized(availableControls: allControlIdentitiesForDesign)
+        bringLayersToFront([identity])
+    }
+
+    mutating func bringLayersToFront(_ identities: Set<GamepadControlIdentity>) {
+        let controls = allControlIdentitiesForDesign
+        let validIdentities = Set(identities.filter { controls.contains($0) })
+        guard !validIdentities.isEmpty else { return }
+        let currentOrder = orderedControlIdentitiesForDesign
+        let moving = currentOrder.filter { validIdentities.contains($0) }
+        guard !moving.isEmpty else { return }
+        let remaining = currentOrder.filter { !validIdentities.contains($0) }
+        setLayerOrder(remaining + moving)
     }
 
     mutating func sendLayerToBack(_ identity: GamepadControlIdentity) {
-        var order = orderedControlIdentitiesForDesign.filter { $0 != identity }
-        guard allControlIdentitiesForDesign.contains(identity) else { return }
-        order.insert(identity, at: 0)
+        sendLayersToBack([identity])
+    }
+
+    mutating func sendLayersToBack(_ identities: Set<GamepadControlIdentity>) {
+        let controls = allControlIdentitiesForDesign
+        let validIdentities = Set(identities.filter { controls.contains($0) })
+        guard !validIdentities.isEmpty else { return }
+        let currentOrder = orderedControlIdentitiesForDesign
+        let moving = currentOrder.filter { validIdentities.contains($0) }
+        guard !moving.isEmpty else { return }
+        let remaining = currentOrder.filter { !validIdentities.contains($0) }
+        setLayerOrder(moving + remaining)
+    }
+
+    private mutating func setLayerOrder(_ order: [GamepadControlIdentity]) {
         var metadata = designMetadata ?? .empty
         metadata.layerOrder = order
         designMetadata = metadata.normalized(availableControls: allControlIdentitiesForDesign)

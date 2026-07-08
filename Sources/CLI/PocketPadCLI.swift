@@ -1568,13 +1568,13 @@ struct PocketPadCLI {
         case "list", "ls":
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let order = profile.customization.orderedControlIdentitiesForDesign
+            let order = profile.customization.zOrderedControlIdentitiesForDesign
             if rest.contains("--json") {
                 try printJSON(order.map { layerSummary(identity: $0, customization: profile.customization) })
             } else {
                 for (index, identity) in order.enumerated() {
                     let summary = layerSummary(identity: identity, customization: profile.customization)
-                    print("\(index)\t\(summary.id)\t\(summary.label)\t\(summary.kind)")
+                    print("\(index)\t\(summary.id)\t\(summary.label)\t\(summary.kind)\tz:\(summary.zIndex)")
                 }
             }
         case "move":
@@ -1621,22 +1621,42 @@ struct PocketPadCLI {
         case "list", "ls":
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let groups = profile.customization.designMetadata?.groups ?? []
-            if rest.contains("--json") { try printJSON(groups) } else { groups.forEach { print("\($0.id.uuidString)\t\($0.name)\t\($0.children.count) elements") } }
+            let customization = try customization(for: profile, arguments: rest)
+            let groups = customization.designMetadata?.normalized(availableControls: customization.allControlIdentitiesForDesign)?.groups ?? []
+            if rest.contains("--json") {
+                try printJSON(groups)
+            } else {
+                groups.forEach { group in
+                    print("\(group.id.uuidString)\t\(group.name)\t\(group.children.count) elements")
+                    if rest.contains("--tree") {
+                        for child in group.children {
+                            let summary = layerSummary(identity: child, customization: customization)
+                            print("  └─ \(summary.id)\t\(summary.label)\t\(summary.kind)")
+                        }
+                    }
+                }
+            }
         case "create", "new":
             let positional = positionals(in: rest)
             guard let name = positional.first, positional.count >= 2 else { throw CLIError.message("Usage: pocketpad group create <name> <element>...") }
             let targets = Array(positional.dropFirst())
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 let children = try targets.map { identity(for: try resolveElementTarget($0, in: customization)) }
+                let childSet = Set(children)
                 var metadata = customization.designMetadata ?? .empty
+                for index in metadata.groups.indices {
+                    metadata.groups[index].children.removeAll { childSet.contains($0) }
+                }
+                metadata.groups.removeAll { $0.children.isEmpty }
                 metadata.groups.append(GamepadLayerGroup(name: name, children: children))
+                customization.moveLayers(childSet, to: firstLayerIndex(for: childSet, in: customization.orderedControlIdentitiesForDesign))
+                metadata.layerOrder = customization.orderedControlIdentitiesForDesign
                 customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
             }
             print("Created group \"\(name)\".")
         case "ungroup", "delete", "rm":
             guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad group ungroup <group-name-or-id>") }
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 var metadata = customization.designMetadata ?? .empty
                 metadata.groups.removeAll { groupMatches($0, target: target) }
                 customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
@@ -1644,22 +1664,44 @@ struct PocketPadCLI {
             print("Removed group \"\(target)\".")
         case "hide", "show", "lock", "unlock":
             guard let targetName = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad group \(subcommand) <group-name-or-id>") }
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 var metadata = customization.designMetadata ?? .empty
                 guard let index = metadata.groups.firstIndex(where: { groupMatches($0, target: targetName) }) else { throw CLIError.message("Group not found: \(targetName)") }
-                let hidden = subcommand == "hide" ? true : (subcommand == "show" ? false : metadata.groups[index].isHidden)
-                let locked = subcommand == "lock" ? true : (subcommand == "unlock" ? false : metadata.groups[index].isLocked)
-                metadata.groups[index].isHidden = hidden
-                metadata.groups[index].isLocked = locked
-                for child in metadata.groups[index].children {
-                    try mutateLayout(for: target(for: child), in: &customization) { layout in
-                        layout.isHidden = hidden
-                        layout.isLocationLocked = locked
+                let children = metadata.groups[index].children
+                switch subcommand {
+                case "hide", "show":
+                    let hidden = subcommand == "hide"
+                    metadata.groups[index].isHidden = hidden
+                    customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+                    for child in children {
+                        try mutateLayout(for: target(for: child), in: &customization) { layout in
+                            layout.isHidden = hidden
+                        }
                     }
+                case "lock", "unlock":
+                    let locked = subcommand == "lock"
+                    metadata.groups[index].isLocked = locked
+                    customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+                    for child in children {
+                        try mutateLayout(for: target(for: child), in: &customization) { layout in
+                            layout.isLocationLocked = locked
+                        }
+                    }
+                default:
+                    break
                 }
-                customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
             }
             print("Updated group \"\(targetName)\".")
+        case "nudge", "move":
+            try nudgeGroup(arguments: rest)
+        case "bring-forward", "forward":
+            try mutateGroupLayers(rest, actionDescription: "Brought group forward") { $0.bringLayersForward($1) }
+        case "send-backward", "backward":
+            try mutateGroupLayers(rest, actionDescription: "Sent group backward") { $0.sendLayersBackward($1) }
+        case "front", "bring-front":
+            try mutateGroupLayers(rest, actionDescription: "Brought group to front") { $0.bringLayersToFront($1) }
+        case "back", "send-back":
+            try mutateGroupLayers(rest, actionDescription: "Sent group to back") { $0.sendLayersToBack($1) }
         default:
             throw CLIError.message("Unknown group subcommand: \(subcommand)")
         }
@@ -1703,6 +1745,7 @@ struct PocketPadCLI {
         var id: String
         var kind: String
         var label: String
+        var zIndex: Int
         var isHidden: Bool
         var isLocked: Bool
     }
@@ -1711,10 +1754,10 @@ struct PocketPadCLI {
         switch identity {
         case .builtin(let button):
             let layout = customization.buttonCustomization(for: button)
-            return LayerSummary(id: identity.id, kind: "button", label: customization.visualLabel(for: button), isHidden: layout.isHidden, isLocked: layout.isLocationLocked)
+            return LayerSummary(id: identity.id, kind: "button", label: customization.visualLabel(for: button), zIndex: layout.zIndex, isHidden: layout.isHidden, isLocked: layout.isLocationLocked)
         case .custom(let id):
             let custom = customization.customButtons.first { $0.id == id }?.normalized
-            return LayerSummary(id: identity.id, kind: custom?.controlKind.rawValue ?? "custom", label: custom?.label ?? id.uuidString, isHidden: custom?.layout.isHidden ?? false, isLocked: custom?.layout.isLocationLocked ?? false)
+            return LayerSummary(id: identity.id, kind: custom?.controlKind.rawValue ?? "custom", label: custom?.label ?? id.uuidString, zIndex: custom?.layout.zIndex ?? 0, isHidden: custom?.layout.isHidden ?? false, isLocked: custom?.layout.isLocationLocked ?? false)
         }
     }
 
@@ -1784,11 +1827,70 @@ struct PocketPadCLI {
 
     private static func mutateLayer(_ arguments: [String], mutate: (inout GamepadCustomization, GamepadControlIdentity) -> Void) throws {
         guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing layer element") }
-        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments)) { customization in
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             let identity = identity(for: try resolveElementTarget(targetText, in: customization))
             mutate(&customization, identity)
         }
         print("Updated layer \"\(targetText)\".")
+    }
+
+    private static func mutateGroupLayers(
+        _ arguments: [String],
+        actionDescription: String,
+        mutate: (inout GamepadCustomization, Set<GamepadControlIdentity>) -> Void
+    ) throws {
+        guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing group name or id") }
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
+            let group = try resolveLayerGroup(targetText, in: customization)
+            mutate(&customization, Set(group.children))
+        }
+        print("\(actionDescription) \"\(targetText)\".")
+    }
+
+    private static func nudgeGroup(arguments: [String]) throws {
+        let positional = positionals(in: arguments)
+        guard let targetText = positional.first else {
+            throw CLIError.message("Usage: pocketpad group nudge <group-name-or-id> <left|right|up|down> [--step 1|10]")
+        }
+        let directionText = positional.dropFirst().first
+        let translation = try parseNudgeTranslation(arguments: arguments, directionText: directionText)
+        let canvasSize = try parseNudgeCanvasSize(arguments)
+
+        var store = loadStore()
+        let profileIndex = try resolveProfileIndex(optionValue("--profile", in: arguments), in: store)
+        let variant = try customizationVariant(in: arguments)
+        let sourceCustomization = variant.map { store.profiles[profileIndex].customization(for: $0) } ?? store.profiles[profileIndex].customization
+        let group = try resolveLayerGroup(targetText, in: sourceCustomization)
+
+        guard let nudgedCustomization = sourceCustomization.nudgedControls(Set(group.children), by: translation, in: canvasSize) else {
+            print("Group \"\(targetText)\" could not move.")
+            return
+        }
+
+        let normalizedNudgedCustomization = nudgedCustomization.normalized
+        if let variant {
+            store.profiles[profileIndex].setCustomization(normalizedNudgedCustomization, for: variant)
+        } else {
+            store.profiles[profileIndex].setCustomization(
+                normalizedNudgedCustomization,
+                for: normalizedNudgedCustomization.deviceCanvas.editorDeviceFrame.orientation
+            )
+        }
+        store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
+        try persistStore(store)
+        print("Nudged group \"\(targetText)\" by \(formatPixels(translation.width))px, \(formatPixels(translation.height))px.")
+    }
+
+    private static func resolveLayerGroup(_ target: String, in customization: GamepadCustomization) throws -> GamepadLayerGroup {
+        let groups = customization.designMetadata?.normalized(availableControls: customization.allControlIdentitiesForDesign)?.groups ?? []
+        guard let group = groups.first(where: { groupMatches($0, target: target) }) else {
+            throw CLIError.message("Group not found: \(target)")
+        }
+        return group
+    }
+
+    private static func firstLayerIndex(for identities: Set<GamepadControlIdentity>, in order: [GamepadControlIdentity]) -> Int {
+        order.indices.first(where: { identities.contains(order[$0]) }) ?? order.count
     }
 
     private static func mutateLayout(for target: ElementTarget, in customization: inout GamepadCustomization, mutate: (inout GamepadButtonCustomization) throws -> Void) throws {
@@ -2451,6 +2553,9 @@ struct PocketPadCLI {
         if let value = optionValue("--y", in: arguments) ?? optionValue("--center-y", in: arguments), let number = Double(value) { layout.centerY = CGFloat(number) }
         if let value = optionValue("--width", in: arguments) ?? optionValue("--width-scale", in: arguments), let number = Double(value) { layout.widthScale = CGFloat(number) }
         if let value = optionValue("--height", in: arguments) ?? optionValue("--height-scale", in: arguments), let number = Double(value) { layout.heightScale = CGFloat(number) }
+        if let value = optionValue("--z-index", in: arguments) ?? optionValue("--z", in: arguments) ?? optionValue("--zindex", in: arguments) {
+            layout.zIndex = GamepadButtonCustomization.normalizedZIndex(try parseInteger(value))
+        }
         if let value = optionValue("--shape", in: arguments), let shape = parseShapeStyleIfPresent(value) { layout.shape = shape }
         if let value = optionValue("--joystick-style", in: arguments) ?? optionValue("--stick-style", in: arguments) {
             layout.joystickVisualStyle = try parseJoystickVisualStyle(value)
@@ -4054,7 +4159,7 @@ struct PocketPadCLI {
             "--light-background-gradient", "--background-light-gradient", "--dark-background-gradient", "--background-dark-gradient",
             "--light-background-tile", "--background-light-tile", "--dark-background-tile", "--background-dark-tile",
             "--light-background-image", "--background-light-image", "--dark-background-image", "--background-dark-image",
-            "--width", "--width-scale", "--device-width", "--height", "--height-scale", "--device-height", "--shape", "--fill", "--light-fill", "--fill-light",
+            "--width", "--width-scale", "--device-width", "--height", "--height-scale", "--device-height", "--z-index", "--z", "--zindex", "--shape", "--fill", "--light-fill", "--fill-light",
             "--light-color", "--dark-fill", "--fill-dark", "--dark-color", "--opacity", "--light-opacity", "--dark-opacity",
             "--thumb-fill", "--thumb-color", "--joystick-thumb-fill", "--joystick-knob-fill", "--light-thumb-fill", "--thumb-light", "--light-thumb-color",
             "--dark-thumb-fill", "--thumb-dark", "--dark-thumb-color", "--thumb-opacity", "--light-thumb-opacity", "--dark-thumb-opacity",
@@ -4253,7 +4358,7 @@ struct PocketPadCLI {
           pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
           pocketpad element add decoration --label Shell --material soft-white-plate --x 0.5 --y 0.5 --width 3.2 --height 1.5 --shape rounded_rectangle
           pocketpad element set jump --keyboard Space --gamepad south
-          pocketpad element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
+          pocketpad element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
           pocketpad element set "Right Stick" --thumb-fill '#22C55E'
           pocketpad element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
           pocketpad element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
@@ -4268,6 +4373,9 @@ struct PocketPadCLI {
           pocketpad layer list
           pocketpad layer front focus
           pocketpad group create Actions jump attack dash focus
+          pocketpad group list --tree
+          pocketpad group nudge Actions right --step 10 --canvas iphone-17-pro-landscape
+          pocketpad group front Actions
           pocketpad asset import ./icon.png --role icon --name SoulOrb
 
         Runtime:

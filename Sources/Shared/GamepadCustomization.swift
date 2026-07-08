@@ -1103,6 +1103,8 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public static let minimumShadowStrength: CGFloat = 0
     public static let maximumShadowStrength: CGFloat = 2
     public static let defaultShadowStrength: CGFloat = 1
+    public static let minimumZIndex = -100
+    public static let maximumZIndex = 100
     public static let defaultValue = GamepadButtonCustomization()
 
     public var centerX: CGFloat?
@@ -1110,6 +1112,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public var widthScale: CGFloat
     public var heightScale: CGFloat
     public var rotationDegrees: CGFloat
+    public var zIndex: Int
     public var shape: GamepadButtonShapeStyle?
     public var accentStyle: GamepadAccentStyle?
     /// Legacy/global fill color used by keypads saved before light/dark-specific colors existed.
@@ -1143,6 +1146,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         widthScale: CGFloat = 1.0,
         heightScale: CGFloat = 1.0,
         rotationDegrees: CGFloat = 0,
+        zIndex: Int = 0,
         shape: GamepadButtonShapeStyle? = nil,
         accentStyle: GamepadAccentStyle? = nil,
         fillColor: GamepadRGBAColor? = nil,
@@ -1171,6 +1175,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         self.widthScale = widthScale
         self.heightScale = heightScale
         self.rotationDegrees = rotationDegrees
+        self.zIndex = Self.normalizedZIndex(zIndex)
         self.shape = shape
         self.accentStyle = accentStyle
         self.fillColor = fillColor
@@ -1202,6 +1207,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         widthScale = try container.decodeIfPresent(CGFloat.self, forKey: .widthScale) ?? 1.0
         heightScale = try container.decodeIfPresent(CGFloat.self, forKey: .heightScale) ?? 1.0
         rotationDegrees = try container.decodeIfPresent(CGFloat.self, forKey: .rotationDegrees) ?? 0
+        zIndex = Self.normalizedZIndex(try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0)
         shape = try container.decodeIfPresent(GamepadButtonShapeStyle.self, forKey: .shape)
         accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle)
         fillColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .fillColor)
@@ -1233,6 +1239,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         try container.encode(widthScale, forKey: .widthScale)
         try container.encode(heightScale, forKey: .heightScale)
         try container.encode(rotationDegrees, forKey: .rotationDegrees)
+        try container.encode(zIndex, forKey: .zIndex)
         try container.encodeIfPresent(shape, forKey: .shape)
         try container.encodeIfPresent(accentStyle, forKey: .accentStyle)
         try container.encodeIfPresent(fillColor, forKey: .fillColor)
@@ -1264,6 +1271,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         copy.widthScale = Self.clamp(copy.widthScale, lower: Self.minimumScale, upper: Self.maximumScale)
         copy.heightScale = Self.clamp(copy.heightScale, lower: Self.minimumScale, upper: Self.maximumScale)
         copy.rotationDegrees = Self.normalizedRotationDegrees(copy.rotationDegrees)
+        copy.zIndex = Self.normalizedZIndex(copy.zIndex)
         copy.fillColor = copy.fillColor?.normalized
         copy.lightFillColor = copy.lightFillColor?.normalized
         copy.darkFillColor = copy.darkFillColor?.normalized
@@ -1302,6 +1310,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
             && abs(widthScale - 1.0) < 0.001
             && abs(heightScale - 1.0) < 0.001
             && abs(rotationDegrees) < 0.001
+            && zIndex == 0
             && shape == nil
             && accentStyle == nil
             && fillColor == nil
@@ -1335,6 +1344,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
             || abs(widthScale - 1.0) >= 0.001
             || abs(heightScale - 1.0) >= 0.001
             || abs(rotationDegrees) >= 0.001
+            || zIndex != 0
             || shape != nil
             || isHidden
     }
@@ -1425,12 +1435,22 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         return abs(normalized) < 0.001 ? 0 : normalized
     }
 
+    static func normalizedZIndex(_ value: Int) -> Int {
+        min(max(value, minimumZIndex), maximumZIndex)
+    }
+
+    static func normalizedZIndex(_ value: Double) -> Int {
+        guard value.isFinite else { return 0 }
+        return normalizedZIndex(Int(value.rounded()))
+    }
+
     private enum CodingKeys: String, CodingKey {
         case centerX
         case centerY
         case widthScale
         case heightScale
         case rotationDegrees
+        case zIndex
         case shape
         case accentStyle
         case fillColor
@@ -2637,7 +2657,7 @@ enum GamepadLayoutResolver {
             ),
             in: canvasSize
         )
-        let layerOrder = customization.orderedControlIdentitiesForDesign
+        let layerOrder = customization.zOrderedControlIdentitiesForDesign
         guard !layerOrder.isEmpty else { return resolved }
         let orderLookup = Dictionary(uniqueKeysWithValues: layerOrder.enumerated().map { ($0.element, $0.offset) })
         return resolved.sorted { lhs, rhs in
@@ -5418,6 +5438,34 @@ private struct GamepadEditorComponentItem: Identifiable, Hashable {
     var id: GamepadControlIdentity { identity }
 }
 
+private struct GamepadEditorLayerGroupItem: Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    let children: [GamepadEditorComponentItem]
+    let isHidden: Bool
+    let isLocationLocked: Bool
+
+    var childIdentities: [GamepadControlIdentity] {
+        children.map(\.identity)
+    }
+
+    var childIdentitySet: Set<GamepadControlIdentity> {
+        Set(childIdentities)
+    }
+}
+
+private enum GamepadEditorLayerListItem: Identifiable, Hashable {
+    case group(GamepadEditorLayerGroupItem)
+    case component(GamepadEditorComponentItem)
+
+    var id: String {
+        switch self {
+        case .group(let group): "group.\(group.id.uuidString)"
+        case .component(let component): "component.\(component.identity.id)"
+        }
+    }
+}
+
 private enum GamepadFrameMetric {
     case x
     case y
@@ -6007,6 +6055,8 @@ struct GamepadCustomizationEditor: View {
     @State private var selectedProfileOrientation: GamepadEditorDeviceOrientation
     @State private var isSelectedProfileExpanded: Bool
     @State private var selectedProfileNameDraft: String
+    @State private var expandedLayerGroupIDs: Set<UUID>
+    @State private var layerSelectionAnchorID: GamepadControlIdentity?
     @State private var configurationSidebarDragStart: CGFloat?
     @State private var inspectorSidebarDragStart: CGFloat?
     @State private var canvasZoomGestureStart: CGFloat?
@@ -6086,6 +6136,8 @@ struct GamepadCustomizationEditor: View {
         self._selectedProfileOrientation = State(initialValue: loadedProfiles.activeProfile?.customization.deviceCanvas.editorDeviceFrame.orientation ?? .landscape)
         self._isSelectedProfileExpanded = State(initialValue: true)
         self._selectedProfileNameDraft = State(initialValue: loadedProfiles.activeProfile?.name ?? "Current Setup")
+        self._expandedLayerGroupIDs = State(initialValue: [])
+        self._layerSelectionAnchorID = State(initialValue: nil)
     }
 
     private var activeDeviceFrame: GamepadEditorDeviceFrame {
@@ -6185,6 +6237,7 @@ struct GamepadCustomizationEditor: View {
                 onDelete: deleteSelectedControl,
                 onUndo: performUndo,
                 onRedo: performRedo,
+                onGroup: performGroupShortcut,
                 onNudge: nudgeSelectedControls
             )
             .frame(width: 0, height: 0)
@@ -6534,6 +6587,20 @@ struct GamepadCustomizationEditor: View {
                     .textCase(.uppercase)
 
                 Spacer(minLength: Geist.Spacing.s1)
+
+                if let selectedLayerGroup {
+                    Button("Ungroup") {
+                        ungroupLayerGroup(selectedLayerGroup.id)
+                    }
+                    .geistButtonStyle(.tertiary, size: .small)
+                    .help("Remove this group while keeping its children on the canvas")
+                } else if canGroupSelectedControls {
+                    Button("Group") {
+                        groupSelectedControls()
+                    }
+                    .geistButtonStyle(.secondary, size: .small)
+                    .help("Create a Figma-style group from the selected layers (⌘G)")
+                }
             }
             .padding(.horizontal, Geist.Spacing.s2)
 
@@ -6541,10 +6608,26 @@ struct GamepadCustomizationEditor: View {
                 emptyComponentsMessage
             } else {
                 VStack(spacing: Geist.Spacing.s1) {
-                    ForEach(componentListItems) { item in
-                        componentRow(item)
+                    ForEach(layerListItems) { listItem in
+                        switch listItem {
+                        case .group(let group):
+                            layerGroupSection(group)
+                        case .component(let item):
+                            componentRow(item)
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func layerGroupSection(_ group: GamepadEditorLayerGroupItem) -> some View {
+        layerGroupRow(group)
+
+        if isLayerGroupExpanded(group.id) {
+            ForEach(group.children.indices, id: \.self) { index in
+                componentRow(group.children[index], indentation: Geist.Spacing.s4)
             }
         }
     }
@@ -6563,7 +6646,114 @@ struct GamepadCustomizationEditor: View {
             )
     }
 
-    private func componentRow(_ item: GamepadEditorComponentItem) -> some View {
+    private func layerGroupRow(_ group: GamepadEditorLayerGroupItem) -> some View {
+        let isSelected = isLayerGroupSelected(group)
+        let primaryTextColor = group.isHidden
+            ? Geist.color(.gray900, scheme: colorScheme).opacity(0.58)
+            : Geist.color(.gray1000, scheme: colorScheme)
+        let secondaryTextColor = group.isHidden
+            ? Geist.color(.gray900, scheme: colorScheme).opacity(0.48)
+            : Geist.color(.gray900, scheme: colorScheme)
+
+        return HStack(spacing: Geist.Spacing.s1) {
+            Button {
+                toggleLayerGroupExpansion(group.id)
+            } label: {
+                Image(systemName: isLayerGroupExpanded(group.id) ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .frame(width: 18, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(isLayerGroupExpanded(group.id) ? "Collapse" : "Expand") \(group.name) group")
+
+            Button {
+                handleSidebarGroupClick(group)
+            } label: {
+                HStack(spacing: Geist.Spacing.s2) {
+                    Image(systemName: "rectangle.3.group")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(primaryTextColor)
+                        .frame(width: 14)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(group.name)
+                            .geistTypography(.label13)
+                            .foregroundStyle(primaryTextColor)
+                            .lineLimit(1)
+                        Text("Group • \(group.children.count) layer\(group.children.count == 1 ? "" : "s")")
+                            .geistTypography(.label12)
+                            .foregroundStyle(secondaryTextColor)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: Geist.Spacing.s1)
+                }
+                .padding(.trailing, Geist.Spacing.s1)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Select \(group.name) group")
+            .help("Select the group to move or resize all nested layers together")
+
+            componentIconButton(
+                systemImage: "arrow.down",
+                accessibilityLabel: "Send \(group.name) group backward",
+                help: "Send group backward"
+            ) {
+                sendLayerGroupBackward(group)
+            }
+
+            componentIconButton(
+                systemImage: "arrow.up",
+                accessibilityLabel: "Bring \(group.name) group forward",
+                help: "Bring group forward"
+            ) {
+                bringLayerGroupForward(group)
+            }
+
+            componentIconButton(
+                systemImage: group.isLocationLocked ? "lock.fill" : "lock.open",
+                accessibilityLabel: group.isLocationLocked ? "Unlock \(group.name) group" : "Lock \(group.name) group",
+                help: group.isLocationLocked ? "Unlock group" : "Lock group"
+            ) {
+                setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
+            }
+
+            componentIconButton(
+                systemImage: group.isHidden ? "eye.slash.fill" : "eye",
+                accessibilityLabel: group.isHidden ? "Show \(group.name) group" : "Hide \(group.name) group",
+                help: group.isHidden ? "Show group" : "Hide group"
+            ) {
+                setLayerGroupHidden(!group.isHidden, groupID: group.id)
+            }
+        }
+        .padding(.leading, Geist.Spacing.s1)
+        .padding(.trailing, Geist.Spacing.s1)
+        .background(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .fill(isSelected ? Geist.color(.background100, scheme: colorScheme) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(isSelected ? Geist.color(.blue700, scheme: colorScheme) : Color.clear, lineWidth: 1.5)
+        )
+        .contextMenu {
+            Button("Ungroup") {
+                ungroupLayerGroup(group.id)
+            }
+            Button(group.isLocationLocked ? "Unlock Group" : "Lock Group") {
+                setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
+            }
+            Button(group.isHidden ? "Show Group" : "Hide Group") {
+                setLayerGroupHidden(!group.isHidden, groupID: group.id)
+            }
+        }
+    }
+
+    private func componentRow(_ item: GamepadEditorComponentItem, indentation: CGFloat = 0) -> some View {
         let isSelected = isControlSelectionActive && selectedControlIDs.contains(item.identity)
         let primaryTextColor = item.isHidden
             ? Geist.color(.gray900, scheme: colorScheme).opacity(0.58)
@@ -6574,9 +6764,16 @@ struct GamepadCustomizationEditor: View {
 
         return HStack(spacing: Geist.Spacing.s1) {
             Button {
-                selectComponent(item.identity)
+                handleSidebarComponentClick(item.identity)
             } label: {
                 HStack(spacing: Geist.Spacing.s2) {
+                    if indentation > 0 {
+                        Image(systemName: "arrow.turn.down.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme).opacity(0.72))
+                            .frame(width: 14)
+                    }
+
                     Image(systemName: item.systemImage)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(primaryTextColor)
@@ -6595,7 +6792,7 @@ struct GamepadCustomizationEditor: View {
 
                     Spacer(minLength: Geist.Spacing.s1)
                 }
-                .padding(.leading, Geist.Spacing.s2)
+                .padding(.leading, Geist.Spacing.s2 + indentation)
                 .padding(.trailing, Geist.Spacing.s1)
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
                 .contentShape(Rectangle())
@@ -6855,6 +7052,7 @@ struct GamepadCustomizationEditor: View {
                         layoutSize: screenRect.size,
                         displayScale: displayScale,
                         defaultLabelProvider: defaultLabelProvider,
+                        groupedSelectionForControl: groupedSelectionIDs(for:),
                         onBeginUndoableChange: { actionName in
                             registerUndoSnapshot(actionName: actionName)
                         }
@@ -7196,9 +7394,11 @@ struct GamepadCustomizationEditor: View {
                 inspectorAccordionSection(.selectedElementIdentity, title: "Element", subtitle: selectedControlTitle) {
                     selectedElementIdentitySection
                 }
-                Divider()
-                inspectorAccordionSection(.selectedElementArrangement, title: "Layer & Arrangement") {
-                    selectedElementArrangementSection
+                if shouldShowSelectedElementArrangementSection {
+                    Divider()
+                    inspectorAccordionSection(.selectedElementArrangement, title: "Arrangement") {
+                        selectedElementArrangementSection
+                    }
                 }
                 Divider()
                 inspectorAccordionSection(.selectedElementStyle, title: "Reusable Style") {
@@ -7718,57 +7918,119 @@ struct GamepadCustomizationEditor: View {
             )
     }
 
+    @ViewBuilder
     private var selectedElementIdentitySection: some View {
-        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            HStack {
-                Spacer(minLength: Geist.Spacing.s2)
+        if let selectedLayerGroup,
+           let groupItem = layerGroupItems.first(where: { $0.id == selectedLayerGroup.id }) {
+            selectedGroupIdentitySection(groupItem)
+        } else {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                HStack {
+                    Spacer(minLength: Geist.Spacing.s2)
 
-                Button("Reset") {
-                    resetSelectedControl()
+                    Button("Reset") {
+                        resetSelectedControl()
+                    }
+                    .geistButtonStyle(.tertiary, size: .small)
                 }
-                .geistButtonStyle(.tertiary, size: .small)
-            }
 
-            controlSelectionPicker
-            selectedElementLabelControls
-            selectedElementOutputControls
+                controlSelectionPicker
+                selectedElementLabelControls
+                selectedElementOutputControls
 
-            componentStateControls
+                componentStateControls
 
-            if case .custom(let id) = selectedControlID,
-               let customButton = customButton(id: id)?.normalized {
-                Button(deleteTitle(for: customButton)) {
-                    _ = deleteCustomButton(id: id)
+                if case .custom(let id) = selectedControlID,
+                   let customButton = customButton(id: id)?.normalized {
+                    Button(deleteTitle(for: customButton)) {
+                        _ = deleteCustomButton(id: id)
+                    }
+                    .geistButtonStyle(.error, size: .small)
                 }
-                .geistButtonStyle(.error, size: .small)
             }
         }
     }
 
+    private func selectedGroupIdentitySection(_ group: GamepadEditorLayerGroupItem) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            HStack(spacing: Geist.Spacing.s2) {
+                Image(systemName: "rectangle.3.group")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(group.name)
+                        .geistTypography(.heading14)
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    Text("\(group.children.count) nested layer\(group.children.count == 1 ? "" : "s")")
+                        .geistTypography(.copy13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                }
+                Spacer(minLength: Geist.Spacing.s2)
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s2) { selectedGroupStateButtons(group) }
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) { selectedGroupStateButtons(group) }
+            }
+
+            Button("Ungroup") {
+                ungroupLayerGroup(group.id)
+            }
+            .geistButtonStyle(.tertiary, size: .small)
+
+            Text("Group selection mirrors Figma: drag or resize any selected child on the canvas to transform the whole group. Select a nested layer in the sidebar to edit one child.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func selectedGroupStateButtons(_ group: GamepadEditorLayerGroupItem) -> some View {
+        Button(group.isHidden ? "Show Group" : "Hide Group") {
+            setLayerGroupHidden(!group.isHidden, groupID: group.id)
+        }
+        .geistButtonStyle(.secondary, size: .small)
+
+        Button(group.isLocationLocked ? "Unlock Group" : "Lock Group") {
+            setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
+        }
+        .geistButtonStyle(.secondary, size: .small)
+    }
+
+    private var shouldShowSelectedElementArrangementSection: Bool {
+        selectedControlIDs.count > 1 || selectedLayerGroup != nil
+    }
+
     private var selectedElementArrangementSection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Geist.Spacing.s2) {
-                Button("Back") { sendLayerToBack(selectedControlID) }
-                    .geistButtonStyle(.secondary, size: .small)
-                Button("Backward") { sendLayerBackward(selectedControlID) }
-                    .geistButtonStyle(.secondary, size: .small)
-                Button("Forward") { bringLayerForward(selectedControlID) }
-                    .geistButtonStyle(.secondary, size: .small)
-                Button("Front") { bringLayerToFront(selectedControlID) }
-                    .geistButtonStyle(.secondary, size: .small)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s2) { groupingButtons }
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) { groupingButtons }
             }
 
-            if selectedControlIDs.count > 1 {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: Geist.Spacing.s2) { alignmentButtons }
-                    VStack(alignment: .leading, spacing: Geist.Spacing.s2) { alignmentButtons }
-                }
-
-                Text("Alignment and distribution apply to the current multi-selection.")
-                    .geistTypography(.copy13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s2) { alignmentButtons }
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) { alignmentButtons }
             }
+
+            Text(selectedLayerGroup == nil ? "Alignment, distribution, and grouping apply to the current multi-selection." : "This group behaves like one layer: drag or resize any selected child to move the whole group.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var groupingButtons: some View {
+        if let selectedLayerGroup {
+            Button("Ungroup") { ungroupLayerGroup(selectedLayerGroup.id) }
+                .geistButtonStyle(.tertiary, size: .small)
+        } else {
+            Button("Group") { groupSelectedControls() }
+                .geistButtonStyle(.secondary, size: .small)
+                .disabled(!canGroupSelectedControls)
+                .help("Create a Figma-style group from the selected layers (⌘G)")
         }
     }
 
@@ -8805,16 +9067,17 @@ struct GamepadCustomizationEditor: View {
     private var selectedElementPositionControls: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Position (pt)")
+                Text("Position")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
                     inspectorMetricField(title: "X", value: frameMetricBinding(.x), unit: "pt", accessibilityLabel: "X position in points")
                     inspectorMetricField(title: "Y", value: frameMetricBinding(.y), unit: "pt", accessibilityLabel: "Y position in points")
+                    inspectorMetricField(title: "Z", value: zIndexBinding(for: selectedControlID), maxFractionDigits: 0, accessibilityLabel: "Z-index from minus 100 to 100")
                 }
 
-                Text("X and Y place the component’s top-left corner on the canvas.")
+                Text("X and Y place the component’s top-left corner on the canvas. Z controls stack order from -100 (back) to 100 (front).")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -9086,12 +9349,327 @@ struct GamepadCustomizationEditor: View {
         }
 
         let items = builtinItems + customItems
-        let orderLookup = Dictionary(uniqueKeysWithValues: customization.orderedControlIdentitiesForDesign.enumerated().map { ($0.element, $0.offset) })
+        let orderLookup = Dictionary(uniqueKeysWithValues: customization.zOrderedControlIdentitiesForDesign.enumerated().map { ($0.element, $0.offset) })
         return items.sorted { lhs, rhs in
             let lhsIndex = orderLookup[lhs.identity] ?? Int.max
             let rhsIndex = orderLookup[rhs.identity] ?? Int.max
             if lhsIndex == rhsIndex { return lhs.title < rhs.title }
             return lhsIndex < rhsIndex
+        }
+    }
+
+    private var normalizedLayerGroups: [GamepadLayerGroup] {
+        customization.designMetadata?.normalized(availableControls: customization.allControlIdentitiesForDesign)?.groups ?? []
+    }
+
+    private var layerGroupItems: [GamepadEditorLayerGroupItem] {
+        let items = componentListItems
+        let itemByIdentity = Dictionary(uniqueKeysWithValues: items.map { ($0.identity, $0) })
+        let orderLookup = Dictionary(uniqueKeysWithValues: customization.zOrderedControlIdentitiesForDesign.enumerated().map { ($0.element, $0.offset) })
+        var groupedIdentities = Set<GamepadControlIdentity>()
+
+        let groups = normalizedLayerGroups.compactMap { group -> GamepadEditorLayerGroupItem? in
+            let children = group.children.compactMap { identity -> GamepadEditorComponentItem? in
+                guard !groupedIdentities.contains(identity), let item = itemByIdentity[identity] else { return nil }
+                groupedIdentities.insert(identity)
+                return item
+            }
+            guard !children.isEmpty else { return nil }
+            return GamepadEditorLayerGroupItem(
+                id: group.id,
+                name: group.name,
+                children: children.sorted { lhs, rhs in
+                    let lhsIndex = orderLookup[lhs.identity] ?? Int.max
+                    let rhsIndex = orderLookup[rhs.identity] ?? Int.max
+                    if lhsIndex == rhsIndex { return lhs.title < rhs.title }
+                    return lhsIndex < rhsIndex
+                },
+                isHidden: group.isHidden || children.allSatisfy(\.isHidden),
+                isLocationLocked: group.isLocked || children.allSatisfy(\.isLocationLocked)
+            )
+        }
+
+        return groups.sorted { lhs, rhs in
+            let lhsIndex = lhs.childIdentities.compactMap { orderLookup[$0] }.min() ?? Int.max
+            let rhsIndex = rhs.childIdentities.compactMap { orderLookup[$0] }.min() ?? Int.max
+            if lhsIndex == rhsIndex { return lhs.name < rhs.name }
+            return lhsIndex < rhsIndex
+        }
+    }
+
+    private var layerListItems: [GamepadEditorLayerListItem] {
+        let groups = layerGroupItems
+        let itemByIdentity = Dictionary(uniqueKeysWithValues: componentListItems.map { ($0.identity, $0) })
+        var groupByChild: [GamepadControlIdentity: GamepadEditorLayerGroupItem] = [:]
+        for group in groups {
+            for identity in group.childIdentities {
+                groupByChild[identity] = group
+            }
+        }
+
+        var emittedGroups = Set<UUID>()
+        var emittedComponents = Set<GamepadControlIdentity>()
+        var listItems: [GamepadEditorLayerListItem] = []
+
+        for identity in customization.zOrderedControlIdentitiesForDesign {
+            if let group = groupByChild[identity] {
+                if emittedGroups.insert(group.id).inserted {
+                    listItems.append(.group(group))
+                    emittedComponents.formUnion(group.childIdentitySet)
+                }
+            } else if let item = itemByIdentity[identity], emittedComponents.insert(identity).inserted {
+                listItems.append(.component(item))
+            }
+        }
+
+        for group in groups where !emittedGroups.contains(group.id) {
+            listItems.append(.group(group))
+            emittedGroups.insert(group.id)
+            emittedComponents.formUnion(group.childIdentitySet)
+        }
+
+        for item in componentListItems where !emittedComponents.contains(item.identity) {
+            listItems.append(.component(item))
+            emittedComponents.insert(item.identity)
+        }
+
+        return listItems
+    }
+
+    private var layerSelectionControlIdentities: [GamepadControlIdentity] {
+        componentListItems.map(\.identity)
+    }
+
+    private var sidebarSelectionClickModifiers: (command: Bool, shift: Bool) {
+#if os(macOS)
+        let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return (flags.contains(.command), flags.contains(.shift))
+#else
+        return (false, false)
+#endif
+    }
+
+    private func handleSidebarComponentClick(_ identity: GamepadControlIdentity) {
+        let modifiers = sidebarSelectionClickModifiers
+        if modifiers.shift {
+            selectLayerRange(through: [identity], preferredPrimary: identity) {
+                selectComponent(identity)
+            }
+        } else if modifiers.command {
+            toggleLayerSelection([identity], preferredPrimary: identity)
+        } else {
+            selectComponent(identity)
+        }
+    }
+
+    private func handleSidebarGroupClick(_ group: GamepadEditorLayerGroupItem) {
+        let modifiers = sidebarSelectionClickModifiers
+        if modifiers.shift {
+            selectLayerRange(through: group.childIdentitySet, preferredPrimary: group.childIdentities.first ?? selectedControlID) {
+                selectLayerGroup(group)
+            }
+        } else if modifiers.command {
+            toggleLayerSelection(group.childIdentitySet, preferredPrimary: group.childIdentities.first ?? selectedControlID)
+            expandedLayerGroupIDs.insert(group.id)
+        } else {
+            selectLayerGroup(group)
+        }
+    }
+
+    private func toggleLayerSelection(_ identities: Set<GamepadControlIdentity>, preferredPrimary: GamepadControlIdentity) {
+        let validIdentities = Set(layerSelectionControlIdentities)
+        let targetIdentities = identities.intersection(validIdentities)
+        guard !targetIdentities.isEmpty else { return }
+
+        var nextSelection = isControlSelectionActive ? selectedControlIDs.intersection(validIdentities) : []
+        if targetIdentities.isSubset(of: nextSelection) {
+            nextSelection.subtract(targetIdentities)
+        } else {
+            nextSelection.formUnion(targetIdentities)
+        }
+
+        layerSelectionAnchorID = preferredPrimary
+        selectedControlIDs = nextSelection
+        isControlSelectionActive = !nextSelection.isEmpty
+        guard !nextSelection.isEmpty else { return }
+
+        if nextSelection.contains(preferredPrimary) {
+            selectedControlID = preferredPrimary
+        } else if !nextSelection.contains(selectedControlID), let firstSelected = firstLayerSelectionIdentity(in: nextSelection) {
+            selectedControlID = firstSelected
+        }
+    }
+
+    private func selectLayerRange(
+        through targetIdentities: Set<GamepadControlIdentity>,
+        preferredPrimary: GamepadControlIdentity,
+        fallback: () -> Void
+    ) {
+        let order = layerSelectionControlIdentities
+        guard !order.isEmpty,
+              let anchor = layerSelectionAnchorID ?? (isControlSelectionActive ? selectedControlID : nil),
+              let anchorIndex = order.firstIndex(of: anchor)
+        else {
+            fallback()
+            return
+        }
+
+        let targetIndices = targetIdentities.compactMap { order.firstIndex(of: $0) }
+        guard let firstTargetIndex = targetIndices.min(),
+              let lastTargetIndex = targetIndices.max()
+        else {
+            fallback()
+            return
+        }
+
+        let lowerBound: Int
+        let upperBound: Int
+        if anchorIndex < firstTargetIndex {
+            lowerBound = anchorIndex
+            upperBound = lastTargetIndex
+        } else if anchorIndex > lastTargetIndex {
+            lowerBound = firstTargetIndex
+            upperBound = anchorIndex
+        } else {
+            lowerBound = firstTargetIndex
+            upperBound = lastTargetIndex
+        }
+
+        let rangeSelection = Set(order[lowerBound...upperBound])
+        guard !rangeSelection.isEmpty else {
+            fallback()
+            return
+        }
+
+        selectedControlIDs = rangeSelection
+        selectedControlID = rangeSelection.contains(preferredPrimary) ? preferredPrimary : (order[upperBound])
+        isControlSelectionActive = true
+    }
+
+    private func firstLayerSelectionIdentity(in selection: Set<GamepadControlIdentity>) -> GamepadControlIdentity? {
+        layerSelectionControlIdentities.first { selection.contains($0) }
+    }
+
+    private var selectedLayerGroup: GamepadLayerGroup? {
+        guard isControlSelectionActive, selectedControlIDs.count > 1 else { return nil }
+        return normalizedLayerGroups.first { group in
+            Set(group.children) == selectedControlIDs
+        }
+    }
+
+    private var canGroupSelectedControls: Bool {
+        isControlSelectionActive
+            && selectedControlIDs.count > 1
+            && selectedLayerGroup == nil
+            && selectedControlIDs.allSatisfy { controlSelectionOptions.contains($0) }
+    }
+
+    private func isLayerGroupExpanded(_ groupID: UUID) -> Bool {
+        expandedLayerGroupIDs.contains(groupID) || isLayerGroupSelected(groupID: groupID)
+    }
+
+    private func toggleLayerGroupExpansion(_ groupID: UUID) {
+        if expandedLayerGroupIDs.contains(groupID) {
+            expandedLayerGroupIDs.remove(groupID)
+        } else {
+            expandedLayerGroupIDs.insert(groupID)
+        }
+    }
+
+    private func isLayerGroupSelected(_ group: GamepadEditorLayerGroupItem) -> Bool {
+        isControlSelectionActive && selectedControlIDs == group.childIdentitySet
+    }
+
+    private func isLayerGroupSelected(groupID: UUID) -> Bool {
+        guard let group = layerGroupItems.first(where: { $0.id == groupID }) else { return false }
+        return isLayerGroupSelected(group)
+    }
+
+    private func selectLayerGroup(_ group: GamepadEditorLayerGroupItem) {
+        guard let primary = group.childIdentities.first else { return }
+        selectedControlID = primary
+        selectedControlIDs = group.childIdentitySet
+        isControlSelectionActive = true
+        layerSelectionAnchorID = primary
+        expandedLayerGroupIDs.insert(group.id)
+    }
+
+    private func groupedSelectionIDs(for identity: GamepadControlIdentity) -> Set<GamepadControlIdentity>? {
+        guard let group = layerGroupItems.first(where: { $0.childIdentitySet.contains(identity) }) else { return nil }
+        expandedLayerGroupIDs.insert(group.id)
+        return group.childIdentitySet
+    }
+
+    private func groupSelectedControls() {
+        guard canGroupSelectedControls else { return }
+        let selectedItems = componentListItems.filter { selectedControlIDs.contains($0.identity) }
+        let children = selectedItems.map(\.identity)
+        guard children.count > 1 else { return }
+
+        let nextIndex = (normalizedLayerGroups.count + 1)
+        let group = GamepadLayerGroup(name: "Group \(nextIndex)", children: children)
+        let childSet = Set(children)
+        update(actionName: "Group Components") { next in
+            var metadata = next.designMetadata ?? .empty
+            for index in metadata.groups.indices {
+                metadata.groups[index].children.removeAll { childSet.contains($0) }
+            }
+            metadata.groups.removeAll { $0.children.isEmpty }
+            metadata.groups.append(group)
+            next.moveLayers(childSet, to: insertionIndexForGroupedSelection(children: children, in: next.orderedControlIdentitiesForDesign))
+            metadata.layerOrder = next.orderedControlIdentitiesForDesign
+            next.designMetadata = metadata.normalized(availableControls: next.allControlIdentitiesForDesign)
+        }
+        expandedLayerGroupIDs.insert(group.id)
+    }
+
+    private func insertionIndexForGroupedSelection(children: [GamepadControlIdentity], in order: [GamepadControlIdentity]) -> Int {
+        let childSet = Set(children)
+        return order.indices.first(where: { childSet.contains(order[$0]) }) ?? order.count
+    }
+
+    private func ungroupLayerGroup(_ groupID: UUID) {
+        update(actionName: "Ungroup Components") { next in
+            var metadata = next.designMetadata ?? .empty
+            metadata.groups.removeAll { $0.id == groupID }
+            next.designMetadata = metadata.normalized(availableControls: next.allControlIdentitiesForDesign)
+        }
+        expandedLayerGroupIDs.remove(groupID)
+    }
+
+    private func bringLayerGroupForward(_ group: GamepadEditorLayerGroupItem) {
+        update(actionName: "Bring Group Forward") { $0.bringLayersForward(group.childIdentitySet) }
+        selectLayerGroup(group)
+    }
+
+    private func sendLayerGroupBackward(_ group: GamepadEditorLayerGroupItem) {
+        update(actionName: "Send Group Backward") { $0.sendLayersBackward(group.childIdentitySet) }
+        selectLayerGroup(group)
+    }
+
+    private func setLayerGroupHidden(_ isHidden: Bool, groupID: UUID) {
+        update(actionName: isHidden ? "Hide Group" : "Show Group") { next in
+            var metadata = next.designMetadata ?? .empty
+            guard let index = metadata.groups.firstIndex(where: { $0.id == groupID }) else { return }
+            let children = metadata.groups[index].children
+            metadata.groups[index].isHidden = isHidden
+            next.designMetadata = metadata.normalized(availableControls: next.allControlIdentitiesForDesign)
+            for child in children {
+                setComponentHidden(isHidden, for: child, in: &next)
+            }
+        }
+    }
+
+    private func setLayerGroupLocked(_ isLocked: Bool, groupID: UUID) {
+        update(actionName: isLocked ? "Lock Group" : "Unlock Group") { next in
+            var metadata = next.designMetadata ?? .empty
+            guard let index = metadata.groups.firstIndex(where: { $0.id == groupID }) else { return }
+            let children = metadata.groups[index].children
+            metadata.groups[index].isLocked = isLocked
+            next.designMetadata = metadata.normalized(availableControls: next.allControlIdentitiesForDesign)
+            for child in children {
+                setComponentLocationLocked(isLocked, for: child, in: &next)
+            }
         }
     }
 
@@ -9562,6 +10140,9 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var selectedInspectorTitle: String {
+        if selectedControlIsEditable, let selectedLayerGroup {
+            return "Group: \(selectedLayerGroup.name)"
+        }
         if selectedControlIsEditable, selectedControlIDs.count > 1 {
             return "\(selectedControlIDs.count) components selected"
         }
@@ -9999,11 +10580,13 @@ struct GamepadCustomizationEditor: View {
         selectedControlID = identity
         selectedControlIDs = [identity]
         isControlSelectionActive = true
+        layerSelectionAnchorID = identity
     }
 
     private func selectKeypadInspector() {
         selectedControlIDs.removeAll()
         isControlSelectionActive = false
+        layerSelectionAnchorID = nil
     }
 
     private func selectPreferredComponent(for customization: GamepadCustomization) {
@@ -10040,6 +10623,32 @@ struct GamepadCustomizationEditor: View {
         update { $0.sendLayerToBack(identity) }
     }
 
+    private var selectedLayerActionIDs: Set<GamepadControlIdentity> {
+        selectedControlIDs.count > 1 ? selectedControlIDs : [selectedControlID]
+    }
+
+    private func bringSelectedLayersForward() {
+        update(actionName: selectedLayerActionIDs.count > 1 ? "Bring Selection Forward" : "Bring Layer Forward") { $0.bringLayersForward(selectedLayerActionIDs) }
+    }
+
+    private func sendSelectedLayersBackward() {
+        update(actionName: selectedLayerActionIDs.count > 1 ? "Send Selection Backward" : "Send Layer Backward") { $0.sendLayersBackward(selectedLayerActionIDs) }
+    }
+
+    private func bringSelectedLayersToFront() {
+        update(actionName: selectedLayerActionIDs.count > 1 ? "Bring Selection To Front" : "Bring Layer To Front") { $0.bringLayersToFront(selectedLayerActionIDs) }
+    }
+
+    private func sendSelectedLayersToBack() {
+        update(actionName: selectedLayerActionIDs.count > 1 ? "Send Selection To Back" : "Send Layer To Back") { $0.sendLayersToBack(selectedLayerActionIDs) }
+    }
+
+    private func performGroupShortcut() -> Bool {
+        guard canGroupSelectedControls else { return false }
+        groupSelectedControls()
+        return true
+    }
+
     private func isComponentHidden(_ identity: GamepadControlIdentity) -> Bool {
         switch identity {
         case .builtin(let button):
@@ -10059,28 +10668,34 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func setComponentHidden(_ isHidden: Bool, for identity: GamepadControlIdentity) {
+        update { next in setComponentHidden(isHidden, for: identity, in: &next) }
+    }
+
+    private func setComponentHidden(_ isHidden: Bool, for identity: GamepadControlIdentity, in customization: inout GamepadCustomization) {
         switch identity {
         case .builtin(let button):
-            update {
-                var buttonCustomization = $0.buttonCustomization(for: button)
-                buttonCustomization.isHidden = isHidden
-                $0.setButtonCustomization(buttonCustomization, for: button)
-            }
+            var buttonCustomization = customization.buttonCustomization(for: button)
+            buttonCustomization.isHidden = isHidden
+            customization.setButtonCustomization(buttonCustomization, for: button)
         case .custom(let id):
-            updateCustomButton(id: id) { $0.layout.isHidden = isHidden }
+            guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { return }
+            customization.customButtons[index].layout.isHidden = isHidden
         }
     }
 
     private func setComponentLocationLocked(_ isLocked: Bool, for identity: GamepadControlIdentity) {
+        update { next in setComponentLocationLocked(isLocked, for: identity, in: &next) }
+    }
+
+    private func setComponentLocationLocked(_ isLocked: Bool, for identity: GamepadControlIdentity, in customization: inout GamepadCustomization) {
         switch identity {
         case .builtin(let button):
-            update {
-                var buttonCustomization = $0.buttonCustomization(for: button)
-                buttonCustomization.isLocationLocked = isLocked
-                $0.setButtonCustomization(buttonCustomization, for: button)
-            }
+            var buttonCustomization = customization.buttonCustomization(for: button)
+            buttonCustomization.isLocationLocked = isLocked
+            customization.setButtonCustomization(buttonCustomization, for: button)
         case .custom(let id):
-            updateCustomButton(id: id) { $0.layout.isLocationLocked = isLocked }
+            guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { return }
+            customization.customButtons[index].layout.isLocationLocked = isLocked
         }
     }
 
@@ -11249,6 +11864,17 @@ struct GamepadCustomizationEditor: View {
 
     private func rotationDegreesValue(for identity: GamepadControlIdentity) -> CGFloat {
         selectedLayoutCustomization(for: identity).rotationDegrees
+    }
+
+    private func zIndexBinding(for identity: GamepadControlIdentity) -> Binding<Double> {
+        Binding(
+            get: { Double(selectedLayoutCustomization(for: identity).zIndex) },
+            set: { newValue in
+                updateLayoutCustomization(for: identity) { buttonCustomization in
+                    buttonCustomization.zIndex = GamepadButtonCustomization.normalizedZIndex(newValue)
+                }
+            }
+        )
     }
 
     private func shapeBinding(for identity: GamepadControlIdentity) -> Binding<GamepadButtonShapeStyle> {
@@ -12860,10 +13486,11 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
     var onDelete: () -> Bool
     var onUndo: () -> Bool
     var onRedo: () -> Bool
+    var onGroup: () -> Bool
     var onNudge: (GamepadEditorNudgeDirection, Bool) -> Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onDelete: onDelete, onUndo: onUndo, onRedo: onRedo, onNudge: onNudge)
+        Coordinator(onDelete: onDelete, onUndo: onUndo, onRedo: onRedo, onGroup: onGroup, onNudge: onNudge)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -12878,6 +13505,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
         context.coordinator.onDelete = onDelete
         context.coordinator.onUndo = onUndo
         context.coordinator.onRedo = onRedo
+        context.coordinator.onGroup = onGroup
         context.coordinator.onNudge = onNudge
         context.coordinator.installMonitor()
     }
@@ -12890,6 +13518,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
         var onDelete: () -> Bool
         var onUndo: () -> Bool
         var onRedo: () -> Bool
+        var onGroup: () -> Bool
         var onNudge: (GamepadEditorNudgeDirection, Bool) -> Bool
         weak var view: NSView?
         private var monitor: Any?
@@ -12898,11 +13527,13 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
             onDelete: @escaping () -> Bool,
             onUndo: @escaping () -> Bool,
             onRedo: @escaping () -> Bool,
+            onGroup: @escaping () -> Bool,
             onNudge: @escaping (GamepadEditorNudgeDirection, Bool) -> Bool
         ) {
             self.onDelete = onDelete
             self.onUndo = onUndo
             self.onRedo = onRedo
+            self.onGroup = onGroup
             self.onNudge = onNudge
         }
 
@@ -12943,6 +13574,10 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
 
             if Self.isUndoEvent(event) {
                 return onUndo() ? nil : event
+            }
+
+            if Self.isGroupEvent(event) {
+                return onGroup() ? nil : event
             }
 
             if let nudgeDirection = Self.nudgeDirection(for: event) {
@@ -12992,6 +13627,17 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
         private static func isRedoEvent(_ event: NSEvent) -> Bool {
             guard commandZFlagsMatch(event, requiresShift: true) else { return false }
             return event.charactersIgnoringModifiers?.lowercased() == "z"
+        }
+
+        private static func isGroupEvent(_ event: NSEvent) -> Bool {
+            guard !event.isARepeat else { return false }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains(.command),
+                  !flags.contains(.shift),
+                  !flags.contains(.option),
+                  !flags.contains(.control)
+            else { return false }
+            return event.charactersIgnoringModifiers?.lowercased() == "g"
         }
 
         private static func commandZFlagsMatch(_ event: NSEvent, requiresShift: Bool) -> Bool {
@@ -14062,6 +14708,7 @@ private struct GamepadLayoutDesigner: View {
     var layoutSize: CGSize?
     var displayScale: CGFloat = 1
     var defaultLabelProvider: ((GameButton) -> String?)? = nil
+    var groupedSelectionForControl: (GamepadControlIdentity) -> Set<GamepadControlIdentity>? = { _ in nil }
     var onBeginUndoableChange: (String) -> Void = { _ in }
     @State private var activeDrag: GamepadControlDragState?
     @State private var activeResize: GamepadControlResizeState?
@@ -14500,6 +15147,8 @@ private struct GamepadLayoutDesigner: View {
                   selectedControlIDs.count > 1,
                   selectedControlIDs.contains(identity) {
             nextSelectionIDs = selectedControlIDs
+        } else if let groupSelection = groupedSelectionForControl(identity), groupSelection.count > 1 {
+            nextSelectionIDs = groupSelection
         } else {
             nextSelectionIDs = [identity]
         }
@@ -15542,37 +16191,16 @@ private struct GamepadGroupSelectionOverlay: View {
     }
 }
 
-private enum GamepadRotationHandleZone: CaseIterable, Identifiable {
-    case top
-    case topTrailing
-    case trailing
-    case bottomTrailing
-    case bottom
-    case bottomLeading
-    case leading
-    case topLeading
-
-    var id: String {
-        switch self {
-        case .top: "top"
-        case .topTrailing: "topTrailing"
-        case .trailing: "trailing"
-        case .bottomTrailing: "bottomTrailing"
-        case .bottom: "bottom"
-        case .bottomLeading: "bottomLeading"
-        case .leading: "leading"
-        case .topLeading: "topLeading"
-        }
-    }
-}
-
 private struct GamepadControlRotationOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
     let control: GamepadResolvedControl
     let displayScale: CGFloat
     let onRotationChanged: (DragGesture.Value) -> Void
     let onRotationEnded: () -> Void
 
-    private static let hitOutset: CGFloat = 22
+    private static let handleHitSize: CGFloat = 32
+    private static let handleIconFrame: CGFloat = 16
+    private static let handleTopInset: CGFloat = 4
 
     private var safeDisplayScale: CGFloat {
         max(displayScale, 0.001)
@@ -15582,74 +16210,39 @@ private struct GamepadControlRotationOverlay: View {
         CGSize(width: max(1, control.size.width * safeDisplayScale), height: max(1, control.size.height * safeDisplayScale))
     }
 
-    private var overlaySize: CGSize {
-        CGSize(width: visualSize.width + Self.hitOutset * 2, height: visualSize.height + Self.hitOutset * 2)
+    private var handlePosition: CGPoint {
+        CGPoint(
+            x: visualSize.width / 2,
+            y: min(Self.handleTopInset + Self.handleHitSize / 2, max(visualSize.height / 2, 1))
+        )
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            ForEach(GamepadRotationHandleZone.allCases) { zone in
-                rotationHitZone(zone)
-                    .frame(width: zoneSize(zone).width, height: zoneSize(zone).height)
-                    .position(zonePosition(zone))
-            }
+            rotationHandle
+                .position(handlePosition)
         }
-        .frame(width: overlaySize.width, height: overlaySize.height)
+        .frame(width: visualSize.width, height: visualSize.height)
         .rotationEffect(.degrees(control.rotationDegrees))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Rotate selected component"))
-        .accessibilityHint(Text("Drag just outside the selected component edge to rotate it"))
+        .accessibilityElement(children: .contain)
     }
 
-    private func rotationHitZone(_ zone: GamepadRotationHandleZone) -> some View {
-        Rectangle()
-            .fill(Color.clear)
+    private var rotationHandle: some View {
+        Image(systemName: "arrow.clockwise")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Geist.color(.blue700, scheme: colorScheme))
+            .frame(width: Self.handleIconFrame, height: Self.handleIconFrame)
+            .frame(width: Self.handleHitSize, height: Self.handleHitSize)
             .contentShape(Rectangle())
+            .rotationEffect(.degrees(-control.rotationDegrees))
             .gamepadRotationCursor()
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("gamepadLayoutDesigner"))
                     .onChanged(onRotationChanged)
                     .onEnded { _ in onRotationEnded() }
             )
-    }
-
-    private func zoneSize(_ zone: GamepadRotationHandleZone) -> CGSize {
-        switch zone {
-        case .top, .bottom:
-            CGSize(width: visualSize.width, height: Self.hitOutset)
-        case .leading, .trailing:
-            CGSize(width: Self.hitOutset, height: visualSize.height)
-        case .topLeading, .topTrailing, .bottomTrailing, .bottomLeading:
-            CGSize(width: Self.hitOutset, height: Self.hitOutset)
-        }
-    }
-
-    private func zonePosition(_ zone: GamepadRotationHandleZone) -> CGPoint {
-        let left = Self.hitOutset / 2
-        let centerX = Self.hitOutset + visualSize.width / 2
-        let right = Self.hitOutset + visualSize.width + Self.hitOutset / 2
-        let top = Self.hitOutset / 2
-        let centerY = Self.hitOutset + visualSize.height / 2
-        let bottom = Self.hitOutset + visualSize.height + Self.hitOutset / 2
-
-        switch zone {
-        case .top:
-            return CGPoint(x: centerX, y: top)
-        case .topTrailing:
-            return CGPoint(x: right, y: top)
-        case .trailing:
-            return CGPoint(x: right, y: centerY)
-        case .bottomTrailing:
-            return CGPoint(x: right, y: bottom)
-        case .bottom:
-            return CGPoint(x: centerX, y: bottom)
-        case .bottomLeading:
-            return CGPoint(x: left, y: bottom)
-        case .leading:
-            return CGPoint(x: left, y: centerY)
-        case .topLeading:
-            return CGPoint(x: left, y: top)
-        }
+            .accessibilityLabel(Text("Rotate selected component"))
+            .accessibilityHint(Text("Press and drag this handle to rotate it"))
     }
 }
 

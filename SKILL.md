@@ -244,7 +244,7 @@ Element-level controls:
 "$POCKETPAD_CLI" element add button --label Fire --maps-to custom1 --x 0.50 --y 0.80 --light-fill '#F59E0B' --dark-fill '#78350F'
 "$POCKETPAD_CLI" element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
 "$POCKETPAD_CLI" element add trackpad --label Trackpad --x 0.50 --y 0.58 --width 1.25 --sensitivity 1.2 --scroll-sensitivity 0.85 --tap-to-click true
-"$POCKETPAD_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
+"$POCKETPAD_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
 "$POCKETPAD_CLI" element set "Right Stick" --thumb-fill '#22C55E'
 "$POCKETPAD_CLI" element set focus --icon sf:sparkles --haptic medium --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9' --glow-radius 12
 "$POCKETPAD_CLI" element set jump --lock
@@ -259,7 +259,7 @@ Appearance/design flags:
 - `element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'` saves separate button fills for both palettes.
 - `--fill '#RRGGBB'` remains the shared/legacy fill for both palettes; `--clear-light-fill`, `--clear-dark-fill`, and `--clear-fill` remove custom colors.
 - `style list|create|show|apply|detach|delete|export|import` manages reusable style tokens.
-- `layer list|move|front|back|bring-forward|send-backward` manages z-order/layer order.
+- `element set BUTTON --z-index -100...100` sets explicit stack order; `layer list|move|front|back|bring-forward|send-backward` still manages same-z tie order.
 - `group list|create|ungroup|hide|show|lock|unlock` stores editor groups and can apply group visibility/lock to child controls.
 - `asset import|list|remove` stores profile-local design assets for future icon/background workflows.
 

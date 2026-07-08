@@ -11,6 +11,7 @@ struct GamepadLayoutResolverSmokeTests {
         testNudgeSkipsLockedControls()
         testNudgePreventsOverlaps()
         testOnePixelInspectorSizedControlsResolveAtRequestedSize()
+        testZIndexSortsResolvedControls()
         testLayoutQualityPassesDefaultController()
         testLayoutQualityDetectsBadOverlaps()
         testLayoutQualityDetectsUnderusedBottomSpace()
@@ -155,6 +156,28 @@ struct GamepadLayoutResolverSmokeTests {
 
         expectAlmostEqual(resizedControl.size.width, targetSize, "1 pt inspector width should be preserved")
         expectAlmostEqual(resizedControl.size.height, targetSize, "1 pt inspector height should be preserved")
+    }
+
+    private static func testZIndexSortsResolvedControls() {
+        let canvasSize = CGSize(width: 400, height: 200)
+        let backID = UUID(uuidString: "00000000-0000-0000-0000-000000000701")!
+        let frontID = UUID(uuidString: "00000000-0000-0000-0000-000000000702")!
+        var back = customButton(id: backID, center: CGPoint(x: 0.5, y: 0.5))
+        var front = customButton(id: frontID, center: CGPoint(x: 0.5, y: 0.5))
+        back.layout.zIndex = 50
+        front.layout.zIndex = -10
+
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = [back, front]
+        customization.designMetadata = GamepadDesignMetadata(layerOrder: [.custom(backID), .custom(frontID)])
+
+        let controls = customization.resolvedControls(in: canvasSize)
+        let backIndex = controls.firstIndex { $0.id == .custom(backID) }
+        let frontIndex = controls.firstIndex { $0.id == .custom(frontID) }
+        expect(backIndex != nil && frontIndex != nil, "z-index test controls should resolve")
+        expect(frontIndex! < backIndex!, "lower z-index should render behind higher z-index regardless of layer order")
+        expect(GamepadButtonCustomization(zIndex: 250).zIndex == 100, "z-index should clamp to the front limit")
+        expect(GamepadButtonCustomization(zIndex: -250).zIndex == -100, "z-index should clamp to the back limit")
     }
 
     private static func testLayoutQualityPassesDefaultController() {
