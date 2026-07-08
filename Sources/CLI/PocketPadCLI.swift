@@ -1741,14 +1741,33 @@ struct PocketPadCLI {
     }
 
     private static func applyRichVisualOptions(_ arguments: [String], to layout: inout GamepadButtonCustomization) throws {
-        var style = layout.visualStyle ?? .empty
+        var style = if let material = optionValue("--material", in: arguments) ?? optionValue("--material-preset", in: arguments) {
+            try parseMaterialVisualStyle(material)
+        } else {
+            layout.visualStyle ?? .empty
+        }
         var normal = style.normal
         if let stroke = optionValue("--stroke", in: arguments) ?? optionValue("--stroke-color", in: arguments) { normal.strokeColor = try parseRGBAColor(stroke) }
         if let foreground = optionValue("--foreground", in: arguments) ?? optionValue("--foreground-color", in: arguments) ?? optionValue("--text-color", in: arguments) { normal.foregroundColor = try parseRGBAColor(foreground) }
         if let value = optionValue("--stroke-width", in: arguments), let width = Double(value) { normal.strokeWidth = CGFloat(width) }
         if let glow = optionValue("--glow", in: arguments) ?? optionValue("--glow-color", in: arguments) { normal.glowColor = try parseRGBAColor(glow) }
         if let value = optionValue("--glow-radius", in: arguments), let radius = Double(value) { normal.glowRadius = CGFloat(radius) }
+        if let innerShadow = optionValue("--inner-shadow", in: arguments) ?? optionValue("--inner-shadow-color", in: arguments) { normal.innerShadowColor = try parseRGBAColor(innerShadow) }
+        if let value = optionValue("--inner-shadow-radius", in: arguments), let radius = Double(value) { normal.innerShadowRadius = CGFloat(radius) }
+        if let value = optionValue("--inner-shadow-x", in: arguments), let x = Double(value) { normal.innerShadowX = CGFloat(x) }
+        if let value = optionValue("--inner-shadow-y", in: arguments), let y = Double(value) { normal.innerShadowY = CGFloat(y) }
+        if let highlight = optionValue("--highlight", in: arguments) ?? optionValue("--highlight-color", in: arguments) { normal.highlightColor = try parseRGBAColor(highlight) }
+        if let value = optionValue("--highlight-radius", in: arguments), let radius = Double(value) { normal.highlightRadius = CGFloat(radius) }
+        if let value = optionValue("--highlight-x", in: arguments), let x = Double(value) { normal.highlightX = CGFloat(x) }
+        if let value = optionValue("--highlight-y", in: arguments), let y = Double(value) { normal.highlightY = CGFloat(y) }
+        if let value = optionValue("--highlight-opacity", in: arguments), let opacity = parseOpacityIfPresent(value) { normal.highlightOpacity = opacity }
+        if let bevelHighlight = optionValue("--bevel-highlight", in: arguments) { normal.bevelHighlightColor = try parseRGBAColor(bevelHighlight) }
+        if let bevelShadow = optionValue("--bevel-shadow", in: arguments) { normal.bevelShadowColor = try parseRGBAColor(bevelShadow) }
+        if let value = optionValue("--bevel-width", in: arguments) ?? optionValue("--bevel", in: arguments), let width = Double(value) { normal.bevelWidth = CGFloat(width) }
         if let value = optionValue("--opacity", in: arguments), let opacity = parseOpacityIfPresent(value) { normal.opacity = opacity }
+        if let shadows = optionValue("--shadow-layers", in: arguments) ?? optionValue("--shadows", in: arguments) {
+            normal.shadows = try parseShadowLayers(shadows)
+        }
         if let value = optionValue("--press-scale", in: arguments) ?? optionValue("--scale-on-press", in: arguments), let scale = Double(value) {
             var pressed = style.pressed ?? .empty
             pressed.scale = CGFloat(scale)
@@ -2067,7 +2086,7 @@ struct PocketPadCLI {
     }
 
     private static func addElement(arguments: [String]) throws {
-        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: pocketpad element add <button|joystick|trigger|trackpad> [options]") }
+        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: pocketpad element add <button|joystick|trigger|trackpad|decoration> [options]") }
         let kind = try parseCustomControlKind(kindText)
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             guard customization.customButtons.count < GamepadCustomization.maximumCustomButtons else { throw CLIError.message("Maximum custom element count reached") }
@@ -2084,7 +2103,7 @@ struct PocketPadCLI {
             let id = UUID()
             let triggerCount = customization.customButtons.filter { $0.normalized.isTrigger }.count
             let defaultTriggerTarget: VirtualGamepadTrigger = triggerCount == 0 ? .left : .right
-            let mapped = try optionValue("--maps-to", in: arguments).map(parseButton) ?? (kind == .joystick ? .up : firstAvailableCustomSlot(in: customization) ?? .custom1)
+            let mapped = try optionValue("--maps-to", in: arguments).map(parseButton) ?? (kind == .joystick ? .up : (kind == .decoration ? .custom8 : firstAvailableCustomSlot(in: customization) ?? .custom1))
             var customButton = GamepadCustomButton(
                 id: id,
                 mappedButton: mapped,
@@ -2130,9 +2149,21 @@ struct PocketPadCLI {
                 }
                 customButton.triggerSettings = nil
                 customButton.trackpadSettings = try trackpadSettings(from: arguments)
+            } else if kind == .decoration {
+                customButton.layout.shape = customButton.layout.shape ?? .roundedRectangle
+                customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 2.2 : customButton.layout.widthScale
+                customButton.layout.heightScale = customButton.layout.heightScale == 1.0 ? 1.2 : customButton.layout.heightScale
+                customButton.layout.shadowStrength = 0
+                customButton.layout.visualStyle = customButton.layout.visualStyle ?? .softWhitePlate()
+                if optionValue("--corner", in: arguments) == nil && optionValue("--radius", in: arguments) == nil {
+                    customButton.layout.cornerRadius = customButton.layout.cornerRadius ?? 28
+                }
+                customButton.joystickMapping = nil
+                customButton.triggerSettings = nil
+                customButton.trackpadSettings = nil
             }
             customization.customButtons.append(customButton)
-            if hasAnyOption(elementOutputOptionNames, in: arguments) {
+            if kind != .decoration && hasAnyOption(elementOutputOptionNames, in: arguments) {
                 try applyElementOutputOptions(arguments, target: .custom(id), to: &customization)
             }
         }
@@ -2180,6 +2211,13 @@ struct PocketPadCLI {
                     customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].layout.shape = customization.customButtons[index].layout.shape ?? .roundedRectangle
                     customization.customButtons[index].trackpadSettings = try trackpadSettings(from: arguments, fallback: customization.customButtons[index].trackpadSettings ?? .defaultValue)
+                } else if customization.customButtons[index].controlKind == .decoration {
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].joystickOutputSettings = nil
+                    customization.customButtons[index].triggerSettings = nil
+                    customization.customButtons[index].trackpadSettings = nil
+                    customization.customButtons[index].layout.shape = customization.customButtons[index].layout.shape ?? .roundedRectangle
+                    customization.customButtons[index].layout.shadowStrength = 0
                 } else if customization.customButtons[index].controlKind == .button {
                     customization.customButtons[index].joystickMapping = nil
                     customization.customButtons[index].joystickOutputSettings = nil
@@ -2190,6 +2228,10 @@ struct PocketPadCLI {
             }
 
             if hasAnyOption(elementOutputOptionNames, in: arguments) {
+                if case .custom(let id) = target,
+                   customization.customButtons.first(where: { $0.id == id })?.normalized.isDecoration == true {
+                    throw CLIError.message("Decoration elements do not send output")
+                }
                 try applyElementOutputOptions(arguments, target: target, to: &customization)
             }
         }
@@ -2381,6 +2423,22 @@ struct PocketPadCLI {
                         shape: .roundedRectangle
                     )
                     customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].trackpadSettings = nil
+                case .decoration:
+                    customization.customButtons[index].layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.5,
+                        widthScale: 2.2,
+                        heightScale: 1.2,
+                        shape: .roundedRectangle,
+                        fillColor: GamepadRGBAColor(hexString: "#F2EEF5"),
+                        visualStyle: .softWhitePlate(),
+                        cornerRadius: 28,
+                        shadowStrength: 0
+                    )
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].joystickOutputSettings = nil
+                    customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].trackpadSettings = nil
                 }
             }
@@ -3601,7 +3659,38 @@ struct PocketPadCLI {
         if normalized == "stick" { return .joystick }
         if normalized == "trigger" || normalized == "slider" { return .trigger }
         if normalized == "touchpad" || normalized == "trackpad" || normalized == "cursorpad" { return .trackpad }
+        if normalized == "decoration" || normalized == "decor" || normalized == "visual" || normalized == "plate" || normalized == "panel" || normalized == "ring" { return .decoration }
         throw CLIError.message("Unknown element kind: \(text)")
+    }
+
+    private static func parseMaterialVisualStyle(_ text: String) throws -> GamepadControlVisualStyle {
+        switch normalizedLookup(text) {
+        case "softwhite", "softwhiteraised", "raised", "neumorphic", "neumorphicraised":
+            return .softWhiteRaised()
+        case "softwhiteinset", "inset", "recessed", "well":
+            return .softWhiteInset()
+        case "softwhiteplate", "plate", "panel", "shell":
+            return .softWhitePlate()
+        default:
+            throw CLIError.message("Unknown material preset: \(text). Use soft-white, soft-white-inset, or soft-white-plate.")
+        }
+    }
+
+    private static func parseShadowLayers(_ text: String) throws -> [GamepadControlShadowStyle] {
+        let parts = text.split(separator: ";").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !parts.isEmpty else { return [] }
+        return try parts.map { part in
+            let fields = part.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard fields.count >= 4 else {
+                throw CLIError.message("Invalid shadow layer \"\(part)\". Use color,radius,x,y[,opacity]; separate layers with semicolons.")
+            }
+            let color = try parseRGBAColor(fields[0])
+            guard let radius = Double(fields[1]), let x = Double(fields[2]), let y = Double(fields[3]) else {
+                throw CLIError.message("Invalid shadow layer numbers in \"\(part)\".")
+            }
+            let opacity = fields.count >= 5 ? (parseOpacityIfPresent(fields[4]) ?? 1) : 1
+            return GamepadControlShadowStyle(color: color, radius: CGFloat(radius), x: CGFloat(x), y: CGFloat(y), opacity: opacity)
+        }
     }
 
     private static func defaultLabel(for kind: GamepadCustomControlKind) -> String {
@@ -3610,6 +3699,7 @@ struct PocketPadCLI {
         case .joystick: return "Joystick"
         case .trigger: return "Trigger"
         case .trackpad: return "Trackpad"
+        case .decoration: return "Decoration"
         }
     }
 
@@ -3888,8 +3978,8 @@ struct PocketPadCLI {
         }
         summaries += customization.customButtons.map { custom in
             let normalized = custom.normalized
-            let kind = normalized.isJoystick ? "joystick" : (normalized.isTrigger ? "trigger" : (normalized.isTrackpad ? "trackpad" : "button"))
-            let fallbackLabel = normalized.isTrigger ? (normalized.triggerSettings ?? .defaultValue).normalized.target.shortName : (normalized.isTrackpad ? "Trackpad" : "Button")
+            let kind = normalized.isJoystick ? "joystick" : (normalized.isTrigger ? "trigger" : (normalized.isTrackpad ? "trackpad" : (normalized.isDecoration ? "decoration" : "button")))
+            let fallbackLabel = normalized.isDecoration ? "Decoration" : (normalized.isTrigger ? (normalized.triggerSettings ?? .defaultValue).normalized.target.shortName : (normalized.isTrackpad ? "Trackpad" : "Button"))
             return ElementSummary(
                 id: normalized.id.uuidString,
                 kind: kind,
@@ -3981,7 +4071,10 @@ struct PocketPadCLI {
             "--id", "--style", "--style-id", "--icon", "--sf-symbol", "--icon-text", "--haptic",
             "--haptic-pattern", "--haptic-rhythm", "--haptic-intensity", "--haptic-strength", "--haptic-sharpness", "--haptic-duration", "--haptic-duration-ms",
             "--stroke", "--stroke-color", "--stroke-width", "--foreground", "--foreground-color", "--text-color",
-            "--glow", "--glow-color", "--glow-radius", "--pressed-fill", "--pressed-color", "--press-scale", "--scale-on-press",
+            "--glow", "--glow-color", "--glow-radius", "--inner-shadow", "--inner-shadow-color", "--inner-shadow-radius", "--inner-shadow-x", "--inner-shadow-y",
+            "--highlight", "--highlight-color", "--highlight-radius", "--highlight-x", "--highlight-y", "--highlight-opacity",
+            "--bevel", "--bevel-highlight", "--bevel-shadow", "--bevel-width", "--pressed-fill", "--pressed-color", "--press-scale", "--scale-on-press",
+            "--material", "--material-preset", "--shadow-layers", "--shadows",
             "--to", "--before", "--after", "--role"
         ]
         for argument in arguments {
@@ -4122,11 +4215,13 @@ struct PocketPadCLI {
         Templates:
           pocketpad template list
           pocketpad template install nes [--name "My NES"] [--default]
+          pocketpad template install softWhite [--name "Soft Pad"]
 
         Themes:
           pocketpad theme list
           pocketpad theme show cavern-glow
           pocketpad theme apply cavern-glow [--profile PROFILE]
+          pocketpad theme apply soft-white-controller [--profile PROFILE]
 
         Bindings:
           pocketpad binding list [--profile PROFILE]
@@ -4156,6 +4251,7 @@ struct PocketPadCLI {
           pocketpad element add joystick --label Nub --thumbstick --target right-stick --no-digital-directions --x 0.5 --y 0.58
           pocketpad element add trigger --target left --orientation horizontal --sensitivity 1.2
           pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
+          pocketpad element add decoration --label Shell --material soft-white-plate --x 0.5 --y 0.5 --width 3.2 --height 1.5 --shape rounded_rectangle
           pocketpad element set jump --keyboard Space --gamepad south
           pocketpad element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
           pocketpad element set "Right Stick" --thumb-fill '#22C55E'
@@ -4163,7 +4259,10 @@ struct PocketPadCLI {
           pocketpad element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
           pocketpad element set jump --fill-image ./button-texture.png --image-mode fill
           pocketpad element set focus --icon sf:sparkles --haptic medium --haptic-pattern double --haptic-intensity 75% --haptic-duration 70ms --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9'
+          pocketpad element set jump --text-color '#7C61A8' --inner-shadow '#B8B2C2' --inner-shadow-radius 5 --highlight '#FFFFFF' --highlight-opacity 45% --highlight-x -4 --highlight-y -4 --bevel-width 1.5
+          pocketpad element set jump --material soft-white --shadow-layers '#FFFFFF,14,-7,-7,96%;#9B91AA,20,8,9,24%'
           pocketpad element nudge jump right --step 10 --canvas iphone-17-pro-landscape
+          pocketpad style create SoftWhite --material soft-white --fill '#F8F6F7' --text-color '#7C61A8'
           pocketpad style create Soul --fill '#F8FAFC' --stroke '#38BDF8' --pressed-fill '#0EA5E9' --icon sf:sparkles
           pocketpad style apply soul focus
           pocketpad layer list

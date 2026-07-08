@@ -2094,7 +2094,7 @@ private struct GamepadFreeformControllerCanvas: View {
 
                 ForEach(controls) { control in
                     renderedControl(control)
-                        .allowsHitTesting(!isEditingLayout)
+                        .allowsHitTesting(!isEditingLayout && !control.isDecoration)
                         .rotationEffect(.degrees(control.rotationDegrees))
                         .position(control.center)
                         .zIndex(0)
@@ -2159,7 +2159,15 @@ private struct GamepadFreeformControllerCanvas: View {
 
     @ViewBuilder
     private func renderedControl(_ control: GamepadResolvedControl) -> some View {
-        if control.isJoystick, let joystickMapping = control.joystickMapping {
+        if control.isDecoration {
+            GamepadRenderedControlFace(
+                control: control,
+                customization: customization,
+                state: .normal
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        } else if control.isJoystick, let joystickMapping = control.joystickMapping {
             GamepadJoystick(
                 elementID: control.elementID,
                 mapping: joystickMapping,
@@ -2913,6 +2921,43 @@ private struct ActionButtonsView: View {
     }
 }
 
+private extension View {
+    func gamepadOuterShadows(_ presentation: GamepadResolvedControlPresentation) -> some View {
+        modifier(IOSGamepadOuterShadowModifier(presentation: presentation))
+    }
+}
+
+private struct IOSGamepadOuterShadowModifier: ViewModifier {
+    let presentation: GamepadResolvedControlPresentation
+
+    func body(content: Content) -> some View {
+        var view = AnyView(content)
+        if presentation.shadows.isEmpty {
+            view = AnyView(
+                view.shadow(
+                    color: presentation.shadowSwiftUIColor,
+                    radius: presentation.shadowRadius,
+                    x: presentation.shadowX,
+                    y: presentation.shadowY
+                )
+            )
+        } else {
+            for shadow in presentation.shadows {
+                let normalized = shadow.normalized
+                view = AnyView(
+                    view.shadow(
+                        color: normalized.swiftUIColor,
+                        radius: normalized.radius,
+                        x: normalized.x,
+                        y: normalized.y
+                    )
+                )
+            }
+        }
+        return view
+    }
+}
+
 private struct GamepadJoystick: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
@@ -3011,12 +3056,8 @@ private struct GamepadJoystick: View {
 
             GamepadFillShapeLayer(shape: Circle(), fillStyle: fillStyle)
                 .overlay(Circle().stroke(strokeColor, lineWidth: presentation.strokeWidth))
-                .shadow(
-                    color: presentation.shadowSwiftUIColor,
-                    radius: presentation.shadowRadius,
-                    x: presentation.shadowX,
-                    y: presentation.shadowY
-                )
+                .overlay(GamepadControlEffectOverlay(shape: Circle(), presentation: presentation))
+                .gamepadOuterShadows(presentation)
                 .frame(width: visualSide, height: visualSide)
 
             if !isThumbstick {
@@ -3138,12 +3179,8 @@ private struct GamepadTrigger: View {
         return ZStack(alignment: normalizedSettings.orientation == .vertical ? .bottom : .leading) {
             GamepadFillShapeLayer(shape: Capsule(), fillStyle: fillStyle)
                 .overlay(Capsule().stroke(strokeColor, lineWidth: presentation.strokeWidth))
-                .shadow(
-                    color: presentation.shadowSwiftUIColor,
-                    radius: presentation.shadowRadius,
-                    x: presentation.shadowX,
-                    y: presentation.shadowY
-                )
+                .overlay(GamepadControlEffectOverlay(shape: Capsule(), presentation: presentation))
+                .gamepadOuterShadows(presentation)
 
             Capsule()
                 .fill(foregroundColor.opacity(colorScheme == .dark ? 0.24 : 0.18))
@@ -3398,12 +3435,8 @@ private struct GamepadTrackpad: View {
         return ZStack {
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: presentation.strokeWidth))
-                .shadow(
-                    color: presentation.shadowSwiftUIColor,
-                    radius: presentation.shadowRadius,
-                    x: presentation.shadowX,
-                    y: presentation.shadowY
-                )
+                .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
+                .gamepadOuterShadows(presentation)
 
             RoundedRectangle(cornerRadius: max(8, min(size.width, size.height) * 0.08), style: .continuous)
                 .stroke(foregroundColor.opacity(isActive ? 0.28 : 0.18), lineWidth: 1)
@@ -3498,12 +3531,7 @@ private struct GamepadButton: View {
         ZStack {
             ZStack {
                 buttonBackground(presentation: presentation)
-                    .shadow(
-                        color: presentation.shadowSwiftUIColor,
-                        radius: presentation.shadowRadius,
-                        x: presentation.shadowX,
-                        y: presentation.shadowY
-                    )
+                    .gamepadOuterShadows(presentation)
                     .overlay {
                         if let glowColor = presentation.glowSwiftUIColor, presentation.glowRadius > 0 {
                             buttonBackground(presentation: presentation)
@@ -3582,14 +3610,17 @@ private struct GamepadButton: View {
             let shape = UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
         case .polygon:
             let shape = GamepadRegularPolygonButtonShape(sides: 3)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
         case .star:
             let shape = GamepadStarButtonShape(points: 5)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
         }
     }
 

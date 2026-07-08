@@ -882,6 +882,7 @@ public enum GamepadCustomControlKind: String, Codable, CaseIterable, Identifiabl
     case joystick
     case trigger
     case trackpad
+    case decoration
 
     public var id: String { rawValue }
 
@@ -891,6 +892,7 @@ public enum GamepadCustomControlKind: String, Codable, CaseIterable, Identifiabl
         case .joystick: "Joystick"
         case .trigger: "Trigger"
         case .trackpad: "Trackpad"
+        case .decoration: "Decoration"
         }
     }
 }
@@ -1092,7 +1094,7 @@ struct GamepadStarButtonShape: Shape {
 public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public static let minimumDimension: CGFloat = 1
     public static let minimumScale: CGFloat = 0.001
-    public static let maximumScale: CGFloat = 8.0
+    public static let maximumScale: CGFloat = 12.0
     public static let minimumCornerRadius: CGFloat = 0
     public static let capsulePreviewCornerRadius: CGFloat = 240
     @available(*, deprecated, message: "Corner radii are unbounded; use capsulePreviewCornerRadius only for fixed-size capsule previews.")
@@ -1595,6 +1597,13 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
             copy.triggerSettings = nil
             copy.trackpadSettings = nil
             if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
+        case .decoration:
+            copy.joystickMapping = nil
+            copy.joystickOutputSettings = nil
+            copy.triggerSettings = nil
+            copy.trackpadSettings = nil
+            if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
+            if copy.label.isEmpty { copy.label = "Decoration" }
         }
         return copy
     }
@@ -1609,6 +1618,10 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
 
     var isTrackpad: Bool {
         controlKind == .trackpad
+    }
+
+    var isDecoration: Bool {
+        controlKind == .decoration
     }
 
     func visualLabel(fallback: String) -> String {
@@ -1713,6 +1726,15 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
             copy.trackpadSettings = nil
             if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
             if copy.label.isEmpty { copy.label = copy.legacySlot.map(GamepadCustomization.defaultVisualLabel(for:)) ?? "Button" }
+        case .decoration:
+            copy.output = nil
+            copy.partOutputs.removeAll()
+            copy.joystickMapping = nil
+            copy.joystickOutputSettings = nil
+            copy.triggerSettings = nil
+            copy.trackpadSettings = nil
+            if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
+            if copy.label.isEmpty { copy.label = "Decoration" }
         }
 
         return copy
@@ -1757,7 +1779,7 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
 
 public struct GamepadCustomization: Codable, Equatable, Sendable {
     public static let maximumLabelLength = gamepadMaximumLabelLength
-    public static let maximumCustomButtons = 10
+    public static let maximumCustomButtons = 64
     public static let maximumJoysticks = 2
     public static let maximumTriggers = 2
     public static let maximumTrackpads = 1
@@ -2072,6 +2094,39 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         upsertElementMirror(for: customButton, migratesLegacySlot: mappedButton != nil)
     }
 
+    public mutating func addDecoration(
+        id: UUID = UUID(),
+        label: String = "Decoration",
+        centerX: CGFloat = 0.5,
+        centerY: CGFloat = 0.5,
+        widthScale: CGFloat = 2.2,
+        heightScale: CGFloat = 1.2,
+        shape: GamepadButtonShapeStyle = .roundedRectangle,
+        cornerRadius: CGFloat? = 28,
+        visualStyle: GamepadControlVisualStyle? = .softWhitePlate()
+    ) {
+        guard customButtons.count < Self.maximumCustomButtons else { return }
+        let customButton = GamepadCustomButton(
+            id: id,
+            mappedButton: .custom8,
+            label: label,
+            layout: GamepadButtonCustomization(
+                centerX: centerX,
+                centerY: centerY,
+                widthScale: widthScale,
+                heightScale: heightScale,
+                shape: shape,
+                fillColor: GamepadRGBAColor(hexString: "#F2EEF5"),
+                visualStyle: visualStyle,
+                cornerRadius: cornerRadius,
+                shadowStrength: 0
+            ),
+            controlKind: .decoration
+        )
+        customButtons.append(customButton)
+        upsertElementMirror(for: customButton, migratesLegacySlot: false)
+    }
+
     public mutating func removeCustomButton(id: UUID) {
         customButtons.removeAll { $0.id == id }
         elements.removeAll { $0.id == id }
@@ -2369,6 +2424,10 @@ struct GamepadResolvedControl: Identifiable, Equatable {
         controlKind == .trackpad
     }
 
+    var isDecoration: Bool {
+        controlKind == .decoration
+    }
+
     var frame: CGRect {
         CGRect(
             x: center.x - size.width / 2,
@@ -2642,7 +2701,13 @@ enum GamepadLayoutResolver {
             let normalizedButton = customButton.normalized
             guard !normalizedButton.layout.isHidden else { return nil }
 
-            let defaultShape = normalizedButton.isJoystick ? GamepadButtonShapeStyle.circle : defaultShape(for: normalizedButton.mappedButton)
+            let defaultShape: GamepadButtonShapeStyle = if normalizedButton.isJoystick {
+                .circle
+            } else if normalizedButton.isDecoration {
+                .roundedRectangle
+            } else {
+                defaultShape(for: normalizedButton.mappedButton)
+            }
             let shape = normalizedButton.layout.resolvedShape(defaultShape: defaultShape)
             let baseControlSize: CGSize
             if normalizedButton.isJoystick {
@@ -2651,6 +2716,8 @@ enum GamepadLayoutResolver {
                 baseControlSize = triggerBaseSize(controlScale: customization.controlScale, in: canvasSize)
             } else if normalizedButton.isTrackpad {
                 baseControlSize = trackpadBaseSize(controlScale: customization.controlScale, in: canvasSize)
+            } else if normalizedButton.isDecoration {
+                baseControlSize = baseSize(for: .jump, controlScale: customization.controlScale, in: canvasSize)
             } else {
                 baseControlSize = baseSize(for: normalizedButton.mappedButton, controlScale: customization.controlScale, in: canvasSize)
             }
@@ -2782,6 +2849,11 @@ enum GamepadLayoutResolver {
         var occupiedFrames: [CGRect] = []
 
         for control in controls {
+            if control.isDecoration {
+                adjustedControls.append(control)
+                continue
+            }
+
             let adjustedFrame = nonOverlappingFrame(
                 for: control.frame,
                 avoiding: occupiedFrames,
@@ -3533,6 +3605,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
     case psp
     case playStation
     case xbox
+    case softWhite
 
     var id: String { rawValue }
 
@@ -3551,6 +3624,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         case .psp: "PSP"
         case .playStation: "PlayStation"
         case .xbox: "Xbox"
+        case .softWhite: "Soft White Pro"
         }
     }
 
@@ -3569,6 +3643,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         case .psp: "Portable emulator pad with D-pad, nub, shoulders, and face buttons"
         case .playStation: "Dual-stick layout with PlayStation face symbols and shoulders"
         case .xbox: "Dual-stick Xbox-style layout with ABXY and triggers"
+        case .softWhite: "Premium soft-white neumorphic controller with layered shell, rings, plates, dual sticks, D-pad, ABXY, and shoulder controls"
         }
     }
 
@@ -3583,6 +3658,7 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         case .arcadeStick: "circle.grid.3x3.fill"
         case .playStation: "gamecontroller.fill"
         case .xbox: "circle.grid.cross"
+        case .softWhite: "sparkles"
         }
     }
 
@@ -3618,6 +3694,8 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
             Self.playStationCustomization()
         case .xbox:
             Self.xboxCustomization()
+        case .softWhite:
+            Self.softWhiteCustomization()
         }
     }
 
@@ -3628,6 +3706,77 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         customization.accentStyle = accentStyle
         customization.showsButtonLabels = true
         return customization
+    }
+
+    private static func softWhiteCustomization() -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .purple, controlScale: .standard)
+        customization.colorSchemePreference = .light
+        customization.showsButtonLabels = false
+        customization.backgroundLightFillStyle = .solid(GamepadRGBAColor(hexString: "#000000") ?? .defaultValue)
+        customization.backgroundDarkFillStyle = customization.backgroundLightFillStyle
+        customization.styleLibrary = GamepadStyleLibrary(styles: [
+            GamepadStyleToken(id: "soft-white-raised", name: "Soft White Raised", visualStyle: .softWhiteRaised()),
+            GamepadStyleToken(id: "soft-white-inset", name: "Soft White Inset", visualStyle: .softWhiteInset()),
+            GamepadStyleToken(id: "soft-white-plate", name: "Soft White Plate", appliesTo: GamepadCustomControlKind.allCases, visualStyle: .softWhitePlate()),
+            GamepadStyleToken(id: "reference-white-raised", name: "Reference White Raised", visualStyle: referenceRaisedStyle())
+        ].compactMap { $0.normalized }).normalized
+
+        hideButton(.up, in: &customization)
+        hideButton(.down, in: &customization)
+        hideButton(.left, in: &customization)
+        hideButton(.right, in: &customization)
+        hideButton(.map, in: &customization)
+        hideButton(.pause, in: &customization)
+
+        let shellID = addDecoration(label: "", in: &customization, x: 0.50, y: 0.50, width: 9.62, height: 4.28, shape: .roundedRectangle, cornerRadius: 30, style: referenceShellStyle())
+        let leftWellID = addDecoration(label: "", in: &customization, x: 0.195, y: 0.565, width: 2.12, height: 2.12, shape: .circle, cornerRadius: nil, style: referenceInsetStyle())
+        let stickID = addReferenceJoystick(label: "Move", mappedButton: .custom1, mapping: .movement, in: &customization, x: 0.195, y: 0.585, scale: 1.38)
+        let stickTextureID = addDecoration(label: "", in: &customization, x: 0.195, y: 0.585, width: 1.06, height: 1.06, shape: .circle, cornerRadius: nil, style: referenceGridStyle())
+        let markerUpID = addIconDecoration(label: "", icon: "⌃", in: &customization, x: 0.195, y: 0.432, width: 0.30, height: 0.30, shape: .circle, cornerRadius: nil, style: referenceMarkerStyle(), iconScale: 1.18)
+        let markerDownID = addIconDecoration(label: "", icon: "⌄", in: &customization, x: 0.195, y: 0.737, width: 0.30, height: 0.30, shape: .circle, cornerRadius: nil, style: referenceMarkerStyle(), iconScale: 1.18)
+        let markerLeftID = addIconDecoration(label: "", icon: "‹", in: &customization, x: 0.106, y: 0.585, width: 0.30, height: 0.30, shape: .circle, cornerRadius: nil, style: referenceMarkerStyle(), iconScale: 1.18)
+        let markerRightID = addIconDecoration(label: "", icon: "›", in: &customization, x: 0.284, y: 0.585, width: 0.30, height: 0.30, shape: .circle, cornerRadius: nil, style: referenceMarkerStyle(), iconScale: 1.18)
+        let badgeID = addIconDecoration(label: "Variant", icon: "5", in: &customization, x: 0.034, y: 0.054, width: 0.48, height: 0.48, shape: .circle, cornerRadius: nil, style: referenceBadgeStyle(), iconScale: 1.85)
+
+        let minusID = addReferenceButton(mappedTo: .custom6, label: "−", in: &customization, x: 0.35, y: 0.125, width: 0.56, height: 0.56, shape: .circle, cornerRadius: nil, iconScale: 1.45)
+        let plusID = addReferenceButton(mappedTo: .custom7, label: "+", in: &customization, x: 0.65, y: 0.125, width: 0.56, height: 0.56, shape: .circle, cornerRadius: nil, iconScale: 1.45)
+
+        let zlID = addReferenceButton(mappedTo: .custom2, label: "ZL", in: &customization, x: 0.135, y: 0.285, width: 0.80, height: 0.52, shape: .roundedRectangle, cornerRadius: 9, iconScale: 1.28)
+        let lID = addReferenceButton(mappedTo: .custom3, label: "L", in: &customization, x: 0.245, y: 0.285, width: 0.80, height: 0.52, shape: .roundedRectangle, cornerRadius: 9, iconScale: 1.34)
+        let rID = addReferenceButton(mappedTo: .custom4, label: "R", in: &customization, x: 0.755, y: 0.285, width: 0.80, height: 0.52, shape: .roundedRectangle, cornerRadius: 9, iconScale: 1.34)
+        let zrID = addReferenceButton(mappedTo: .custom5, label: "ZR", in: &customization, x: 0.865, y: 0.285, width: 0.80, height: 0.52, shape: .roundedRectangle, cornerRadius: 9, iconScale: 1.28)
+
+        setReferenceButton(.focus, label: "Y", in: &customization, x: 0.642, y: 0.525, width: 0.92, height: 0.92, shape: .circle, iconScale: 1.28)
+        setReferenceButton(.attack, label: "X", in: &customization, x: 0.785, y: 0.430, width: 0.64, height: 0.64, shape: .circle, iconScale: 1.36)
+        setReferenceButton(.jump, label: "A", in: &customization, x: 0.875, y: 0.560, width: 0.70, height: 0.70, shape: .circle, iconScale: 1.32)
+        setReferenceButton(.dash, label: "B", in: &customization, x: 0.735, y: 0.725, width: 0.92, height: 0.92, shape: .circle, iconScale: 1.28)
+
+        var metadata = customization.designMetadata ?? .empty
+        metadata.layerOrder = [
+            .custom(shellID),
+            .custom(leftWellID),
+            .custom(minusID),
+            .custom(plusID),
+            .custom(zlID),
+            .custom(lID),
+            .custom(rID),
+            .custom(zrID),
+            .builtin(.focus),
+            .builtin(.attack),
+            .builtin(.jump),
+            .builtin(.dash),
+            .custom(stickID),
+            .custom(stickTextureID),
+            .custom(markerUpID),
+            .custom(markerDownID),
+            .custom(markerLeftID),
+            .custom(markerRightID),
+            .custom(badgeID)
+        ] + GameButton.builtInControls.map { .builtin($0) } + customization.customButtons.map { .custom($0.id) }
+        metadata.tags = ["showcase", "soft-white", "neumorphic", "variant-5", "reference-quality"]
+        metadata.notes = "A layered profile built to resemble gamepad_redesign_variant_5.png: black outer canvas, rounded white controller shell, top +/- buttons, ZL/L/R/ZR shoulders, a textured left movement pad, and offset X/Y/A/B face buttons."
+        customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+        return customization.normalized
     }
 
     private static func nesCustomization() -> GamepadCustomization {
@@ -3916,6 +4065,434 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         return customization.normalized
     }
 
+    @discardableResult
+    private static func addDecoration(
+        label: String,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        cornerRadius: CGFloat?,
+        style: GamepadControlVisualStyle
+    ) -> UUID {
+        let control = GamepadCustomButton(
+            mappedButton: .custom8,
+            label: label,
+            layout: GamepadButtonCustomization(
+                centerX: x,
+                centerY: y,
+                widthScale: width,
+                heightScale: height,
+                shape: shape,
+                fillColor: GamepadRGBAColor(hexString: "#F2EEF5") ?? .defaultValue,
+                visualStyle: style,
+                cornerRadius: cornerRadius,
+                shadowStrength: 0
+            ),
+            controlKind: .decoration
+        )
+        customization.customButtons.append(control)
+        return control.id
+    }
+
+    @discardableResult
+    private static func addIconDecoration(
+        label: String,
+        icon: String,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        cornerRadius: CGFloat?,
+        style: GamepadControlVisualStyle,
+        iconScale: CGFloat
+    ) -> UUID {
+        let controlID = addDecoration(
+            label: label,
+            in: &customization,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            shape: shape,
+            cornerRadius: cornerRadius,
+            style: style
+        )
+        guard let index = customization.customButtons.firstIndex(where: { $0.id == controlID }) else { return controlID }
+        customization.customButtons[index].layout.icon = GamepadControlIcon(
+            source: .text,
+            value: icon,
+            placement: .center,
+            scale: iconScale,
+            tintColor: style.normal.foregroundColor,
+            renderingMode: .template
+        ).normalized
+        return controlID
+    }
+
+    private static func hideButton(_ button: GameButton, in customization: inout GamepadCustomization) {
+        var layout = customization.buttonCustomization(for: button)
+        layout.isHidden = true
+        customization.setButtonCustomization(layout, for: button)
+    }
+
+    private static func setReferenceButton(
+        _ button: GameButton,
+        label: String,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        iconScale: CGFloat,
+        cornerRadius: CGFloat? = nil
+    ) {
+        customization.setButtonCustomization(
+            referenceButtonLayout(label: label, x: x, y: y, width: width, height: height, shape: shape, cornerRadius: cornerRadius, iconScale: iconScale),
+            for: button
+        )
+        customization.setLabel(label, for: button)
+    }
+
+    @discardableResult
+    private static func addReferenceButton(
+        mappedTo button: GameButton,
+        label: String,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        cornerRadius: CGFloat?,
+        iconScale: CGFloat
+    ) -> UUID {
+        let control = GamepadCustomButton(
+            mappedButton: button,
+            label: label,
+            layout: referenceButtonLayout(label: label, x: x, y: y, width: width, height: height, shape: shape, cornerRadius: cornerRadius, iconScale: iconScale),
+            controlKind: .button
+        )
+        customization.customButtons.append(control)
+        return control.id
+    }
+
+    @discardableResult
+    private static func addReferenceJoystick(
+        label: String,
+        mappedButton: GameButton,
+        mapping: GamepadJoystickMapping,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        scale: CGFloat
+    ) -> UUID {
+        var layout = GamepadButtonCustomization(
+            centerX: x,
+            centerY: y,
+            widthScale: scale,
+            heightScale: scale,
+            shape: .circle,
+            fillColor: GamepadRGBAColor(hexString: "#ECE8F0") ?? .defaultValue,
+            visualStyle: referenceInsetStyle(),
+            shadowStrength: 0,
+            isLocationLocked: false,
+            isHidden: false
+        )
+        layout.joystickVisualStyle = .pad
+        layout.joystickKnobColor = GamepadRGBAColor(hexString: "#DAD3E2")
+        let control = GamepadCustomButton(
+            mappedButton: mappedButton,
+            label: label,
+            layout: layout,
+            controlKind: .joystick,
+            joystickMapping: mapping
+        )
+        customization.customButtons.append(control)
+        return control.id
+    }
+
+    private static func referenceButtonLayout(
+        label: String,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        cornerRadius: CGFloat?,
+        iconScale: CGFloat
+    ) -> GamepadButtonCustomization {
+        var layout = GamepadButtonCustomization(
+            centerX: x,
+            centerY: y,
+            widthScale: width,
+            heightScale: height,
+            shape: shape,
+            fillColor: GamepadRGBAColor(hexString: "#F5F2F7") ?? .defaultValue,
+            styleID: "reference-white-raised",
+            visualStyle: referenceRaisedStyle(),
+            cornerRadius: cornerRadius,
+            shadowStrength: 0,
+            isLocationLocked: false,
+            isHidden: false
+        )
+        layout.icon = GamepadControlIcon(
+            source: .text,
+            value: label,
+            placement: .center,
+            scale: iconScale,
+            tintColor: GamepadRGBAColor(hexString: "#7A62A2"),
+            renderingMode: .template
+        ).normalized
+        return layout
+    }
+
+    private static func referenceShellStyle() -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .gradient(
+                    GamepadGradientFill(
+                        type: .linear,
+                        angleDegrees: 135,
+                        stops: [
+                            GamepadGradientStop(offset: 0.0, color: GamepadRGBAColor(hexString: "#FAF9FB") ?? .defaultValue),
+                            GamepadGradientStop(offset: 0.55, color: GamepadRGBAColor(hexString: "#F0EDF3") ?? .defaultValue),
+                            GamepadGradientStop(offset: 1.0, color: GamepadRGBAColor(hexString: "#E8E3ED") ?? .defaultValue)
+                        ]
+                    )
+                ),
+                foregroundColor: GamepadRGBAColor(hexString: "#7860A0"),
+                strokeColor: GamepadRGBAColor(hexString: "#18131E", alpha: 0.82),
+                strokeWidth: 2,
+                shadows: [
+                    .outer("#000000", alpha: 0.38, radius: 10, x: 0, y: 6),
+                    .outer("#FFFFFF", alpha: 0.36, radius: 6, x: -2, y: -2)
+                ],
+                highlightColor: GamepadRGBAColor(hexString: "#FFFFFF"),
+                highlightRadius: 18,
+                highlightX: -7,
+                highlightY: -7,
+                highlightOpacity: 0.26,
+                bevelHighlightColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.72),
+                bevelShadowColor: GamepadRGBAColor(hexString: "#BDB5C6", alpha: 0.50),
+                bevelWidth: 1.0
+            )
+        )
+    }
+
+    private static func referenceRaisedStyle(
+        fill: GamepadRGBAColor = GamepadRGBAColor(hexString: "#F7F4F8") ?? .defaultValue,
+        foreground: GamepadRGBAColor = GamepadRGBAColor(hexString: "#7A62A2") ?? .defaultValue
+    ) -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .solid(fill),
+                foregroundColor: foreground,
+                strokeColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.76),
+                strokeWidth: 1.2,
+                shadows: [
+                    .outer("#FFFFFF", alpha: 0.90, radius: 5, x: -2, y: -2),
+                    .outer("#776C84", alpha: 0.34, radius: 5, x: 0, y: 3),
+                    .outer("#A99FB4", alpha: 0.20, radius: 12, x: 5, y: 7)
+                ],
+                highlightColor: GamepadRGBAColor(hexString: "#FFFFFF"),
+                highlightRadius: 6,
+                highlightX: -3,
+                highlightY: -3,
+                highlightOpacity: 0.28,
+                bevelHighlightColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.78),
+                bevelShadowColor: GamepadRGBAColor(hexString: "#AFA6B9", alpha: 0.58),
+                bevelWidth: 1.0
+            ),
+            pressed: GamepadControlStateStyle(
+                fillStyle: .solid(GamepadRGBAColor(hexString: "#EDE8F1") ?? fill),
+                shadows: [
+                    .outer("#FFFFFF", alpha: 0.54, radius: 3, x: -1, y: -1),
+                    .outer("#7B7188", alpha: 0.24, radius: 4, x: 1, y: 2)
+                ],
+                innerShadowColor: GamepadRGBAColor(hexString: "#9E94AB", alpha: 0.32),
+                innerShadowRadius: 4,
+                innerShadowX: 1,
+                innerShadowY: 2,
+                scale: 0.975
+            ),
+            hapticFeedback: GamepadHapticFeedback(style: .soft, pattern: .single, intensity: 0.42, sharpness: 0.22)
+        )
+    }
+
+    private static func referenceInsetStyle() -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .solid(GamepadRGBAColor(hexString: "#ECE8F0") ?? .defaultValue),
+                foregroundColor: GamepadRGBAColor(hexString: "#7A62A2"),
+                strokeColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.56),
+                strokeWidth: 1,
+                shadows: [
+                    .outer("#FFFFFF", alpha: 0.72, radius: 6, x: -3, y: -3),
+                    .outer("#8D819A", alpha: 0.28, radius: 8, x: 3, y: 5)
+                ],
+                innerShadowColor: GamepadRGBAColor(hexString: "#9D94AA", alpha: 0.38),
+                innerShadowRadius: 7,
+                innerShadowX: 3,
+                innerShadowY: 3,
+                highlightColor: GamepadRGBAColor(hexString: "#FFFFFF"),
+                highlightRadius: 7,
+                highlightX: -3,
+                highlightY: -3,
+                highlightOpacity: 0.18,
+                bevelHighlightColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.64),
+                bevelShadowColor: GamepadRGBAColor(hexString: "#AAA0B7", alpha: 0.48),
+                bevelWidth: 1
+            )
+        )
+    }
+
+    private static func referenceGridStyle() -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .tile(
+                    GamepadTileFill(
+                        pattern: .grid,
+                        foregroundColor: GamepadRGBAColor(hexString: "#BFB7CA", alpha: 0.48) ?? .defaultValue,
+                        backgroundColor: GamepadRGBAColor(hexString: "#D7D0DF") ?? .defaultValue,
+                        scale: 0.55,
+                        spacingX: 0,
+                        spacingY: 0,
+                        alignment: .center,
+                        opacity: 1
+                    )
+                ),
+                foregroundColor: GamepadRGBAColor(hexString: "#7A62A2"),
+                strokeColor: GamepadRGBAColor(hexString: "#EEEAF3", alpha: 0.88),
+                strokeWidth: 1,
+                shadows: [
+                    .outer("#FFFFFF", alpha: 0.42, radius: 3, x: -1, y: -1),
+                    .outer("#81758E", alpha: 0.18, radius: 5, x: 1, y: 2)
+                ],
+                bevelHighlightColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.54),
+                bevelShadowColor: GamepadRGBAColor(hexString: "#AFA6B9", alpha: 0.36),
+                bevelWidth: 0.75
+            )
+        )
+    }
+
+    private static func referenceMarkerStyle() -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .solid(GamepadRGBAColor(red: 1, green: 1, blue: 1, alpha: 0.001)),
+                foregroundColor: GamepadRGBAColor(hexString: "#8A72B0"),
+                strokeColor: GamepadRGBAColor(red: 1, green: 1, blue: 1, alpha: 0.001),
+                strokeWidth: 0,
+                opacity: 0.92
+            )
+        )
+    }
+
+    private static func referenceBadgeStyle() -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .solid(GamepadRGBAColor(hexString: "#111111") ?? .defaultValue),
+                foregroundColor: GamepadRGBAColor(hexString: "#FFFFFF"),
+                strokeColor: GamepadRGBAColor(hexString: "#FFFFFF"),
+                strokeWidth: 2,
+                shadows: [
+                    .outer("#000000", alpha: 0.42, radius: 4, x: 0, y: 2)
+                ]
+            )
+        )
+    }
+
+    private static func setSoftButton(
+        _ button: GameButton,
+        label: String,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        cornerRadius: CGFloat?
+    ) {
+        customization.setButtonCustomization(
+            softButtonLayout(x: x, y: y, width: width, height: height, shape: shape, cornerRadius: cornerRadius),
+            for: button
+        )
+        customization.setLabel(label, for: button)
+    }
+
+    private static func addSoftButton(
+        mappedTo button: GameButton,
+        label: String,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle
+    ) {
+        customization.customButtons.append(
+            GamepadCustomButton(
+                mappedButton: button,
+                label: label,
+                layout: softButtonLayout(x: x, y: y, width: width, height: height, shape: shape, cornerRadius: nil),
+                controlKind: .button
+            )
+        )
+    }
+
+    private static func addSoftJoystick(
+        label: String,
+        mappedButton: GameButton,
+        mapping: GamepadJoystickMapping,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        scale: CGFloat
+    ) {
+        var layout = softButtonLayout(x: x, y: y, width: scale, height: scale, shape: .circle, cornerRadius: nil)
+        layout.visualStyle = .softWhiteInset()
+        layout.joystickKnobColor = GamepadRGBAColor(hexString: "#FAF8FB")
+        layout.joystickVisualStyle = .thumbstick
+        customization.customButtons.append(
+            GamepadCustomButton(
+                mappedButton: mappedButton,
+                label: label,
+                layout: layout,
+                controlKind: .joystick,
+                joystickMapping: mapping
+            )
+        )
+    }
+
+    private static func softButtonLayout(
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        shape: GamepadButtonShapeStyle,
+        cornerRadius: CGFloat?
+    ) -> GamepadButtonCustomization {
+        GamepadButtonCustomization(
+            centerX: x,
+            centerY: y,
+            widthScale: width,
+            heightScale: height,
+            shape: shape,
+            fillColor: GamepadRGBAColor(hexString: "#F8F6FA") ?? .defaultValue,
+            styleID: "soft-white-raised",
+            visualStyle: .softWhiteRaised(),
+            cornerRadius: cornerRadius,
+            shadowStrength: 0,
+            isLocationLocked: false,
+            isHidden: false
+        )
+    }
+
     private static func setDPad(
         in customization: inout GamepadCustomization,
         centerX: CGFloat,
@@ -4199,6 +4776,7 @@ enum GamepadConfigurationProfilePersistence {
             GamepadControllerTemplate.psp.makeProfile(),
             GamepadControllerTemplate.playStation.makeProfile(),
             GamepadControllerTemplate.xbox.makeProfile(),
+            GamepadControllerTemplate.softWhite.makeProfile(),
             GamepadConfigurationProfile(name: "Navigation Left", customization: standard),
             GamepadConfigurationProfile(name: "Actions Left", customization: southpaw),
             GamepadConfigurationProfile(name: "Dual Stick Shooter", customization: dualStick),
@@ -4270,6 +4848,78 @@ private struct GamepadAlphaCheckerboard: View {
                 }
             }
         }
+    }
+}
+
+struct GamepadControlEffectOverlay<S: Shape>: View {
+    let shape: S
+    let presentation: GamepadResolvedControlPresentation
+
+    var body: some View {
+        ZStack {
+            highlightLayer
+            bevelLayer
+            innerShadowLayer
+        }
+        .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private var highlightLayer: some View {
+        if let color = effectiveHighlightColor, effectiveHighlightOpacity > 0 {
+            shape
+                .fill(color.opacity(effectiveHighlightOpacity))
+                .blur(radius: presentation.highlightRadius)
+                .offset(x: presentation.highlightX, y: presentation.highlightY)
+                .mask(shape)
+        }
+    }
+
+    @ViewBuilder
+    private var bevelLayer: some View {
+        if presentation.bevelWidth > 0 {
+            shape.stroke(
+                LinearGradient(
+                    colors: [effectiveBevelHighlightColor, effectiveBevelShadowColor],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: presentation.bevelWidth
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var innerShadowLayer: some View {
+        if let color = effectiveInnerShadowColor, presentation.innerShadowRadius > 0 {
+            shape
+                .stroke(color, lineWidth: max(1, presentation.innerShadowRadius * 2.0))
+                .blur(radius: presentation.innerShadowRadius)
+                .offset(x: presentation.innerShadowX, y: presentation.innerShadowY)
+                .mask(shape)
+        }
+    }
+
+    private var effectiveInnerShadowColor: Color? {
+        if let color = presentation.innerShadowSwiftUIColor { return color }
+        return presentation.innerShadowRadius > 0 ? Color.black.opacity(0.22) : nil
+    }
+
+    private var effectiveHighlightColor: Color? {
+        guard presentation.highlightOpacity > 0 else { return nil }
+        return presentation.highlightSwiftUIColor ?? Color.white
+    }
+
+    private var effectiveHighlightOpacity: Double {
+        Double(min(max(presentation.highlightOpacity, 0), 1))
+    }
+
+    private var effectiveBevelHighlightColor: Color {
+        presentation.bevelHighlightSwiftUIColor ?? Color.white.opacity(0.62)
+    }
+
+    private var effectiveBevelShadowColor: Color {
+        presentation.bevelShadowSwiftUIColor ?? Color.black.opacity(0.24)
     }
 }
 
@@ -4479,6 +5129,43 @@ private struct GamepadFillPreview<S: Shape>: View {
     }
 }
 
+private extension View {
+    func gamepadOuterShadows(_ presentation: GamepadResolvedControlPresentation) -> some View {
+        modifier(GamepadOuterShadowModifier(presentation: presentation))
+    }
+}
+
+private struct GamepadOuterShadowModifier: ViewModifier {
+    let presentation: GamepadResolvedControlPresentation
+
+    func body(content: Content) -> some View {
+        var view = AnyView(content)
+        if presentation.shadows.isEmpty {
+            view = AnyView(
+                view.shadow(
+                    color: presentation.shadowSwiftUIColor,
+                    radius: presentation.shadowRadius,
+                    x: presentation.shadowX,
+                    y: presentation.shadowY
+                )
+            )
+        } else {
+            for shadow in presentation.shadows {
+                let normalized = shadow.normalized
+                view = AnyView(
+                    view.shadow(
+                        color: normalized.swiftUIColor,
+                        radius: normalized.radius,
+                        x: normalized.x,
+                        y: normalized.y
+                    )
+                )
+            }
+        }
+        return view
+    }
+}
+
 struct GamepadRenderedControlFace: View {
     @Environment(\.colorScheme) private var colorScheme
     let control: GamepadResolvedControl
@@ -4497,14 +5184,14 @@ struct GamepadRenderedControlFace: View {
             }
 
             controlBackground(presentation: presentation)
-                .shadow(
-                    color: presentation.shadowSwiftUIColor,
-                    radius: presentation.shadowRadius,
-                    x: presentation.shadowX,
-                    y: presentation.shadowY
-                )
+                .gamepadOuterShadows(presentation)
 
-            if control.isJoystick {
+            if control.isDecoration {
+                if let icon = presentation.icon {
+                    controlIcon(icon, presentation: presentation)
+                        .padding(.horizontal, 4)
+                }
+            } else if control.isJoystick {
                 joystickFace(presentation: presentation)
             } else if control.isTrackpad {
                 trackpadFace(presentation: presentation)
@@ -4542,14 +5229,17 @@ struct GamepadRenderedControlFace: View {
             let shape = UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
         case .polygon:
             let shape = GamepadRegularPolygonButtonShape(sides: 3)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
         case .star:
             let shape = GamepadStarButtonShape(points: 5)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
         }
     }
 
@@ -4810,6 +5500,11 @@ private struct GamepadShapeDrawState {
     let tool: GamepadCanvasTool
     let startPoint: CGPoint
     var currentPoint: CGPoint
+}
+
+private enum GamepadDecorationTemplateKind {
+    case plate
+    case ring
 }
 
 private enum GamepadEditorColorScheme: String, CaseIterable, Hashable {
@@ -6280,6 +6975,15 @@ struct GamepadCustomizationEditor: View {
                 }
                 .disabled(customization.customButtons.filter { $0.normalized.isTrackpad }.count >= GamepadCustomization.maximumTrackpads || customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
                 Divider()
+                Button("Add Soft Plate") {
+                    addDecorationControl(kind: .plate)
+                }
+                .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
+                Button("Add Ring") {
+                    addDecorationControl(kind: .ring)
+                }
+                .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
+                Divider()
                 Button("Reset Key Layout") {
                     resetKeyLayout()
                 }
@@ -6293,6 +6997,10 @@ struct GamepadCustomizationEditor: View {
                     Button(style.displayName) {
                         update { $0.accentStyle = style }
                     }
+                }
+                Divider()
+                Button("Apply Soft White Theme") {
+                    update(actionName: "Apply Soft White Theme") { GamepadThemePreset.softWhiteController.apply(to: &$0) }
                 }
             }
         }
@@ -8208,6 +8916,82 @@ struct GamepadCustomizationEditor: View {
                 range: Double(GamepadButtonCustomization.minimumShadowStrength)...Double(GamepadButtonCustomization.maximumShadowStrength),
                 valueText: "\(Int((shadowStrengthValue(for: selectedControlID) * 100).rounded()))%"
             )
+
+            Divider()
+
+            Text("Text & material")
+                .geistTypography(.heading14)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
+                colorTextField(title: "Text", value: visualStyleColorHexBinding(for: selectedControlID, keyPath: \.foregroundColor), unit: nil)
+                colorTextField(title: "Inner", value: visualStyleColorHexBinding(for: selectedControlID, keyPath: \.innerShadowColor), unit: nil)
+                colorTextField(title: "Highlight", value: visualStyleColorHexBinding(for: selectedControlID, keyPath: \.highlightColor), unit: nil)
+                colorTextField(title: "Bevel top", value: visualStyleColorHexBinding(for: selectedControlID, keyPath: \.bevelHighlightColor), unit: nil)
+                colorTextField(title: "Bevel bottom", value: visualStyleColorHexBinding(for: selectedControlID, keyPath: \.bevelShadowColor), unit: nil)
+            }
+
+            valueSlider(
+                title: "Inner",
+                value: visualStyleNumberBinding(for: selectedControlID, keyPath: \.innerShadowRadius),
+                range: 0...32,
+                valueText: "\(Int((normalVisualStyleValue(for: selectedControlID).innerShadowRadius ?? 0).rounded())) pt"
+            )
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
+                inspectorMetricField(title: "Inner X", value: visualStyleNumberBinding(for: selectedControlID, keyPath: \.innerShadowX), unit: "pt", maxFractionDigits: 0, accessibilityLabel: "Inner shadow X offset")
+                inspectorMetricField(title: "Inner Y", value: visualStyleNumberBinding(for: selectedControlID, keyPath: \.innerShadowY), unit: "pt", maxFractionDigits: 0, accessibilityLabel: "Inner shadow Y offset")
+            }
+
+            valueSlider(
+                title: "Hi Op",
+                value: visualStyleNumberBinding(for: selectedControlID, keyPath: \.highlightOpacity),
+                range: 0...1,
+                valueText: "\(Int(((normalVisualStyleValue(for: selectedControlID).highlightOpacity ?? 0) * 100).rounded()))%"
+            )
+            valueSlider(
+                title: "Blur",
+                value: visualStyleNumberBinding(for: selectedControlID, keyPath: \.highlightRadius),
+                range: 0...40,
+                valueText: "\(Int((normalVisualStyleValue(for: selectedControlID).highlightRadius ?? 0).rounded())) pt"
+            )
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Geist.Spacing.s2) {
+                inspectorMetricField(title: "Hi X", value: visualStyleNumberBinding(for: selectedControlID, keyPath: \.highlightX), unit: "pt", maxFractionDigits: 0, accessibilityLabel: "Highlight X offset")
+                inspectorMetricField(title: "Hi Y", value: visualStyleNumberBinding(for: selectedControlID, keyPath: \.highlightY), unit: "pt", maxFractionDigits: 0, accessibilityLabel: "Highlight Y offset")
+            }
+
+            valueSlider(
+                title: "Bevel",
+                value: visualStyleNumberBinding(for: selectedControlID, keyPath: \.bevelWidth),
+                range: 0...12,
+                valueText: String(format: "%.1f pt", Double(normalVisualStyleValue(for: selectedControlID).bevelWidth ?? 0))
+            )
+
+            HStack(spacing: Geist.Spacing.s2) {
+                Button("Soft White") {
+                    applyMaterial(.softWhiteRaised(), to: selectedControlID)
+                }
+                .geistButtonStyle(.secondary, size: .small)
+                Button("Inset") {
+                    applyMaterial(.softWhiteInset(), to: selectedControlID)
+                }
+                .geistButtonStyle(.secondary, size: .small)
+                Button("Plate") {
+                    applyMaterial(.softWhitePlate(), to: selectedControlID)
+                }
+                .geistButtonStyle(.secondary, size: .small)
+            }
+
+            Button("Clear material effects") {
+                clearMaterialEffects(for: selectedControlID)
+            }
+            .geistButtonStyle(.tertiary, size: .small)
+
+            Text("These controls add label color, inset shadows, highlights, and bevel strokes for soft/neumorphic controller surfaces.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -8277,6 +9061,9 @@ struct GamepadCustomizationEditor: View {
                 let analogTarget = (normalizedButton.joystickOutputSettings ?? .defaultValue).normalized.analogTarget
                 subtitle = analogTarget == .none ? "Joystick → 4 directions" : "Joystick → \(analogTarget.displayName)"
                 systemImage = "circle.grid.cross"
+            } else if normalizedButton.isDecoration {
+                subtitle = "Decoration layer"
+                systemImage = "square.3.layers.3d.down.right"
             } else if normalizedButton.isTrigger {
                 let target = (normalizedButton.triggerSettings ?? .defaultValue).normalized.target
                 subtitle = "Trigger → \(target.displayName)"
@@ -8340,6 +9127,8 @@ struct GamepadCustomizationEditor: View {
     private func customButtonControls(id: UUID) -> some View {
         if customButton(id: id)?.normalized.isJoystick == true {
             joystickControls(id: id)
+        } else if customButton(id: id)?.normalized.isDecoration == true {
+            decorationControls(id: id)
         } else if customButton(id: id)?.normalized.isTrigger == true {
             triggerControls(id: id)
         } else if customButton(id: id)?.normalized.isTrackpad == true {
@@ -8359,6 +9148,20 @@ struct GamepadCustomizationEditor: View {
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private func decorationControls(id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text("Decoration label")
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            TextField("Decoration", text: customLabelBinding(id: id))
+                .geistInput(size: .small)
+            Text("Decoration layers render on the keypad but never send keyboard, mouse, or gamepad input. Use them for shells, rings, plates, highlights, and visual grouping behind controls.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -8782,6 +9585,7 @@ struct GamepadCustomizationEditor: View {
         if customButton.isJoystick { return "Joystick" }
         if customButton.isTrigger { return "Trigger" }
         if customButton.isTrackpad { return "Trackpad" }
+        if customButton.isDecoration { return "Decoration" }
         return "Button"
     }
 
@@ -8789,6 +9593,7 @@ struct GamepadCustomizationEditor: View {
         if customButton.isJoystick { return "Joystick" }
         if customButton.isTrigger { return (customButton.triggerSettings ?? .defaultValue).normalized.target.shortName }
         if customButton.isTrackpad { return "Trackpad" }
+        if customButton.isDecoration { return "Decoration" }
         return "Button"
     }
 
@@ -8797,7 +9602,11 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var selectedPrimaryElementInputID: KeypadElementInputID? {
-        customization.elementID(for: selectedControlID).map { KeypadElementInputID(elementID: $0, part: .primary) }
+        if case .custom(let id) = selectedControlID,
+           customButton(id: id)?.normalized.isDecoration == true {
+            return nil
+        }
+        return customization.elementID(for: selectedControlID).map { KeypadElementInputID(elementID: $0, part: .primary) }
     }
 
     private var selectedProfile: GamepadConfigurationProfile? {
@@ -10352,6 +11161,81 @@ struct GamepadCustomizationEditor: View {
         selectedLayoutCustomization(for: identity).shadowStrength
     }
 
+    private func normalVisualStyleValue(for identity: GamepadControlIdentity) -> GamepadControlStateStyle {
+        selectedLayoutCustomization(for: identity).visualStyle?.normal.normalized ?? .empty
+    }
+
+    private func updateNormalVisualStyle(for identity: GamepadControlIdentity, mutate: (inout GamepadControlStateStyle) -> Void) {
+        updateLayoutCustomization(for: identity) { layout in
+            var visualStyle = layout.visualStyle ?? .empty
+            var normal = visualStyle.normal
+            mutate(&normal)
+            visualStyle.normal = normal.normalized
+            layout.visualStyle = visualStyle.normalized
+        }
+    }
+
+    private func visualStyleColorHexBinding(
+        for identity: GamepadControlIdentity,
+        keyPath: WritableKeyPath<GamepadControlStateStyle, GamepadRGBAColor?>
+    ) -> Binding<String> {
+        Binding(
+            get: { normalVisualStyleValue(for: identity)[keyPath: keyPath]?.hexString ?? "" },
+            set: { value in
+                updateNormalVisualStyle(for: identity) { style in
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        style[keyPath: keyPath] = nil
+                    } else if let color = GamepadRGBAColor(hexString: trimmed) {
+                        style[keyPath: keyPath] = color.normalized
+                    }
+                }
+            }
+        )
+    }
+
+    private func visualStyleNumberBinding(
+        for identity: GamepadControlIdentity,
+        keyPath: WritableKeyPath<GamepadControlStateStyle, CGFloat?>,
+        defaultValue: CGFloat = 0
+    ) -> Binding<Double> {
+        Binding(
+            get: { Double(normalVisualStyleValue(for: identity)[keyPath: keyPath] ?? defaultValue) },
+            set: { value in
+                updateNormalVisualStyle(for: identity) { style in
+                    let next = CGFloat(value)
+                    style[keyPath: keyPath] = abs(next - defaultValue) < 0.001 ? nil : next
+                }
+            }
+        )
+    }
+
+    private func applyMaterial(_ material: GamepadControlVisualStyle, to identity: GamepadControlIdentity) {
+        updateLayoutCustomization(for: identity) { layout in
+            layout.visualStyle = material.normalized
+            layout.shadowStrength = 0
+        }
+    }
+
+    private func clearMaterialEffects(for identity: GamepadControlIdentity) {
+        updateNormalVisualStyle(for: identity) { style in
+            style.foregroundColor = nil
+            style.shadows = nil
+            style.innerShadowColor = nil
+            style.innerShadowRadius = nil
+            style.innerShadowX = nil
+            style.innerShadowY = nil
+            style.highlightColor = nil
+            style.highlightRadius = nil
+            style.highlightX = nil
+            style.highlightY = nil
+            style.highlightOpacity = nil
+            style.bevelHighlightColor = nil
+            style.bevelShadowColor = nil
+            style.bevelWidth = nil
+        }
+    }
+
     private func rotationDegreesBinding(for identity: GamepadControlIdentity) -> Binding<Double> {
         Binding(
             get: { Double(rotationDegreesValue(for: identity)) },
@@ -10619,6 +11503,23 @@ struct GamepadCustomizationEditor: View {
                     $0.joystickOutputSettings = nil
                     $0.triggerSettings = nil
                     $0.trackpadSettings = nil
+                case .decoration:
+                    $0.label = "Decoration"
+                    $0.layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.5,
+                        widthScale: 2.2,
+                        heightScale: 1.2,
+                        shape: .roundedRectangle,
+                        fillColor: GamepadRGBAColor(hexString: "#F2EEF5"),
+                        visualStyle: .softWhitePlate(),
+                        cornerRadius: 28,
+                        shadowStrength: 0
+                    )
+                    $0.joystickMapping = nil
+                    $0.joystickOutputSettings = nil
+                    $0.triggerSettings = nil
+                    $0.trackpadSettings = nil
                 }
             }
         }
@@ -10839,13 +11740,46 @@ struct GamepadCustomizationEditor: View {
         applyCustomization(next, selecting: .custom(id), undoActionName: "Add Trackpad")
     }
 
+    private func addDecorationControl(kind: GamepadDecorationTemplateKind) {
+        let id = UUID()
+        var next = customization
+        switch kind {
+        case .plate:
+            next.addDecoration(
+                id: id,
+                label: "Soft Plate",
+                centerX: 0.5,
+                centerY: 0.5,
+                widthScale: 3.2,
+                heightScale: 1.55,
+                shape: .roundedRectangle,
+                cornerRadius: 42,
+                visualStyle: .softWhitePlate()
+            )
+        case .ring:
+            next.addDecoration(
+                id: id,
+                label: "Ring",
+                centerX: 0.5,
+                centerY: 0.5,
+                widthScale: 1.35,
+                heightScale: 1.35,
+                shape: .circle,
+                cornerRadius: nil,
+                visualStyle: .softWhiteInset()
+            )
+        }
+        placeDecoration(id: id, in: &next)
+        applyCustomization(next, selecting: .custom(id), undoActionName: kind == .plate ? "Add Soft Plate" : "Add Ring")
+    }
+
     private func placeCustomControl(id: UUID, in next: inout GamepadCustomization) {
         let identity = GamepadControlIdentity.custom(id)
         let controls = next.resolvedControls(in: currentCanvasLayoutSize)
         guard let control = controls.first(where: { $0.id == identity }),
               let adjustedFrame = GamepadLayoutResolver.nonOverlappingFrame(
                 for: control.frame,
-                avoiding: controls.compactMap { $0.id == identity ? nil : $0.frame },
+                avoiding: controls.compactMap { $0.id == identity || $0.isDecoration ? nil : $0.frame },
                 in: currentCanvasLayoutSize
               ),
               let index = next.customButtons.firstIndex(where: { $0.id == id })
@@ -10853,6 +11787,18 @@ struct GamepadCustomizationEditor: View {
 
         next.customButtons[index].layout.centerX = adjustedFrame.midX / max(currentCanvasLayoutSize.width, 1)
         next.customButtons[index].layout.centerY = adjustedFrame.midY / max(currentCanvasLayoutSize.height, 1)
+    }
+
+    private func placeDecoration(id: UUID, in next: inout GamepadCustomization) {
+        let identity = GamepadControlIdentity.custom(id)
+        guard let index = next.customButtons.firstIndex(where: { $0.id == id }) else { return }
+        if let selection = customization.resolvedControls(in: currentCanvasLayoutSize).first(where: { selectedControlIDs.contains($0.id) }) {
+            next.customButtons[index].layout.centerX = selection.normalizedCenter.x
+            next.customButtons[index].layout.centerY = selection.normalizedCenter.y
+        } else if let control = next.resolvedControls(in: currentCanvasLayoutSize).first(where: { $0.id == identity }) {
+            next.customButtons[index].layout.centerX = control.normalizedCenter.x
+            next.customButtons[index].layout.centerY = control.normalizedCenter.y
+        }
     }
 
     @discardableResult
@@ -14981,14 +15927,29 @@ private struct GamepadDesignerButton: View {
             let shape = UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay {
+                    if !isSelected {
+                        GamepadControlEffectOverlay(shape: shape, presentation: presentation)
+                    }
+                }
         case .polygon:
             let shape = GamepadRegularPolygonButtonShape(sides: 3)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay {
+                    if !isSelected {
+                        GamepadControlEffectOverlay(shape: shape, presentation: presentation)
+                    }
+                }
         case .star:
             let shape = GamepadStarButtonShape(points: 5)
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
                 .overlay(shape.stroke(strokeColor, lineWidth: lineWidth))
+                .overlay {
+                    if !isSelected {
+                        GamepadControlEffectOverlay(shape: shape, presentation: presentation)
+                    }
+                }
         }
     }
 }

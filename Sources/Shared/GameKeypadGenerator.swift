@@ -151,7 +151,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
             ?? button?.displayName
             ?? id
             ?? "Button"
-        key = try container.decode(String.self, forKey: .key)
+        key = try container.decodeIfPresent(String.self, forKey: .key) ?? ""
         modifiers = try container.decodeIfPresent([String].self, forKey: .modifiers) ?? []
         role = try container.decodeIfPresent(AgentKeypadControlRole.self, forKey: .role)
         centerX = try container.decodeIfPresent(CGFloat.self, forKey: .centerX)
@@ -274,7 +274,13 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
             return explicit.normalized
         }
 
-        var normal = GamepadControlStateStyle.empty
+        var style = if let material = try container.decodeIfPresent(String.self, forKey: .material) ?? container.decodeIfPresent(String.self, forKey: .materialPreset),
+                       let materialStyle = materialVisualStyle(material) {
+            materialStyle
+        } else {
+            GamepadControlVisualStyle.empty
+        }
+        var normal = style.normal
         if let strokeColor = decodeHexColor(from: container, keys: [.stroke, .strokeColor]) {
             normal.strokeColor = strokeColor
         }
@@ -284,23 +290,79 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         if let strokeWidth = try container.decodeIfPresent(CGFloat.self, forKey: .strokeWidth) {
             normal.strokeWidth = strokeWidth
         }
+        if let shadows = try container.decodeIfPresent([GamepadControlShadowStyle].self, forKey: .shadows) {
+            normal.shadows = shadows
+        }
         if let glowColor = decodeHexColor(from: container, keys: [.glow, .glowColor]) {
             normal.glowColor = glowColor
         }
         if let glowRadius = try container.decodeIfPresent(CGFloat.self, forKey: .glowRadius) {
             normal.glowRadius = glowRadius
         }
+        if let innerShadowColor = decodeHexColor(from: container, keys: [.innerShadow, .innerShadowColor]) {
+            normal.innerShadowColor = innerShadowColor
+        }
+        if let innerShadowRadius = try container.decodeIfPresent(CGFloat.self, forKey: .innerShadowRadius) {
+            normal.innerShadowRadius = innerShadowRadius
+        }
+        if let innerShadowX = try container.decodeIfPresent(CGFloat.self, forKey: .innerShadowX) {
+            normal.innerShadowX = innerShadowX
+        }
+        if let innerShadowY = try container.decodeIfPresent(CGFloat.self, forKey: .innerShadowY) {
+            normal.innerShadowY = innerShadowY
+        }
+        if let highlightColor = decodeHexColor(from: container, keys: [.highlight, .highlightColor]) {
+            normal.highlightColor = highlightColor
+        }
+        if let highlightRadius = try container.decodeIfPresent(CGFloat.self, forKey: .highlightRadius) {
+            normal.highlightRadius = highlightRadius
+        }
+        if let highlightX = try container.decodeIfPresent(CGFloat.self, forKey: .highlightX) {
+            normal.highlightX = highlightX
+        }
+        if let highlightY = try container.decodeIfPresent(CGFloat.self, forKey: .highlightY) {
+            normal.highlightY = highlightY
+        }
+        if let highlightOpacity = try container.decodeIfPresent(CGFloat.self, forKey: .highlightOpacity) {
+            normal.highlightOpacity = highlightOpacity
+        }
+        if let bevelHighlightColor = decodeHexColor(from: container, keys: [.bevelHighlight, .bevelHighlightColor]) {
+            normal.bevelHighlightColor = bevelHighlightColor
+        }
+        if let bevelShadowColor = decodeHexColor(from: container, keys: [.bevelShadow, .bevelShadowColor]) {
+            normal.bevelShadowColor = bevelShadowColor
+        }
+        if let bevelWidth = try container.decodeIfPresent(CGFloat.self, forKey: .bevelWidth) {
+            normal.bevelWidth = bevelWidth
+        }
         if let opacity = try container.decodeIfPresent(CGFloat.self, forKey: .opacity) {
             normal.opacity = opacity
         }
 
-        var pressed: GamepadControlStateStyle?
+        var pressed = style.pressed
         if let pressedFill = decodeHexColor(from: container, keys: [.pressedFill, .pressedColor]) {
-            pressed = GamepadControlStateStyle(fillStyle: .solid(pressedFill))
+            var pressedStyle = pressed ?? .empty
+            pressedStyle.fillStyle = .solid(pressedFill)
+            pressed = pressedStyle
         }
 
-        let style = GamepadControlVisualStyle(normal: normal, pressed: pressed)
+        style.normal = normal
+        style.pressed = pressed
         return style.normalized
+    }
+
+    private static func materialVisualStyle(_ text: String) -> GamepadControlVisualStyle? {
+        let normalized = text.lowercased().filter { $0.isLetter || $0.isNumber }
+        switch normalized {
+        case "softwhite", "softwhiteraised", "raised", "neumorphic", "neumorphicraised":
+            return .softWhiteRaised()
+        case "softwhiteinset", "inset", "recessed", "well":
+            return .softWhiteInset()
+        case "softwhiteplate", "plate", "panel", "shell":
+            return .softWhitePlate()
+        default:
+            return nil
+        }
     }
 
     private static func decodeIcon(from container: KeyedDecodingContainer<CodingKeys>) throws -> GamepadControlIcon? {
@@ -364,7 +426,15 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
 
     private static func decodeControlKindAlias(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> GamepadCustomControlKind? {
         guard let rawValue = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
-        return GamepadCustomControlKind(rawValue: rawValue)
+        if let kind = GamepadCustomControlKind(rawValue: rawValue) { return kind }
+        let normalized = rawValue.lowercased().filter { $0.isLetter || $0.isNumber }
+        switch normalized {
+        case "shape": return .button
+        case "stick": return .joystick
+        case "touchpad", "cursorpad": return .trackpad
+        case "decor", "visual", "plate", "panel", "ring": return .decoration
+        default: return nil
+        }
     }
 
     private static func decodeGameButtonAlias(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> GameButton? {
@@ -468,9 +538,28 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         case foreground
         case foregroundColor
         case textColor
+        case material
+        case materialPreset
+        case shadows
         case glow
         case glowColor
         case glowRadius
+        case innerShadow
+        case innerShadowColor
+        case innerShadowRadius
+        case innerShadowX
+        case innerShadowY
+        case highlight
+        case highlightColor
+        case highlightRadius
+        case highlightX
+        case highlightY
+        case highlightOpacity
+        case bevelHighlight
+        case bevelHighlightColor
+        case bevelShadow
+        case bevelShadowColor
+        case bevelWidth
         case pressedFill
         case pressedColor
         case opacity
@@ -752,7 +841,9 @@ private enum GeneratedProfileBuilder {
                 )
             }
 
-            keyBindings[control.button] = control.binding
+            if controlKind != .decoration, !control.binding.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                keyBindings[control.button] = control.binding
+            }
         }
 
         customization.customButtons = customButtons

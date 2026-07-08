@@ -59,7 +59,15 @@ struct GamepadLayoutControlSummary: Codable, Equatable {
     init(requested: GamepadResolvedControl, resolved: GamepadResolvedControl, canvasSize: CGSize) {
         id = requested.id.id
         mappedButton = requested.mappedButton
-        kind = requested.isJoystick ? "joystick" : (requested.isTrackpad ? "trackpad" : "button")
+        if requested.isDecoration {
+            kind = "decoration"
+        } else if requested.isJoystick {
+            kind = "joystick"
+        } else if requested.isTrackpad {
+            kind = "trackpad"
+        } else {
+            kind = "button"
+        }
         label = requested.label
         shape = requested.shape
         requestedFrame = GamepadLayoutRectSummary(requested.frame)
@@ -135,12 +143,16 @@ private extension GamepadLayoutQualityReport {
         }
 
         var issues: [GamepadLayoutIssue] = []
-        if requestedControls.isEmpty {
+        let interactiveRequestedControls = requestedControls.filter { !$0.isDecoration }
+        let interactiveResolvedControls = resolvedControls.filter { !$0.isDecoration }
+        let interactiveSummaries = controlSummaries.filter { $0.kind != "decoration" }
+
+        if interactiveRequestedControls.isEmpty {
             issues.append(
                 GamepadLayoutIssue(
                     severity: .error,
                     code: "no-visible-controls",
-                    message: "The keypad has no visible controls.",
+                    message: "The keypad has no visible interactive controls.",
                     controls: [],
                     metric: nil
                 )
@@ -149,12 +161,12 @@ private extension GamepadLayoutQualityReport {
 
         if validatesFreeformLayout {
             issues.append(contentsOf: overlapIssues(
-                controls: requestedControls,
+                controls: interactiveRequestedControls,
                 phase: "requested",
                 codePrefix: "requested-overlap"
             ))
             issues.append(contentsOf: overlapIssues(
-                controls: resolvedControls,
+                controls: interactiveResolvedControls,
                 phase: "resolved",
                 codePrefix: "resolved-overlap"
             ).map { issue in
@@ -162,20 +174,20 @@ private extension GamepadLayoutQualityReport {
                 copy.severity = .error
                 return copy
             })
-            issues.append(contentsOf: displacementIssues(controlSummaries, canvasSize: canvasSize))
-            issues.append(contentsOf: sizeIssues(controlSummaries, canvasSize: canvasSize))
-            issues.append(contentsOf: edgeIssues(controlSummaries, canvasSize: canvasSize))
-            issues.append(contentsOf: utilizationIssues(controlSummaries, canvasSize: canvasSize))
+            issues.append(contentsOf: displacementIssues(interactiveSummaries, canvasSize: canvasSize))
+            issues.append(contentsOf: sizeIssues(interactiveSummaries, canvasSize: canvasSize))
+            issues.append(contentsOf: edgeIssues(interactiveSummaries, canvasSize: canvasSize))
+            issues.append(contentsOf: utilizationIssues(interactiveSummaries, canvasSize: canvasSize))
         }
 
-        let usedFrame = usedLayoutFrame(controlSummaries)
+        let usedFrame = usedLayoutFrame(interactiveSummaries.isEmpty ? controlSummaries : interactiveSummaries)
         let summary = GamepadLayoutQualitySummary(
             controlCount: controlSummaries.count,
             errorCount: issues.filter { $0.severity == .error }.count,
             warningCount: issues.filter { $0.severity == .warning }.count,
-            largestDisplacement: controlSummaries.map(\.displacement).max() ?? 0,
-            largestWidthRatio: controlSummaries.map(\.widthRatio).max() ?? 0,
-            largestHeightRatio: controlSummaries.map(\.heightRatio).max() ?? 0,
+            largestDisplacement: interactiveSummaries.map(\.displacement).max() ?? 0,
+            largestWidthRatio: interactiveSummaries.map(\.widthRatio).max() ?? 0,
+            largestHeightRatio: interactiveSummaries.map(\.heightRatio).max() ?? 0,
             layoutWidthCoverage: Double(usedFrame.width / max(canvasSize.width, 1)),
             layoutHeightCoverage: Double(usedFrame.height / max(canvasSize.height, 1)),
             bottomUnusedRatio: Double(max(0, canvasSize.height - usedFrame.maxY) / max(canvasSize.height, 1))
@@ -261,10 +273,10 @@ private extension GamepadLayoutQualityReport {
 
             let isJoystick = control.kind == "joystick"
             let isTrackpad = control.kind == "trackpad"
-            let heightWarning = isJoystick ? 0.34 : (isTrackpad ? 0.36 : 0.24)
-            let heightError = isJoystick ? 0.42 : (isTrackpad ? 0.46 : 0.30)
-            let widthWarning = isJoystick ? 0.28 : (isTrackpad ? 0.58 : 0.34)
-            let widthError = isJoystick ? 0.36 : (isTrackpad ? 0.72 : 0.48)
+            let heightWarning = isJoystick ? 0.44 : (isTrackpad ? 0.36 : 0.24)
+            let heightError = isJoystick ? 0.52 : (isTrackpad ? 0.46 : 0.30)
+            let widthWarning = isJoystick ? 0.34 : (isTrackpad ? 0.58 : 0.34)
+            let widthError = isJoystick ? 0.44 : (isTrackpad ? 0.72 : 0.48)
 
             if control.heightRatio > heightError || control.widthRatio > widthError {
                 return GamepadLayoutIssue(
@@ -548,6 +560,8 @@ enum GamepadLayoutPreviewRenderer {
         let fill = presentation.fillStyle.representativeColor
         let foreground = presentation.foregroundColor
 
+        drawOuterShadows(for: control, presentation: presentation, fill: fill, in: context)
+
         context.saveGState()
         context.setFillColor(cgColor(fill, alphaMultiplier: presentation.opacity))
         context.setStrokeColor(cgColor(presentation.strokeColor))
@@ -555,6 +569,8 @@ enum GamepadLayoutPreviewRenderer {
 
         addPath(for: control, in: context)
         context.drawPath(using: .fillStroke)
+
+        drawMaterialEffects(for: control, presentation: presentation, in: context)
 
         if control.isJoystick {
             drawJoystickDetails(control: control, foreground: foreground, in: context)
@@ -573,6 +589,7 @@ enum GamepadLayoutPreviewRenderer {
 
         if customization.showsButtonLabels,
            !control.isJoystick,
+           !control.isDecoration,
            shouldDrawLabel(control.label, with: icon) {
             drawLabel(
                 control.label,
@@ -585,6 +602,106 @@ enum GamepadLayoutPreviewRenderer {
             )
         }
 
+        context.restoreGState()
+    }
+
+    private static func drawOuterShadows(
+        for control: GamepadResolvedControl,
+        presentation: GamepadResolvedControlPresentation,
+        fill: GamepadRGBAColor,
+        in context: CGContext
+    ) {
+        let shadows: [GamepadControlShadowStyle]
+        if presentation.shadows.isEmpty {
+            guard presentation.shadowRadius > 0 || abs(presentation.shadowX) > 0.001 || abs(presentation.shadowY) > 0.001 else { return }
+            shadows = [GamepadControlShadowStyle(color: presentation.shadowColor, radius: presentation.shadowRadius, x: presentation.shadowX, y: presentation.shadowY)]
+        } else {
+            shadows = presentation.shadows
+        }
+
+        for shadow in shadows {
+            let normalized = shadow.normalized
+            guard normalized.radius > 0 || abs(normalized.x) > 0.001 || abs(normalized.y) > 0.001 else { continue }
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: normalized.x, height: normalized.y), blur: normalized.radius, color: cgColor(normalized.color))
+            context.setFillColor(cgColor(fill, alphaMultiplier: presentation.opacity))
+            addPath(for: control, in: context)
+            context.fillPath()
+            context.restoreGState()
+        }
+    }
+
+    private static func drawMaterialEffects(
+        for control: GamepadResolvedControl,
+        presentation: GamepadResolvedControlPresentation,
+        in context: CGContext
+    ) {
+        if presentation.highlightOpacity > 0 {
+            let color = presentation.highlightColor ?? GamepadRGBAColor(red: 1, green: 1, blue: 1, alpha: 1)
+            context.saveGState()
+            addPath(for: control, in: context)
+            context.clip()
+            context.translateBy(x: presentation.highlightX, y: presentation.highlightY)
+            if presentation.highlightRadius > 0 {
+                context.setShadow(
+                    offset: .zero,
+                    blur: presentation.highlightRadius,
+                    color: cgColor(color, alphaMultiplier: presentation.highlightOpacity)
+                )
+            }
+            context.setFillColor(cgColor(color, alphaMultiplier: presentation.highlightOpacity))
+            addPath(for: control, in: context)
+            context.fillPath()
+            context.restoreGState()
+        }
+
+        if presentation.bevelWidth > 0 {
+            drawOffsetStroke(
+                for: control,
+                color: presentation.bevelHighlightColor ?? GamepadRGBAColor(red: 1, green: 1, blue: 1, alpha: 0.62),
+                lineWidth: presentation.bevelWidth,
+                offset: CGSize(width: -presentation.bevelWidth * 0.35, height: -presentation.bevelWidth * 0.35),
+                context: context
+            )
+            drawOffsetStroke(
+                for: control,
+                color: presentation.bevelShadowColor ?? GamepadRGBAColor(red: 0, green: 0, blue: 0, alpha: 0.24),
+                lineWidth: max(0.5, presentation.bevelWidth * 0.70),
+                offset: CGSize(width: presentation.bevelWidth * 0.35, height: presentation.bevelWidth * 0.35),
+                context: context
+            )
+        }
+
+        if presentation.innerShadowRadius > 0 || presentation.innerShadowColor != nil {
+            let color = presentation.innerShadowColor ?? GamepadRGBAColor(red: 0, green: 0, blue: 0, alpha: 0.22)
+            context.saveGState()
+            addPath(for: control, in: context)
+            context.clip()
+            context.translateBy(x: presentation.innerShadowX, y: presentation.innerShadowY)
+            context.setShadow(offset: .zero, blur: max(0, presentation.innerShadowRadius), color: cgColor(color))
+            context.setStrokeColor(cgColor(color))
+            context.setLineWidth(max(1, presentation.innerShadowRadius * 2))
+            addPath(for: control, in: context)
+            context.strokePath()
+            context.restoreGState()
+        }
+    }
+
+    private static func drawOffsetStroke(
+        for control: GamepadResolvedControl,
+        color: GamepadRGBAColor,
+        lineWidth: CGFloat,
+        offset: CGSize,
+        context: CGContext
+    ) {
+        context.saveGState()
+        addPath(for: control, in: context)
+        context.clip()
+        context.translateBy(x: offset.width, y: offset.height)
+        context.setStrokeColor(cgColor(color))
+        context.setLineWidth(lineWidth)
+        addPath(for: control, in: context)
+        context.strokePath()
         context.restoreGState()
     }
 

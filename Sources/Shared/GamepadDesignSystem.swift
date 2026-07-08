@@ -213,6 +213,94 @@ public struct GamepadHapticFeedback: Codable, Equatable, Sendable {
     }
 }
 
+public struct GamepadControlShadowStyle: Codable, Equatable, Sendable {
+    public var color: GamepadRGBAColor
+    public var radius: CGFloat
+    public var x: CGFloat
+    public var y: CGFloat
+    public var opacity: CGFloat
+
+    public init(
+        color: GamepadRGBAColor,
+        radius: CGFloat,
+        x: CGFloat = 0,
+        y: CGFloat = 0,
+        opacity: CGFloat = 1
+    ) {
+        self.color = color
+        self.radius = radius
+        self.x = x
+        self.y = y
+        self.opacity = opacity
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        color = try container.decode(GamepadRGBAColor.self, forKey: .color)
+        radius = try container.decodeIfPresent(CGFloat.self, forKey: .radius) ?? 0
+        x = try container.decodeIfPresent(CGFloat.self, forKey: .x) ?? 0
+        y = try container.decodeIfPresent(CGFloat.self, forKey: .y) ?? 0
+        opacity = try container.decodeIfPresent(CGFloat.self, forKey: .opacity) ?? 1
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(color.normalized, forKey: .color)
+        try container.encode(radius, forKey: .radius)
+        try container.encode(x, forKey: .x)
+        try container.encode(y, forKey: .y)
+        if abs(opacity - 1) > 0.001 { try container.encode(opacity, forKey: .opacity) }
+    }
+
+    public static func outer(
+        _ hex: String,
+        alpha: CGFloat = 1,
+        radius: CGFloat,
+        x: CGFloat = 0,
+        y: CGFloat = 0,
+        opacity: CGFloat = 1
+    ) -> GamepadControlShadowStyle {
+        GamepadControlShadowStyle(
+            color: GamepadRGBAColor(hexString: hex, alpha: alpha) ?? .defaultValue,
+            radius: radius,
+            x: x,
+            y: y,
+            opacity: opacity
+        )
+    }
+
+    var normalized: GamepadControlShadowStyle {
+        let normalizedColor = color.normalized
+        return GamepadControlShadowStyle(
+            color: GamepadRGBAColor(
+                red: normalizedColor.red,
+                green: normalizedColor.green,
+                blue: normalizedColor.blue,
+                alpha: normalizedColor.alpha * Self.clamp(opacity, lower: 0, upper: 1)
+            ).normalized,
+            radius: Self.clamp(radius, lower: 0, upper: 96),
+            x: Self.clamp(x, lower: -96, upper: 96),
+            y: Self.clamp(y, lower: -96, upper: 96),
+            opacity: 1
+        )
+    }
+
+    public var swiftUIColor: Color { normalized.color.swiftUIColor }
+
+    private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        guard value.isFinite else { return lower }
+        return min(max(value, lower), upper)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case color
+        case radius
+        case x
+        case y
+        case opacity
+    }
+}
+
 public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
     public var fillStyle: GamepadFillStyle?
     public var foregroundColor: GamepadRGBAColor?
@@ -222,8 +310,21 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
     public var shadowRadius: CGFloat?
     public var shadowX: CGFloat?
     public var shadowY: CGFloat?
+    public var shadows: [GamepadControlShadowStyle]?
     public var glowColor: GamepadRGBAColor?
     public var glowRadius: CGFloat?
+    public var innerShadowColor: GamepadRGBAColor?
+    public var innerShadowRadius: CGFloat?
+    public var innerShadowX: CGFloat?
+    public var innerShadowY: CGFloat?
+    public var highlightColor: GamepadRGBAColor?
+    public var highlightRadius: CGFloat?
+    public var highlightX: CGFloat?
+    public var highlightY: CGFloat?
+    public var highlightOpacity: CGFloat?
+    public var bevelHighlightColor: GamepadRGBAColor?
+    public var bevelShadowColor: GamepadRGBAColor?
+    public var bevelWidth: CGFloat?
     public var opacity: CGFloat?
     public var scale: CGFloat?
     public var blurRadius: CGFloat?
@@ -237,8 +338,21 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
         shadowRadius: CGFloat? = nil,
         shadowX: CGFloat? = nil,
         shadowY: CGFloat? = nil,
+        shadows: [GamepadControlShadowStyle]? = nil,
         glowColor: GamepadRGBAColor? = nil,
         glowRadius: CGFloat? = nil,
+        innerShadowColor: GamepadRGBAColor? = nil,
+        innerShadowRadius: CGFloat? = nil,
+        innerShadowX: CGFloat? = nil,
+        innerShadowY: CGFloat? = nil,
+        highlightColor: GamepadRGBAColor? = nil,
+        highlightRadius: CGFloat? = nil,
+        highlightX: CGFloat? = nil,
+        highlightY: CGFloat? = nil,
+        highlightOpacity: CGFloat? = nil,
+        bevelHighlightColor: GamepadRGBAColor? = nil,
+        bevelShadowColor: GamepadRGBAColor? = nil,
+        bevelWidth: CGFloat? = nil,
         opacity: CGFloat? = nil,
         scale: CGFloat? = nil,
         blurRadius: CGFloat? = nil
@@ -251,8 +365,21 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
         self.shadowRadius = shadowRadius
         self.shadowX = shadowX
         self.shadowY = shadowY
+        self.shadows = shadows
         self.glowColor = glowColor
         self.glowRadius = glowRadius
+        self.innerShadowColor = innerShadowColor
+        self.innerShadowRadius = innerShadowRadius
+        self.innerShadowX = innerShadowX
+        self.innerShadowY = innerShadowY
+        self.highlightColor = highlightColor
+        self.highlightRadius = highlightRadius
+        self.highlightX = highlightX
+        self.highlightY = highlightY
+        self.highlightOpacity = highlightOpacity
+        self.bevelHighlightColor = bevelHighlightColor
+        self.bevelShadowColor = bevelShadowColor
+        self.bevelWidth = bevelWidth
         self.opacity = opacity
         self.scale = scale
         self.blurRadius = blurRadius
@@ -270,8 +397,21 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
             shadowRadius: shadowRadius.map { Self.clamp($0, lower: 0, upper: 48) },
             shadowX: shadowX.map { Self.clamp($0, lower: -64, upper: 64) },
             shadowY: shadowY.map { Self.clamp($0, lower: -64, upper: 64) },
+            shadows: shadows.map { Array($0.prefix(8)).map(\.normalized) },
             glowColor: glowColor?.normalized,
             glowRadius: glowRadius.map { Self.clamp($0, lower: 0, upper: 64) },
+            innerShadowColor: innerShadowColor?.normalized,
+            innerShadowRadius: innerShadowRadius.map { Self.clamp($0, lower: 0, upper: 64) },
+            innerShadowX: innerShadowX.map { Self.clamp($0, lower: -64, upper: 64) },
+            innerShadowY: innerShadowY.map { Self.clamp($0, lower: -64, upper: 64) },
+            highlightColor: highlightColor?.normalized,
+            highlightRadius: highlightRadius.map { Self.clamp($0, lower: 0, upper: 64) },
+            highlightX: highlightX.map { Self.clamp($0, lower: -64, upper: 64) },
+            highlightY: highlightY.map { Self.clamp($0, lower: -64, upper: 64) },
+            highlightOpacity: highlightOpacity.map { Self.clamp($0, lower: 0, upper: 1) },
+            bevelHighlightColor: bevelHighlightColor?.normalized,
+            bevelShadowColor: bevelShadowColor?.normalized,
+            bevelWidth: bevelWidth.map { Self.clamp($0, lower: 0, upper: 24) },
             opacity: opacity.map { Self.clamp($0, lower: 0, upper: 1) },
             scale: scale.map { Self.clamp($0, lower: 0.5, upper: 1.5) },
             blurRadius: blurRadius.map { Self.clamp($0, lower: 0, upper: 24) }
@@ -287,8 +427,21 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
             && shadowRadius == nil
             && shadowX == nil
             && shadowY == nil
+            && shadows == nil
             && glowColor == nil
             && glowRadius == nil
+            && innerShadowColor == nil
+            && innerShadowRadius == nil
+            && innerShadowX == nil
+            && innerShadowY == nil
+            && highlightColor == nil
+            && highlightRadius == nil
+            && highlightX == nil
+            && highlightY == nil
+            && highlightOpacity == nil
+            && bevelHighlightColor == nil
+            && bevelShadowColor == nil
+            && bevelWidth == nil
             && opacity == nil
             && scale == nil
             && blurRadius == nil
@@ -304,8 +457,21 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
             shadowRadius: shadowRadius ?? base.shadowRadius,
             shadowX: shadowX ?? base.shadowX,
             shadowY: shadowY ?? base.shadowY,
+            shadows: shadows ?? base.shadows,
             glowColor: glowColor ?? base.glowColor,
             glowRadius: glowRadius ?? base.glowRadius,
+            innerShadowColor: innerShadowColor ?? base.innerShadowColor,
+            innerShadowRadius: innerShadowRadius ?? base.innerShadowRadius,
+            innerShadowX: innerShadowX ?? base.innerShadowX,
+            innerShadowY: innerShadowY ?? base.innerShadowY,
+            highlightColor: highlightColor ?? base.highlightColor,
+            highlightRadius: highlightRadius ?? base.highlightRadius,
+            highlightX: highlightX ?? base.highlightX,
+            highlightY: highlightY ?? base.highlightY,
+            highlightOpacity: highlightOpacity ?? base.highlightOpacity,
+            bevelHighlightColor: bevelHighlightColor ?? base.bevelHighlightColor,
+            bevelShadowColor: bevelShadowColor ?? base.bevelShadowColor,
+            bevelWidth: bevelWidth ?? base.bevelWidth,
             opacity: opacity ?? base.opacity,
             scale: scale ?? base.scale,
             blurRadius: blurRadius ?? base.blurRadius
@@ -383,6 +549,111 @@ public struct GamepadControlVisualStyle: Codable, Equatable, Sendable {
             override = disabled
         }
         return (override ?? .empty).merged(over: normal).normalized
+    }
+}
+
+public extension GamepadControlVisualStyle {
+    static func softWhiteRaised(
+        fill: GamepadRGBAColor = GamepadRGBAColor(hexString: "#F7F4F8") ?? .defaultValue,
+        foreground: GamepadRGBAColor = GamepadRGBAColor(hexString: "#7C61A8") ?? .defaultValue
+    ) -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .solid(fill),
+                foregroundColor: foreground,
+                strokeColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.68),
+                strokeWidth: 1,
+                shadows: [
+                    .outer("#FFFFFF", alpha: 0.96, radius: 14, x: -7, y: -7),
+                    .outer("#9B91AA", alpha: 0.24, radius: 20, x: 8, y: 9)
+                ],
+                highlightColor: GamepadRGBAColor(hexString: "#FFFFFF"),
+                highlightRadius: 10,
+                highlightX: -5,
+                highlightY: -5,
+                highlightOpacity: 0.34,
+                bevelHighlightColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.70),
+                bevelShadowColor: GamepadRGBAColor(hexString: "#C8C0D2", alpha: 0.50),
+                bevelWidth: 1.25
+            ),
+            pressed: GamepadControlStateStyle(
+                fillStyle: .solid(GamepadRGBAColor(hexString: "#EDE8F1") ?? fill),
+                shadows: [
+                    .outer("#A89DB7", alpha: 0.18, radius: 8, x: 3, y: 3),
+                    .outer("#FFFFFF", alpha: 0.74, radius: 8, x: -2, y: -2)
+                ],
+                innerShadowColor: GamepadRGBAColor(hexString: "#B5AFC1", alpha: 0.36),
+                innerShadowRadius: 6,
+                innerShadowX: 2,
+                innerShadowY: 2,
+                highlightOpacity: 0.10,
+                bevelWidth: 0.6,
+                scale: 0.975
+            ),
+            hapticFeedback: GamepadHapticFeedback(style: .soft, pattern: .single, intensity: 0.42, sharpness: 0.22)
+        )
+    }
+
+    static func softWhiteInset(
+        fill: GamepadRGBAColor = GamepadRGBAColor(hexString: "#EFEAF2") ?? .defaultValue,
+        foreground: GamepadRGBAColor = GamepadRGBAColor(hexString: "#8067A7") ?? .defaultValue
+    ) -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .solid(fill),
+                foregroundColor: foreground,
+                strokeColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.42),
+                strokeWidth: 1,
+                shadows: [
+                    .outer("#FFFFFF", alpha: 0.62, radius: 10, x: -3, y: -3),
+                    .outer("#B0A7BC", alpha: 0.20, radius: 12, x: 4, y: 5)
+                ],
+                innerShadowColor: GamepadRGBAColor(hexString: "#AFA7BB", alpha: 0.30),
+                innerShadowRadius: 8,
+                innerShadowX: 3,
+                innerShadowY: 3,
+                highlightColor: GamepadRGBAColor(hexString: "#FFFFFF"),
+                highlightRadius: 8,
+                highlightX: -4,
+                highlightY: -4,
+                highlightOpacity: 0.22,
+                bevelHighlightColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.58),
+                bevelShadowColor: GamepadRGBAColor(hexString: "#B7AEC4", alpha: 0.42),
+                bevelWidth: 1
+            ),
+            pressed: GamepadControlStateStyle(
+                innerShadowRadius: 10,
+                innerShadowX: 4,
+                innerShadowY: 4,
+                scale: 0.985
+            ),
+            hapticFeedback: GamepadHapticFeedback(style: .soft, pattern: .single, intensity: 0.34, sharpness: 0.18)
+        )
+    }
+
+    static func softWhitePlate(
+        fill: GamepadRGBAColor = GamepadRGBAColor(hexString: "#F2EEF5") ?? .defaultValue
+    ) -> GamepadControlVisualStyle {
+        GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .solid(fill),
+                foregroundColor: GamepadRGBAColor(hexString: "#8169A7"),
+                strokeColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.48),
+                strokeWidth: 1,
+                shadows: [
+                    .outer("#FFFFFF", alpha: 0.92, radius: 26, x: -12, y: -12),
+                    .outer("#998DAA", alpha: 0.22, radius: 34, x: 14, y: 16)
+                ],
+                highlightColor: GamepadRGBAColor(hexString: "#FFFFFF"),
+                highlightRadius: 22,
+                highlightX: -10,
+                highlightY: -10,
+                highlightOpacity: 0.26,
+                bevelHighlightColor: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.64),
+                bevelShadowColor: GamepadRGBAColor(hexString: "#C8C0D2", alpha: 0.42),
+                bevelWidth: 1.4
+            )
+        )
     }
 }
 
@@ -780,8 +1051,21 @@ public struct GamepadResolvedControlPresentation: Equatable, Sendable {
     public var shadowRadius: CGFloat
     public var shadowX: CGFloat
     public var shadowY: CGFloat
+    public var shadows: [GamepadControlShadowStyle]
     public var glowColor: GamepadRGBAColor?
     public var glowRadius: CGFloat
+    public var innerShadowColor: GamepadRGBAColor?
+    public var innerShadowRadius: CGFloat
+    public var innerShadowX: CGFloat
+    public var innerShadowY: CGFloat
+    public var highlightColor: GamepadRGBAColor?
+    public var highlightRadius: CGFloat
+    public var highlightX: CGFloat
+    public var highlightY: CGFloat
+    public var highlightOpacity: CGFloat
+    public var bevelHighlightColor: GamepadRGBAColor?
+    public var bevelShadowColor: GamepadRGBAColor?
+    public var bevelWidth: CGFloat
     public var opacity: CGFloat
     public var scale: CGFloat
     public var blurRadius: CGFloat
@@ -798,8 +1082,21 @@ public struct GamepadResolvedControlPresentation: Equatable, Sendable {
         shadowRadius: CGFloat,
         shadowX: CGFloat = 0,
         shadowY: CGFloat,
+        shadows: [GamepadControlShadowStyle] = [],
         glowColor: GamepadRGBAColor? = nil,
         glowRadius: CGFloat = 0,
+        innerShadowColor: GamepadRGBAColor? = nil,
+        innerShadowRadius: CGFloat = 0,
+        innerShadowX: CGFloat = 0,
+        innerShadowY: CGFloat = 0,
+        highlightColor: GamepadRGBAColor? = nil,
+        highlightRadius: CGFloat = 0,
+        highlightX: CGFloat = 0,
+        highlightY: CGFloat = 0,
+        highlightOpacity: CGFloat = 0,
+        bevelHighlightColor: GamepadRGBAColor? = nil,
+        bevelShadowColor: GamepadRGBAColor? = nil,
+        bevelWidth: CGFloat = 0,
         opacity: CGFloat = 1,
         scale: CGFloat = 1,
         blurRadius: CGFloat = 0,
@@ -815,8 +1112,21 @@ public struct GamepadResolvedControlPresentation: Equatable, Sendable {
         self.shadowRadius = Self.clamp(shadowRadius, lower: 0, upper: 64)
         self.shadowX = Self.clamp(shadowX, lower: -64, upper: 64)
         self.shadowY = Self.clamp(shadowY, lower: -64, upper: 64)
+        self.shadows = Array(shadows.prefix(8)).map(\.normalized)
         self.glowColor = glowColor?.normalized
         self.glowRadius = Self.clamp(glowRadius, lower: 0, upper: 64)
+        self.innerShadowColor = innerShadowColor?.normalized
+        self.innerShadowRadius = Self.clamp(innerShadowRadius, lower: 0, upper: 64)
+        self.innerShadowX = Self.clamp(innerShadowX, lower: -64, upper: 64)
+        self.innerShadowY = Self.clamp(innerShadowY, lower: -64, upper: 64)
+        self.highlightColor = highlightColor?.normalized
+        self.highlightRadius = Self.clamp(highlightRadius, lower: 0, upper: 64)
+        self.highlightX = Self.clamp(highlightX, lower: -64, upper: 64)
+        self.highlightY = Self.clamp(highlightY, lower: -64, upper: 64)
+        self.highlightOpacity = Self.clamp(highlightOpacity, lower: 0, upper: 1)
+        self.bevelHighlightColor = bevelHighlightColor?.normalized
+        self.bevelShadowColor = bevelShadowColor?.normalized
+        self.bevelWidth = Self.clamp(bevelWidth, lower: 0, upper: 24)
         self.opacity = Self.clamp(opacity, lower: 0, upper: 1)
         self.scale = Self.clamp(scale, lower: 0.5, upper: 1.5)
         self.blurRadius = Self.clamp(blurRadius, lower: 0, upper: 24)
@@ -830,6 +1140,10 @@ public struct GamepadResolvedControlPresentation: Equatable, Sendable {
     public var strokeSwiftUIColor: Color { strokeColor.swiftUIColor }
     public var shadowSwiftUIColor: Color { shadowColor.swiftUIColor }
     public var glowSwiftUIColor: Color? { glowColor?.swiftUIColor }
+    public var innerShadowSwiftUIColor: Color? { innerShadowColor?.swiftUIColor }
+    public var highlightSwiftUIColor: Color? { highlightColor?.swiftUIColor }
+    public var bevelHighlightSwiftUIColor: Color? { bevelHighlightColor?.swiftUIColor }
+    public var bevelShadowSwiftUIColor: Color? { bevelShadowColor?.swiftUIColor }
 
     private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
         guard value.isFinite else { return lower }
@@ -891,12 +1205,14 @@ extension GamepadButtonCustomization {
 
 public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sendable {
     case cavernGlow = "cavern-glow"
+    case softWhiteController = "soft-white-controller"
 
     public var id: String { rawValue }
 
     public var displayName: String {
         switch self {
         case .cavernGlow: "Cavern Glow"
+        case .softWhiteController: "Soft White Controller"
         }
     }
 
@@ -904,6 +1220,8 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
         switch self {
         case .cavernGlow:
             "A marketable dark-fantasy action theme with misty cave gradients, pale glyph buttons, cyan soul glows, slate utility controls, pressed states, icons, and tactile haptics."
+        case .softWhiteController:
+            "A near-reference soft/neumorphic white gamepad material with lavender typography, layered white highlights, low purple shadows, inset pressed states, and tactile haptics."
         }
     }
 
@@ -920,6 +1238,8 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
         switch self {
         case .cavernGlow:
             Self.applyCavernGlow(to: &customization)
+        case .softWhiteController:
+            Self.applySoftWhiteController(to: &customization)
         }
     }
 
@@ -941,6 +1261,17 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
                 "hollowknightinspired",
                 "hallownest",
                 "hallownestglow"
+            ]
+        case .softWhiteController:
+            [
+                "softwhite",
+                "softcontroller",
+                "neumorphic",
+                "neumorphism",
+                "whitecontroller",
+                "lavendercontroller",
+                "referencegamepad",
+                "premiumwhite"
             ]
         }
     }
@@ -1003,6 +1334,103 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
         customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
         customization.updatedAt = Date.currentMilliseconds
         customization = customization.normalized
+    }
+
+    private static func applySoftWhiteController(to customization: inout GamepadCustomization) {
+        customization.colorSchemePreference = .light
+        customization.accentStyle = .purple
+        customization.showsButtonLabels = true
+        customization.backgroundLightFillStyle = .gradient(
+            gradient(
+                angle: 135,
+                stops: [
+                    (0.00, "#FFFFFF", 1.0),
+                    (0.42, "#F4F0F7", 1.0),
+                    (1.00, "#E7E0EC", 1.0)
+                ]
+            )
+        )
+        customization.backgroundDarkFillStyle = .gradient(
+            gradient(
+                angle: 135,
+                stops: [
+                    (0.00, "#F9F6FB", 1.0),
+                    (1.00, "#D9D0E4", 1.0)
+                ]
+            )
+        )
+        customization.backgroundFillStyle = nil
+        customization.backgroundLightColor = nil
+        customization.backgroundDarkColor = nil
+        customization.styleLibrary = softWhiteStyleLibrary
+
+        for button in GameButton.builtInControls {
+            var layout = customization.buttonCustomization(for: button)
+            applySoftWhiteRole(to: &layout, button: button, controlKind: .button)
+            customization.setButtonCustomization(layout, for: button)
+        }
+
+        for index in customization.customButtons.indices {
+            var layout = customization.customButtons[index].layout
+            let custom = customization.customButtons[index]
+            applySoftWhiteRole(to: &layout, button: custom.mappedButton, controlKind: custom.controlKind)
+            customization.customButtons[index].layout = layout.normalized
+        }
+
+        var metadata = customization.designMetadata ?? .empty
+        var tags = Set(metadata.tags)
+        tags.insert("showcase")
+        tags.insert("soft-white")
+        tags.insert("neumorphic")
+        metadata.tags = Array(tags).sorted()
+        metadata.notes = metadata.notes ?? "Styled with PocketPad's Soft White Controller material for layered neumorphic pads inspired by premium white game controllers."
+        customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+        customization.updatedAt = Date.currentMilliseconds
+        customization = customization.normalized
+    }
+
+    private static var softWhiteStyleLibrary: GamepadStyleLibrary {
+        GamepadStyleLibrary(styles: [
+            GamepadStyleToken(id: "soft-white-raised", name: "Soft White Raised", visualStyle: .softWhiteRaised()),
+            GamepadStyleToken(id: "soft-white-inset", name: "Soft White Inset", visualStyle: .softWhiteInset()),
+            GamepadStyleToken(id: "soft-white-plate", name: "Soft White Plate", appliesTo: GamepadCustomControlKind.allCases, visualStyle: .softWhitePlate()),
+            GamepadStyleToken(
+                id: "soft-white-lavender",
+                name: "Lavender Face Button",
+                visualStyle: .softWhiteRaised(
+                    fill: color("#F9F6FA"),
+                    foreground: color("#7F61AA")
+                )
+            )
+        ].compactMap { $0.normalized }).normalized
+    }
+
+    private static func applySoftWhiteRole(
+        to layout: inout GamepadButtonCustomization,
+        button: GameButton,
+        controlKind: GamepadCustomControlKind
+    ) {
+        layout.shadowStrength = 0
+        layout.visualStyle = nil
+        switch controlKind {
+        case .joystick:
+            layout.styleID = "soft-white-inset"
+            layout.shape = .circle
+            layout.joystickKnobColor = color("#F9F7FA")
+            layout.joystickVisualStyle = layout.joystickVisualStyle ?? .pad
+        case .trigger, .trackpad:
+            layout.styleID = "soft-white-raised"
+            if controlKind == .trigger { layout.shape = .capsule }
+            if controlKind == .trackpad { layout.shape = .roundedRectangle }
+        case .decoration:
+            layout.styleID = "soft-white-plate"
+        case .button:
+            if [.jump, .attack, .dash, .focus].contains(button) {
+                layout.styleID = "soft-white-lavender"
+            } else {
+                layout.styleID = "soft-white-raised"
+            }
+        }
     }
 
     private static var cavernGlowStyleLibrary: GamepadStyleLibrary {
@@ -1429,8 +1857,34 @@ private extension GamepadResolvedControlPresentation {
         if let shadowRadius = stateStyle.shadowRadius { self.shadowRadius = shadowRadius }
         if let shadowX = stateStyle.shadowX { self.shadowX = shadowX }
         if let shadowY = stateStyle.shadowY { self.shadowY = shadowY }
+        if let shadows = stateStyle.shadows { self.shadows = Array(shadows.prefix(8)).map(\.normalized) }
         if let glowColor = stateStyle.glowColor { self.glowColor = glowColor.normalized }
         if let glowRadius = stateStyle.glowRadius { self.glowRadius = glowRadius }
+        if let innerShadowColor = stateStyle.innerShadowColor {
+            self.innerShadowColor = innerShadowColor.normalized
+            if self.innerShadowRadius <= 0 { self.innerShadowRadius = 4 }
+        }
+        if let innerShadowRadius = stateStyle.innerShadowRadius { self.innerShadowRadius = innerShadowRadius }
+        if let innerShadowX = stateStyle.innerShadowX { self.innerShadowX = innerShadowX }
+        if let innerShadowY = stateStyle.innerShadowY { self.innerShadowY = innerShadowY }
+        if let highlightColor = stateStyle.highlightColor {
+            self.highlightColor = highlightColor.normalized
+            if self.highlightOpacity <= 0 { self.highlightOpacity = 0.42 }
+            if self.highlightRadius <= 0 { self.highlightRadius = 8 }
+        }
+        if let highlightRadius = stateStyle.highlightRadius { self.highlightRadius = highlightRadius }
+        if let highlightX = stateStyle.highlightX { self.highlightX = highlightX }
+        if let highlightY = stateStyle.highlightY { self.highlightY = highlightY }
+        if let highlightOpacity = stateStyle.highlightOpacity { self.highlightOpacity = highlightOpacity }
+        if let bevelHighlightColor = stateStyle.bevelHighlightColor {
+            self.bevelHighlightColor = bevelHighlightColor.normalized
+            if self.bevelWidth <= 0 { self.bevelWidth = 1 }
+        }
+        if let bevelShadowColor = stateStyle.bevelShadowColor {
+            self.bevelShadowColor = bevelShadowColor.normalized
+            if self.bevelWidth <= 0 { self.bevelWidth = 1 }
+        }
+        if let bevelWidth = stateStyle.bevelWidth { self.bevelWidth = bevelWidth }
         if let opacity = stateStyle.opacity { self.opacity = opacity }
         if let scale = stateStyle.scale { self.scale = scale }
         if let blurRadius = stateStyle.blurRadius { self.blurRadius = blurRadius }

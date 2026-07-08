@@ -403,10 +403,31 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
             visualStyle: GamepadControlVisualStyle(
                 normal: GamepadControlStateStyle(
                     fillStyle: .solid(GamepadRGBAColor(hexString: "#F8FAFC")!),
+                    foregroundColor: GamepadRGBAColor(hexString: "#7C61A8")!,
                     strokeColor: GamepadRGBAColor(hexString: "#38BDF8")!,
                     strokeWidth: 3,
+                    shadowColor: GamepadRGBAColor(hexString: "#000000", alpha: 0.12)!,
+                    shadowRadius: 6,
+                    shadowX: 1,
+                    shadowY: 2,
+                    shadows: [
+                        GamepadControlShadowStyle(color: GamepadRGBAColor(hexString: "#FFFFFF", alpha: 0.9)!, radius: 12, x: -6, y: -6),
+                        GamepadControlShadowStyle(color: GamepadRGBAColor(hexString: "#9B91AA", alpha: 0.24)!, radius: 20, x: 8, y: 9)
+                    ],
                     glowColor: GamepadRGBAColor(hexString: "#0EA5E9")!,
-                    glowRadius: 12
+                    glowRadius: 12,
+                    innerShadowColor: GamepadRGBAColor(hexString: "#B8B2C2")!,
+                    innerShadowRadius: 5,
+                    innerShadowX: 1,
+                    innerShadowY: 2,
+                    highlightColor: GamepadRGBAColor(hexString: "#FFFFFF")!,
+                    highlightRadius: 8,
+                    highlightX: -4,
+                    highlightY: -4,
+                    highlightOpacity: 0.45,
+                    bevelHighlightColor: GamepadRGBAColor(hexString: "#FFFFFF")!,
+                    bevelShadowColor: GamepadRGBAColor(hexString: "#C7C0CC")!,
+                    bevelWidth: 1.5
                 ),
                 pressed: GamepadControlStateStyle(fillStyle: .solid(GamepadRGBAColor(hexString: "#0EA5E9")!)),
                 icon: .sfSymbol("circle.hexagongrid.fill"),
@@ -421,8 +442,26 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         let control = customization.resolvedControls(in: CGSize(width: 874, height: 402)).first { $0.id == .builtin(.focus) }!
         let normal = customization.resolvedPresentation(for: control, state: .normal, scheme: .dark)
         XCTAssertEqual(normal.fillStyle.representativeColor, GamepadRGBAColor(hexString: "#F8FAFC")!.normalized)
+        XCTAssertEqual(normal.foregroundColor, GamepadRGBAColor(hexString: "#7C61A8")!.normalized)
         XCTAssertEqual(normal.strokeColor, GamepadRGBAColor(hexString: "#38BDF8")!.normalized)
         XCTAssertEqual(normal.strokeWidth, CGFloat(3))
+        XCTAssertEqual(normal.shadowRadius, CGFloat(6))
+        XCTAssertEqual(normal.shadowX, CGFloat(1))
+        XCTAssertEqual(normal.shadowY, CGFloat(2))
+        XCTAssertEqual(normal.shadows.count, 2)
+        XCTAssertEqual(normal.shadows.first?.radius, CGFloat(12))
+        XCTAssertEqual(normal.innerShadowColor, GamepadRGBAColor(hexString: "#B8B2C2")!.normalized)
+        XCTAssertEqual(normal.innerShadowRadius, CGFloat(5))
+        XCTAssertEqual(normal.innerShadowX, CGFloat(1))
+        XCTAssertEqual(normal.innerShadowY, CGFloat(2))
+        XCTAssertEqual(normal.highlightColor, GamepadRGBAColor(hexString: "#FFFFFF")!.normalized)
+        XCTAssertEqual(normal.highlightRadius, CGFloat(8))
+        XCTAssertEqual(normal.highlightX, CGFloat(-4))
+        XCTAssertEqual(normal.highlightY, CGFloat(-4))
+        XCTAssertEqual(normal.highlightOpacity, CGFloat(0.45))
+        XCTAssertEqual(normal.bevelHighlightColor, GamepadRGBAColor(hexString: "#FFFFFF")!.normalized)
+        XCTAssertEqual(normal.bevelShadowColor, GamepadRGBAColor(hexString: "#C7C0CC")!.normalized)
+        XCTAssertEqual(normal.bevelWidth, CGFloat(1.5))
         XCTAssertEqual(normal.icon?.value, "circle.hexagongrid.fill")
         XCTAssertEqual(normal.hapticStyle, .medium)
         XCTAssertEqual(normal.hapticFeedback.style, .medium)
@@ -451,6 +490,20 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
               "pressedFill": "#38BDF8",
               "stroke": "#F8FAFC",
               "strokeWidth": 2,
+              "foreground": "#7C61A8",
+              "shadows": [
+                { "color": { "red": 1, "green": 1, "blue": 1, "alpha": 0.9 }, "radius": 12, "x": -6, "y": -6 },
+                { "color": { "red": 0.61, "green": 0.57, "blue": 0.67, "alpha": 0.24 }, "radius": 20, "x": 8, "y": 9 }
+              ],
+              "innerShadow": "#B8B2C2",
+              "innerShadowRadius": 5,
+              "highlight": "#FFFFFF",
+              "highlightOpacity": 0.45,
+              "highlightX": -4,
+              "highlightY": -4,
+              "bevelHighlight": "#FFFFFF",
+              "bevelShadow": "#C7C0CC",
+              "bevelWidth": 1.5,
               "sfSymbol": "sparkles",
               "hapticStyle": "heavy",
               "hapticPattern": "double",
@@ -472,7 +525,67 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(layout.hapticFeedback?.sharpness ?? 0, CGFloat(0.88), accuracy: 0.0001)
         XCTAssertEqual(layout.hapticFeedback?.duration ?? 0, CGFloat(0.09), accuracy: 0.0001)
         XCTAssertEqual(layout.visualStyle?.normal.strokeWidth, Optional(CGFloat(2)))
+        XCTAssertEqual(layout.visualStyle?.normal.shadows?.count, 2)
+        XCTAssertEqual(layout.visualStyle?.normal.shadows?.first?.radius, Optional(CGFloat(12)))
+        XCTAssertEqual(layout.visualStyle?.normal.foregroundColor, Optional(GamepadRGBAColor(hexString: "#7C61A8")!.normalized))
+        XCTAssertEqual(layout.visualStyle?.normal.innerShadowColor, Optional(GamepadRGBAColor(hexString: "#B8B2C2")!.normalized))
+        XCTAssertEqual(layout.visualStyle?.normal.innerShadowRadius, Optional(CGFloat(5)))
+        XCTAssertEqual(layout.visualStyle?.normal.highlightColor, Optional(GamepadRGBAColor(hexString: "#FFFFFF")!.normalized))
+        XCTAssertEqual(layout.visualStyle?.normal.highlightOpacity, Optional(CGFloat(0.45)))
+        XCTAssertEqual(layout.visualStyle?.normal.highlightX, Optional(CGFloat(-4)))
+        XCTAssertEqual(layout.visualStyle?.normal.highlightY, Optional(CGFloat(-4)))
+        XCTAssertEqual(layout.visualStyle?.normal.bevelHighlightColor, Optional(GamepadRGBAColor(hexString: "#FFFFFF")!.normalized))
+        XCTAssertEqual(layout.visualStyle?.normal.bevelShadowColor, Optional(GamepadRGBAColor(hexString: "#C7C0CC")!.normalized))
+        XCTAssertEqual(layout.visualStyle?.normal.bevelWidth, Optional(CGFloat(1.5)))
         XCTAssertEqual(layout.visualStyle?.pressed?.fillStyle?.representativeColor, GamepadRGBAColor(hexString: "#38BDF8")!.normalized)
+    }
+
+    func testSoftWhiteThemeAndTemplateSupportDecorationLayers() throws {
+        var customization = GamepadCustomization.defaultValue
+        GamepadThemePreset.softWhiteController.apply(to: &customization)
+        let themed = customization.normalized
+        XCTAssertEqual(themed.colorSchemePreference, .light)
+        XCTAssertTrue(themed.styleLibrary.style(id: "soft-white-raised") != nil)
+        XCTAssertEqual(themed.buttonCustomization(for: .jump).styleID, "soft-white-lavender")
+        let jump = themed.resolvedControls(in: CGSize(width: 874, height: 402)).first { $0.id == .builtin(.jump) }!
+        XCTAssertGreaterThan(themed.resolvedPresentation(for: jump, state: .normal, scheme: .light).shadows.count, 1)
+
+        let template = GamepadControllerTemplate.softWhite.makeProfile().customization.normalized
+        let decorations = template.customButtons.filter { $0.normalized.isDecoration }
+        XCTAssertGreaterThanOrEqual(decorations.count, 5)
+        XCTAssertTrue(template.resolvedControls(in: CGSize(width: 874, height: 402)).contains { $0.isDecoration })
+        XCTAssertEqual(template.orderedControlIdentitiesForDesign.first, .custom(decorations.first!.id))
+
+        let report = template.layoutQualityReport(profileName: "Soft White Pro", canvasSize: CGSize(width: 874, height: 402))
+        XCTAssertFalse(report.hasErrors)
+        XCTAssertEqual(report.summary.warningCount, 0)
+        XCTAssertTrue(report.controls.contains { $0.kind == "decoration" })
+    }
+
+    func testDecorationAgentSpecDoesNotCreateKeyBinding() throws {
+        let json = """
+        {
+          "gameName": "Decor Spec",
+          "controls": [
+            {
+              "label": "Shell",
+              "kind": "decoration",
+              "material": "soft-white-plate",
+              "x": 0.5,
+              "y": 0.5,
+              "width": 3.2,
+              "height": 1.5,
+              "shape": "rounded_rectangle"
+            }
+          ]
+        }
+        """
+        let spec = try JSONDecoder().decode(AgentKeypadSpec.self, from: Data(json.utf8))
+        let generated = GameKeypadGenerator.generate(from: spec)
+        let decoration = try XCTUnwrap(generated.profile.customization.customButtons.first?.normalized)
+        XCTAssertTrue(decoration.isDecoration)
+        XCTAssertTrue(generated.keyBindings.isEmpty)
+        XCTAssertEqual(decoration.layout.visualStyle?.normal.shadows?.count, 2)
     }
 
     func testThemePresetAppliesCavernGlowDesignSystem() throws {
