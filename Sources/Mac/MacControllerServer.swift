@@ -4,7 +4,19 @@ import Foundation
 import Network
 import SwiftUI
 
+final class MacControllerLiveActivity: ObservableObject {
+    @Published var lastHeartbeat: Date?
+    @Published var lastReceivedEvent: String = "None"
+    @Published var estimatedLatencyMS: Int?
+    @Published var pressedButtons: Set<GameButton> = []
+    @Published var missedButtonFrames = 0
+    @Published var ignoredButtonEdges = 0
+    @Published var recoveredButtonEdges = 0
+}
+
 final class MacControllerServer: ObservableObject {
+    let liveActivity = MacControllerLiveActivity()
+
     @Published private(set) var statusText = "Stopped"
     @Published private(set) var isRunning = false
     @Published private(set) var isClientConnected = false
@@ -14,13 +26,34 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var pendingPairingClientName: String?
     @Published private(set) var clientName: String = "No client"
     @Published private(set) var clientDeviceInfo: ControllerClientDeviceInfo?
-    @Published private(set) var lastHeartbeat: Date?
-    @Published private(set) var lastReceivedEvent: String = "None"
-    @Published private(set) var estimatedLatencyMS: Int?
-    @Published private(set) var pressedButtons: Set<GameButton> = []
-    @Published private(set) var missedButtonFrames = 0
-    @Published private(set) var ignoredButtonEdges = 0
-    @Published private(set) var recoveredButtonEdges = 0
+    private(set) var lastHeartbeat: Date? {
+        get { liveActivity.lastHeartbeat }
+        set { liveActivity.lastHeartbeat = newValue }
+    }
+    private(set) var lastReceivedEvent: String {
+        get { liveActivity.lastReceivedEvent }
+        set { liveActivity.lastReceivedEvent = newValue }
+    }
+    private(set) var estimatedLatencyMS: Int? {
+        get { liveActivity.estimatedLatencyMS }
+        set { liveActivity.estimatedLatencyMS = newValue }
+    }
+    private(set) var pressedButtons: Set<GameButton> {
+        get { liveActivity.pressedButtons }
+        set { liveActivity.pressedButtons = newValue }
+    }
+    private(set) var missedButtonFrames: Int {
+        get { liveActivity.missedButtonFrames }
+        set { liveActivity.missedButtonFrames = newValue }
+    }
+    private(set) var ignoredButtonEdges: Int {
+        get { liveActivity.ignoredButtonEdges }
+        set { liveActivity.ignoredButtonEdges = newValue }
+    }
+    private(set) var recoveredButtonEdges: Int {
+        get { liveActivity.recoveredButtonEdges }
+        set { liveActivity.recoveredButtonEdges = newValue }
+    }
     @Published private(set) var accessibilityTrusted = false
     @Published private(set) var keyBindings: [GameButton: MacKeyBinding]
     @Published private(set) var outputBindings: [GameButton: MacControlOutputBinding]
@@ -84,6 +117,7 @@ final class MacControllerServer: ObservableObject {
     private static let inputEventLoggingEnabled = false
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
+    private static let runtimeStatusPublishIntervalNanoseconds: UInt64 = 250_000_000
     private static let buttonReorderDelayNanoseconds: UInt64 = 4_000_000
     // The iPhone re-sends every active touch on each heartbeat (500 ms). If a
     // button-up packet is lost, heartbeats continue but that button stops being
@@ -122,6 +156,8 @@ final class MacControllerServer: ObservableObject {
     private var pendingLastReceivedEvent: String?
     private var pendingPressedButtons: Set<GameButton>?
     private var controllerDebugUpdateTask: Task<Void, Never>?
+    private var runtimeStatusPublishTask: Task<Void, Never>?
+    private var lastRuntimeStatusPublishUptime: UInt64 = 0
     private var lastInputDebugPublishUptime: UInt64 = 0
     private var lastClientActivityPublishUptime: UInt64 = 0
     private var lastAccessibilityRefresh = Date.distantPast
@@ -3436,9 +3472,37 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func publishRuntimeStatusOnMain(synchronize: Bool) {
+        if synchronize {
+            runtimeStatusPublishTask?.cancel()
+            runtimeStatusPublishTask = nil
+            writeRuntimeStatusSnapshotOnMain(synchronize: true)
+            return
+        }
+
+        let now = DispatchTime.now().uptimeNanoseconds
+        let elapsed = now - lastRuntimeStatusPublishUptime
+        if elapsed >= Self.runtimeStatusPublishIntervalNanoseconds {
+            runtimeStatusPublishTask?.cancel()
+            runtimeStatusPublishTask = nil
+            writeRuntimeStatusSnapshotOnMain(synchronize: false)
+            return
+        }
+
+        guard runtimeStatusPublishTask == nil else { return }
+        let delay = Self.runtimeStatusPublishIntervalNanoseconds - elapsed
+        runtimeStatusPublishTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard let self, !Task.isCancelled else { return }
+            self.writeRuntimeStatusSnapshotOnMain(synchronize: false)
+        }
+    }
+
+    private func writeRuntimeStatusSnapshotOnMain(synchronize: Bool) {
+        runtimeStatusPublishTask = nil
         let snapshot = runtimeStatusSnapshot()
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         UserDefaults.standard.set(data, forKey: PocketPadMacIPC.runtimeStatusDefaultsKey)
+        lastRuntimeStatusPublishUptime = DispatchTime.now().uptimeNanoseconds
         if synchronize {
             UserDefaults.standard.synchronize()
         }

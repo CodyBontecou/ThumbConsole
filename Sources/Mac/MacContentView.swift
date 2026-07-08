@@ -244,10 +244,11 @@ struct MacContentView: View {
                         value: (activeGamepadProfile?.customization ?? server.gamepadCustomization).colorSchemePreference.displayName,
                         systemImage: "circle.lefthalf.filled"
                     )
-                    homeInlineMetric(
+                    MacLiveActivityInlineMetric(
+                        activity: server.liveActivity,
                         title: "Last event",
-                        value: server.lastReceivedEvent,
-                        systemImage: "waveform.path.ecg"
+                        systemImage: "waveform.path.ecg",
+                        value: { $0.lastReceivedEvent }
                     )
                 }
 
@@ -262,10 +263,11 @@ struct MacContentView: View {
                         value: (activeGamepadProfile?.customization ?? server.gamepadCustomization).colorSchemePreference.displayName,
                         systemImage: "circle.lefthalf.filled"
                     )
-                    homeInlineMetric(
+                    MacLiveActivityInlineMetric(
+                        activity: server.liveActivity,
                         title: "Last event",
-                        value: server.lastReceivedEvent,
-                        systemImage: "waveform.path.ecg"
+                        systemImage: "waveform.path.ecg",
+                        value: { $0.lastReceivedEvent }
                     )
                 }
             }
@@ -649,10 +651,11 @@ struct MacContentView: View {
                     value: (activeGamepadProfile?.customization ?? server.gamepadCustomization).colorSchemePreference.displayName,
                     systemImage: "circle.lefthalf.filled"
                 )
-                homeMetricRow(
+                MacLiveActivityMetricRow(
+                    activity: server.liveActivity,
                     title: "Last event",
-                    value: server.lastReceivedEvent,
-                    systemImage: "waveform.path.ecg"
+                    systemImage: "waveform.path.ecg",
+                    value: { $0.lastReceivedEvent }
                 )
             }
 
@@ -1523,20 +1526,7 @@ struct MacContentView: View {
                 subtitle: "Transport and keyboard-injection details for live testing."
             )
 
-            VStack(spacing: 0) {
-                DiagnosticRow(title: "Last Heartbeat", value: lastHeartbeatText)
-                DiagnosticRow(title: "Estimated Latency", value: server.estimatedLatencyMS.map { "\($0) ms" } ?? "—")
-                DiagnosticRow(title: "Missing Input Frames", value: "\(server.missedButtonFrames)")
-                DiagnosticRow(title: "Ignored Input Edges", value: "\(server.ignoredButtonEdges)")
-                DiagnosticRow(title: "Recovered Input Edges", value: "\(server.recoveredButtonEdges)")
-                DiagnosticRow(title: "Last Event", value: server.lastReceivedEvent)
-                DiagnosticRow(title: "Pressed Inputs", value: pressedButtonsText)
-            }
-            .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-            )
+            MacInputDiagnosticsRows(activity: server.liveActivity)
         }
         .geistPanel()
     }
@@ -1587,14 +1577,110 @@ struct MacContentView: View {
         .geistPanel()
     }
 
+}
+
+private struct MacLiveActivityInlineMetric: View {
+    @ObservedObject var activity: MacControllerLiveActivity
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let systemImage: String
+    let value: (MacControllerLiveActivity) -> String
+
+    var body: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .lineLimit(1)
+                Text(value(activity))
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: Geist.Spacing.s1)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+}
+
+private struct MacLiveActivityMetricRow: View {
+    @ObservedObject var activity: MacControllerLiveActivity
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let systemImage: String
+    let value: (MacControllerLiveActivity) -> String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s3) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(width: 18)
+            Text(title)
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(width: 92, alignment: .leading)
+            Text(value(activity))
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: Geist.Spacing.s1)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+}
+
+private struct MacInputDiagnosticsRows: View {
+    @ObservedObject var activity: MacControllerLiveActivity
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            DiagnosticRow(title: "Last Heartbeat", value: lastHeartbeatText)
+            DiagnosticRow(title: "Estimated Latency", value: activity.estimatedLatencyMS.map { "\($0) ms" } ?? "—")
+            DiagnosticRow(title: "Missing Input Frames", value: "\(activity.missedButtonFrames)")
+            DiagnosticRow(title: "Ignored Input Edges", value: "\(activity.ignoredButtonEdges)")
+            DiagnosticRow(title: "Recovered Input Edges", value: "\(activity.recoveredButtonEdges)")
+            DiagnosticRow(title: "Last Event", value: activity.lastReceivedEvent)
+            DiagnosticRow(title: "Pressed Inputs", value: pressedButtonsText)
+        }
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+
     private var lastHeartbeatText: String {
-        guard let date = server.lastHeartbeat else { return "—" }
+        guard let date = activity.lastHeartbeat else { return "—" }
         return date.formatted(date: .omitted, time: .standard)
     }
 
     private var pressedButtonsText: String {
-        if server.pressedButtons.isEmpty { return "None" }
-        return server.pressedButtons
+        if activity.pressedButtons.isEmpty { return "None" }
+        return activity.pressedButtons
             .map(\.rawValue)
             .sorted()
             .joined(separator: ", ")

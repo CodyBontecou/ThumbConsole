@@ -5080,6 +5080,40 @@ private struct GamepadTilePatternFillView: View {
     }
 }
 
+private enum GamepadImageDecodeCache {
+#if os(macOS)
+    private static let cache: NSCache<NSData, NSImage> = {
+        let cache = NSCache<NSData, NSImage>()
+        cache.countLimit = 32
+        cache.totalCostLimit = 32 * 1024 * 1024
+        return cache
+    }()
+
+    static func image(for data: Data) -> NSImage? {
+        let key = data as NSData
+        if let cached = cache.object(forKey: key) { return cached }
+        guard let image = NSImage(data: data) else { return nil }
+        cache.setObject(image, forKey: key, cost: data.count)
+        return image
+    }
+#elseif os(iOS)
+    private static let cache: NSCache<NSData, UIImage> = {
+        let cache = NSCache<NSData, UIImage>()
+        cache.countLimit = 32
+        cache.totalCostLimit = 32 * 1024 * 1024
+        return cache
+    }()
+
+    static func image(for data: Data) -> UIImage? {
+        let key = data as NSData
+        if let cached = cache.object(forKey: key) { return cached }
+        guard let image = UIImage(data: data) else { return nil }
+        cache.setObject(image, forKey: key, cost: data.count)
+        return image
+    }
+#endif
+}
+
 private struct GamepadImageFillView: View {
     let fill: GamepadImageFill
 
@@ -5111,11 +5145,11 @@ private struct GamepadImageFillView: View {
     @ViewBuilder
     private func platformImage(data: Data, contentMode: GamepadImageContentMode) -> some View {
 #if os(macOS)
-        if let image = NSImage(data: data) {
+        if let image = GamepadImageDecodeCache.image(for: data) {
             resizableImage(Image(nsImage: image), contentMode: contentMode)
         }
 #elseif os(iOS)
-        if let image = UIImage(data: data) {
+        if let image = GamepadImageDecodeCache.image(for: data) {
             resizableImage(Image(uiImage: image), contentMode: contentMode)
         }
 #endif
@@ -6013,7 +6047,8 @@ struct GamepadCustomizationEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @Binding private var customization: GamepadCustomization
+    @Binding private var externalCustomization: GamepadCustomization
+    @State private var customization: GamepadCustomization
 
     private let showsPreview: Bool
     private let externalProfiles: [GamepadConfigurationProfile]?
@@ -6041,6 +6076,7 @@ struct GamepadCustomizationEditor: View {
     private static let canvasZoomMax: CGFloat = 2.25
     private static let deviceFrameSpringAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.08)
     private static let deviceFrameMotionSettleDelay: TimeInterval = 0.12
+    private static let externalCommitDebounceDelay: TimeInterval = 0.20
     private static let profileDragUTType = UTType(exportedAs: "com.codybontecou.pocketpad.profile-selection")
 
     @State private var selectedControlID: GamepadControlIdentity
@@ -6074,6 +6110,11 @@ struct GamepadCustomizationEditor: View {
     @State private var fillColorPickerHue: CGFloat = 0
     @State private var copiedElementStyle: GamepadButtonCustomization?
     @State private var attachedApplicationStatus: String?
+    @State private var pendingExternalCommitWorkItem: DispatchWorkItem?
+    @State private var hasPendingExternalEditorCommit = false
+    @State private var draftConfigurationSidebarWidth: CGFloat?
+    @State private var draftInspectorSidebarWidth: CGFloat?
+    @State private var draftCanvasZoom: CGFloat?
     @State private var undoTarget = GamepadEditorUndoTarget()
     @FocusState private var isProfileNameFieldFocused: Bool
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
@@ -6112,7 +6153,8 @@ struct GamepadCustomizationEditor: View {
             )
         }
 
-        self._customization = customization
+        self._externalCustomization = customization
+        self._customization = State(initialValue: customization.wrappedValue.normalized)
         self.showsPreview = showsPreview
         self.externalProfiles = initialProfiles
         self.externalSelectedProfileID = initialSelectedProfileID
@@ -6216,6 +6258,9 @@ struct GamepadCustomizationEditor: View {
         .onChange(of: externalDefaultProfileID) { _, _ in
             syncExternalProfileState()
         }
+        .onChange(of: externalCustomization) { _, newValue in
+            syncExternalCustomizationState(newValue)
+        }
         .onAppear {
             applyConnectedDeviceFrameIfAvailable()
             applySelectedProfileCustomizationForCurrentOrientation()
@@ -6242,6 +6287,9 @@ struct GamepadCustomizationEditor: View {
             )
             .frame(width: 0, height: 0)
         }
+        .onDisappear {
+            commitPendingEditorChanges()
+        }
     }
 
     private var wideEditor: some View {
@@ -6259,6 +6307,7 @@ struct GamepadCustomizationEditor: View {
                     },
                     onDragEnded: {
                         configurationSidebarDragStart = nil
+                        commitConfigurationSidebarWidthDraft()
                     }
                 )
 
@@ -6272,6 +6321,7 @@ struct GamepadCustomizationEditor: View {
                     },
                     onDragEnded: {
                         inspectorSidebarDragStart = nil
+                        commitInspectorSidebarWidthDraft()
                     }
                 )
 
@@ -6328,7 +6378,7 @@ struct GamepadCustomizationEditor: View {
             Divider()
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: Geist.Spacing.s2) {
+                LazyVStack(spacing: Geist.Spacing.s2) {
                     ForEach(profiles) { profile in
                         profileRow(profile)
                     }
@@ -6369,7 +6419,7 @@ struct GamepadCustomizationEditor: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Geist.Spacing.s2) {
+                LazyHStack(spacing: Geist.Spacing.s2) {
                     ForEach(profiles) { profile in
                         profileChip(profile)
                     }
@@ -6607,7 +6657,7 @@ struct GamepadCustomizationEditor: View {
             if componentListItems.isEmpty {
                 emptyComponentsMessage
             } else {
-                VStack(spacing: Geist.Spacing.s1) {
+                LazyVStack(spacing: Geist.Spacing.s1) {
                     ForEach(layerListItems) { listItem in
                         switch listItem {
                         case .group(let group):
@@ -7055,6 +7105,9 @@ struct GamepadCustomizationEditor: View {
                         groupedSelectionForControl: groupedSelectionIDs(for:),
                         onBeginUndoableChange: { actionName in
                             registerUndoSnapshot(actionName: actionName)
+                        },
+                        onEndEditingGesture: {
+                            commitPendingEditorChanges()
                         }
                     )
                     .environment(\.colorScheme, activeKeypadColorScheme)
@@ -7096,6 +7149,7 @@ struct GamepadCustomizationEditor: View {
                 }
                 .onEnded { _ in
                     canvasZoomGestureStart = nil
+                    commitCanvasZoomDraft()
                 }
         )
     }
@@ -7383,7 +7437,7 @@ struct GamepadCustomizationEditor: View {
     @ViewBuilder
     private var selectedElementInspector: some View {
         if selectedControlIsEditable {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if let profileOutputModeContent {
                     inspectorAccordionSection(.output, title: "Output") {
                         profileOutputModeContent()
@@ -7435,7 +7489,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var keypadLevelInspector: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             if let profileOutputModeContent {
                 inspectorAccordionSection(.output, title: "Output") {
                     profileOutputModeContent()
@@ -7650,7 +7704,7 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private func attachedApplicationIcon(for launchTarget: GamepadProfileLaunchTarget) -> some View {
-        if let data = launchTarget.iconPNGData, let image = NSImage(data: data) {
+        if let data = launchTarget.iconPNGData, let image = GamepadImageDecodeCache.image(for: data) {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
@@ -9934,7 +9988,7 @@ struct GamepadCustomizationEditor: View {
 
     private var configurationSidebarWidth: CGFloat {
         Self.clamp(
-            CGFloat(configurationSidebarWidthValue),
+            draftConfigurationSidebarWidth ?? CGFloat(configurationSidebarWidthValue),
             lower: Self.configurationSidebarMinWidth,
             upper: Self.configurationSidebarMaxWidth
         )
@@ -9942,7 +9996,7 @@ struct GamepadCustomizationEditor: View {
 
     private var inspectorSidebarWidth: CGFloat {
         Self.clamp(
-            CGFloat(inspectorSidebarWidthValue),
+            draftInspectorSidebarWidth ?? CGFloat(inspectorSidebarWidthValue),
             lower: Self.inspectorSidebarMinWidth,
             upper: Self.inspectorSidebarMaxWidth
         )
@@ -9950,7 +10004,7 @@ struct GamepadCustomizationEditor: View {
 
     private var effectiveCanvasZoom: CGFloat {
         Self.clamp(
-            CGFloat(canvasZoomValue),
+            draftCanvasZoom ?? CGFloat(canvasZoomValue),
             lower: Self.canvasZoomMin,
             upper: Self.canvasZoomMax
         )
@@ -10001,7 +10055,13 @@ struct GamepadCustomizationEditor: View {
             )
         )
         let nextWidth = (configurationSidebarDragStart ?? currentWidths.configuration) + value.translation.width
-        configurationSidebarWidthValue = Double(Self.clamp(nextWidth, lower: Self.configurationSidebarMinWidth, upper: maxWidth))
+        draftConfigurationSidebarWidth = Self.clamp(nextWidth, lower: Self.configurationSidebarMinWidth, upper: maxWidth)
+    }
+
+    private func commitConfigurationSidebarWidthDraft() {
+        guard let draftConfigurationSidebarWidth else { return }
+        configurationSidebarWidthValue = Double(draftConfigurationSidebarWidth)
+        self.draftConfigurationSidebarWidth = nil
     }
 
     private func resizeInspectorSidebar(with value: DragGesture.Value, totalWidth: CGFloat) {
@@ -10018,11 +10078,23 @@ struct GamepadCustomizationEditor: View {
             )
         )
         let nextWidth = (inspectorSidebarDragStart ?? currentWidths.inspector) - value.translation.width
-        inspectorSidebarWidthValue = Double(Self.clamp(nextWidth, lower: Self.inspectorSidebarMinWidth, upper: maxWidth))
+        draftInspectorSidebarWidth = Self.clamp(nextWidth, lower: Self.inspectorSidebarMinWidth, upper: maxWidth)
+    }
+
+    private func commitInspectorSidebarWidthDraft() {
+        guard let draftInspectorSidebarWidth else { return }
+        inspectorSidebarWidthValue = Double(draftInspectorSidebarWidth)
+        self.draftInspectorSidebarWidth = nil
     }
 
     private func setCanvasZoom(_ zoom: CGFloat) {
-        canvasZoomValue = Double(Self.clamp(zoom, lower: Self.canvasZoomMin, upper: Self.canvasZoomMax))
+        draftCanvasZoom = Self.clamp(zoom, lower: Self.canvasZoomMin, upper: Self.canvasZoomMax)
+    }
+
+    private func commitCanvasZoomDraft() {
+        guard let draftCanvasZoom else { return }
+        canvasZoomValue = Double(draftCanvasZoom)
+        self.draftCanvasZoom = nil
     }
 
     private func setDeviceFrame(_ frame: GamepadEditorDeviceFrame) {
@@ -10203,6 +10275,46 @@ struct GamepadCustomizationEditor: View {
             get: { customization },
             set: { applyCustomization($0) }
         )
+    }
+
+    private func syncExternalCustomizationState(_ newCustomization: GamepadCustomization) {
+        let normalized = newCustomization.normalized
+        guard !normalized.hasSamePresentation(as: customization) else { return }
+        pendingExternalCommitWorkItem?.cancel()
+        pendingExternalCommitWorkItem = nil
+        hasPendingExternalEditorCommit = false
+        customization = normalized
+        reconcileSelection(in: normalized)
+        syncSelectedProfile(with: normalized, persistsImmediately: false)
+    }
+
+    private func scheduleExternalEditorCommit(after delay: TimeInterval = Self.externalCommitDebounceDelay) {
+        hasPendingExternalEditorCommit = true
+        pendingExternalCommitWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            commitEditorChangesExternally()
+        }
+        pendingExternalCommitWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func commitPendingEditorChanges() {
+        pendingExternalCommitWorkItem?.cancel()
+        pendingExternalCommitWorkItem = nil
+        commitEditorChangesExternally()
+    }
+
+    private func commitEditorChangesExternally() {
+        guard hasPendingExternalEditorCommit else { return }
+        hasPendingExternalEditorCommit = false
+        let normalized = customization.normalized
+        syncSelectedProfile(with: normalized, persistsImmediately: false)
+        persistProfiles()
+
+        if onProfilesChanged == nil,
+           !normalized.hasSamePresentation(as: externalCustomization) {
+            externalCustomization = normalized
+        }
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<GamepadCustomization, Value>) -> Binding<Value> {
@@ -12228,7 +12340,7 @@ struct GamepadCustomizationEditor: View {
         let nextIsControlSelectionActive = selectionWasExplicit
             ? !resolvedSelectionIDs.isEmpty
             : (isControlSelectionActive && !resolvedSelectionIDs.isEmpty)
-        let shouldUpdateCustomization = customization.normalized != normalizedCustomization
+        let shouldUpdateCustomization = customization != normalizedCustomization
         let shouldUpdateSelection = nextPrimaryControlID != selectedControlID
             || resolvedSelectionIDs != selectedControlIDs
             || nextIsControlSelectionActive != isControlSelectionActive
@@ -12242,7 +12354,8 @@ struct GamepadCustomizationEditor: View {
         selectedControlID = nextPrimaryControlID
         selectedControlIDs = resolvedSelectionIDs
         isControlSelectionActive = nextIsControlSelectionActive
-        syncSelectedProfile(with: normalizedCustomization)
+        syncSelectedProfile(with: normalizedCustomization, persistsImmediately: false)
+        scheduleExternalEditorCommit()
     }
 
     private func registerUndoSnapshot(actionName: String) {
@@ -12848,7 +12961,7 @@ struct GamepadCustomizationEditor: View {
         onReset?()
     }
 
-    private func syncSelectedProfile(with newCustomization: GamepadCustomization) {
+    private func syncSelectedProfile(with newCustomization: GamepadCustomization, persistsImmediately: Bool = true) {
         guard let index = profiles.firstIndex(where: { $0.id == selectedProfileID }) else { return }
         let normalizedCustomization = newCustomization.normalized
         var nextProfile = profiles[index]
@@ -12857,7 +12970,9 @@ struct GamepadCustomizationEditor: View {
 
         profiles[index] = nextProfile.normalized
         profiles[index].updatedAt = Date.currentMilliseconds
-        persistProfiles()
+        if persistsImmediately {
+            persistProfiles()
+        }
     }
 
     private func syncExternalProfileState() {
@@ -14710,6 +14825,7 @@ private struct GamepadLayoutDesigner: View {
     var defaultLabelProvider: ((GameButton) -> String?)? = nil
     var groupedSelectionForControl: (GamepadControlIdentity) -> Set<GamepadControlIdentity>? = { _ in nil }
     var onBeginUndoableChange: (String) -> Void = { _ in }
+    var onEndEditingGesture: () -> Void = {}
     @State private var activeDrag: GamepadControlDragState?
     @State private var activeResize: GamepadControlResizeState?
     @State private var activeGroupResize: GamepadGroupResizeState?
@@ -14761,10 +14877,11 @@ private struct GamepadLayoutDesigner: View {
                         onResizeChanged: { corner, value in
                             selectOnly(control.id)
                             guard !control.isLocationLocked else { return }
-                            updateResize(corner, value: value, control: control, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
+                            updateResize(corner, value: value, control: control, controls: controls, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
                         },
                         onResizeEnded: {
                             activeResize = nil
+                            onEndEditingGesture()
                         },
                         onRadiusChanged: { value in
                             selectOnly(control.id)
@@ -14772,6 +14889,7 @@ private struct GamepadLayoutDesigner: View {
                         },
                         onRadiusEnded: {
                             activeRadiusDrag = nil
+                            onEndEditingGesture()
                         }
                     )
                     .rotationEffect(.degrees(control.rotationDegrees))
@@ -14843,6 +14961,7 @@ private struct GamepadLayoutDesigner: View {
                             .onEnded { _ in
                                 activeDrag = nil
                                 activeAlignmentGuide = nil
+                                onEndEditingGesture()
                             }
                     )
                     .allowsHitTesting(activeTool == .select)
@@ -14899,6 +15018,7 @@ private struct GamepadLayoutDesigner: View {
                         },
                         onRotationEnded: {
                             activeRotation = nil
+                            onEndEditingGesture()
                         }
                     )
                     .position(
@@ -14911,10 +15031,11 @@ private struct GamepadLayoutDesigner: View {
                    let selectionFrame = selectionBounds(for: selectedDesignerControls) {
                     GamepadGroupSelectionOverlay(
                         onResizeChanged: { corner, value in
-                            updateGroupResize(corner, value: value, selectedControls: selectedDesignerControls, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
+                            updateGroupResize(corner, value: value, selectedControls: selectedDesignerControls, controls: controls, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
                         },
                         onResizeEnded: {
                             activeGroupResize = nil
+                            onEndEditingGesture()
                         }
                     )
                     .frame(width: selectionFrame.width * resolvedDisplayScale, height: selectionFrame.height * resolvedDisplayScale)
@@ -15026,6 +15147,11 @@ private struct GamepadLayoutDesigner: View {
             .onContinuousHover(coordinateSpace: .named("gamepadLayoutDesigner")) { phase in
                 switch phase {
                 case .active(let location):
+                    guard shouldTrackHoverState else {
+                        clearHoverStateIfNeeded()
+                        return
+                    }
+
                     let pointerIsInsideCanvas = isPointerInsideCanvas(
                         at: location,
                         canvasSize: resolvedLayoutSize,
@@ -15038,22 +15164,27 @@ private struct GamepadLayoutDesigner: View {
                         displayScale: resolvedDisplayScale,
                         excludesSelectedControls: false
                     )
-                    hoveredControlID = controlIDUnderPointer(
+                    let nextHoveredControlID = controlIDUnderPointer(
                         at: location,
                         in: controls,
                         canvasSize: resolvedLayoutSize,
                         displayScale: resolvedDisplayScale
                     )
-                    isHoveringCanvasBackground = pointerIsInsideCanvas && hoveredAnyControlID == nil
+                    let nextIsHoveringCanvasBackground = pointerIsInsideCanvas && hoveredAnyControlID == nil
+                    if hoveredControlID != nextHoveredControlID {
+                        hoveredControlID = nextHoveredControlID
+                    }
+                    if isHoveringCanvasBackground != nextIsHoveringCanvasBackground {
+                        isHoveringCanvasBackground = nextIsHoveringCanvasBackground
+                    }
                 case .ended:
-                    hoveredControlID = nil
-                    isHoveringCanvasBackground = false
+                    clearHoverStateIfNeeded()
                 }
             }
         }
     }
 
-    private var shouldShowMeasurementOverlay: Bool {
+    private var shouldTrackHoverState: Bool {
         activeTool == .select
             && isOptionKeyPressed
             && isControlSelectionActive
@@ -15063,6 +15194,19 @@ private struct GamepadLayoutDesigner: View {
             && activeRotation == nil
             && activeRadiusDrag == nil
             && activeDraw == nil
+    }
+
+    private var shouldShowMeasurementOverlay: Bool {
+        shouldTrackHoverState
+    }
+
+    private func clearHoverStateIfNeeded() {
+        if hoveredControlID != nil {
+            hoveredControlID = nil
+        }
+        if isHoveringCanvasBackground {
+            isHoveringCanvasBackground = false
+        }
     }
 
     private func measurementControlPair(in controls: [GamepadResolvedControl]) -> (selected: GamepadResolvedControl, hovered: GamepadResolvedControl)? {
@@ -15207,6 +15351,7 @@ private struct GamepadLayoutDesigner: View {
                 let rect = finalizedDrawRect(for: finalDrawState, in: canvasSize)
                 createCustomButton(from: rect, tool: finalDrawState.tool, canvasSize: canvasSize)
                 activeDraw = nil
+                onEndEditingGesture()
             }
     }
 
@@ -15442,7 +15587,7 @@ private struct GamepadLayoutDesigner: View {
             canvasSize: canvasSize,
             displayScale: displayScale
         )
-        let adjustedFrame = nonOverlappingFrame(for: snapResult.frame, excluding: control.id, canvasSize: canvasSize) ?? control.frame
+        let adjustedFrame = nonOverlappingFrame(for: snapResult.frame, excluding: control.id, controls: controls, canvasSize: canvasSize) ?? control.frame
         activeAlignmentGuide = GamepadAlignmentSnapSolver.framesAreEquivalent(adjustedFrame, snapResult.frame) ? snapResult.guide : nil
         let adjustedPosition = CGPoint(x: adjustedFrame.midX / max(canvasSize.width, 1), y: adjustedFrame.midY / max(canvasSize.height, 1))
         var next = customization
@@ -15515,7 +15660,7 @@ private struct GamepadLayoutDesigner: View {
         )
         let snappedBounds = startBounds.offsetBy(dx: snappedTranslation.width, dy: snappedTranslation.height)
         let snapGuide = GamepadAlignmentSnapSolver.framesAreEquivalent(snappedBounds, snapResult.frame) ? snapResult.guide : nil
-        let existingFrames = existingControlFrames(excluding: selectedIDs, canvasSize: canvasSize)
+        let existingFrames = existingControlFrames(excluding: selectedIDs, controls: controls)
         guard groupFrames(snapshots, offsetBy: snappedTranslation).contains(where: { GamepadLayoutResolver.frameOverlapsAny($0, avoiding: existingFrames) }) else {
             activeAlignmentGuide = snapGuide
             return snappedTranslation
@@ -15570,10 +15715,24 @@ private struct GamepadLayoutDesigner: View {
         }
     }
 
+    private func existingControlFrames(excluding identities: Set<GamepadControlIdentity>, controls: [GamepadResolvedControl]) -> [CGRect] {
+        controls.compactMap { control in
+            identities.contains(control.id) ? nil : control.frame
+        }
+    }
+
     private func nonOverlappingFrame(for preferredFrame: CGRect, excluding identity: GamepadControlIdentity, canvasSize: CGSize) -> CGRect? {
         GamepadLayoutResolver.nonOverlappingFrame(
             for: preferredFrame,
             avoiding: existingControlFrames(excluding: identity, canvasSize: canvasSize),
+            in: canvasSize
+        )
+    }
+
+    private func nonOverlappingFrame(for preferredFrame: CGRect, excluding identity: GamepadControlIdentity, controls: [GamepadResolvedControl], canvasSize: CGSize) -> CGRect? {
+        GamepadLayoutResolver.nonOverlappingFrame(
+            for: preferredFrame,
+            avoiding: existingControlFrames(excluding: [identity], controls: controls),
             in: canvasSize
         )
     }
@@ -15589,6 +15748,7 @@ private struct GamepadLayoutDesigner: View {
         _ corner: GamepadResizeHandleCorner,
         value: DragGesture.Value,
         control: GamepadResolvedControl,
+        controls: [GamepadResolvedControl],
         canvasSize: CGSize,
         displayScale: CGFloat
     ) {
@@ -15631,7 +15791,7 @@ private struct GamepadLayoutDesigner: View {
             minSize: minSize,
             maxSize: maxSize,
             canvasSize: canvasSize,
-            avoiding: existingControlFrames(excluding: control.id, canvasSize: canvasSize)
+            avoiding: existingControlFrames(excluding: [control.id], controls: controls)
         )
         let newSize = resizedRect.size
         let newCenter = CGPoint(x: resizedRect.midX, y: resizedRect.midY)
@@ -15654,6 +15814,7 @@ private struct GamepadLayoutDesigner: View {
         _ corner: GamepadResizeHandleCorner,
         value: DragGesture.Value,
         selectedControls: [GamepadResolvedControl],
+        controls: [GamepadResolvedControl],
         canvasSize: CGSize,
         displayScale: CGFloat
     ) {
@@ -15670,6 +15831,7 @@ private struct GamepadLayoutDesigner: View {
         let resizedBounds = resizedGroupFrameAvoidingOverlaps(
             state: groupResizeState,
             translation: translation,
+            controls: controls,
             canvasSize: canvasSize
         )
         guard rectDidChange(from: groupResizeState.startBounds, to: resizedBounds) else { return }
@@ -15724,6 +15886,7 @@ private struct GamepadLayoutDesigner: View {
     private func resizedGroupFrameAvoidingOverlaps(
         state: GamepadGroupResizeState,
         translation: CGSize,
+        controls: [GamepadResolvedControl],
         canvasSize: CGSize
     ) -> CGRect {
         let limits = groupResizeLimits(for: state, canvasSize: canvasSize)
@@ -15735,7 +15898,7 @@ private struct GamepadLayoutDesigner: View {
             maxSize: limits.maxSize,
             canvasSize: canvasSize
         )
-        let existingFrames = existingControlFrames(excluding: state.selectionIDs, canvasSize: canvasSize)
+        let existingFrames = existingControlFrames(excluding: state.selectionIDs, controls: controls)
         guard !groupResizeFrames(state: state, resizedBounds: desiredBounds).contains(where: { GamepadLayoutResolver.frameOverlapsAny($0, avoiding: existingFrames) }) else {
             var lowerBound: CGFloat = 0
             var upperBound: CGFloat = 1
