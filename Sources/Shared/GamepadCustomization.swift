@@ -184,51 +184,55 @@ public struct GamepadRGBAColor: Codable, Equatable, Sendable {
     }
 
     private static func replacingLegacyAmberWithGreyscale(_ color: GamepadRGBAColor) -> GamepadRGBAColor {
-        let key = hexKey(red: color.red, green: color.green, blue: color.blue)
-        guard let replacementHex = legacyAmberGreyscaleHexes[key],
-              let replacement = GamepadRGBAColor(hexString: replacementHex, alpha: color.alpha)
-        else {
-            return color
-        }
+        let key = rgbKey(red: color.red, green: color.green, blue: color.blue)
+        guard var replacement = legacyAmberGreyscaleColors[key] else { return color }
+        replacement.alpha = color.alpha
         return replacement
     }
 
-    private static func hexKey(red: CGFloat, green: CGFloat, blue: CGFloat) -> String {
-        String(
-            format: "#%02X%02X%02X",
-            Int((Self.clamp(red) * 255).rounded()),
-            Int((Self.clamp(green) * 255).rounded()),
-            Int((Self.clamp(blue) * 255).rounded())
+    private static func rgbKey(red: CGFloat, green: CGFloat, blue: CGFloat) -> UInt32 {
+        let redByte = UInt32((Self.clamp(red) * 255).rounded())
+        let greenByte = UInt32((Self.clamp(green) * 255).rounded())
+        let blueByte = UInt32((Self.clamp(blue) * 255).rounded())
+        return (redByte << 16) | (greenByte << 8) | blueByte
+    }
+
+    private static func rgbColor(_ rgb: UInt32) -> GamepadRGBAColor {
+        GamepadRGBAColor(
+            red: CGFloat((rgb >> 16) & 0xff) / 255,
+            green: CGFloat((rgb >> 8) & 0xff) / 255,
+            blue: CGFloat(rgb & 0xff) / 255,
+            alpha: 1
         )
     }
 
-    private static let legacyAmberGreyscaleHexes: [String: String] = [
-        "#FFF6DE": "#F5F5F5",
-        "#FFF4CF": "#F5F5F5",
-        "#FFF1C1": "#F5F5F5",
-        "#FFDC73": "#D4D4D4",
-        "#FFC543": "#D4D4D4",
-        "#FFA600": "#A3A3A3",
-        "#FFAE00": "#A3A3A3",
-        "#FF9300": "#737373",
-        "#AA4D00": "#525252",
-        "#561900": "#262626",
-        "#2A1700": "#1A1A1A",
-        "#361900": "#1F1F1F",
-        "#502800": "#292929",
-        "#5B3000": "#2E2E2E",
-        "#703E00": "#454545",
-        "#ED9A00": "#878787",
-        "#FFF3D5": "#EDEDED",
-        "#FDE68A": "#E5E7EB",
-        "#D97706": "#9CA3AF",
-        "#78350F": "#374151",
-        "#FCD34D": "#F3F4F6",
-        "#F59E0B": "#D1D5DB",
-        "#451A03": "#111827",
-        "#FACC15": "#D1D5DB",
-        "#F97316": "#9CA3AF",
-        "#EAB308": "#D1D5DB"
+    private static let legacyAmberGreyscaleColors: [UInt32: GamepadRGBAColor] = [
+        0xFFF6DE: rgbColor(0xF5F5F5),
+        0xFFF4CF: rgbColor(0xF5F5F5),
+        0xFFF1C1: rgbColor(0xF5F5F5),
+        0xFFDC73: rgbColor(0xD4D4D4),
+        0xFFC543: rgbColor(0xD4D4D4),
+        0xFFA600: rgbColor(0xA3A3A3),
+        0xFFAE00: rgbColor(0xA3A3A3),
+        0xFF9300: rgbColor(0x737373),
+        0xAA4D00: rgbColor(0x525252),
+        0x561900: rgbColor(0x262626),
+        0x2A1700: rgbColor(0x1A1A1A),
+        0x361900: rgbColor(0x1F1F1F),
+        0x502800: rgbColor(0x292929),
+        0x5B3000: rgbColor(0x2E2E2E),
+        0x703E00: rgbColor(0x454545),
+        0xED9A00: rgbColor(0x878787),
+        0xFFF3D5: rgbColor(0xEDEDED),
+        0xFDE68A: rgbColor(0xE5E7EB),
+        0xD97706: rgbColor(0x9CA3AF),
+        0x78350F: rgbColor(0x374151),
+        0xFCD34D: rgbColor(0xF3F4F6),
+        0xF59E0B: rgbColor(0xD1D5DB),
+        0x451A03: rgbColor(0x111827),
+        0xFACC15: rgbColor(0xD1D5DB),
+        0xF97316: rgbColor(0x9CA3AF),
+        0xEAB308: rgbColor(0xD1D5DB)
     ]
 
     var swiftUIColor: Color {
@@ -2657,10 +2661,13 @@ enum GamepadLayoutResolver {
             ),
             in: canvasSize
         )
-        let layerOrder = customization.zOrderedControlIdentitiesForDesign
+        let layerOrder = customization.orderedControlIdentitiesForDesign
         guard !layerOrder.isEmpty else { return resolved }
         let orderLookup = Dictionary(uniqueKeysWithValues: layerOrder.enumerated().map { ($0.element, $0.offset) })
         return resolved.sorted { lhs, rhs in
+            if lhs.layoutCustomization.zIndex != rhs.layoutCustomization.zIndex {
+                return lhs.layoutCustomization.zIndex < rhs.layoutCustomization.zIndex
+            }
             let lhsIndex = orderLookup[lhs.id] ?? Int.max
             let rhsIndex = orderLookup[rhs.id] ?? Int.max
             if lhsIndex == rhsIndex { return lhs.id.id < rhs.id.id }
@@ -2832,7 +2839,15 @@ enum GamepadLayoutResolver {
         let preferredCenter = CGPoint(x: clampedPreferred.midX, y: clampedPreferred.midY)
 
         for x in xCandidates {
+            let dx = (x + clampedPreferred.width / 2) - preferredCenter.x
+            let xScore = dx * dx
+            guard xScore < bestScore else { break }
+
             for y in yCandidates {
+                let dy = (y + clampedPreferred.height / 2) - preferredCenter.y
+                let score = xScore + dy * dy
+                guard score < bestScore else { break }
+
                 let candidate = CGRect(
                     x: x,
                     y: y,
@@ -2841,13 +2856,8 @@ enum GamepadLayoutResolver {
                 )
                 guard !frameOverlapsAny(candidate, avoiding: existingFrames, minimumSpacing: minimumSpacing) else { continue }
 
-                let dx = candidate.midX - preferredCenter.x
-                let dy = candidate.midY - preferredCenter.y
-                let score = dx * dx + dy * dy
-                if score < bestScore {
-                    bestScore = score
-                    bestFrame = candidate
-                }
+                bestScore = score
+                bestFrame = candidate
             }
         }
 
@@ -2927,14 +2937,26 @@ enum GamepadLayoutResolver {
             rawValues.append(maxValue - length)
         }
 
+        let clampedValues = rawValues
+            .map { clampedOrigin($0, length: length, canvasLength: canvasLength) }
+            .sorted()
         var uniqueValues: [CGFloat] = []
-        for rawValue in rawValues {
-            let value = clampedOrigin(rawValue, length: length, canvasLength: canvasLength)
-            guard !uniqueValues.contains(where: { abs($0 - value) < 0.5 }) else { continue }
+        uniqueValues.reserveCapacity(clampedValues.count)
+        for value in clampedValues {
+            guard let lastValue = uniqueValues.last else {
+                uniqueValues.append(value)
+                continue
+            }
+            guard abs(lastValue - value) >= 0.5 else { continue }
             uniqueValues.append(value)
         }
 
-        return uniqueValues
+        return uniqueValues.sorted { lhs, rhs in
+            let lhsDistance = abs(lhs - preferred)
+            let rhsDistance = abs(rhs - preferred)
+            if abs(lhsDistance - rhsDistance) > 0.001 { return lhsDistance < rhsDistance }
+            return lhs < rhs
+        }
     }
 
     private static func framesOverlap(_ lhs: CGRect, _ rhs: CGRect, minimumSpacing: CGFloat) -> Bool {
@@ -5500,6 +5522,234 @@ private enum GamepadEditorLayerListItem: Identifiable, Hashable {
     }
 }
 
+private struct GamepadEditorLayerModel {
+    let controlSelectionOptions: [GamepadControlIdentity]
+    let componentItems: [GamepadEditorComponentItem]
+    let normalizedLayerGroups: [GamepadLayerGroup]
+    let layerGroupItems: [GamepadEditorLayerGroupItem]
+    let layerListItems: [GamepadEditorLayerListItem]
+
+    var layerSelectionControlIdentities: [GamepadControlIdentity] {
+        componentItems.map(\.identity)
+    }
+
+    init(
+        customization: GamepadCustomization,
+        defaultLabelProvider: ((GameButton) -> String?)? = nil
+    ) {
+        let builtInControls = GameButton.builtInControls
+        var builtInLayouts: [GameButton: GamepadButtonCustomization] = [:]
+        builtInLayouts.reserveCapacity(builtInControls.count)
+        for button in builtInControls {
+            builtInLayouts[button] = customization.buttonCustomization(for: button)
+        }
+
+        let normalizedCustomButtons = customization.customButtons.map(\.normalized)
+        let allControlIdentities = builtInControls.map { GamepadControlIdentity.builtin($0) }
+            + normalizedCustomButtons.map { GamepadControlIdentity.custom($0.id) }
+        let normalizedMetadata = customization.designMetadata?.normalized(availableControls: allControlIdentities)
+        let orderedControlIdentities = normalizedMetadata?.layerOrder ?? allControlIdentities
+
+        var zIndexLookup: [GamepadControlIdentity: Int] = [:]
+        zIndexLookup.reserveCapacity(allControlIdentities.count)
+        for button in builtInControls {
+            zIndexLookup[.builtin(button)] = builtInLayouts[button]?.zIndex ?? 0
+        }
+        for customButton in normalizedCustomButtons {
+            zIndexLookup[.custom(customButton.id)] = customButton.layout.zIndex
+        }
+
+        let orderLookup = Dictionary(uniqueKeysWithValues: orderedControlIdentities.enumerated().map { ($0.element, $0.offset) })
+        let zOrderedControlIdentities = orderedControlIdentities.sorted { lhs, rhs in
+            let lhsZIndex = zIndexLookup[lhs] ?? 0
+            let rhsZIndex = zIndexLookup[rhs] ?? 0
+            if lhsZIndex == rhsZIndex {
+                let lhsIndex = orderLookup[lhs] ?? Int.max
+                let rhsIndex = orderLookup[rhs] ?? Int.max
+                if lhsIndex == rhsIndex { return lhs.id < rhs.id }
+                return lhsIndex < rhsIndex
+            }
+            return lhsZIndex < rhsZIndex
+        }
+        let shouldListBuiltInComponents = builtInControls.contains { builtInLayouts[$0]?.isHidden == false }
+        self.controlSelectionOptions = (shouldListBuiltInComponents ? builtInControls.map { .builtin($0) } : [])
+            + normalizedCustomButtons.map { .custom($0.id) }
+
+        let visualLabelForButton: (GameButton) -> String = { button in
+            let providedLabel = defaultLabelProvider?(button).map(normalizedGamepadLabel) ?? ""
+            let defaultLabel = providedLabel.isEmpty ? GamepadCustomization.defaultVisualLabel(for: button) : providedLabel
+            return customization.visualLabel(for: button, defaultLabel: defaultLabel)
+        }
+
+        let builtInItems: [GamepadEditorComponentItem]
+        if shouldListBuiltInComponents {
+            builtInItems = builtInControls.map { button in
+                let layout = builtInLayouts[button] ?? .defaultValue
+                return GamepadEditorComponentItem(
+                    identity: .builtin(button),
+                    title: visualLabelForButton(button),
+                    subtitle: "Button",
+                    systemImage: "diamond.fill",
+                    isHidden: layout.isHidden,
+                    isLocationLocked: layout.isLocationLocked
+                )
+            }
+        } else {
+            builtInItems = []
+        }
+
+        let customItems = normalizedCustomButtons.map { customButton -> GamepadEditorComponentItem in
+            let title = customButton.visualLabel(fallback: Self.fallbackLabel(for: customButton))
+            let subtitle: String
+            let systemImage: String
+            if customButton.isJoystick {
+                let analogTarget = (customButton.joystickOutputSettings ?? .defaultValue).normalized.analogTarget
+                subtitle = analogTarget == .none ? "Joystick → 4 directions" : "Joystick → \(analogTarget.displayName)"
+                systemImage = "circle.grid.cross"
+            } else if customButton.isDecoration {
+                subtitle = "Decoration layer"
+                systemImage = "square.3.layers.3d.down.right"
+            } else if customButton.isTrigger {
+                let target = (customButton.triggerSettings ?? .defaultValue).normalized.target
+                subtitle = "Trigger → \(target.displayName)"
+                systemImage = "slider.horizontal.3"
+            } else if customButton.isTrackpad {
+                subtitle = "Trackpad → cursor, click, scroll"
+                systemImage = "rectangle.and.hand.point.up.left"
+            } else {
+                subtitle = "Button"
+                systemImage = "plus.square.fill"
+            }
+            return GamepadEditorComponentItem(
+                identity: .custom(customButton.id),
+                title: title,
+                subtitle: subtitle,
+                systemImage: systemImage,
+                isHidden: customButton.layout.isHidden,
+                isLocationLocked: customButton.layout.isLocationLocked
+            )
+        }
+
+        let zOrderLookup = Dictionary(uniqueKeysWithValues: zOrderedControlIdentities.enumerated().map { ($0.element, $0.offset) })
+        let componentItems = (builtInItems + customItems).sorted { lhs, rhs in
+            let lhsIndex = zOrderLookup[lhs.identity] ?? Int.max
+            let rhsIndex = zOrderLookup[rhs.identity] ?? Int.max
+            if lhsIndex == rhsIndex { return lhs.title < rhs.title }
+            return lhsIndex < rhsIndex
+        }
+
+        var componentItemByIdentity: [GamepadControlIdentity: GamepadEditorComponentItem] = [:]
+        componentItemByIdentity.reserveCapacity(componentItems.count)
+        for item in componentItems {
+            componentItemByIdentity[item.identity] = item
+        }
+
+        let normalizedLayerGroups = normalizedMetadata?.groups ?? []
+        let layerGroupItems = Self.makeLayerGroupItems(
+            groups: normalizedLayerGroups,
+            componentItemByIdentity: componentItemByIdentity,
+            orderLookup: zOrderLookup
+        )
+        let layerListItems = Self.makeLayerListItems(
+            groups: layerGroupItems,
+            componentItems: componentItems,
+            componentItemByIdentity: componentItemByIdentity,
+            zOrderedControlIdentities: zOrderedControlIdentities
+        )
+
+        self.componentItems = componentItems
+        self.normalizedLayerGroups = normalizedLayerGroups
+        self.layerGroupItems = layerGroupItems
+        self.layerListItems = layerListItems
+    }
+
+    private static func fallbackLabel(for customButton: GamepadCustomButton) -> String {
+        if customButton.isJoystick { return "Joystick" }
+        if customButton.isTrigger { return (customButton.triggerSettings ?? .defaultValue).normalized.target.shortName }
+        if customButton.isTrackpad { return "Trackpad" }
+        if customButton.isDecoration { return "Decoration" }
+        return "Button"
+    }
+
+    private static func makeLayerGroupItems(
+        groups: [GamepadLayerGroup],
+        componentItemByIdentity: [GamepadControlIdentity: GamepadEditorComponentItem],
+        orderLookup: [GamepadControlIdentity: Int]
+    ) -> [GamepadEditorLayerGroupItem] {
+        var groupedIdentities = Set<GamepadControlIdentity>()
+        let groupItems = groups.compactMap { group -> GamepadEditorLayerGroupItem? in
+            let children = group.children.compactMap { identity -> GamepadEditorComponentItem? in
+                guard !groupedIdentities.contains(identity), let item = componentItemByIdentity[identity] else { return nil }
+                groupedIdentities.insert(identity)
+                return item
+            }
+            guard !children.isEmpty else { return nil }
+            return GamepadEditorLayerGroupItem(
+                id: group.id,
+                name: group.name,
+                children: children.sorted { lhs, rhs in
+                    let lhsIndex = orderLookup[lhs.identity] ?? Int.max
+                    let rhsIndex = orderLookup[rhs.identity] ?? Int.max
+                    if lhsIndex == rhsIndex { return lhs.title < rhs.title }
+                    return lhsIndex < rhsIndex
+                },
+                isHidden: group.isHidden || children.allSatisfy(\.isHidden),
+                isLocationLocked: group.isLocked || children.allSatisfy(\.isLocationLocked)
+            )
+        }
+
+        return groupItems.sorted { lhs, rhs in
+            let lhsIndex = lhs.childIdentities.compactMap { orderLookup[$0] }.min() ?? Int.max
+            let rhsIndex = rhs.childIdentities.compactMap { orderLookup[$0] }.min() ?? Int.max
+            if lhsIndex == rhsIndex { return lhs.name < rhs.name }
+            return lhsIndex < rhsIndex
+        }
+    }
+
+    private static func makeLayerListItems(
+        groups: [GamepadEditorLayerGroupItem],
+        componentItems: [GamepadEditorComponentItem],
+        componentItemByIdentity: [GamepadControlIdentity: GamepadEditorComponentItem],
+        zOrderedControlIdentities: [GamepadControlIdentity]
+    ) -> [GamepadEditorLayerListItem] {
+        var groupByChild: [GamepadControlIdentity: GamepadEditorLayerGroupItem] = [:]
+        for group in groups {
+            for identity in group.childIdentities {
+                groupByChild[identity] = group
+            }
+        }
+
+        var emittedGroups = Set<UUID>()
+        var emittedComponents = Set<GamepadControlIdentity>()
+        var listItems: [GamepadEditorLayerListItem] = []
+        listItems.reserveCapacity(componentItems.count)
+
+        for identity in zOrderedControlIdentities {
+            if let group = groupByChild[identity] {
+                if emittedGroups.insert(group.id).inserted {
+                    listItems.append(.group(group))
+                    emittedComponents.formUnion(group.childIdentitySet)
+                }
+            } else if let item = componentItemByIdentity[identity], emittedComponents.insert(identity).inserted {
+                listItems.append(.component(item))
+            }
+        }
+
+        for group in groups where !emittedGroups.contains(group.id) {
+            listItems.append(.group(group))
+            emittedGroups.insert(group.id)
+            emittedComponents.formUnion(group.childIdentitySet)
+        }
+
+        for item in componentItems where !emittedComponents.contains(item.identity) {
+            listItems.append(.component(item))
+            emittedComponents.insert(item.identity)
+        }
+
+        return listItems
+    }
+}
+
 private enum GamepadFrameMetric {
     case x
     case y
@@ -6049,6 +6299,7 @@ struct GamepadCustomizationEditor: View {
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Binding private var externalCustomization: GamepadCustomization
     @State private var customization: GamepadCustomization
+    @State private var editorLayerModel: GamepadEditorLayerModel
 
     private let showsPreview: Bool
     private let externalProfiles: [GamepadConfigurationProfile]?
@@ -6153,8 +6404,11 @@ struct GamepadCustomizationEditor: View {
             )
         }
 
+        let initialCustomization = customization.wrappedValue.normalized
+
         self._externalCustomization = customization
-        self._customization = State(initialValue: customization.wrappedValue.normalized)
+        self._customization = State(initialValue: initialCustomization)
+        self._editorLayerModel = State(initialValue: GamepadEditorLayerModel(customization: initialCustomization, defaultLabelProvider: defaultLabelProvider))
         self.showsPreview = showsPreview
         self.externalProfiles = initialProfiles
         self.externalSelectedProfileID = initialSelectedProfileID
@@ -6226,6 +6480,15 @@ struct GamepadCustomizationEditor: View {
             get: { editorColorScheme },
             set: { editingColorSchemeRawValue = $0.rawValue }
         )
+    }
+
+    private func makeEditorLayerModel(for customization: GamepadCustomization) -> GamepadEditorLayerModel {
+        GamepadEditorLayerModel(customization: customization, defaultLabelProvider: defaultLabelProvider)
+    }
+
+    private func setEditorCustomization(_ normalizedCustomization: GamepadCustomization) {
+        customization = normalizedCustomization
+        editorLayerModel = makeEditorLayerModel(for: normalizedCustomization)
     }
 
     private var deviceFrameAnimation: Animation? {
@@ -9331,7 +9594,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var controlSelectionOptions: [GamepadControlIdentity] {
-        controlSelectionOptions(for: customization)
+        editorLayerModel.controlSelectionOptions
     }
 
     private func controlSelectionOptions(for customization: GamepadCustomization) -> [GamepadControlIdentity] {
@@ -9352,146 +9615,23 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var componentListItems: [GamepadEditorComponentItem] {
-        let builtinItems: [GamepadEditorComponentItem]
-        if shouldListBuiltInComponents(for: customization) {
-            builtinItems = GameButton.builtInControls.map { button -> GamepadEditorComponentItem in
-                let buttonCustomization = customization.buttonCustomization(for: button)
-                return GamepadEditorComponentItem(
-                    identity: .builtin(button),
-                    title: visualLabel(for: button),
-                    subtitle: "Button",
-                    systemImage: "diamond.fill",
-                    isHidden: buttonCustomization.isHidden,
-                    isLocationLocked: buttonCustomization.isLocationLocked
-                )
-            }
-        } else {
-            builtinItems = []
-        }
-
-        let customItems = customization.customButtons.map { customButton -> GamepadEditorComponentItem in
-            let normalizedButton = customButton.normalized
-            let title = normalizedButton.visualLabel(fallback: customButtonFallbackLabel(for: normalizedButton))
-            let subtitle: String
-            let systemImage: String
-            if normalizedButton.isJoystick {
-                let analogTarget = (normalizedButton.joystickOutputSettings ?? .defaultValue).normalized.analogTarget
-                subtitle = analogTarget == .none ? "Joystick → 4 directions" : "Joystick → \(analogTarget.displayName)"
-                systemImage = "circle.grid.cross"
-            } else if normalizedButton.isDecoration {
-                subtitle = "Decoration layer"
-                systemImage = "square.3.layers.3d.down.right"
-            } else if normalizedButton.isTrigger {
-                let target = (normalizedButton.triggerSettings ?? .defaultValue).normalized.target
-                subtitle = "Trigger → \(target.displayName)"
-                systemImage = "slider.horizontal.3"
-            } else if normalizedButton.isTrackpad {
-                subtitle = "Trackpad → cursor, click, scroll"
-                systemImage = "rectangle.and.hand.point.up.left"
-            } else {
-                subtitle = "Button"
-                systemImage = "plus.square.fill"
-            }
-            return GamepadEditorComponentItem(
-                identity: .custom(normalizedButton.id),
-                title: title,
-                subtitle: subtitle,
-                systemImage: systemImage,
-                isHidden: normalizedButton.layout.isHidden,
-                isLocationLocked: normalizedButton.layout.isLocationLocked
-            )
-        }
-
-        let items = builtinItems + customItems
-        let orderLookup = Dictionary(uniqueKeysWithValues: customization.zOrderedControlIdentitiesForDesign.enumerated().map { ($0.element, $0.offset) })
-        return items.sorted { lhs, rhs in
-            let lhsIndex = orderLookup[lhs.identity] ?? Int.max
-            let rhsIndex = orderLookup[rhs.identity] ?? Int.max
-            if lhsIndex == rhsIndex { return lhs.title < rhs.title }
-            return lhsIndex < rhsIndex
-        }
+        editorLayerModel.componentItems
     }
 
     private var normalizedLayerGroups: [GamepadLayerGroup] {
-        customization.designMetadata?.normalized(availableControls: customization.allControlIdentitiesForDesign)?.groups ?? []
+        editorLayerModel.normalizedLayerGroups
     }
 
     private var layerGroupItems: [GamepadEditorLayerGroupItem] {
-        let items = componentListItems
-        let itemByIdentity = Dictionary(uniqueKeysWithValues: items.map { ($0.identity, $0) })
-        let orderLookup = Dictionary(uniqueKeysWithValues: customization.zOrderedControlIdentitiesForDesign.enumerated().map { ($0.element, $0.offset) })
-        var groupedIdentities = Set<GamepadControlIdentity>()
-
-        let groups = normalizedLayerGroups.compactMap { group -> GamepadEditorLayerGroupItem? in
-            let children = group.children.compactMap { identity -> GamepadEditorComponentItem? in
-                guard !groupedIdentities.contains(identity), let item = itemByIdentity[identity] else { return nil }
-                groupedIdentities.insert(identity)
-                return item
-            }
-            guard !children.isEmpty else { return nil }
-            return GamepadEditorLayerGroupItem(
-                id: group.id,
-                name: group.name,
-                children: children.sorted { lhs, rhs in
-                    let lhsIndex = orderLookup[lhs.identity] ?? Int.max
-                    let rhsIndex = orderLookup[rhs.identity] ?? Int.max
-                    if lhsIndex == rhsIndex { return lhs.title < rhs.title }
-                    return lhsIndex < rhsIndex
-                },
-                isHidden: group.isHidden || children.allSatisfy(\.isHidden),
-                isLocationLocked: group.isLocked || children.allSatisfy(\.isLocationLocked)
-            )
-        }
-
-        return groups.sorted { lhs, rhs in
-            let lhsIndex = lhs.childIdentities.compactMap { orderLookup[$0] }.min() ?? Int.max
-            let rhsIndex = rhs.childIdentities.compactMap { orderLookup[$0] }.min() ?? Int.max
-            if lhsIndex == rhsIndex { return lhs.name < rhs.name }
-            return lhsIndex < rhsIndex
-        }
+        editorLayerModel.layerGroupItems
     }
 
     private var layerListItems: [GamepadEditorLayerListItem] {
-        let groups = layerGroupItems
-        let itemByIdentity = Dictionary(uniqueKeysWithValues: componentListItems.map { ($0.identity, $0) })
-        var groupByChild: [GamepadControlIdentity: GamepadEditorLayerGroupItem] = [:]
-        for group in groups {
-            for identity in group.childIdentities {
-                groupByChild[identity] = group
-            }
-        }
-
-        var emittedGroups = Set<UUID>()
-        var emittedComponents = Set<GamepadControlIdentity>()
-        var listItems: [GamepadEditorLayerListItem] = []
-
-        for identity in customization.zOrderedControlIdentitiesForDesign {
-            if let group = groupByChild[identity] {
-                if emittedGroups.insert(group.id).inserted {
-                    listItems.append(.group(group))
-                    emittedComponents.formUnion(group.childIdentitySet)
-                }
-            } else if let item = itemByIdentity[identity], emittedComponents.insert(identity).inserted {
-                listItems.append(.component(item))
-            }
-        }
-
-        for group in groups where !emittedGroups.contains(group.id) {
-            listItems.append(.group(group))
-            emittedGroups.insert(group.id)
-            emittedComponents.formUnion(group.childIdentitySet)
-        }
-
-        for item in componentListItems where !emittedComponents.contains(item.identity) {
-            listItems.append(.component(item))
-            emittedComponents.insert(item.identity)
-        }
-
-        return listItems
+        editorLayerModel.layerListItems
     }
 
     private var layerSelectionControlIdentities: [GamepadControlIdentity] {
-        componentListItems.map(\.identity)
+        editorLayerModel.layerSelectionControlIdentities
     }
 
     private var sidebarSelectionClickModifiers: (command: Bool, shift: Bool) {
@@ -10283,7 +10423,7 @@ struct GamepadCustomizationEditor: View {
         pendingExternalCommitWorkItem?.cancel()
         pendingExternalCommitWorkItem = nil
         hasPendingExternalEditorCommit = false
-        customization = normalized
+        setEditorCustomization(normalized)
         reconcileSelection(in: normalized)
         syncSelectedProfile(with: normalized, persistsImmediately: false)
     }
@@ -12350,7 +12490,7 @@ struct GamepadCustomizationEditor: View {
             registerUndoSnapshot(actionName: undoActionName)
         }
 
-        customization = normalizedCustomization
+        setEditorCustomization(normalizedCustomization)
         selectedControlID = nextPrimaryControlID
         selectedControlIDs = resolvedSelectionIDs
         isControlSelectionActive = nextIsControlSelectionActive
@@ -12423,7 +12563,7 @@ struct GamepadCustomizationEditor: View {
         selectedProfileOrientation = snapshot.selectedProfileOrientation
         isSelectedProfileExpanded = snapshot.isSelectedProfileExpanded
         selectedProfileNameDraft = snapshot.selectedProfileNameDraft
-        customization = snapshot.editorSnapshot.customization.normalized
+        setEditorCustomization(snapshot.editorSnapshot.customization.normalized)
         selectedControlID = snapshot.editorSnapshot.selectedControlID
         selectedControlIDs = snapshot.editorSnapshot.selectedControlIDs
         isControlSelectionActive = snapshot.editorSnapshot.isControlSelectionActive && !selectedControlIDs.isEmpty
@@ -14813,6 +14953,47 @@ private struct GamepadAlignmentSnapCandidate {
     }
 }
 
+private final class GamepadResolvedControlsCache {
+    private var cachedCustomization: GamepadCustomization?
+    private var cachedLayoutSize: CGSize?
+    private var cachedDefaultLabels: [GameButton: String] = [:]
+    private var cachedControls: [GamepadResolvedControl] = []
+
+    func controls(
+        for customization: GamepadCustomization,
+        in layoutSize: CGSize,
+        defaultLabelProvider: ((GameButton) -> String?)?
+    ) -> [GamepadResolvedControl] {
+        let defaultLabels = Self.defaultLabels(from: defaultLabelProvider)
+        if cachedLayoutSize == layoutSize,
+           cachedDefaultLabels == defaultLabels,
+           cachedCustomization == customization {
+            return cachedControls
+        }
+
+        let controls = customization.resolvedControls(in: layoutSize) { button in
+            defaultLabels[button]
+        }
+        cachedCustomization = customization
+        cachedLayoutSize = layoutSize
+        cachedDefaultLabels = defaultLabels
+        cachedControls = controls
+        return controls
+    }
+
+    private static func defaultLabels(from provider: ((GameButton) -> String?)?) -> [GameButton: String] {
+        guard let provider else { return [:] }
+        var labels: [GameButton: String] = [:]
+        labels.reserveCapacity(GameButton.builtInControls.count)
+        for button in GameButton.builtInControls {
+            if let label = provider(button) {
+                labels[button] = label
+            }
+        }
+        return labels
+    }
+}
+
 private struct GamepadLayoutDesigner: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var customization: GamepadCustomization
@@ -14837,6 +15018,7 @@ private struct GamepadLayoutDesigner: View {
     @State private var activeAlignmentGuide: GamepadAlignmentGuide?
     @State private var isOptionKeyPressed = false
     @State private var isShiftKeyPressed = false
+    @State private var resolvedControlsCache = GamepadResolvedControlsCache()
 
     private static let dragActivationDistance: CGFloat = 4
     private static let minimumDrawnButtonSize = GamepadButtonCustomization.minimumDimension
@@ -14846,7 +15028,8 @@ private struct GamepadLayoutDesigner: View {
         GeometryReader { proxy in
             let resolvedLayoutSize = resolvedLayoutSize(for: proxy.size)
             let resolvedDisplayScale = max(displayScale, 0.001)
-            let controls = customization.resolvedControls(
+            let controls = resolvedControlsCache.controls(
+                for: customization,
                 in: resolvedLayoutSize,
                 defaultLabelProvider: defaultLabelProvider
             )

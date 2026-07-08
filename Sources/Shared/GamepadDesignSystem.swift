@@ -1718,18 +1718,29 @@ extension GamepadCustomization {
     }
 
     var orderedControlIdentitiesForDesign: [GamepadControlIdentity] {
-        if let metadata = designMetadata?.normalized(availableControls: allControlIdentitiesForDesign) {
+        let controls = allControlIdentitiesForDesign
+        if let metadata = designMetadata?.normalized(availableControls: controls) {
             return metadata.layerOrder
         }
-        return allControlIdentitiesForDesign
+        return controls
     }
 
     var zOrderedControlIdentitiesForDesign: [GamepadControlIdentity] {
-        let baseOrder = orderedControlIdentitiesForDesign
+        let controls = allControlIdentitiesForDesign
+        let baseOrder = designMetadata?.normalized(availableControls: controls)?.layerOrder ?? controls
         let orderLookup = Dictionary(uniqueKeysWithValues: baseOrder.enumerated().map { ($0.element, $0.offset) })
+        var zIndexLookup: [GamepadControlIdentity: Int] = [:]
+        zIndexLookup.reserveCapacity(controls.count)
+        for button in GameButton.builtInControls {
+            zIndexLookup[.builtin(button)] = buttonCustomization(for: button).zIndex
+        }
+        for customButton in customButtons {
+            let normalizedButton = customButton.normalized
+            zIndexLookup[.custom(normalizedButton.id)] = normalizedButton.layout.zIndex
+        }
         return baseOrder.sorted { lhs, rhs in
-            let lhsZIndex = zIndex(for: lhs)
-            let rhsZIndex = zIndex(for: rhs)
+            let lhsZIndex = zIndexLookup[lhs] ?? 0
+            let rhsZIndex = zIndexLookup[rhs] ?? 0
             if lhsZIndex == rhsZIndex {
                 let lhsIndex = orderLookup[lhs] ?? Int.max
                 let rhsIndex = orderLookup[rhs] ?? Int.max
