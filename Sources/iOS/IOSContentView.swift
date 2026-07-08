@@ -95,6 +95,7 @@ struct IOSContentView: View {
 
 private enum IOSKeypadSettings {
     static let hapticsEnabledDefaultsKey = "PocketPad.iOS.keypadHapticsEnabled.v1"
+    static let hasOpenedKeypadDefaultsKey = "PocketPad.iOS.hasOpenedKeypad.v1"
 }
 
 private struct KeypadHapticsEnabledEnvironmentKey: EnvironmentKey {
@@ -378,18 +379,18 @@ private struct ConnectionView: View {
     }
 
     private func handleScannedPairingCode(_ text: String) {
-        guard let payload = PairingPayload.decode(from: text),
-              let urlString = payload.urls.first
-        else {
+        guard let payload = PairingPayload.decode(from: text) else {
             qrScanError = "QR code not recognized. Scan the PocketPad code shown on your Mac."
             isShowingScanner = false
             return
         }
 
         pairingCode = payload.pairingCode ?? ""
-        applyConnectionFields(from: urlString)
+        if let urlString = payload.urls.first {
+            applyConnectionFields(from: urlString)
+        }
         isShowingScanner = false
-        client.connect(hostField: urlString, port: "", pairingCode: pairingCode)
+        client.connect(pairingPayload: payload)
     }
 
     private func applyConnectionFields(from urlString: String) {
@@ -573,7 +574,7 @@ private struct IOSOnboardingView: View {
 
             IOSOnboardingCallout(
                 title: "You will need the Mac app too",
-                text: "Open PocketPad Mac on the same Wi‑Fi network. The Mac app grants permissions, shows the QR code, and hosts the keypad editor.",
+                text: "Open PocketPad Mac on the same Wi‑Fi network, or keep Wi‑Fi/Bluetooth enabled nearby for offline peer-to-peer. The Mac app grants permissions, shows the QR code, and hosts the keypad editor.",
                 systemImage: "macbook"
             )
 
@@ -601,7 +602,7 @@ private struct IOSOnboardingView: View {
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
                 IOSOnboardingPermissionCard(
                     title: "Local Network",
-                    text: "Allow this so Smart Connect can discover PocketPad Mac and so manual WebSocket pairing works on your Wi‑Fi.",
+                    text: "Allow this so Smart Connect can discover PocketPad Mac over Wi‑Fi or nearby peer-to-peer, and so manual WebSocket pairing works on your network.",
                     systemImage: "wifi"
                 )
                 IOSOnboardingPermissionCard(
@@ -640,7 +641,7 @@ private struct IOSOnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                IOSOnboardingInstructionCard(step: "1", title: "Tap Smart Connect", text: "PocketPad looks for the Mac helper advertised on your local network.")
+                IOSOnboardingInstructionCard(step: "1", title: "Tap Smart Connect", text: "PocketPad looks for the Mac helper advertised on your local or nearby peer-to-peer network.")
                 IOSOnboardingInstructionCard(step: "2", title: "If needed, scan the QR", text: "On the Mac Home screen, scan the QR card shown under Connect From iPhone.")
                 IOSOnboardingInstructionCard(step: "3", title: "Enter the six-digit code", text: "Manual pairing asks you to type the code shown on PocketPad Mac. Smart Connect will remember this Mac after pairing.")
             }
@@ -672,7 +673,7 @@ private struct IOSOnboardingView: View {
                 IOSOnboardingInstructionCard(step: "1", title: "Edit on Mac", text: "Open the Keypad section on PocketPad Mac to add controls, style them, and record shortcuts.")
                 IOSOnboardingInstructionCard(step: "2", title: "Open the top bar", text: "Swipe down from the top edge if the keypad controls are hidden.")
                 IOSOnboardingInstructionCard(step: "3", title: "Switch setups", text: "Use the Keypad setup menu to choose another synced setup, mark it as default, or export keypads as JSON.")
-                IOSOnboardingInstructionCard(step: "4", title: "Adjust a freeform layout", text: "Tap the lock icon to unlock movable controls, drag them, then lock again before playing or working.")
+                IOSOnboardingInstructionCard(step: "4", title: "Adjust a freeform layout", text: "Tap the lock icon to unlock controls, then move, resize, rotate, or delete elements before locking again.")
             }
 
             Button {
@@ -1092,7 +1093,9 @@ private struct ControllerPadView: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
+    @AppStorage(IOSKeypadSettings.hasOpenedKeypadDefaultsKey) private var hasOpenedKeypad = false
     @State private var isTopBarVisible = true
+    @State private var isShowingFirstOpenTopBar = false
     @State private var isExportingKeypadConfiguration = false
     @State private var isEditingKeypadLayout = false
 
@@ -1149,10 +1152,16 @@ private struct ControllerPadView: View {
         }
         .environment(\.keypadHapticsEnabled, isKeypadHapticsEnabled)
         .onAppear {
-            isTopBarVisible = !client.isConnected
+            applyInitialTopBarVisibility()
         }
         .onChange(of: client.isConnected) { _, isConnected in
+            guard !isShowingFirstOpenTopBar else { return }
             isTopBarVisible = !isConnected
+        }
+        .onChange(of: isTopBarVisible) { _, isVisible in
+            if !isVisible {
+                isShowingFirstOpenTopBar = false
+            }
         }
         .onChange(of: client.gamepadCustomization) { _, _ in
             guard !isEditingKeypadLayout else { return }
@@ -1433,7 +1442,7 @@ private struct ControllerPadView: View {
         }
         .geistButtonStyle(isEditingKeypadLayout ? .primary : .secondary, size: .small)
         .accessibilityLabel(isEditingKeypadLayout ? "Lock keypad layout" : "Unlock keypad layout")
-        .accessibilityHint(isEditingKeypadLayout ? "Stops moving controls and keeps the saved layout." : "Lets you drag keypad controls to new positions.")
+        .accessibilityHint(isEditingKeypadLayout ? "Stops editing controls and keeps the saved layout." : "Lets you move, resize, rotate, or delete keypad elements.")
     }
 
     private var homeButton: some View {
@@ -1465,6 +1474,8 @@ private struct ControllerPadView: View {
                 }
             }
             .geistButtonStyle(.error, size: .small)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
             .accessibilityLabel("Disconnect")
         } else {
             Button {
@@ -1490,6 +1501,19 @@ private struct ControllerPadView: View {
         let willEdit = !isEditingKeypadLayout
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             isEditingKeypadLayout = willEdit
+        }
+    }
+
+    private func applyInitialTopBarVisibility() {
+        // Reveal the slide-down controls on a user's first keypad session so
+        // profile switching, settings, and Home are discoverable.
+        if hasOpenedKeypad {
+            isShowingFirstOpenTopBar = false
+            isTopBarVisible = !client.isConnected
+        } else {
+            hasOpenedKeypad = true
+            isShowingFirstOpenTopBar = true
+            isTopBarVisible = true
         }
     }
 
@@ -2052,6 +2076,7 @@ private struct GamepadFreeformControllerCanvas: View {
     @State private var activeResize: IOSKeypadControlResizeState?
     @State private var activeRotation: IOSKeypadControlRotationState?
     @State private var selectedControlID: GamepadControlIdentity?
+    @State private var pendingDeleteControl: IOSKeypadControlDeleteCandidate?
 
     var body: some View {
         GeometryReader { proxy in
@@ -2072,6 +2097,7 @@ private struct GamepadFreeformControllerCanvas: View {
                         .allowsHitTesting(!isEditingLayout)
                         .rotationEffect(.degrees(control.rotationDegrees))
                         .position(control.center)
+                        .zIndex(0)
                 }
 
                 if isEditingLayout {
@@ -2081,11 +2107,26 @@ private struct GamepadFreeformControllerCanvas: View {
                             canvasSize: proxy.size,
                             isSelected: selectedControlID == control.id
                         )
+                        .zIndex(selectedControlID == control.id ? 200 : 100)
                     }
                 }
             }
             .coordinateSpace(name: "iOSKeypadLayoutCanvas")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .confirmationDialog(
+            "Delete element?",
+            isPresented: deleteConfirmationBinding,
+            presenting: pendingDeleteControl
+        ) { candidate in
+            Button("Delete \(candidate.label)", role: .destructive) {
+                deleteControl(candidate.identity)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteControl = nil
+            }
+        } message: { candidate in
+            Text("Remove \(candidate.label) from this keypad setup.")
         }
         .onChange(of: isEditingLayout) { _, isEditing in
             if !isEditing {
@@ -2097,11 +2138,23 @@ private struct GamepadFreeformControllerCanvas: View {
         }
     }
 
+    private var deleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteControl != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingDeleteControl = nil
+                }
+            }
+        )
+    }
+
     private func clearEditSelection() {
         activeDrag = nil
         activeResize = nil
         activeRotation = nil
         selectedControlID = nil
+        pendingDeleteControl = nil
     }
 
     @ViewBuilder
@@ -2154,6 +2207,12 @@ private struct GamepadFreeformControllerCanvas: View {
             width: max(minimumTouchSize, control.size.width + chromeOutset),
             height: max(minimumTouchSize, control.size.height + chromeOutset)
         )
+        let handleOutset: CGFloat = isSelected ? 34 : 0
+        let hitFrameSize = CGSize(
+            width: overlaySize.width + handleOutset * 2,
+            height: overlaySize.height + handleOutset * 2
+        )
+        let chromeCenter = CGPoint(x: hitFrameSize.width / 2, y: hitFrameSize.height / 2)
         let cornerRadius = min(16, max(8, min(overlaySize.width, overlaySize.height) * 0.12))
         let tint = control.isLocationLocked ? Geist.color(.gray900, scheme: colorScheme) : Geist.color(.blue900, scheme: colorScheme)
         let strokeStyle = StrokeStyle(
@@ -2161,16 +2220,24 @@ private struct GamepadFreeformControllerCanvas: View {
             dash: control.isLocationLocked ? [4, 4] : []
         )
 
-        return ZStack(alignment: .topTrailing) {
+        return ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.white.opacity(0.001))
+                .frame(width: overlaySize.width, height: overlaySize.height)
+                .position(chromeCenter)
+                .zIndex(0)
+
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(tint.opacity(control.isLocationLocked ? 0.025 : (isSelected ? 0.055 : 0.018)))
+                .frame(width: overlaySize.width, height: overlaySize.height)
+                .position(chromeCenter)
+                .zIndex(1)
 
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(tint.opacity(control.isLocationLocked ? 0.45 : (isSelected ? 0.95 : 0.38)), style: strokeStyle)
-                .background(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(tint.opacity(control.isLocationLocked ? 0.025 : (isSelected ? 0.055 : 0.018)))
-                )
+                .frame(width: overlaySize.width, height: overlaySize.height)
+                .position(chromeCenter)
+                .zIndex(2)
 
             if control.isLocationLocked {
                 Image(systemName: "lock.fill")
@@ -2179,39 +2246,60 @@ private struct GamepadFreeformControllerCanvas: View {
                     .padding(4)
                     .background(Geist.color(.background100, scheme: colorScheme).opacity(0.9), in: Circle())
                     .overlay(Circle().stroke(tint.opacity(0.2), lineWidth: 1))
-                    .offset(x: 5, y: -5)
+                    .position(x: handleOutset + overlaySize.width, y: handleOutset)
+                    .zIndex(6)
             }
 
-            if isSelected && !control.isLocationLocked {
-                selectedEditHandles(for: control, overlaySize: overlaySize, canvasSize: canvasSize)
+            if isSelected {
+                selectedEditHandles(
+                    for: control,
+                    overlaySize: overlaySize,
+                    handleOutset: handleOutset,
+                    canvasSize: canvasSize
+                )
+                .zIndex(10)
             }
         }
-        .frame(width: overlaySize.width, height: overlaySize.height)
+        .frame(width: hitFrameSize.width, height: hitFrameSize.height)
         .contentShape(Rectangle())
         .gesture(editDragGesture(for: control, canvasSize: canvasSize))
         .rotationEffect(.degrees(control.rotationDegrees))
         .position(control.center)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(control.isLocationLocked ? "\(control.label) locked" : "Edit \(control.label)")
-        .accessibilityHint(control.isLocationLocked ? "This control is locked in the Mac keypad editor." : "Drag to move. Select it to drag the corner handles to resize or the rotate handle above it to rotate.")
+        .accessibilityHint(control.isLocationLocked ? "This control is locked in the Mac keypad editor. Use the trash button to delete it." : "Drag to move. Use the corner handles to resize, the rotate handle above it to rotate, or the trash button to delete.")
     }
 
-    private func selectedEditHandles(for control: GamepadResolvedControl, overlaySize: CGSize, canvasSize: CGSize) -> some View {
-        ZStack {
-            Capsule()
-                .fill(Geist.color(.blue700, scheme: colorScheme).opacity(0.45))
-                .frame(width: 1.5, height: 10)
-                .position(x: overlaySize.width / 2, y: 2)
+    private func selectedEditHandles(for control: GamepadResolvedControl, overlaySize: CGSize, handleOutset: CGFloat, canvasSize: CGSize) -> some View {
+        let hitFrameSize = CGSize(
+            width: overlaySize.width + handleOutset * 2,
+            height: overlaySize.height + handleOutset * 2
+        )
 
-            rotationHandle(for: control)
-                .position(x: overlaySize.width / 2, y: -8)
+        return ZStack {
+            if !control.isLocationLocked {
+                Capsule()
+                    .fill(Geist.color(.blue700, scheme: colorScheme).opacity(0.45))
+                    .frame(width: 1.5, height: 10)
+                    .position(x: handleOutset + overlaySize.width / 2, y: handleOutset + 2)
+                    .zIndex(1)
 
-            ForEach(IOSKeypadResizeHandleCorner.allCases) { corner in
-                resizeHandle(corner, for: control, canvasSize: canvasSize)
-                    .position(handlePosition(for: corner, in: overlaySize))
+                rotationHandle(for: control)
+                    .position(x: handleOutset + overlaySize.width / 2, y: handleOutset - 8)
+                    .zIndex(4)
+
+                ForEach(IOSKeypadResizeHandleCorner.allCases) { corner in
+                    let position = handlePosition(for: corner, in: overlaySize)
+                    resizeHandle(corner, for: control, canvasSize: canvasSize)
+                        .position(x: handleOutset + position.x, y: handleOutset + position.y)
+                        .zIndex(3)
+                }
             }
+
+            deleteHandle(for: control, overlaySize: overlaySize, handleOutset: handleOutset, canvasSize: canvasSize)
+                .zIndex(5)
         }
-        .frame(width: overlaySize.width, height: overlaySize.height)
+        .frame(width: hitFrameSize.width, height: hitFrameSize.height)
     }
 
     private func resizeHandle(_ corner: IOSKeypadResizeHandleCorner, for control: GamepadResolvedControl, canvasSize: CGSize) -> some View {
@@ -2260,6 +2348,48 @@ private struct GamepadFreeformControllerCanvas: View {
             .accessibilityHint(Text("Drag around the selected control to rotate it"))
     }
 
+    private func deleteHandle(for control: GamepadResolvedControl, overlaySize: CGSize, handleOutset: CGFloat, canvasSize: CGSize) -> some View {
+        let belowFits = control.center.y + overlaySize.height / 2 + handleOutset <= canvasSize.height
+        let aboveFits = control.center.y - overlaySize.height / 2 - handleOutset >= 0
+        let rightFits = control.center.x + overlaySize.width / 2 + handleOutset <= canvasSize.width
+        let position: CGPoint
+        if belowFits {
+            position = CGPoint(x: handleOutset + overlaySize.width / 2, y: handleOutset + overlaySize.height + 15)
+        } else if aboveFits {
+            position = CGPoint(x: handleOutset + overlaySize.width / 2, y: handleOutset - 15)
+        } else if rightFits {
+            position = CGPoint(x: handleOutset + overlaySize.width + 15, y: handleOutset + overlaySize.height / 2)
+        } else {
+            position = CGPoint(x: handleOutset - 15, y: handleOutset + overlaySize.height / 2)
+        }
+
+        return ZStack {
+            Circle()
+                .fill(Geist.color(.red900, scheme: colorScheme))
+                .overlay(Circle().stroke(Geist.color(.background100, scheme: colorScheme), lineWidth: 1.25))
+                .shadow(color: Color.black.opacity(0.16), radius: 5, x: 0, y: 2)
+
+            Image(systemName: "trash.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: 30, height: 30)
+        .contentShape(Circle())
+        .position(position)
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named("iOSKeypadLayoutCanvas"))
+                .onEnded { _ in
+                    requestDelete(control)
+                }
+        )
+        .accessibilityLabel(Text("Delete \(control.label)"))
+        .accessibilityHint(Text("Asks before removing this element from the current keypad setup"))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            requestDelete(control)
+        }
+    }
+
     private func handlePosition(for corner: IOSKeypadResizeHandleCorner, in size: CGSize) -> CGPoint {
         let inset: CGFloat = 4
         switch corner {
@@ -2272,6 +2402,25 @@ private struct GamepadFreeformControllerCanvas: View {
         case .bottomLeading:
             return CGPoint(x: inset, y: size.height - inset)
         }
+    }
+
+    private func requestDelete(_ control: GamepadResolvedControl) {
+        selectedControlID = control.id
+        pendingDeleteControl = IOSKeypadControlDeleteCandidate(identity: control.id, label: control.label)
+    }
+
+    private func deleteControl(_ identity: GamepadControlIdentity) {
+        guard let nextCustomization = customization.iosDeletingControl(identity) else {
+            pendingDeleteControl = nil
+            return
+        }
+
+        activeDrag = nil
+        activeResize = nil
+        activeRotation = nil
+        selectedControlID = nil
+        pendingDeleteControl = nil
+        onCustomizationChanged(nextCustomization, true)
     }
 
     private func editDragGesture(for control: GamepadResolvedControl, canvasSize: CGSize) -> some Gesture {
@@ -2617,6 +2766,34 @@ private struct IOSKeypadControlRotationState {
     var didRotate = false
 }
 
+private struct IOSKeypadControlDeleteCandidate: Identifiable {
+    let identity: GamepadControlIdentity
+    let label: String
+
+    var id: String { identity.id }
+}
+
+private extension GamepadCustomization {
+    func iosDeletingControl(_ identity: GamepadControlIdentity) -> GamepadCustomization? {
+        var next = self
+
+        switch identity {
+        case .builtin(let button):
+            var buttonCustomization = next.buttonCustomization(for: button)
+            guard !buttonCustomization.isHidden else { return nil }
+            buttonCustomization.isHidden = true
+            next.setButtonCustomization(buttonCustomization, for: button)
+
+        case .custom(let id):
+            guard next.customButtons.contains(where: { $0.id == id }) else { return nil }
+            next.removeCustomButton(id: id)
+        }
+
+        let normalizedNext = next.normalized
+        return normalizedNext == normalized ? nil : normalizedNext
+    }
+}
+
 private enum IOSKeypadResizeHandleCorner: CaseIterable, Identifiable {
     case topLeading
     case topTrailing
@@ -2750,27 +2927,52 @@ private struct GamepadJoystick: View {
     @State private var activeDirections: Set<GamepadJoystickDirection> = []
     @State private var normalizedOffset = CGSize.zero
 
+    private var joystickVisualStyle: GamepadJoystickVisualStyle {
+        elementCustomization.joystickVisualStyle ?? .pad
+    }
+
     private var visualSide: CGFloat {
         min(size.width, size.height)
     }
 
+    private var hitSide: CGFloat {
+        switch joystickVisualStyle {
+        case .pad:
+            max(visualSide + ControllerLayoutMetrics.buttonHitOutset * 2, visualSide)
+        case .thumbstick:
+            max(visualSide + ControllerLayoutMetrics.buttonHitOutset * 2, visualSide * 2.55, 104)
+        }
+    }
+
+    private var activationDiameter: CGFloat? {
+        joystickVisualStyle == .thumbstick ? max(44, visualSide) : nil
+    }
+
     private var knobSide: CGFloat {
-        max(34, visualSide * 0.36)
+        switch joystickVisualStyle {
+        case .pad:
+            max(34, visualSide * 0.36)
+        case .thumbstick:
+            max(32, visualSide * 0.72)
+        }
     }
 
     private var knobTravelRadius: CGFloat {
-        max(0, (visualSide - knobSide) / 2 - 4)
+        switch joystickVisualStyle {
+        case .pad:
+            max(0, (visualSide - knobSide) / 2 - 4)
+        case .thumbstick:
+            max(0, (hitSide - knobSide) / 2 - 6)
+        }
     }
 
     var body: some View {
-        let hitSide = max(visualSide + ControllerLayoutMetrics.buttonHitOutset * 2, visualSide)
-
         ZStack {
             joystickBase
-                .frame(width: size.width, height: size.height)
+                .frame(width: hitSide, height: hitSide)
                 .allowsHitTesting(false)
 
-            JoystickCaptureView { direction, pressed, pressIdentifier in
+            JoystickCaptureView(activationDiameter: activationDiameter) { direction, pressed, pressIdentifier in
                 handleDirectionEdge(direction, pressed: pressed, pressIdentifier: pressIdentifier)
             } onVectorChanged: { vector, directions in
                 normalizedOffset = CGSize(width: vector.dx, height: vector.dy)
@@ -2789,7 +2991,7 @@ private struct GamepadJoystick: View {
 
     private var joystickBase: some View {
         let accentStyle = elementCustomization.accentStyle ?? customization.accentStyle
-        let isActive = !activeDirections.isEmpty
+        let isActive = !activeDirections.isEmpty || abs(normalizedOffset.width) > 0.001 || abs(normalizedOffset.height) > 0.001
         let presentation = customization.resolvedPresentation(for: elementCustomization, fallbackAccentStyle: accentStyle, controlKind: .joystick, state: isActive ? .active : .normal, scheme: colorScheme)
         let fillStyle = presentation.fillStyle
         let strokeColor = presentation.strokeSwiftUIColor
@@ -2797,8 +2999,16 @@ private struct GamepadJoystick: View {
         let knobFillColor = elementCustomization.joystickKnobFill(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
         let knobStrokeColor = elementCustomization.joystickKnobStroke(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
         let knobOffset = CGSize(width: normalizedOffset.width * knobTravelRadius, height: normalizedOffset.height * knobTravelRadius)
+        let isThumbstick = joystickVisualStyle == .thumbstick
 
         return ZStack {
+            if isThumbstick && isActive {
+                Circle()
+                    .stroke(foregroundColor.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [5, 7]))
+                    .frame(width: hitSide * 0.72, height: hitSide * 0.72)
+                    .transition(.opacity)
+            }
+
             GamepadFillShapeLayer(shape: Circle(), fillStyle: fillStyle)
                 .overlay(Circle().stroke(strokeColor, lineWidth: presentation.strokeWidth))
                 .shadow(
@@ -2807,12 +3017,15 @@ private struct GamepadJoystick: View {
                     x: presentation.shadowX,
                     y: presentation.shadowY
                 )
+                .frame(width: visualSide, height: visualSide)
 
-            Circle()
-                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                .frame(width: visualSide * 0.70, height: visualSide * 0.70)
+            if !isThumbstick {
+                Circle()
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                    .frame(width: visualSide * 0.70, height: visualSide * 0.70)
 
-            directionLabels(foregroundColor: foregroundColor)
+                directionLabels(foregroundColor: foregroundColor)
+            }
 
             Circle()
                 .fill(knobFillColor)
@@ -2821,14 +3034,14 @@ private struct GamepadJoystick: View {
                 .offset(knobOffset)
                 .animation(.interactiveSpring(response: 0.16, dampingFraction: 0.82), value: normalizedOffset)
 
-            if customization.showsButtonLabels {
+            if customization.showsButtonLabels && !isThumbstick {
                 Text(label)
                     .geistTypography(visualSide <= 88 ? .button12 : .button14)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .foregroundStyle(foregroundColor)
                     .padding(.horizontal, 6)
-                    .offset(y: visualSide * 0.34)
+                    .offset(y: visualSide * (isThumbstick ? 0.58 : 0.34))
             }
         }
     }

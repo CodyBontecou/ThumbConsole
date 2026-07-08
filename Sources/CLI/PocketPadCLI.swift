@@ -27,6 +27,12 @@ struct PocketPadCLI {
         "--target", "--trigger", "--orientation", "--dead-zone", "--deadzone",
         "--digital", "--digital-button", "--digital-threshold"
     ]
+    private static let joystickOptionNames = [
+        "--up", "--down", "--left", "--right", "--analog", "--analog-stick", "--stick",
+        "--digital-directions", "--send-digital-directions", "--sends-digital-directions",
+        "--no-digital-directions", "--invert-x", "--invert-y", "--snap-to-cardinal", "--snap-cardinal",
+        "--joystick-style", "--stick-style", "--thumbstick", "--classic-joystick"
+    ]
 
     private struct StoredProfileState: Codable {
         var profiles: [GamepadConfigurationProfile]
@@ -146,6 +152,7 @@ struct PocketPadCLI {
         var isLocationLocked: Bool
         var layout: GamepadButtonCustomization
         var joystickMapping: GamepadJoystickMapping?
+        var joystickOutputSettings: GamepadJoystickOutputSettings?
         var triggerSettings: GamepadTriggerSettings?
         var trackpadSettings: GamepadTrackpadSettings?
     }
@@ -2080,15 +2087,18 @@ struct PocketPadCLI {
                 label: optionValue("--label", in: arguments) ?? (kind == .trigger ? defaultTriggerTarget.shortName : defaultLabel(for: kind)),
                 controlKind: kind,
                 joystickMapping: kind == .joystick ? try joystickMapping(from: arguments) : nil,
+                joystickOutputSettings: kind == .joystick ? try joystickOutputSettings(from: arguments) : nil,
                 triggerSettings: kind == .trigger ? try triggerSettings(from: arguments, fallback: GamepadTriggerSettings(target: defaultTriggerTarget, orientation: .horizontal)) : nil,
                 trackpadSettings: kind == .trackpad ? .defaultValue : nil
             )
             try applyLayoutOptions(arguments, to: &customButton.layout)
             if kind == .joystick {
                 customButton.layout.shape = .circle
-                customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 1.35 : customButton.layout.widthScale
-                customButton.layout.heightScale = customButton.layout.heightScale == 1.0 ? 1.35 : customButton.layout.heightScale
+                let defaultScale: CGFloat = customButton.layout.joystickVisualStyle == .thumbstick ? 0.58 : 1.35
+                customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? defaultScale : customButton.layout.widthScale
+                customButton.layout.heightScale = customButton.layout.heightScale == 1.0 ? defaultScale : customButton.layout.heightScale
                 customButton.joystickMapping = try joystickMapping(from: arguments)
+                customButton.joystickOutputSettings = try joystickOutputSettings(from: arguments, fallback: customButton.joystickOutputSettings ?? .defaultValue)
                 customButton.triggerSettings = nil
             } else if kind == .trigger {
                 let settings = try triggerSettings(from: arguments, fallback: customButton.triggerSettings ?? .defaultValue)
@@ -2137,29 +2147,35 @@ struct PocketPadCLI {
                 if let label = optionValue("--label", in: arguments) { customization.customButtons[index].label = normalizedLabel(label) }
                 if let mapped = optionValue("--maps-to", in: arguments) { customization.customButtons[index].mappedButton = try parseButton(mapped) }
                 if let kind = optionValue("--kind", in: arguments) { customization.customButtons[index].controlKind = try parseCustomControlKind(kind) }
-                let hasJoystickOptions = hasAnyOption(["--up", "--down", "--left", "--right"], in: arguments)
+                let currentKind = customization.customButtons[index].controlKind
+                let hasJoystickOptions = hasAnyOption(joystickOptionNames, in: arguments)
+                    || (currentKind == .joystick && hasAnyOption(["--target", "--dead-zone", "--deadzone", "--sensitivity"], in: arguments))
                 let hasTriggerOptions = hasAnyOption(triggerOptionNames, in: arguments)
                 let hasTrackpadOptions = hasAnyOption(trackpadOptionNames, in: arguments)
                 if customization.customButtons[index].controlKind == .joystick || hasJoystickOptions {
                     customization.customButtons[index].controlKind = .joystick
                     customization.customButtons[index].joystickMapping = try joystickMapping(from: arguments, fallback: customization.customButtons[index].joystickMapping ?? .movement)
+                    customization.customButtons[index].joystickOutputSettings = try joystickOutputSettings(from: arguments, fallback: customization.customButtons[index].joystickOutputSettings ?? .defaultValue)
                     customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].trackpadSettings = nil
                     customization.customButtons[index].layout.shape = .circle
                 } else if customization.customButtons[index].controlKind == .trigger || hasTriggerOptions {
                     customization.customButtons[index].controlKind = .trigger
                     customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].joystickOutputSettings = nil
                     customization.customButtons[index].triggerSettings = try triggerSettings(from: arguments, fallback: customization.customButtons[index].triggerSettings ?? .defaultValue)
                     customization.customButtons[index].trackpadSettings = nil
                     customization.customButtons[index].layout.shape = .capsule
                 } else if customization.customButtons[index].controlKind == .trackpad || hasTrackpadOptions {
                     customization.customButtons[index].controlKind = .trackpad
                     customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].joystickOutputSettings = nil
                     customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].layout.shape = customization.customButtons[index].layout.shape ?? .roundedRectangle
                     customization.customButtons[index].trackpadSettings = try trackpadSettings(from: arguments, fallback: customization.customButtons[index].trackpadSettings ?? .defaultValue)
                 } else if customization.customButtons[index].controlKind == .button {
                     customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].joystickOutputSettings = nil
                     customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].trackpadSettings = nil
                 }
@@ -2245,6 +2261,8 @@ struct PocketPadCLI {
                         shape: .circle
                     )
                     customization.customButtons[index].joystickMapping = customization.customButtons[index].joystickMapping ?? .movement
+                    customization.customButtons[index].joystickOutputSettings = customization.customButtons[index].joystickOutputSettings ?? .defaultValue
+                    customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].trackpadSettings = nil
                 case .trackpad:
                     customization.customButtons[index].layout = GamepadButtonCustomization(
@@ -2293,6 +2311,15 @@ struct PocketPadCLI {
         if let value = optionValue("--width", in: arguments) ?? optionValue("--width-scale", in: arguments), let number = Double(value) { layout.widthScale = CGFloat(number) }
         if let value = optionValue("--height", in: arguments) ?? optionValue("--height-scale", in: arguments), let number = Double(value) { layout.heightScale = CGFloat(number) }
         if let value = optionValue("--shape", in: arguments), let shape = parseShapeStyleIfPresent(value) { layout.shape = shape }
+        if let value = optionValue("--joystick-style", in: arguments) ?? optionValue("--stick-style", in: arguments) {
+            layout.joystickVisualStyle = try parseJoystickVisualStyle(value)
+        }
+        if arguments.contains("--thumbstick") {
+            layout.joystickVisualStyle = .thumbstick
+        }
+        if arguments.contains("--classic-joystick") || arguments.contains("--full-joystick") {
+            layout.joystickVisualStyle = nil
+        }
         if let value = optionValue("--accent", in: arguments), let accent = parseAccentStyleIfPresent(value) {
             layout.accentStyle = accent
             layout.fillColor = nil
@@ -2634,7 +2661,14 @@ struct PocketPadCLI {
             print(try readFreshRuntimeStatus().pairingCode)
         case "payload":
             let status = try readFreshRuntimeStatus()
-            let payload = PairingPayload(urls: status.localURLs, pairingCode: status.pairingCode)
+            let payload = PairingPayload(
+                urls: status.localURLs,
+                pairingCode: status.pairingCode,
+                serviceName: status.bonjourServiceName,
+                serviceType: status.bonjourServiceType,
+                serviceDomain: status.bonjourServiceDomain,
+                serverID: status.serverID
+            )
             try printJSON(payload)
         case "cancel":
             postRuntimeCommand(.cancelPairing)
@@ -2983,6 +3017,10 @@ struct PocketPadCLI {
             print("Port: \(status.port)")
             print("Pairing Code: \(status.pairingCode)")
             print("Accessibility: \(status.accessibilityTrusted ? "granted" : "required")")
+            if let serviceName = status.bonjourServiceName, !serviceName.isEmpty {
+                let serviceType = status.bonjourServiceType ?? PairingPayload.defaultServiceType
+                print("Nearby Service: \(serviceName) (\(serviceType))")
+            }
             if !status.localURLs.isEmpty {
                 print("Addresses:")
                 for url in status.localURLs { print("- \(url)") }
@@ -3464,6 +3502,15 @@ struct PocketPadCLI {
         GamepadButtonShapeStyle(rawValue: text) ?? GamepadButtonShapeStyle.allCases.first { normalizedLookup($0.displayName) == normalizedLookup(text) }
     }
 
+    private static func parseJoystickVisualStyle(_ text: String) throws -> GamepadJoystickVisualStyle {
+        if let style = GamepadJoystickVisualStyle(rawValue: text) { return style }
+        switch normalizedLookup(text) {
+        case "pad", "fullpad", "classic", "joystick": return .pad
+        case "thumbstick", "thumb", "nub", "stickball", "ball": return .thumbstick
+        default: throw CLIError.message("Unknown joystick style: \(text). Use pad or thumbstick.")
+        }
+    }
+
     private static func parseCustomControlKind(_ text: String) throws -> GamepadCustomControlKind {
         if let value = GamepadCustomControlKind(rawValue: text) { return value }
         let normalized = normalizedLookup(text)
@@ -3677,6 +3724,54 @@ struct PocketPadCLI {
         return mapping
     }
 
+    private static func joystickOutputSettings(
+        from arguments: [String],
+        fallback: GamepadJoystickOutputSettings = .defaultValue
+    ) throws -> GamepadJoystickOutputSettings {
+        var settings = fallback.normalized
+        if let value = optionValue("--analog", in: arguments)
+            ?? optionValue("--analog-stick", in: arguments)
+            ?? optionValue("--stick", in: arguments)
+            ?? optionValue("--target", in: arguments) {
+            settings.analogTarget = try parseJoystickAnalogTarget(value)
+        }
+        if arguments.contains("--digital-directions") || arguments.contains("--send-digital-directions") || arguments.contains("--sends-digital-directions") {
+            settings.sendsDigitalDirections = true
+        }
+        if let value = optionValue("--sends-digital-directions", in: arguments) {
+            settings.sendsDigitalDirections = try parseBool(value)
+        }
+        if arguments.contains("--no-digital-directions") {
+            settings.sendsDigitalDirections = false
+        }
+        if let value = optionValue("--dead-zone", in: arguments) ?? optionValue("--deadzone", in: arguments) {
+            settings.deadZone = try parseUnitInterval(value, option: "joystick dead zone")
+        }
+        if let value = optionValue("--sensitivity", in: arguments) {
+            settings.sensitivity = try parseTrackpadScale(value, option: "joystick sensitivity")
+        }
+        if arguments.contains("--invert-x") {
+            settings.invertX = true
+        }
+        if arguments.contains("--invert-y") {
+            settings.invertY = true
+        }
+        if arguments.contains("--snap-to-cardinal") || arguments.contains("--snap-cardinal") {
+            settings.snapToCardinal = true
+        }
+        return settings.normalized
+    }
+
+    private static func parseJoystickAnalogTarget(_ text: String) throws -> GamepadJoystickAnalogTarget {
+        if let target = GamepadJoystickAnalogTarget(rawValue: text) { return target }
+        switch normalizedLookup(text) {
+        case "none", "digital", "digitaldirections", "off": return .none
+        case "left", "leftstick", "lstick", "ls": return .leftStick
+        case "right", "rightstick", "rstick", "rs": return .rightStick
+        default: throw CLIError.message("Unknown joystick analog target: \(text). Use none, left-stick, or right-stick.")
+        }
+    }
+
     private static func resolveElementTarget(_ text: String, in customization: GamepadCustomization) throws -> ElementTarget {
         if let uuid = UUID(uuidString: text), customization.customButtons.contains(where: { $0.id == uuid }) { return .custom(uuid) }
         if let button = try? parseButton(text) {
@@ -3703,6 +3798,7 @@ struct PocketPadCLI {
                 isLocationLocked: layout.isLocationLocked,
                 layout: layout,
                 joystickMapping: nil,
+                joystickOutputSettings: nil,
                 triggerSettings: nil,
                 trackpadSettings: nil
             )
@@ -3720,6 +3816,7 @@ struct PocketPadCLI {
                 isLocationLocked: normalized.layout.isLocationLocked,
                 layout: normalized.layout,
                 joystickMapping: normalized.joystickMapping,
+                joystickOutputSettings: normalized.joystickOutputSettings,
                 triggerSettings: normalized.triggerSettings,
                 trackpadSettings: normalized.trackpadSettings
             )
@@ -3793,6 +3890,7 @@ struct PocketPadCLI {
             "--fill-image", "--image", "--image-mode",
             "--corner", "--radius", "--corner-tl", "--corner-tr", "--corner-br", "--corner-bl", "--shadow",
             "--shadow-strength", "--kind", "--up", "--down", "--left", "--right", "--target", "--trigger", "--dead-zone", "--deadzone", "--sensitivity",
+            "--analog", "--analog-stick", "--stick", "--sends-digital-directions", "--joystick-style", "--stick-style",
             "--cursor-sensitivity", "--pointer-sensitivity", "--scroll-sensitivity", "--tap-to-click",
             "--two-finger-scroll", "--natural-scrolling", "--natural-scroll", "--digital", "--digital-button", "--digital-threshold", "--hold-ms",
             "--step", "--pixels", "--by", "--dx", "--dy", "--canvas", "--canvas-width", "--canvas-height",
@@ -3972,6 +4070,7 @@ struct PocketPadCLI {
           pocketpad element list
           pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#6B7280' --dark-fill '#374151'
           pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
+          pocketpad element add joystick --label Nub --thumbstick --target right-stick --no-digital-directions --x 0.5 --y 0.58
           pocketpad element add trigger --target left --orientation horizontal --sensitivity 1.2
           pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
           pocketpad element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2

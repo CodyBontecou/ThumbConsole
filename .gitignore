@@ -1,9 +1,16 @@
 # App Store draft image output
 app-store-output/
 
+# Release artifacts
+.release/
+
 # Local AI/API keys
 .env
 .env.local
 
-# Node dependencies for the self-contained App Store image tool
+# Local Cloudflare/Wrangler state
+.wrangler/
+
+# Node dependencies
+node_modules/
 scripts/app-store-images/node_modules/

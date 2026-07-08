@@ -16,22 +16,33 @@ struct TouchCaptureView: UIViewRepresentable {
         uiView.hitShape = hitShape
         uiView.onPressEdge = onPressEdge
     }
+
+    static func dismantleUIView(_ uiView: TouchCaptureUIView, coordinator: ()) {
+        uiView.dismantleCaptureView()
+    }
 }
 
 struct JoystickCaptureView: UIViewRepresentable {
+    var activationDiameter: CGFloat? = nil
     var onDirectionEdge: (_ direction: GamepadJoystickDirection, _ pressed: Bool, _ pressIdentifier: UInt64) -> Void
     var onVectorChanged: (_ vector: CGVector, _ activeDirections: Set<GamepadJoystickDirection>) -> Void
 
     func makeUIView(context: Context) -> JoystickCaptureUIView {
         let view = JoystickCaptureUIView()
+        view.activationDiameter = activationDiameter
         view.onDirectionEdge = onDirectionEdge
         view.onVectorChanged = onVectorChanged
         return view
     }
 
     func updateUIView(_ uiView: JoystickCaptureUIView, context: Context) {
+        uiView.activationDiameter = activationDiameter
         uiView.onDirectionEdge = onDirectionEdge
         uiView.onVectorChanged = onVectorChanged
+    }
+
+    static func dismantleUIView(_ uiView: JoystickCaptureUIView, coordinator: ()) {
+        uiView.dismantleCaptureView()
     }
 }
 
@@ -49,6 +60,10 @@ struct TriggerCaptureView: UIViewRepresentable {
     func updateUIView(_ uiView: TriggerCaptureUIView, context: Context) {
         uiView.orientation = orientation
         uiView.onValueChanged = onValueChanged
+    }
+
+    static func dismantleUIView(_ uiView: TriggerCaptureUIView, coordinator: ()) {
+        uiView.dismantleCaptureView()
     }
 }
 
@@ -78,6 +93,10 @@ struct TrackpadCaptureView: UIViewRepresentable {
         uiView.onScroll = onScroll
         uiView.onTap = onTap
         uiView.onActiveChanged = onActiveChanged
+    }
+
+    static func dismantleUIView(_ uiView: TrackpadCaptureUIView, coordinator: ()) {
+        uiView.dismantleCaptureView()
     }
 }
 
@@ -215,6 +234,58 @@ fileprivate enum ControllerPressIdentifierAllocator {
     }
 }
 
+fileprivate enum ControllerTouchReleaseWatchdog {
+    private static let interval: TimeInterval = 0.12
+    private static var timer: Timer?
+
+    static func refresh() {
+        if Thread.isMainThread {
+            updateTimerState()
+        } else {
+            DispatchQueue.main.async {
+                updateTimerState()
+            }
+        }
+    }
+
+    private static func updateTimerState() {
+        if hasActiveTouches {
+            startIfNeeded()
+        } else {
+            stop()
+        }
+    }
+
+    private static var hasActiveTouches: Bool {
+        TouchCaptureUIView.hasActiveRegisteredTouches()
+            || JoystickCaptureUIView.hasActiveRegisteredTouches()
+            || TriggerCaptureUIView.hasActiveRegisteredTouches()
+            || TrackpadCaptureUIView.hasActiveRegisteredTouches()
+    }
+
+    private static func startIfNeeded() {
+        guard timer == nil else { return }
+        let nextTimer = Timer(timeInterval: interval, repeats: true) { _ in
+            sweep()
+        }
+        timer = nextTimer
+        RunLoop.main.add(nextTimer, forMode: .common)
+    }
+
+    private static func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private static func sweep() {
+        TouchCaptureUIView.sweepInactiveTouches()
+        JoystickCaptureUIView.sweepInactiveTouches()
+        TriggerCaptureUIView.sweepInactiveTouches()
+        TrackpadCaptureUIView.sweepInactiveTouches()
+        updateTimerState()
+    }
+}
+
 final class TouchCaptureUIView: UIView {
     var hitShape: GamepadButtonShapeStyle = .roundedRectangle {
         didSet {
@@ -339,6 +410,7 @@ final class TouchCaptureUIView: UIView {
         let pressIdentifier = ControllerPressIdentifierAllocator.allocate()
         activeTouchIdentifiers[touch] = pressIdentifier
         onPressEdge?(true, true, pressIdentifier)
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private func deactivateTouch(_ touch: UITouch, clearsOwner: Bool = true) {
@@ -351,6 +423,7 @@ final class TouchCaptureUIView: UIView {
             ControllerPressIdentifierAllocator.release(pressIdentifier)
             onPressEdge?(false, !activeTouches.isEmpty, pressIdentifier)
         }
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     fileprivate static func deactivateGlobally(_ touch: UITouch) {
@@ -388,6 +461,39 @@ final class TouchCaptureUIView: UIView {
         TriggerCaptureUIView.deactivateAllRegisteredTriggers()
         TrackpadCaptureUIView.deactivateAllRegisteredTrackpads()
         ControllerPressIdentifierAllocator.reset()
+        ControllerTouchReleaseWatchdog.refresh()
+    }
+
+    fileprivate static func hasActiveRegisteredTouches() -> Bool {
+        registeredViews.allObjects.contains { !$0.activeTouches.isEmpty }
+    }
+
+    fileprivate static func sweepInactiveTouches() {
+        touchOwners = touchOwners.filter { $0.value.view != nil }
+        for owner in registeredViews.allObjects {
+            owner.deactivateInactiveTouches()
+        }
+    }
+
+    fileprivate func dismantleCaptureView() {
+        Self.registeredViews.remove(self)
+        deactivateAllTouches()
+    }
+
+    private func deactivateInactiveTouches() {
+        let touchesToRelease = activeTouches.filter { Self.shouldReleaseInactiveTouch($0, ownedBy: self) }
+        for touch in touchesToRelease {
+            deactivateTouch(touch)
+        }
+    }
+
+    private static func shouldReleaseInactiveTouch(_ touch: UITouch, ownedBy owner: UIView) -> Bool {
+        switch touch.phase {
+        case .ended, .cancelled:
+            return true
+        default:
+            return owner.window == nil || touch.window == nil
+        }
     }
 
     private func deactivateAllTouches() {
@@ -396,7 +502,10 @@ final class TouchCaptureUIView: UIView {
         let touchIdentifiers = activeTouchIdentifiers
         activeTouchIdentifiers.removeAll()
         Self.touchOwners = Self.touchOwners.filter { $0.value.view !== self }
-        guard !touches.isEmpty else { return }
+        guard !touches.isEmpty else {
+            ControllerTouchReleaseWatchdog.refresh()
+            return
+        }
 
         for touch in touches {
             if let pressIdentifier = touchIdentifiers[touch] {
@@ -404,6 +513,7 @@ final class TouchCaptureUIView: UIView {
                 onPressEdge?(false, false, pressIdentifier)
             }
         }
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private static func owner(for touch: UITouch) -> TouchCaptureUIView? {
@@ -560,6 +670,7 @@ final class TouchCaptureUIView: UIView {
 }
 
 final class JoystickCaptureUIView: UIView {
+    var activationDiameter: CGFloat?
     var onDirectionEdge: ((_ direction: GamepadJoystickDirection, _ pressed: Bool, _ pressIdentifier: UInt64) -> Void)?
     var onVectorChanged: ((_ vector: CGVector, _ activeDirections: Set<GamepadJoystickDirection>) -> Void)?
 
@@ -573,6 +684,7 @@ final class JoystickCaptureUIView: UIView {
 
     private weak var activeTouch: UITouch?
     private var activeDirections: Set<GamepadJoystickDirection> = []
+    private var currentVector = CGVector(dx: 0, dy: 0)
     private var activeDirectionIdentifiers: [GamepadJoystickDirection: UInt64] = [:]
 
     override init(frame: CGRect) {
@@ -693,11 +805,63 @@ final class JoystickCaptureUIView: UIView {
             owner.deactivateTouch()
         }
         touchOwners.removeAll()
+        ControllerTouchReleaseWatchdog.refresh()
+    }
+
+    fileprivate static func hasActiveRegisteredTouches() -> Bool {
+        registeredViews.allObjects.contains {
+            $0.activeTouch != nil
+                || !$0.activeDirections.isEmpty
+                || abs($0.currentVector.dx) > 0.001
+                || abs($0.currentVector.dy) > 0.001
+        }
+    }
+
+    fileprivate static func sweepInactiveTouches() {
+        touchOwners = touchOwners.filter { _, weakOwner in
+            guard let owner = weakOwner.view else { return false }
+            return owner.activeTouch != nil
+        }
+        for owner in registeredViews.allObjects {
+            owner.deactivateInactiveTouchIfNeeded()
+        }
+    }
+
+    fileprivate func dismantleCaptureView() {
+        Self.registeredViews.remove(self)
+        deactivateTouch()
+    }
+
+    private func deactivateInactiveTouchIfNeeded() {
+        guard let touch = activeTouch else {
+            if !activeDirections.isEmpty || abs(currentVector.dx) > 0.001 || abs(currentVector.dy) > 0.001 {
+                deactivateTouch()
+            }
+            return
+        }
+
+        if Self.shouldReleaseInactiveTouch(touch, ownedBy: self) {
+            deactivateTouch()
+        }
+    }
+
+    private static func shouldReleaseInactiveTouch(_ touch: UITouch, ownedBy owner: UIView) -> Bool {
+        switch touch.phase {
+        case .ended, .cancelled:
+            return true
+        default:
+            return owner.window == nil || touch.window == nil
+        }
+    }
+
+    private static func clearOwners(for owner: JoystickCaptureUIView) {
+        touchOwners = touchOwners.filter { $0.value.view !== owner }
     }
 
     private func activateTouch(_ touch: UITouch, in sourceWindow: UIWindow) {
         activeTouch = touch
         updateTouch(touch, in: sourceWindow)
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private func updateTouch(_ touch: UITouch, in sourceWindow: UIWindow) {
@@ -706,13 +870,16 @@ final class JoystickCaptureUIView: UIView {
         let localLocation = sourceWindow.convert(windowLocation, to: self)
         let vector = normalizedVector(for: localLocation)
         let nextDirections = directions(for: vector)
+        currentVector = vector
         applyActiveDirections(nextDirections)
         onVectorChanged?(CGVector(dx: vector.dx, dy: vector.dy), nextDirections)
     }
 
     private func deactivateTouch(clearsOwner: Bool = true) {
         guard let touch = activeTouch else {
+            Self.clearOwners(for: self)
             deactivateAllDirections()
+            ControllerTouchReleaseWatchdog.refresh()
             return
         }
         activeTouch = nil
@@ -720,14 +887,17 @@ final class JoystickCaptureUIView: UIView {
             Self.clearOwner(for: touch)
         }
         deactivateAllDirections()
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private func deactivateAllDirections() {
-        guard !activeDirections.isEmpty || activeTouch != nil else {
+        let hadVector = abs(currentVector.dx) > 0.001 || abs(currentVector.dy) > 0.001
+        guard !activeDirections.isEmpty || activeTouch != nil || hadVector else {
             onVectorChanged?(CGVector(dx: 0, dy: 0), [])
             return
         }
 
+        currentVector = CGVector(dx: 0, dy: 0)
         let directions = activeDirections
         activeDirections.removeAll()
         for direction in directions {
@@ -792,7 +962,12 @@ final class JoystickCaptureUIView: UIView {
     }
 
     private func containsLocalPoint(_ point: CGPoint) -> Bool {
-        bounds.contains(point)
+        guard bounds.contains(point) else { return false }
+        guard let activationDiameter, activationDiameter.isFinite, activationDiameter > 0 else {
+            return true
+        }
+        let radius = max(1, activationDiameter / 2)
+        return hypot(point.x - bounds.midX, point.y - bounds.midY) <= radius
     }
 
     private func canReceiveRoutedTouch(in sourceWindow: UIWindow) -> Bool {
@@ -971,11 +1146,58 @@ final class TriggerCaptureUIView: UIView {
             owner.deactivateTouch()
         }
         touchOwners.removeAll()
+        ControllerTouchReleaseWatchdog.refresh()
+    }
+
+    fileprivate static func hasActiveRegisteredTouches() -> Bool {
+        registeredViews.allObjects.contains { $0.activeTouch != nil || $0.currentValue != 0 }
+    }
+
+    fileprivate static func sweepInactiveTouches() {
+        touchOwners = touchOwners.filter { _, weakOwner in
+            guard let owner = weakOwner.view else { return false }
+            return owner.activeTouch != nil
+        }
+        for owner in registeredViews.allObjects {
+            owner.deactivateInactiveTouchIfNeeded()
+        }
+    }
+
+    fileprivate func dismantleCaptureView() {
+        Self.registeredViews.remove(self)
+        deactivateTouch()
+    }
+
+    private func deactivateInactiveTouchIfNeeded() {
+        guard let touch = activeTouch else {
+            if currentValue != 0 {
+                deactivateTouch()
+            }
+            return
+        }
+
+        if Self.shouldReleaseInactiveTouch(touch, ownedBy: self) {
+            deactivateTouch()
+        }
+    }
+
+    private static func shouldReleaseInactiveTouch(_ touch: UITouch, ownedBy owner: UIView) -> Bool {
+        switch touch.phase {
+        case .ended, .cancelled:
+            return true
+        default:
+            return owner.window == nil || touch.window == nil
+        }
+    }
+
+    private static func clearOwners(for owner: TriggerCaptureUIView) {
+        touchOwners = touchOwners.filter { $0.value.view !== owner }
     }
 
     private func activateTouch(_ touch: UITouch, in sourceWindow: UIWindow) {
         activeTouch = touch
         updateTouch(touch, in: sourceWindow)
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private func updateTouch(_ touch: UITouch, in sourceWindow: UIWindow) {
@@ -990,10 +1212,12 @@ final class TriggerCaptureUIView: UIView {
 
     private func deactivateTouch(clearsOwner: Bool = true) {
         guard let touch = activeTouch else {
+            Self.clearOwners(for: self)
             if currentValue != 0 {
                 currentValue = 0
                 onValueChanged?(0, false)
             }
+            ControllerTouchReleaseWatchdog.refresh()
             return
         }
         activeTouch = nil
@@ -1006,6 +1230,7 @@ final class TriggerCaptureUIView: UIView {
         } else {
             onValueChanged?(0, false)
         }
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private func normalizedValue(for point: CGPoint) -> CGFloat {
@@ -1206,6 +1431,39 @@ final class TrackpadCaptureUIView: UIView {
             owner.deactivateAllTouches(allowsTap: false)
         }
         touchOwners.removeAll()
+        ControllerTouchReleaseWatchdog.refresh()
+    }
+
+    fileprivate static func hasActiveRegisteredTouches() -> Bool {
+        registeredViews.allObjects.contains { !$0.activeTouches.isEmpty }
+    }
+
+    fileprivate static func sweepInactiveTouches() {
+        touchOwners = touchOwners.filter { $0.value.view != nil }
+        for owner in registeredViews.allObjects {
+            owner.deactivateInactiveTouches()
+        }
+    }
+
+    fileprivate func dismantleCaptureView() {
+        Self.registeredViews.remove(self)
+        deactivateAllTouches(allowsTap: false)
+    }
+
+    private func deactivateInactiveTouches() {
+        let touchesToRelease = activeTouches.filter { Self.shouldReleaseInactiveTouch($0, ownedBy: self) }
+        for touch in touchesToRelease {
+            deactivateTouch(touch, allowsTap: touch.phase == .ended)
+        }
+    }
+
+    private static func shouldReleaseInactiveTouch(_ touch: UITouch, ownedBy owner: UIView) -> Bool {
+        switch touch.phase {
+        case .ended, .cancelled:
+            return true
+        default:
+            return owner.window == nil || touch.window == nil
+        }
     }
 
     private func activateTouch(_ touch: UITouch, in sourceWindow: UIWindow) {
@@ -1228,6 +1486,7 @@ final class TrackpadCaptureUIView: UIView {
         maximumTouchCount = max(maximumTouchCount, activeTouches.count)
         resetMovementBaseline(in: sourceWindow)
         onActiveChanged?(true, activeTouches.count)
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private func updateTouch(_ touch: UITouch, in sourceWindow: UIWindow) {
@@ -1277,6 +1536,7 @@ final class TrackpadCaptureUIView: UIView {
             resetMovementBaseline(in: sourceWindow)
             onActiveChanged?(true, activeTouches.count)
         }
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private func deactivateAllTouches(allowsTap: Bool) {
@@ -1286,6 +1546,7 @@ final class TrackpadCaptureUIView: UIView {
             Self.clearOwner(for: touch)
         }
         finishGesture(allowsTap: allowsTap)
+        ControllerTouchReleaseWatchdog.refresh()
     }
 
     private func finishGesture(allowsTap: Bool) {

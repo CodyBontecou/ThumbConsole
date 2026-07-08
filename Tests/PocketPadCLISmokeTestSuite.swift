@@ -91,6 +91,74 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(legacyProfile.outputMode, .custom)
     }
 
+    func testCommandClickedProfileSelectionExcludesActiveByDefault() {
+        let activeID = UUID(uuidString: "00000000-0000-0000-0000-00000000A001")!
+        let firstClickedID = UUID(uuidString: "00000000-0000-0000-0000-00000000B001")!
+        let secondClickedID = UUID(uuidString: "00000000-0000-0000-0000-00000000C001")!
+        let orderedIDs = [activeID, firstClickedID, secondClickedID]
+
+        var explicitSelection = GamepadProfileSelectionLogic.toggledExplicitSelection(
+            firstClickedID,
+            currentExplicitSelection: [],
+            orderedProfileIDs: orderedIDs
+        )
+        explicitSelection = GamepadProfileSelectionLogic.toggledExplicitSelection(
+            secondClickedID,
+            currentExplicitSelection: explicitSelection,
+            orderedProfileIDs: orderedIDs
+        )
+
+        XCTAssertEqual(explicitSelection, [firstClickedID, secondClickedID])
+        XCTAssertEqual(
+            GamepadProfileSelectionLogic.actionIDs(
+                explicitSelection: explicitSelection,
+                activeID: activeID,
+                orderedProfileIDs: orderedIDs
+            ),
+            [firstClickedID, secondClickedID]
+        )
+    }
+
+    func testProfileActionsFallBackToActiveWhenNothingIsCommandSelected() {
+        let activeID = UUID(uuidString: "00000000-0000-0000-0000-00000000A002")!
+        let otherID = UUID(uuidString: "00000000-0000-0000-0000-00000000B002")!
+
+        XCTAssertEqual(
+            GamepadProfileSelectionLogic.actionIDs(
+                explicitSelection: [],
+                activeID: activeID,
+                orderedProfileIDs: [activeID, otherID]
+            ),
+            [activeID]
+        )
+    }
+
+    func testActiveProfileMustBeExplicitlyCommandSelectedForBulkActions() {
+        let activeID = UUID(uuidString: "00000000-0000-0000-0000-00000000A003")!
+        let otherID = UUID(uuidString: "00000000-0000-0000-0000-00000000B003")!
+        let orderedIDs = [activeID, otherID]
+
+        var explicitSelection = GamepadProfileSelectionLogic.toggledExplicitSelection(
+            activeID,
+            currentExplicitSelection: [],
+            orderedProfileIDs: orderedIDs
+        )
+        explicitSelection = GamepadProfileSelectionLogic.toggledExplicitSelection(
+            otherID,
+            currentExplicitSelection: explicitSelection,
+            orderedProfileIDs: orderedIDs
+        )
+
+        XCTAssertEqual(
+            GamepadProfileSelectionLogic.actionIDs(
+                explicitSelection: explicitSelection,
+                activeID: activeID,
+                orderedProfileIDs: orderedIDs
+            ),
+            [activeID, otherID]
+        )
+    }
+
     func testKeypadProfileLaunchTargetRoundTrips() throws {
         let iconData = Data([0x89, 0x50, 0x4E, 0x47])
         let target = GamepadProfileLaunchTarget(
@@ -210,6 +278,7 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
 
         let thumbColor = GamepadRGBAColor(hexString: "#F8FAFC")!
         customization.customButtons[index].layout.joystickKnobColor = thumbColor
+        customization.customButtons[index].layout.joystickVisualStyle = .thumbstick
 
         let data = try JSONEncoder().encode(customization.normalized)
         let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data).normalized
@@ -218,6 +287,7 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(joystick?.controlKind, .joystick)
         XCTAssertEqual(joystick?.layout.joystickKnobColor, thumbColor.normalized)
         XCTAssertEqual(joystick?.layout.joystickKnobColor(for: .light), thumbColor.normalized)
+        XCTAssertEqual(joystick?.layout.joystickVisualStyle, .thumbstick)
     }
 
     func testAgentJoystickThumbColorSpecGeneratesCustomJoystick() throws {
@@ -231,6 +301,7 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
               "kind": "joystick",
               "fill": "#111827",
               "thumbFill": "#F8FAFC",
+              "joystickStyle": "thumbstick",
               "up": "up",
               "down": "down",
               "left": "left",
@@ -250,6 +321,8 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertTrue(joystick.isJoystick)
         XCTAssertEqual(joystick.layout.fillColor, GamepadRGBAColor(hexString: "#111827")!.normalized)
         XCTAssertEqual(joystick.layout.joystickKnobColor, GamepadRGBAColor(hexString: "#F8FAFC")!.normalized)
+        XCTAssertEqual(joystick.layout.joystickVisualStyle, .thumbstick)
+        XCTAssertEqual(joystick.layout.widthScale, 0.58, accuracy: 0.001)
     }
 
     func testAgentTrackpadSensitivitySpecGeneratesCustomTrackpad() throws {

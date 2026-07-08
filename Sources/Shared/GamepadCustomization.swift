@@ -965,6 +965,27 @@ public enum GamepadJoystickDirection: String, Codable, CaseIterable, Identifiabl
     }
 }
 
+public enum GamepadJoystickVisualStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    case pad
+    case thumbstick
+
+    public var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .pad: "Full pad"
+        case .thumbstick: "Thumbstick"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .pad: "A fixed joystick pad with a visible travel well."
+        case .thumbstick: "A compact center nub with an invisible drag range, like the small ball between face buttons."
+        }
+    }
+}
+
 public struct GamepadJoystickMapping: Codable, Equatable, Sendable {
     public var up: GameButton
     public var down: GameButton
@@ -1101,6 +1122,8 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public var joystickKnobColor: GamepadRGBAColor?
     public var lightJoystickKnobColor: GamepadRGBAColor?
     public var darkJoystickKnobColor: GamepadRGBAColor?
+    /// Joystick-only visual style. `nil` keeps the legacy full-pad appearance.
+    public var joystickVisualStyle: GamepadJoystickVisualStyle?
     public var styleID: String?
     public var visualStyle: GamepadControlVisualStyle?
     public var icon: GamepadControlIcon?
@@ -1129,6 +1152,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         joystickKnobColor: GamepadRGBAColor? = nil,
         lightJoystickKnobColor: GamepadRGBAColor? = nil,
         darkJoystickKnobColor: GamepadRGBAColor? = nil,
+        joystickVisualStyle: GamepadJoystickVisualStyle? = nil,
         styleID: String? = nil,
         visualStyle: GamepadControlVisualStyle? = nil,
         icon: GamepadControlIcon? = nil,
@@ -1156,6 +1180,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         self.joystickKnobColor = joystickKnobColor
         self.lightJoystickKnobColor = lightJoystickKnobColor
         self.darkJoystickKnobColor = darkJoystickKnobColor
+        self.joystickVisualStyle = joystickVisualStyle
         self.styleID = styleID
         self.visualStyle = visualStyle
         self.icon = icon
@@ -1186,6 +1211,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         joystickKnobColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .joystickKnobColor)
         lightJoystickKnobColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .lightJoystickKnobColor)
         darkJoystickKnobColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .darkJoystickKnobColor)
+        joystickVisualStyle = try container.decodeIfPresent(GamepadJoystickVisualStyle.self, forKey: .joystickVisualStyle)
         styleID = try container.decodeIfPresent(String.self, forKey: .styleID)
         visualStyle = try container.decodeIfPresent(GamepadControlVisualStyle.self, forKey: .visualStyle)
         icon = try container.decodeIfPresent(GamepadControlIcon.self, forKey: .icon)
@@ -1216,6 +1242,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         try container.encodeIfPresent(joystickKnobColor?.normalized, forKey: .joystickKnobColor)
         try container.encodeIfPresent(lightJoystickKnobColor?.normalized, forKey: .lightJoystickKnobColor)
         try container.encodeIfPresent(darkJoystickKnobColor?.normalized, forKey: .darkJoystickKnobColor)
+        try container.encodeIfPresent(joystickVisualStyle, forKey: .joystickVisualStyle)
         try container.encodeIfPresent(styleID, forKey: .styleID)
         try container.encodeIfPresent(visualStyle?.normalized, forKey: .visualStyle)
         try container.encodeIfPresent(icon?.normalized, forKey: .icon)
@@ -1244,6 +1271,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         copy.joystickKnobColor = copy.joystickKnobColor?.normalized
         copy.lightJoystickKnobColor = copy.lightJoystickKnobColor?.normalized
         copy.darkJoystickKnobColor = copy.darkJoystickKnobColor?.normalized
+        if copy.joystickVisualStyle == .pad { copy.joystickVisualStyle = nil }
         let normalizedStyleID = copy.styleID.map(GamepadStyleToken.normalizedIdentifier) ?? ""
         copy.styleID = normalizedStyleID.isEmpty ? nil : normalizedStyleID
         copy.visualStyle = copy.visualStyle?.normalized
@@ -1283,6 +1311,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
             && joystickKnobColor == nil
             && lightJoystickKnobColor == nil
             && darkJoystickKnobColor == nil
+            && joystickVisualStyle == nil
             && styleID == nil
             && visualStyle == nil
             && icon == nil
@@ -1411,6 +1440,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         case joystickKnobColor
         case lightJoystickKnobColor
         case darkJoystickKnobColor
+        case joystickVisualStyle
         case styleID
         case visualStyle
         case icon
@@ -4153,6 +4183,48 @@ enum GamepadConfigurationProfilePersistence {
     }
 }
 
+enum GamepadProfileSelectionLogic {
+    static func normalizedExplicitSelection(_ selection: Set<UUID>, validProfileIDs: Set<UUID>) -> Set<UUID> {
+        selection.intersection(validProfileIDs)
+    }
+
+    static func actionIDs(
+        explicitSelection: Set<UUID>,
+        activeID: UUID,
+        orderedProfileIDs: [UUID]
+    ) -> Set<UUID> {
+        let validProfileIDs = Set(orderedProfileIDs)
+        let normalizedSelection = normalizedExplicitSelection(explicitSelection, validProfileIDs: validProfileIDs)
+        if !normalizedSelection.isEmpty {
+            return normalizedSelection
+        }
+        if validProfileIDs.contains(activeID) {
+            return [activeID]
+        }
+        if let fallbackID = orderedProfileIDs.first {
+            return [fallbackID]
+        }
+        return []
+    }
+
+    static func toggledExplicitSelection(
+        _ profileID: UUID,
+        currentExplicitSelection: Set<UUID>,
+        orderedProfileIDs: [UUID]
+    ) -> Set<UUID> {
+        let validProfileIDs = Set(orderedProfileIDs)
+        var selection = normalizedExplicitSelection(currentExplicitSelection, validProfileIDs: validProfileIDs)
+        guard validProfileIDs.contains(profileID) else { return selection }
+
+        if selection.contains(profileID) {
+            selection.remove(profileID)
+        } else {
+            selection.insert(profileID)
+        }
+        return selection
+    }
+}
+
 private struct GamepadAlphaCheckerboard: View {
     var body: some View {
         Canvas { context, size in
@@ -4539,25 +4611,29 @@ struct GamepadRenderedControlFace: View {
         let knobFillColor = control.layoutCustomization.joystickKnobFill(accentStyle: resolvedAccentStyle, isPressed: state.usesPressedFallback, scheme: colorScheme)
         let knobStrokeColor = control.layoutCustomization.joystickKnobStroke(accentStyle: resolvedAccentStyle, isPressed: state.usesPressedFallback, scheme: colorScheme)
         let visualSide = min(control.size.width, control.size.height)
+        let isThumbstick = control.layoutCustomization.joystickVisualStyle == .thumbstick
+        let knobRatio: CGFloat = isThumbstick ? 0.72 : 0.34
 
         return ZStack {
-            Circle()
-                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                .frame(width: visualSide * 0.70, height: visualSide * 0.70)
+            if !isThumbstick {
+                Circle()
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                    .frame(width: visualSide * 0.70, height: visualSide * 0.70)
+            }
 
             Circle()
                 .fill(knobFillColor)
                 .overlay(Circle().stroke(knobStrokeColor, lineWidth: 1))
-                .frame(width: visualSide * 0.34, height: visualSide * 0.34)
+                .frame(width: visualSide * knobRatio, height: visualSide * knobRatio)
 
-            if customization.showsButtonLabels {
+            if customization.showsButtonLabels && !isThumbstick {
                 Text(control.label)
                     .geistTypography(visualSide <= 88 ? .button12 : .button14)
                     .lineLimit(1)
                     .minimumScaleFactor(0.48)
                     .foregroundStyle(presentation.foregroundSwiftUIColor)
                     .padding(.horizontal, 4)
-                    .offset(y: control.size.height * 0.34)
+                    .offset(y: control.size.height * (isThumbstick ? 0.58 : 0.34))
             }
         }
         .allowsHitTesting(false)
@@ -4603,6 +4679,17 @@ private struct GamepadEditorUndoSnapshot: Equatable {
     var selectedControlID: GamepadControlIdentity
     var selectedControlIDs: Set<GamepadControlIdentity>
     var isControlSelectionActive: Bool
+}
+
+private struct GamepadEditorProfileUndoSnapshot: Equatable {
+    var profiles: [GamepadConfigurationProfile]
+    var selectedProfileID: UUID
+    var selectedProfileIDs: Set<UUID>
+    var defaultProfileID: UUID
+    var selectedProfileOrientation: GamepadEditorDeviceOrientation
+    var isSelectedProfileExpanded: Bool
+    var selectedProfileNameDraft: String
+    var editorSnapshot: GamepadEditorUndoSnapshot
 }
 
 private struct GamepadEditorComponentItem: Identifiable, Hashable {
@@ -5166,6 +5253,7 @@ struct GamepadCustomizationEditor: View {
     private let externalDefaultProfileID: UUID?
     private let onReset: (() -> Void)?
     private let onProfilesChanged: (([GamepadConfigurationProfile], UUID, UUID) -> Void)?
+    private let onRegisterProfileUndoSnapshot: ((String) -> Void)?
     private let onLaunchProfileTarget: ((UUID) -> Void)?
     private let defaultLabelProvider: ((GameButton) -> String?)?
     private let profileOutputModeContent: (() -> AnyView)?
@@ -5192,6 +5280,7 @@ struct GamepadCustomizationEditor: View {
     @State private var isControlSelectionActive: Bool
     @State private var profiles: [GamepadConfigurationProfile]
     @State private var selectedProfileID: UUID
+    // Explicit command-click setup selection. When empty, profile actions target selectedProfileID.
     @State private var selectedProfileIDs: Set<UUID>
     @State private var draggingProfileIDs: [UUID]
     @State private var defaultProfileID: UUID
@@ -5232,6 +5321,7 @@ struct GamepadCustomizationEditor: View {
         initialDefaultProfileID: UUID? = nil,
         onReset: (() -> Void)? = nil,
         onProfilesChanged: (([GamepadConfigurationProfile], UUID, UUID) -> Void)? = nil,
+        onRegisterProfileUndoSnapshot: ((String) -> Void)? = nil,
         onLaunchProfileTarget: ((UUID) -> Void)? = nil,
         defaultLabelProvider: ((GameButton) -> String?)? = nil,
         profileOutputModeContent: (() -> AnyView)? = nil,
@@ -5259,6 +5349,7 @@ struct GamepadCustomizationEditor: View {
         self.externalDefaultProfileID = initialDefaultProfileID
         self.onReset = onReset
         self.onProfilesChanged = onProfilesChanged
+        self.onRegisterProfileUndoSnapshot = onRegisterProfileUndoSnapshot
         self.onLaunchProfileTarget = onLaunchProfileTarget
         self.defaultLabelProvider = defaultLabelProvider
         self.profileOutputModeContent = profileOutputModeContent
@@ -5269,7 +5360,7 @@ struct GamepadCustomizationEditor: View {
         self._isControlSelectionActive = State(initialValue: false)
         self._profiles = State(initialValue: loadedProfiles.profiles)
         self._selectedProfileID = State(initialValue: loadedProfiles.activeProfileID)
-        self._selectedProfileIDs = State(initialValue: [loadedProfiles.activeProfileID])
+        self._selectedProfileIDs = State(initialValue: [])
         self._draggingProfileIDs = State(initialValue: [])
         self._defaultProfileID = State(initialValue: loadedProfiles.defaultProfileID)
         self._selectedProfileOrientation = State(initialValue: loadedProfiles.activeProfile?.customization.deviceCanvas.editorDeviceFrame.orientation ?? .landscape)
@@ -5934,7 +6025,8 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private var profileManagementButtons: some View {
-        let selectedCount = selectedProfileIDs.count
+        let actionIDs = selectedProfileActionIDs
+        let selectedCount = actionIDs.count
 
         Button("Rename") {
             beginRenamingSelectedProfile()
@@ -5943,15 +6035,15 @@ struct GamepadCustomizationEditor: View {
         .disabled(selectedCount != 1)
 
         Button(selectedCount > 1 ? "Duplicate Selected" : "Duplicate") {
-            duplicateProfiles(ids: selectedProfileIDs)
+            duplicateProfiles(ids: actionIDs)
         }
         .geistButtonStyle(.secondary, size: .small)
 
         Button(selectedCount > 1 ? "Delete Selected" : "Delete") {
-            deleteProfiles(selectedProfileIDs)
+            deleteProfiles(actionIDs)
         }
         .geistButtonStyle(.tertiary, size: .small)
-        .disabled(!canDeleteProfiles(selectedProfileIDs))
+        .disabled(!canDeleteProfiles(actionIDs))
     }
 
     private var canvasStage: some View {
@@ -8229,6 +8321,22 @@ struct GamepadCustomizationEditor: View {
                 .geistInput(size: .small)
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                HStack(spacing: Geist.Spacing.s3) {
+                    Text("Look")
+                        .geistTypography(.label13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    Spacer()
+                    GeistMenuPicker(title: "Joystick look", options: GamepadJoystickVisualStyle.allCases, selection: joystickVisualStyleBinding(id: id)) { style in
+                        style.displayName
+                    }
+                }
+                Text(joystickVisualStyleValue(id: id).description)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                 Text("Directions")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -8819,6 +8927,21 @@ struct GamepadCustomizationEditor: View {
 
     private func joystickMappingValue(id: UUID) -> GamepadJoystickMapping {
         customButton(id: id)?.normalized.joystickMapping ?? .movement
+    }
+
+    private func joystickVisualStyleValue(id: UUID) -> GamepadJoystickVisualStyle {
+        customButton(id: id)?.normalized.layout.joystickVisualStyle ?? .pad
+    }
+
+    private func joystickVisualStyleBinding(id: UUID) -> Binding<GamepadJoystickVisualStyle> {
+        Binding(
+            get: { joystickVisualStyleValue(id: id) },
+            set: { value in
+                updateCustomButton(id: id) { customButton in
+                    customButton.layout.joystickVisualStyle = value == .pad ? nil : value
+                }
+            }
+        )
     }
 
     private func joystickOutputSettingsValue(id: UUID) -> GamepadJoystickOutputSettings {
@@ -10589,6 +10712,58 @@ struct GamepadCustomizationEditor: View {
         undoManager.setActionName(actionName)
     }
 
+    private var profileUndoSnapshot: GamepadEditorProfileUndoSnapshot {
+        GamepadEditorProfileUndoSnapshot(
+            profiles: profiles,
+            selectedProfileID: selectedProfileID,
+            selectedProfileIDs: selectedProfileIDs,
+            defaultProfileID: defaultProfileID,
+            selectedProfileOrientation: selectedProfileOrientation,
+            isSelectedProfileExpanded: isSelectedProfileExpanded,
+            selectedProfileNameDraft: selectedProfileNameDraft,
+            editorSnapshot: GamepadEditorUndoSnapshot(
+                customization: customization.normalized,
+                selectedControlID: selectedControlID,
+                selectedControlIDs: selectedControlIDs,
+                isControlSelectionActive: isControlSelectionActive
+            )
+        )
+    }
+
+    private func registerProfileUndoSnapshot(actionName: String) {
+        if let onRegisterProfileUndoSnapshot {
+            onRegisterProfileUndoSnapshot(actionName)
+            return
+        }
+
+        guard let undoManager else { return }
+        let snapshot = profileUndoSnapshot
+        undoManager.registerUndo(withTarget: undoTarget) { _ in
+            restoreProfileUndoSnapshot(snapshot, actionName: actionName)
+        }
+        undoManager.setActionName(actionName)
+    }
+
+    private func restoreProfileUndoSnapshot(_ snapshot: GamepadEditorProfileUndoSnapshot, actionName: String) {
+        registerProfileUndoSnapshot(actionName: actionName)
+
+        profiles = snapshot.profiles
+        selectedProfileID = snapshot.selectedProfileID
+        selectedProfileIDs = GamepadProfileSelectionLogic.normalizedExplicitSelection(
+            snapshot.selectedProfileIDs,
+            validProfileIDs: Set(snapshot.profiles.map(\.id))
+        )
+        defaultProfileID = snapshot.defaultProfileID
+        selectedProfileOrientation = snapshot.selectedProfileOrientation
+        isSelectedProfileExpanded = snapshot.isSelectedProfileExpanded
+        selectedProfileNameDraft = snapshot.selectedProfileNameDraft
+        customization = snapshot.editorSnapshot.customization.normalized
+        selectedControlID = snapshot.editorSnapshot.selectedControlID
+        selectedControlIDs = snapshot.editorSnapshot.selectedControlIDs
+        isControlSelectionActive = snapshot.editorSnapshot.isControlSelectionActive && !selectedControlIDs.isEmpty
+        persistProfiles()
+    }
+
     private func createProfile() {
         commitSelectedProfileNameDraft()
         let profile = GamepadConfigurationProfile(
@@ -10606,7 +10781,7 @@ struct GamepadCustomizationEditor: View {
     private func selectNewProfile(_ profile: GamepadConfigurationProfile) {
         profiles.append(profile)
         selectedProfileID = profile.id
-        selectedProfileIDs = [profile.id]
+        selectedProfileIDs.removeAll()
         selectedProfileNameDraft = profile.name
         isSelectedProfileExpanded = true
         selectKeypadInspector()
@@ -10744,17 +10919,19 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func beginRenamingSelectedProfile() {
-        guard selectedProfileIDs.count == 1,
-              let selectedProfile
+        let actionIDs = selectedProfileActionIDs
+        guard actionIDs.count == 1,
+              let profileID = actionIDs.first,
+              let profile = profiles.first(where: { $0.id == profileID })
         else { return }
-        beginRenamingProfile(selectedProfile)
+        beginRenamingProfile(profile)
     }
 
     private func beginRenamingProfile(_ profile: GamepadConfigurationProfile) {
         if profile.id != selectedProfileID {
             selectProfile(profile)
         } else {
-            selectedProfileIDs = [profile.id]
+            selectedProfileIDs.removeAll()
             isSelectedProfileExpanded = true
         }
 
@@ -10784,7 +10961,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func duplicateProfile() {
-        duplicateProfiles(ids: selectedProfileIDs)
+        duplicateProfiles(ids: selectedProfileActionIDs)
     }
 
     private func duplicateProfile(_ profile: GamepadConfigurationProfile) {
@@ -10820,7 +10997,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func deleteSelectedProfile() {
-        deleteProfiles(selectedProfileIDs)
+        deleteProfiles(selectedProfileActionIDs)
     }
 
     private func deleteProfile(_ profile: GamepadConfigurationProfile) {
@@ -10841,8 +11018,9 @@ struct GamepadCustomizationEditor: View {
             : firstRemovedIndex
         let removedDefaultProfile = removedIDs.contains(defaultProfileID)
         let removedEveryProfile = removedIDs.count == profiles.count
+        registerProfileUndoSnapshot(actionName: removedIDs.count == 1 ? "Delete Setup" : "Delete Setups")
         profiles.removeAll { removedIDs.contains($0.id) }
-        selectedProfileIDs.subtract(removedIDs)
+        selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs.subtracting(removedIDs))
 
         if removedEveryProfile {
             let replacementProfile = GamepadConfigurationProfile(
@@ -10851,7 +11029,7 @@ struct GamepadCustomizationEditor: View {
             )
             profiles = [replacementProfile]
             selectedProfileID = replacementProfile.id
-            selectedProfileIDs = [replacementProfile.id]
+            selectedProfileIDs.removeAll()
             defaultProfileID = replacementProfile.id
             selectedProfileNameDraft = replacementProfile.name
             isSelectedProfileExpanded = true
@@ -10860,7 +11038,6 @@ struct GamepadCustomizationEditor: View {
         } else if removedActiveProfile {
             let nextProfile = profiles[min(removedActiveIndex, profiles.count - 1)]
             selectedProfileID = nextProfile.id
-            selectedProfileIDs.insert(nextProfile.id)
             selectedProfileNameDraft = nextProfile.name
             isSelectedProfileExpanded = true
             selectKeypadInspector()
@@ -10869,7 +11046,6 @@ struct GamepadCustomizationEditor: View {
             }
             applyCustomization(nextProfile.customization(for: selectedProfileOrientation))
         } else {
-            selectedProfileIDs.insert(selectedProfileID)
             if removedDefaultProfile {
                 defaultProfileID = selectedProfileID
             }
@@ -10879,7 +11055,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func selectProfile(_ profile: GamepadConfigurationProfile, expandsDetails: Bool = true) {
-        activateProfile(profile, expandsDetails: expandsDetails, selectionIDs: [profile.id])
+        activateProfile(profile, expandsDetails: expandsDetails, selectionIDs: [])
     }
 
     private func activateProfile(
@@ -10891,7 +11067,7 @@ struct GamepadCustomizationEditor: View {
         let nextProfile = profiles.first { $0.id == profile.id } ?? profile
         let wasSelectedProfile = selectedProfileID == nextProfile.id
         selectedProfileID = nextProfile.id
-        selectedProfileIDs = normalizedProfileSelection(selectionIDs, activeID: nextProfile.id)
+        selectedProfileIDs = normalizedProfileSelection(selectionIDs)
         selectedProfileNameDraft = nextProfile.name
         if expandsDetails {
             isSelectedProfileExpanded = true
@@ -10916,19 +11092,11 @@ struct GamepadCustomizationEditor: View {
         let validProfileIDs = Set(profiles.map(\.id))
         guard validProfileIDs.contains(profile.id) else { return }
 
-        if selectedProfileIDs.contains(profile.id) {
-            guard selectedProfileIDs.count > 1 else { return }
-            var nextSelection = selectedProfileIDs
-            nextSelection.remove(profile.id)
-            if profile.id == selectedProfileID,
-               let nextProfile = profiles.first(where: { nextSelection.contains($0.id) }) {
-                activateProfile(nextProfile, expandsDetails: false, selectionIDs: nextSelection)
-            } else {
-                selectedProfileIDs = normalizedProfileSelection(nextSelection, activeID: selectedProfileID)
-            }
-        } else {
-            selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs.union([profile.id]), activeID: selectedProfileID)
-        }
+        selectedProfileIDs = GamepadProfileSelectionLogic.toggledExplicitSelection(
+            profile.id,
+            currentExplicitSelection: selectedProfileIDs,
+            orderedProfileIDs: profiles.map(\.id)
+        )
     }
 
     private var isCommandProfileSelectionModifierActive: Bool {
@@ -10940,20 +11108,20 @@ struct GamepadCustomizationEditor: View {
 #endif
     }
 
-    private func normalizedProfileSelection(_ ids: Set<UUID>, activeID: UUID) -> Set<UUID> {
-        let validProfileIDs = Set(profiles.map(\.id))
-        var selection = ids.intersection(validProfileIDs)
-        if validProfileIDs.contains(activeID) {
-            selection.insert(activeID)
-        }
-        if selection.isEmpty, let fallbackID = profiles.first?.id {
-            selection.insert(fallbackID)
-        }
-        return selection
+    private var selectedProfileActionIDs: Set<UUID> {
+        GamepadProfileSelectionLogic.actionIDs(
+            explicitSelection: selectedProfileIDs,
+            activeID: selectedProfileID,
+            orderedProfileIDs: profiles.map(\.id)
+        )
+    }
+
+    private func normalizedProfileSelection(_ ids: Set<UUID>) -> Set<UUID> {
+        GamepadProfileSelectionLogic.normalizedExplicitSelection(ids, validProfileIDs: Set(profiles.map(\.id)))
     }
 
     private func profileContextSelectionIDs(for profile: GamepadConfigurationProfile) -> Set<UUID> {
-        let validSelection = normalizedProfileSelection(selectedProfileIDs, activeID: selectedProfileID)
+        let validSelection = normalizedProfileSelection(selectedProfileIDs)
         return validSelection.contains(profile.id) ? validSelection : [profile.id]
     }
 
@@ -11037,7 +11205,7 @@ struct GamepadCustomizationEditor: View {
         guard nextProfiles.map(\.id) != profiles.map(\.id) else { return }
 
         profiles = nextProfiles
-        selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs.union(movingIDSet), activeID: selectedProfileID)
+        selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs.union(movingIDSet))
         persistProfiles()
     }
 
@@ -11117,8 +11285,8 @@ struct GamepadCustomizationEditor: View {
         selectedProfileID = state.activeProfileID
         defaultProfileID = state.defaultProfileID
         selectedProfileIDs = didChangeSelectedProfile
-            ? [state.activeProfileID]
-            : normalizedProfileSelection(selectedProfileIDs, activeID: state.activeProfileID)
+            ? []
+            : normalizedProfileSelection(selectedProfileIDs)
         if didChangeSelectedProfile {
             isSelectedProfileExpanded = true
         }
@@ -11142,7 +11310,7 @@ struct GamepadCustomizationEditor: View {
         profiles = state.profiles
         selectedProfileID = state.activeProfileID
         defaultProfileID = state.defaultProfileID
-        selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs, activeID: state.activeProfileID)
+        selectedProfileIDs = normalizedProfileSelection(selectedProfileIDs)
         if !isProfileNameFieldFocused {
             syncSelectedProfileNameDraft()
         }
@@ -14731,24 +14899,28 @@ private struct GamepadDesignerButton: View {
     private var joystickFace: some View {
         let knobFillColor = control.layoutCustomization.joystickKnobFill(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
         let knobStrokeColor = control.layoutCustomization.joystickKnobStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+        let isThumbstick = control.layoutCustomization.joystickVisualStyle == .thumbstick
+        let knobRatio: CGFloat = isThumbstick ? 0.72 : 0.34
 
         return ZStack {
-            Circle()
-                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1 * inverseDisplayScale)
-                .frame(width: control.size.width * 0.70, height: control.size.height * 0.70)
+            if !isThumbstick {
+                Circle()
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1 * inverseDisplayScale)
+                    .frame(width: control.size.width * 0.70, height: control.size.height * 0.70)
+            }
             Circle()
                 .fill(knobFillColor)
                 .overlay(Circle().stroke(knobStrokeColor, lineWidth: 1 * inverseDisplayScale))
-                .frame(width: min(control.size.width, control.size.height) * 0.34, height: min(control.size.width, control.size.height) * 0.34)
+                .frame(width: min(control.size.width, control.size.height) * knobRatio, height: min(control.size.width, control.size.height) * knobRatio)
 
-            if customization.showsButtonLabels {
+            if customization.showsButtonLabels && !isThumbstick {
                 Text(control.label)
                     .geistTypography(control.size.width <= 72 ? .button12 : .button14)
                     .lineLimit(1)
                     .minimumScaleFactor(0.48)
                     .foregroundStyle(resolvedPresentation.foregroundSwiftUIColor)
                     .padding(.horizontal, 4)
-                    .offset(y: control.size.height * 0.34)
+                    .offset(y: control.size.height * (isThumbstick ? 0.58 : 0.34))
             }
         }
         .allowsHitTesting(false)

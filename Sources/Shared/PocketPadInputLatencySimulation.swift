@@ -237,7 +237,7 @@ private struct Simulation {
     private static let tcpLatencyNanoseconds: UInt64 = 3_200_000
     private static let reliableMirrorDelayNanoseconds: UInt64 = 500_000
     private static let buttonReorderDelayNanoseconds: UInt64 = 4_000_000
-    private static let heldDirectionHeartbeatResyncNanoseconds: UInt64 = 1_600_000_000
+    private static let heldDirectionHeartbeatResyncNanoseconds: UInt64 = 850_000_000
 
     private let pattern: PocketPadLatencySimulationPattern
     private let mode: PocketPadLatencySimulationMode

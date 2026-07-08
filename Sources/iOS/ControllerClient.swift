@@ -259,6 +259,61 @@ private struct ControllerActiveElementInputState: Equatable, Sendable {
     }
 }
 
+private struct MacServiceResolution: Equatable {
+    let serviceName: String
+    let serviceType: String
+    let serviceDomain: String
+    let hostName: String?
+    let port: Int
+    let serverID: String?
+    let displayName: String
+
+    var endpoint: NWEndpoint {
+        .service(name: serviceName, type: serviceType, domain: serviceDomain, interface: nil)
+    }
+
+    var url: URL? {
+        guard let hostName, !hostName.isEmpty else { return nil }
+        var components = URLComponents()
+        components.scheme = "ws"
+        components.host = hostName
+        components.port = port
+        return components.url
+    }
+}
+
+private enum ControllerConnectionTarget {
+    case url(URL)
+    case service(MacServiceResolution)
+
+    var endpoint: NWEndpoint {
+        switch self {
+        case .url(let url):
+            return .url(url)
+        case .service(let resolution):
+            return resolution.endpoint
+        }
+    }
+
+    var displayURL: URL? {
+        switch self {
+        case .url(let url):
+            return url
+        case .service(let resolution):
+            return resolution.url
+        }
+    }
+
+    var serviceResolution: MacServiceResolution? {
+        switch self {
+        case .url:
+            return nil
+        case .service(let resolution):
+            return resolution
+        }
+    }
+}
+
 @MainActor
 final class ControllerClient: ObservableObject {
     enum ConnectionState: Equatable {
@@ -296,7 +351,9 @@ final class ControllerClient: ObservableObject {
     private var trustedMacCredential: TrustedMacCredential?
     private var currentAuthToken: String?
     private var currentExpectedServerID: String?
-    private var smartDiscovery: SmartMacDiscovery?
+    private var currentServiceResolution: MacServiceResolution?
+    private var smartDiscovery: MacServiceDiscovery?
+    private var pairingDiscovery: MacServiceDiscovery?
     private var reconnectTask: Task<Void, Never>?
     private var autoReconnectEnabled = false
     private var realtimeDatagramConnection: NWConnection?
@@ -400,6 +457,7 @@ final class ControllerClient: ObservableObject {
 
     func connect(hostField: String, port: String, pairingCode: String) {
         stopSmartDiscovery()
+        stopPairingDiscovery()
         reconnectTask?.cancel()
         reconnectTask = nil
         autoReconnectEnabled = false
@@ -407,9 +465,40 @@ final class ControllerClient: ObservableObject {
         openConnection(hostField: hostField, port: port, pairingCode: pairingCode)
     }
 
+    func connect(pairingPayload payload: PairingPayload) {
+        stopSmartDiscovery()
+        stopPairingDiscovery()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        autoReconnectEnabled = false
+        lastError = nil
+        smartConnectStatus = nil
+
+        let pairingCode = payload.pairingCode?.nilIfBlank ?? ""
+        let hasNearbyFallback = payload.hasServiceDiscoveryInfo
+        if hasNearbyFallback {
+            startPairingDiscovery(for: payload, pairingCode: pairingCode)
+        }
+
+        if let url = payload.urls.compactMap(URL.init(string:)).first(where: Self.isUsableRemoteURL) {
+            openConnection(target: .url(url), pairingCode: pairingCode)
+            return
+        }
+
+        if hasNearbyFallback {
+            closeConnection(sendReleaseAll: false)
+            state = .connecting
+            smartConnectStatus = "Nearby Pairing: looking for this Mac…"
+            return
+        }
+
+        state = .failed("Pairing code did not include a reachable Mac address")
+    }
+
     func disconnect(sendReleaseAll: Bool = true) {
         autoReconnectEnabled = false
         stopSmartDiscovery()
+        stopPairingDiscovery()
         reconnectTask?.cancel()
         reconnectTask = nil
         closeConnection(sendReleaseAll: sendReleaseAll)
@@ -429,6 +518,15 @@ final class ControllerClient: ObservableObject {
         )
     }
 
+    private func connectTrusted(to resolution: MacServiceResolution, credential: TrustedMacCredential) {
+        openConnection(
+            target: .service(resolution),
+            pairingCode: "",
+            authToken: credential.authToken,
+            expectedServerID: credential.serverID
+        )
+    }
+
     private func openConnection(
         hostField: String,
         port: String,
@@ -436,8 +534,6 @@ final class ControllerClient: ObservableObject {
         authToken: String? = nil,
         expectedServerID: String? = nil
     ) {
-        closeConnection(sendReleaseAll: false)
-
         guard let url = makeURL(hostField: hostField, port: port),
               url.host?.isEmpty == false
         else {
@@ -445,22 +541,40 @@ final class ControllerClient: ObservableObject {
             return
         }
 
+        openConnection(
+            target: .url(url),
+            pairingCode: pairingCode,
+            authToken: authToken,
+            expectedServerID: expectedServerID
+        )
+    }
+
+    private func openConnection(
+        target: ControllerConnectionTarget,
+        pairingCode: String,
+        authToken: String? = nil,
+        expectedServerID: String? = nil
+    ) {
+        closeConnection(sendReleaseAll: false)
+
         state = .connecting
         lastError = nil
 
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.noDelay = true
 
-        let scheme = url.scheme?.lowercased()
+        let scheme = target.displayURL?.scheme?.lowercased()
         let tlsOptions = scheme == "wss" ? NWProtocolTLS.Options() : nil
         let parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
+        parameters.includePeerToPeer = true
         let websocketOptions = NWProtocolWebSocket.Options()
         websocketOptions.autoReplyPing = true
         parameters.defaultProtocolStack.applicationProtocols.insert(websocketOptions, at: 0)
 
-        let connection = NWConnection(to: .url(url), using: parameters)
+        let connection = NWConnection(to: target.endpoint, using: parameters)
         self.connection = connection
-        controlURL = url
+        controlURL = target.displayURL
+        currentServiceResolution = target.serviceResolution
         currentAuthToken = authToken?.nilIfBlank
         currentExpectedServerID = expectedServerID?.nilIfBlank
         inputTransport.setReliableConnection(nil, resetSequence: true)
@@ -505,6 +619,7 @@ final class ControllerClient: ObservableObject {
         connection?.cancel()
         connection = nil
         controlURL = nil
+        currentServiceResolution = nil
         currentAuthToken = nil
         currentExpectedServerID = nil
         UIApplication.shared.isIdleTimerDisabled = false
@@ -520,11 +635,17 @@ final class ControllerClient: ObservableObject {
     }
 
     func setButton(_ button: GameButton, pressed: Bool, pressIdentifier: UInt64? = nil) {
-        guard isConnected else { return }
         // Send raw per-touch edges immediately. The Mac helper keeps physical
         // touch identity so the injected key state can change without timer delays.
         let state: ButtonPressState = pressed ? .down : .up
-        guard inputTransport.sendButton(button, state: state, pressIdentifier: pressIdentifier) else { return }
+        guard isConnected,
+              inputTransport.sendButton(button, state: state, pressIdentifier: pressIdentifier)
+        else {
+            if !pressed {
+                activeInputState.record(button: button, state: .up, pressIdentifier: pressIdentifier)
+            }
+            return
+        }
         activeInputState.record(button: button, state: state, pressIdentifier: pressIdentifier)
         if Self.liveInputStatusUpdatesEnabled {
             updateLastSentEvent("\(button.rawValue) \(state.rawValue)")
@@ -532,9 +653,15 @@ final class ControllerClient: ObservableObject {
     }
 
     func setElementInput(_ input: KeypadElementInputID, pressed: Bool, pressIdentifier: UInt64? = nil) {
-        guard isConnected else { return }
         let state: ButtonPressState = pressed ? .down : .up
-        guard inputTransport.sendElementInput(input, state: state, pressIdentifier: pressIdentifier) else { return }
+        guard isConnected,
+              inputTransport.sendElementInput(input, state: state, pressIdentifier: pressIdentifier)
+        else {
+            if !pressed {
+                activeElementInputState.record(input: input, state: .up, pressIdentifier: pressIdentifier)
+            }
+            return
+        }
         activeElementInputState.record(input: input, state: state, pressIdentifier: pressIdentifier)
         if Self.liveInputStatusUpdatesEnabled {
             updateLastSentEvent("\(input.storageKey) \(state.rawValue)")
@@ -852,6 +979,7 @@ final class ControllerClient: ObservableObject {
             lastSentEventUpdateTask = nil
             connection = nil
             controlURL = nil
+            currentServiceResolution = nil
             currentAuthToken = nil
             currentExpectedServerID = nil
             UIApplication.shared.isIdleTimerDisabled = false
@@ -1159,6 +1287,7 @@ final class ControllerClient: ObservableObject {
 
         rememberTrustedMacIfAvailable(authToken: authToken, serverID: serverID)
         stopSmartDiscovery()
+        stopPairingDiscovery()
         reconnectTask?.cancel()
         reconnectTask = nil
         autoReconnectEnabled = trustedMacCredential != nil
@@ -1173,17 +1302,20 @@ final class ControllerClient: ObservableObject {
     }
 
     private func rememberTrustedMacIfAvailable(authToken: String?, serverID: String?) {
-        guard let controlURL else { return }
         let tokenToStore = authToken?.nilIfBlank ?? currentAuthToken?.nilIfBlank
         let serverIDToStore = serverID?.nilIfBlank ?? currentExpectedServerID?.nilIfBlank
-        guard let tokenToStore, let serverIDToStore else { return }
+        let rememberedURLString = currentServiceResolution?.url?.absoluteString ?? controlURL?.absoluteString
+        guard let tokenToStore, let serverIDToStore, let rememberedURLString else { return }
 
-        let macName = trustedMacCredential?.macName ?? controlURL.host ?? "PocketPad Mac"
+        let macName = currentServiceResolution?.displayName
+            ?? trustedMacCredential?.macName
+            ?? controlURL?.host
+            ?? "PocketPad Mac"
         let credential = TrustedMacCredential(
             serverID: serverIDToStore,
             authToken: tokenToStore,
             macName: macName,
-            lastURLString: controlURL.absoluteString,
+            lastURLString: rememberedURLString,
             updatedAt: Date.currentMilliseconds
         )
         trustedMacCredential = credential
@@ -1199,31 +1331,58 @@ final class ControllerClient: ObservableObject {
 
     private func startSmartDiscovery(for credential: TrustedMacCredential) {
         smartDiscovery?.stop()
-        let discovery = SmartMacDiscovery(
+        let discovery = MacServiceDiscovery(
             expectedServerID: credential.serverID,
+            expectedServiceName: nil,
             onStatus: { [weak self] status in
                 self?.smartConnectStatus = status
             },
-            onResolved: { [weak self] url, serviceName in
+            onResolved: { [weak self] resolution in
                 guard let self else { return }
                 var updatedCredential = credential
-                updatedCredential.macName = serviceName.nilIfBlank ?? credential.macName
-                updatedCredential.lastURLString = url.absoluteString
+                updatedCredential.macName = resolution.displayName.nilIfBlank ?? credential.macName
+                if let url = resolution.url {
+                    updatedCredential.lastURLString = url.absoluteString
+                }
                 updatedCredential.updatedAt = Date.currentMilliseconds
                 self.trustedMacCredential = updatedCredential
                 Self.saveTrustedMacCredential(updatedCredential)
                 self.stopSmartDiscovery()
                 self.smartConnectStatus = "Smart Connect: found \(updatedCredential.macName)"
-                self.connectTrusted(to: url, credential: updatedCredential)
+                self.connectTrusted(to: resolution, credential: updatedCredential)
             }
         )
         smartDiscovery = discovery
-        discovery.start()
+        discovery.start(statusMessage: "Smart Connect: scanning nearby Macs…")
+    }
+
+    private func startPairingDiscovery(for payload: PairingPayload, pairingCode: String) {
+        pairingDiscovery?.stop()
+        let discovery = MacServiceDiscovery(
+            expectedServerID: payload.serverID?.nilIfBlank,
+            expectedServiceName: payload.serviceName?.nilIfBlank,
+            onStatus: { [weak self] status in
+                self?.smartConnectStatus = status
+            },
+            onResolved: { [weak self] resolution in
+                guard let self else { return }
+                self.stopPairingDiscovery()
+                self.smartConnectStatus = "Nearby Pairing: found \(resolution.displayName)"
+                self.openConnection(target: .service(resolution), pairingCode: pairingCode)
+            }
+        )
+        pairingDiscovery = discovery
+        discovery.start(statusMessage: "Nearby Pairing: looking for this Mac…")
     }
 
     private func stopSmartDiscovery() {
         smartDiscovery?.stop()
         smartDiscovery = nil
+    }
+
+    private func stopPairingDiscovery() {
+        pairingDiscovery?.stop()
+        pairingDiscovery = nil
     }
 
     private func scheduleSmartReconnectIfNeeded() {
@@ -1265,6 +1424,7 @@ final class ControllerClient: ObservableObject {
         lastSentEventUpdateTask = nil
         connection = nil
         controlURL = nil
+        currentServiceResolution = nil
         currentAuthToken = nil
         currentExpectedServerID = nil
         UIApplication.shared.isIdleTimerDisabled = false
@@ -1284,6 +1444,7 @@ final class ControllerClient: ObservableObject {
         }
 
         let parameters = NWParameters.udp
+        parameters.includePeerToPeer = true
         parameters.allowLocalEndpointReuse = true
 
         let datagramConnection = NWConnection(
@@ -1410,6 +1571,11 @@ final class ControllerClient: ObservableObject {
         UserDefaults.standard.set(true, forKey: Self.hasSavedKeypadSnapshotDefaultsKey)
     }
 
+    private static func isUsableRemoteURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased().nilIfBlank else { return false }
+        return host != "localhost" && host != "127.0.0.1" && host != "::1"
+    }
+
     private func makeURL(hostField: String, port: String) -> URL? {
         let trimmedHost = hostField.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedHost.isEmpty else { return nil }
@@ -1437,21 +1603,26 @@ private struct TrustedMacCredential: Codable, Equatable {
     }
 }
 
-private final class SmartMacDiscovery: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {
-    private static let serviceType = "_pocketpad._tcp."
+private final class MacServiceDiscovery: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {
+    private static let netServiceType = "_pocketpad._tcp."
+    private static let endpointServiceType = "_pocketpad._tcp"
+    private static let defaultDomain = "local"
 
-    private let expectedServerID: String
+    private let expectedServerID: String?
+    private let expectedServiceName: String?
     private let onStatus: (String?) -> Void
-    private let onResolved: (URL, String) -> Void
+    private let onResolved: (MacServiceResolution) -> Void
     private let browser = NetServiceBrowser()
     private var services: [NetService] = []
 
     init(
-        expectedServerID: String,
+        expectedServerID: String?,
+        expectedServiceName: String?,
         onStatus: @escaping (String?) -> Void,
-        onResolved: @escaping (URL, String) -> Void
+        onResolved: @escaping (MacServiceResolution) -> Void
     ) {
-        self.expectedServerID = expectedServerID
+        self.expectedServerID = expectedServerID?.nilIfBlank
+        self.expectedServiceName = expectedServiceName?.nilIfBlank
         self.onStatus = onStatus
         self.onResolved = onResolved
         super.init()
@@ -1459,9 +1630,9 @@ private final class SmartMacDiscovery: NSObject, NetServiceBrowserDelegate, NetS
         browser.includesPeerToPeer = true
     }
 
-    func start() {
-        onStatus("Smart Connect: scanning nearby Macs…")
-        browser.searchForServices(ofType: Self.serviceType, inDomain: "local.")
+    func start(statusMessage: String) {
+        onStatus(statusMessage)
+        browser.searchForServices(ofType: Self.netServiceType, inDomain: "local.")
     }
 
     func stop() {
@@ -1479,22 +1650,28 @@ private final class SmartMacDiscovery: NSObject, NetServiceBrowserDelegate, NetS
     }
 
     func netServiceDidResolveAddress(_ sender: NetService) {
-        guard serviceServerID(sender) == expectedServerID,
-              sender.port > 0,
-              let hostName = sender.hostName?.trimmingCharacters(in: CharacterSet(charactersIn: ".")),
-              !hostName.isEmpty
-        else {
-            return
+        let serverID = serviceServerID(sender)
+        if let expectedServerID {
+            guard serverID == expectedServerID else { return }
+        } else if let expectedServiceName {
+            guard sender.name == expectedServiceName else { return }
         }
+        guard sender.port > 0 else { return }
 
-        var components = URLComponents()
-        components.scheme = "ws"
-        components.host = hostName
-        components.port = sender.port
-        guard let url = components.url else { return }
-
-        let serviceName = serviceDisplayName(sender) ?? sender.name
-        onResolved(url, serviceName)
+        let hostName = sender.hostName?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .nilIfBlank
+        let displayName = serviceDisplayName(sender) ?? sender.name
+        let resolution = MacServiceResolution(
+            serviceName: sender.name,
+            serviceType: Self.endpointServiceType,
+            serviceDomain: Self.normalizedDomain(sender.domain),
+            hostName: hostName,
+            port: sender.port,
+            serverID: serverID,
+            displayName: displayName
+        )
+        onResolved(resolution)
     }
 
     func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
@@ -1505,7 +1682,7 @@ private final class SmartMacDiscovery: NSObject, NetServiceBrowserDelegate, NetS
         guard let txtRecordData = service.txtRecordData() else { return nil }
         let record = NetService.dictionary(fromTXTRecord: txtRecordData)
         guard let data = record["id"] else { return nil }
-        return String(data: data, encoding: .utf8)
+        return String(data: data, encoding: .utf8)?.nilIfBlank
     }
 
     private func serviceDisplayName(_ service: NetService) -> String? {
@@ -1513,6 +1690,11 @@ private final class SmartMacDiscovery: NSObject, NetServiceBrowserDelegate, NetS
         let record = NetService.dictionary(fromTXTRecord: txtRecordData)
         guard let data = record["name"] else { return nil }
         return String(data: data, encoding: .utf8)?.nilIfBlank
+    }
+
+    private static func normalizedDomain(_ domain: String) -> String {
+        let normalized = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return normalized.nilIfBlank ?? Self.defaultDomain
     }
 }
 

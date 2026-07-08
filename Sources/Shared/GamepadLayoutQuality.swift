@@ -571,7 +571,9 @@ enum GamepadLayoutPreviewRenderer {
             drawIcon(icon, in: control.frame, foreground: foreground, context: context)
         }
 
-        if customization.showsButtonLabels, shouldDrawLabel(control.label, with: icon) {
+        if customization.showsButtonLabels,
+           !control.isJoystick,
+           shouldDrawLabel(control.label, with: icon) {
             drawLabel(
                 control.label,
                 in: control.frame,
@@ -589,13 +591,18 @@ enum GamepadLayoutPreviewRenderer {
     private static func drawJoystickDetails(control: GamepadResolvedControl, foreground: GamepadRGBAColor, in context: CGContext) {
         let side = min(control.frame.width, control.frame.height)
         let center = control.center
-        let ringRect = CGRect(x: center.x - side * 0.35, y: center.y - side * 0.35, width: side * 0.70, height: side * 0.70)
-        let knobRect = CGRect(x: center.x - side * 0.18, y: center.y - side * 0.18, width: side * 0.36, height: side * 0.36)
+        let isThumbstick = control.layoutCustomization.joystickVisualStyle == .thumbstick
+        let knobRatio: CGFloat = isThumbstick ? 0.72 : 0.36
+        let knobSide = side * knobRatio
+        let knobRect = CGRect(x: center.x - knobSide / 2, y: center.y - knobSide / 2, width: knobSide, height: knobSide)
         context.saveGState()
         context.setStrokeColor(cgColor(foreground, alphaMultiplier: 0.38))
         context.setLineWidth(1)
-        context.strokeEllipse(in: ringRect)
-        context.setFillColor(cgColor(foreground, alphaMultiplier: 0.20))
+        if !isThumbstick {
+            let ringRect = CGRect(x: center.x - side * 0.35, y: center.y - side * 0.35, width: side * 0.70, height: side * 0.70)
+            context.strokeEllipse(in: ringRect)
+        }
+        context.setFillColor(cgColor(foreground, alphaMultiplier: isThumbstick ? 0.28 : 0.20))
         context.fillEllipse(in: knobRect)
         context.setStrokeColor(cgColor(foreground, alphaMultiplier: 0.34))
         context.strokeEllipse(in: knobRect)

@@ -15,15 +15,15 @@
   <key>CFBundlePackageType</key>
   <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0</string>
+  <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>LSMinimumSystemVersion</key>
   <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
   <key>NSHumanReadableCopyright</key>
   <string></string>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>PocketPad hosts a local keypad server so your iPhone can connect on your Wi‑Fi network.</string>
+  <string>PocketPad hosts a local keypad server so your iPhone can connect over your local network or nearby peer-to-peer.</string>
   <key>NSBonjourServices</key>
   <array>
     <string>_pocketpad._tcp</string>

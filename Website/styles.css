@@ -450,6 +450,7 @@ h3 {
 .details,
 .workflow,
 .use-cases,
+.download,
 .final-cta,
 .privacy-copy {
   padding-block: clamp(72px, 11vw, 132px);
@@ -596,6 +597,73 @@ h3 {
   text-transform: lowercase;
 }
 
+.download {
+  padding-top: 0;
+}
+
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+
+.download-card {
+  min-height: 360px;
+  padding: clamp(20px, 4vw, 34px);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.download-card > span {
+  display: block;
+  margin-bottom: 44px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.download-card p {
+  max-width: 520px;
+  color: var(--muted);
+}
+
+.download-card .pixel-button {
+  margin: 12px 0 18px;
+}
+
+.release-meta {
+  display: grid;
+  gap: 0;
+  margin: 18px 0 0;
+  border-top: 1px solid rgba(17, 17, 15, 0.22);
+}
+
+.release-meta div {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(17, 17, 15, 0.16);
+}
+
+.release-meta dt,
+.release-meta dd {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.release-meta dt {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.release-meta dd {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .final-cta {
   display: grid;
   grid-template-columns: 1fr minmax(300px, 520px);
@@ -685,7 +753,8 @@ h3 {
 
   .spec-strip,
   .feature-list,
-  .workflow-line {
+  .workflow-line,
+  .download-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -718,7 +787,8 @@ h3 {
   .form-row,
   .spec-strip,
   .feature-list,
-  .workflow-line {
+  .workflow-line,
+  .download-grid {
     grid-template-columns: 1fr;
   }
 
@@ -764,6 +834,11 @@ h3 {
   flex-wrap: wrap;
   gap: 10px;
   margin: 0 0 26px;
+}
+
+.pixel-button[aria-disabled="true"] {
+  opacity: 0.58;
+  pointer-events: none;
 }
 
 .pixel-button-secondary {
@@ -1174,6 +1249,7 @@ h3 {
   }
 
   .docs-preview-grid,
+  .download-grid,
   .doc-card-grid.three {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1195,6 +1271,7 @@ h3 {
   }
 
   .docs-preview-grid,
+  .download-grid,
   .doc-card-grid.two,
   .doc-card-grid.three,
   .docs-toc,

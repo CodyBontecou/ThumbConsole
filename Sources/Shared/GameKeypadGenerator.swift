@@ -68,6 +68,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
     public var accentStyle: GamepadAccentStyle?
     public var fillColor: GamepadRGBAColor?
     public var joystickKnobColor: GamepadRGBAColor?
+    public var joystickVisualStyle: GamepadJoystickVisualStyle?
     public var styleID: String?
     public var visualStyle: GamepadControlVisualStyle?
     public var icon: GamepadControlIcon?
@@ -96,6 +97,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         accentStyle: GamepadAccentStyle? = nil,
         fillColor: GamepadRGBAColor? = nil,
         joystickKnobColor: GamepadRGBAColor? = nil,
+        joystickVisualStyle: GamepadJoystickVisualStyle? = nil,
         styleID: String? = nil,
         visualStyle: GamepadControlVisualStyle? = nil,
         icon: GamepadControlIcon? = nil,
@@ -123,6 +125,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         self.accentStyle = accentStyle
         self.fillColor = fillColor
         self.joystickKnobColor = joystickKnobColor
+        self.joystickVisualStyle = joystickVisualStyle
         self.styleID = styleID
         self.visualStyle = visualStyle
         self.icon = icon
@@ -163,6 +166,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle)
         fillColor = Self.decodeFillColor(from: container)
         joystickKnobColor = Self.decodeJoystickKnobColor(from: container)
+        joystickVisualStyle = try Self.decodeJoystickVisualStyle(from: container)
         styleID = try container.decodeIfPresent(String.self, forKey: .styleID)
         visualStyle = try Self.decodeVisualStyle(from: container)
         icon = try Self.decodeIcon(from: container)
@@ -195,6 +199,7 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         try container.encodeIfPresent(accentStyle, forKey: .accentStyle)
         try container.encodeIfPresent(fillColor, forKey: .fillColor)
         try container.encodeIfPresent(joystickKnobColor, forKey: .joystickKnobColor)
+        try container.encodeIfPresent(joystickVisualStyle, forKey: .joystickVisualStyle)
         try container.encodeIfPresent(styleID, forKey: .styleID)
         try container.encodeIfPresent(visualStyle?.normalized, forKey: .visualStyle)
         try container.encodeIfPresent(icon?.normalized, forKey: .icon)
@@ -237,6 +242,31 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         }
 
         return nil
+    }
+
+    private static func decodeJoystickVisualStyle(from container: KeyedDecodingContainer<CodingKeys>) throws -> GamepadJoystickVisualStyle? {
+        if let explicit = try container.decodeIfPresent(GamepadJoystickVisualStyle.self, forKey: .joystickVisualStyle) {
+            return explicit
+        }
+        for key in [CodingKeys.joystickStyle, .stickStyle] {
+            if let raw = try? container.decodeIfPresent(String.self, forKey: key),
+               let style = parseJoystickVisualStyle(raw) {
+                return style
+            }
+        }
+        if (try? container.decodeIfPresent(Bool.self, forKey: .thumbstick)) == true {
+            return .thumbstick
+        }
+        return nil
+    }
+
+    private static func parseJoystickVisualStyle(_ text: String) -> GamepadJoystickVisualStyle? {
+        let normalized = text.lowercased().filter { $0.isLetter || $0.isNumber }
+        switch normalized {
+        case "pad", "fullpad", "classic", "joystick": return .pad
+        case "thumbstick", "thumb", "nub", "stickball", "ball": return .thumbstick
+        default: return nil
+        }
     }
 
     private static func decodeVisualStyle(from container: KeyedDecodingContainer<CodingKeys>) throws -> GamepadControlVisualStyle? {
@@ -414,6 +444,10 @@ public struct AgentKeypadControlSpec: Codable, Equatable, Sendable {
         case thumbFill
         case joystickThumbFill
         case joystickKnobFill
+        case joystickVisualStyle
+        case joystickStyle
+        case stickStyle
+        case thumbstick
         case styleID
         case visualStyle
         case icon
@@ -587,6 +621,7 @@ private struct GeneratedControlDefinition {
     var shape: GamepadButtonShapeStyle
     var fillColor: GamepadRGBAColor?
     var joystickKnobColor: GamepadRGBAColor?
+    var joystickVisualStyle: GamepadJoystickVisualStyle?
     var styleID: String?
     var visualStyle: GamepadControlVisualStyle?
     var icon: GamepadControlIcon?
@@ -615,6 +650,7 @@ private struct GeneratedControlDefinition {
         fill: String? = nil,
         fillColor: GamepadRGBAColor? = nil,
         joystickKnobColor: GamepadRGBAColor? = nil,
+        joystickVisualStyle: GamepadJoystickVisualStyle? = nil,
         styleID: String? = nil,
         visualStyle: GamepadControlVisualStyle? = nil,
         icon: GamepadControlIcon? = nil,
@@ -640,6 +676,7 @@ private struct GeneratedControlDefinition {
         self.shape = shape
         self.fillColor = fillColor ?? fill.flatMap { GamepadRGBAColor(hexString: $0) }
         self.joystickKnobColor = joystickKnobColor
+        self.joystickVisualStyle = joystickVisualStyle
         self.styleID = styleID
         self.visualStyle = visualStyle
         self.icon = icon
@@ -686,6 +723,7 @@ private enum GeneratedProfileBuilder {
                 accentStyle: control.accentStyle ?? control.role.accentStyle,
                 fillColor: control.fillColor ?? control.role.fillColor,
                 joystickKnobColor: control.joystickKnobColor,
+                joystickVisualStyle: control.joystickVisualStyle,
                 styleID: control.styleID,
                 visualStyle: control.visualStyle,
                 icon: control.icon,
@@ -768,9 +806,13 @@ private enum AgentSpecTemplate {
             let role = inferRole(for: controlSpec, button: button)
             let roleIndex = roleCounts[role, default: 0]
             roleCounts[role] = roleIndex + 1
-            let defaults = controlKind == .trackpad
-                ? trackpadLayoutDefaults()
-                : layoutDefaults(for: button, role: role, index: roleIndex)
+            let defaults = if controlKind == .trackpad {
+                trackpadLayoutDefaults()
+            } else if controlKind == .joystick {
+                joystickLayoutDefaults(style: controlSpec.joystickVisualStyle)
+            } else {
+                layoutDefaults(for: button, role: role, index: roleIndex)
+            }
             let label = controlSpec.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? (controlKind == .trackpad ? "Trackpad" : button.displayName)
                 : controlSpec.label
@@ -789,6 +831,7 @@ private enum AgentSpecTemplate {
                     shape: controlSpec.shape ?? defaults.shape,
                     fillColor: controlSpec.fillColor,
                     joystickKnobColor: controlSpec.joystickKnobColor,
+                    joystickVisualStyle: controlSpec.joystickVisualStyle,
                     styleID: controlSpec.styleID,
                     visualStyle: controlSpec.visualStyle,
                     icon: controlSpec.icon,
@@ -825,7 +868,7 @@ private enum AgentSpecTemplate {
     private static func inferredControlKind(for control: AgentKeypadControlSpec) -> GamepadCustomControlKind? {
         if let controlKind = control.controlKind { return controlKind }
         if control.trackpadSettings != nil { return .trackpad }
-        if control.joystickMapping != nil { return .joystick }
+        if control.joystickMapping != nil || control.joystickVisualStyle != nil { return .joystick }
         return nil
     }
 
@@ -899,6 +942,15 @@ private enum AgentSpecTemplate {
 
     private static func trackpadLayoutDefaults() -> LayoutDefaults {
         LayoutDefaults(x: 0.50, y: 0.58, width: 1.25, height: 1.0, shape: .roundedRectangle)
+    }
+
+    private static func joystickLayoutDefaults(style: GamepadJoystickVisualStyle?) -> LayoutDefaults {
+        switch style ?? .pad {
+        case .pad:
+            LayoutDefaults(x: 0.22, y: 0.64, width: 1.35, height: 1.35, shape: .circle)
+        case .thumbstick:
+            LayoutDefaults(x: 0.50, y: 0.62, width: 0.58, height: 0.58, shape: .circle)
+        }
     }
 
     private static func layoutDefaults(for button: GameButton, role: KeypadRole, index: Int) -> LayoutDefaults {

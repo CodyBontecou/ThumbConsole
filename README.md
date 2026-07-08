@@ -1,12 +1,12 @@
 # PocketPad
 
-PocketPad turns an iPhone into a programmable shortcut keypad for your Mac. The iPhone pairs with a macOS SwiftUI helper over WebSocket, sends realtime button state transitions over an authenticated UDP fast path with WebSocket mirroring as fallback, and the helper injects keyboard shortcuts with Accessibility-approved `CGEvent` key down/up events.
+PocketPad turns an iPhone into a programmable shortcut keypad for your Mac. The iPhone pairs with a macOS SwiftUI helper over WebSocket on a local network or Apple peer-to-peer path, sends realtime button state transitions over an authenticated UDP fast path with WebSocket mirroring as fallback, and the helper injects keyboard shortcuts with Accessibility-approved `CGEvent` key down/up events.
 
 It is no longer game-specific: use it for terminal workflows, tmux prefixes, Cursor shortcuts, window management, or any Mac app that responds to keyboard input.
 
 ## Targets
 
-- `PocketPadMac` — macOS 14+ SwiftUI helper, WebSocket pairing/control server plus UDP realtime listener preferring port `8765` with automatic fallback if unavailable, Bonjour Smart Connect advertising, CGEvent keyboard shortcut injection.
+- `PocketPadMac` — macOS 14+ SwiftUI helper, WebSocket pairing/control server plus UDP realtime listener preferring port `8765` with automatic fallback if unavailable, Bonjour Smart Connect advertising with peer-to-peer enabled, CGEvent keyboard shortcut injection.
 - `PocketPadiOS` — iOS 17+ SwiftUI programmable keypad with multitouch controls and Smart Connect reconnects.
 - `PocketPadCLI` — macOS command-line configuration and control tool for generating, editing, importing/exporting, selecting, and testing keypad profiles for the Mac helper.
 
@@ -19,15 +19,33 @@ xcodebuild -project PocketPad.xcodeproj -scheme PocketPadiOS -destination 'gener
 xcodebuild -project PocketPad.xcodeproj -scheme PocketPadCLI -destination 'platform=macOS' build
 ```
 
+## Distribution
+
+PocketPad has first-pass release automation for both shipping channels:
+
+```bash
+# macOS direct download: Developer ID export, notarize, zip, upload to Cloudflare R2.
+scripts/release/macos-cloudflare.sh --version 1.0.0 --build-number 1
+
+# iOS beta: archive/export an IPA, upload it, and distribute to a TestFlight group.
+scripts/release/ios-testflight.sh --app "$ASC_APP_ID" --group "Internal Testers"
+```
+
+Cloudflare Pages serves `/api/releases/latest-mac` and `/api/download-mac` from the `RELEASES` R2 binding. Create the bucket with `wrangler r2 bucket create pocketpad-releases`, then deploy the `Website` project after the binding exists. The macOS release script expects Wrangler auth plus either `asc` API-key notarization auth or notarization credentials via `NOTARYTOOL_KEYCHAIN_PROFILE` / `APPLE_ID`, `APP_SPECIFIC_PASSWORD`, and `ASC_TEAM_ID`.
+
+The iOS script uses the `asc` CLI. Set `ASC_APP_ID` (or pass `--app`) and optionally `POCKETPAD_TESTFLIGHT_GROUP`; it resolves a remote-safe build number when App Store Connect is reachable.
+
 ## Use
 
 1. Run `PocketPadMac` on the Mac.
 2. Grant Accessibility permission when prompted, then restart/refresh if needed.
-3. Run `PocketPadiOS` on the iPhone and tap **Scan Mac QR Code** to connect instantly, or manually enter one of the displayed `ws://<mac-ip>:<port>` addresses and tap **Request Pairing**.
+3. Run `PocketPadiOS` on the iPhone and tap **Scan Mac QR Code** to connect instantly, or manually enter one of the displayed `ws://<mac-ip>:<port>` addresses and tap **Request Pairing**. QR pairing can also discover the Mac over nearby peer-to-peer when there is no Wi‑Fi router.
 4. For manual pairing, enter the six-digit code shown in the Mac helper's secure pairing card.
 5. After the first successful pair, **Smart Connect** remembers this Mac, discovers it over Bonjour, and reconnects automatically when the iOS app opens or returns to foreground.
 6. The iOS app also keeps the last synced keypads available for viewing and switching even when PocketPad Mac is not open.
 7. Focus the Mac app you want to control, such as Terminal, Cursor, or a browser.
+
+For airplane/offline use, turn on Airplane Mode if desired, then manually re-enable Wi‑Fi and Bluetooth. PocketPad can use Apple peer-to-peer discovery without internet or a router; if both radios are off, wireless control is not possible.
 
 ## Programmatic keypad generation
 
@@ -85,6 +103,7 @@ pocketpad output mode keyboard   # or controller/custom per setup
 pocketpad customization set --appearance dark --device iphone-17-pro --background '#101014'
 pocketpad customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
 pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
+pocketpad element add joystick --label Nub --thumbstick --target right-stick --no-digital-directions --x 0.5 --y 0.58
 pocketpad element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
 pocketpad element set "Right Stick" --thumb-fill '#22C55E'
 pocketpad style create Soul --fill '#F8FAFC' --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9' --glow-radius 12 --icon sf:sparkles --haptic medium --haptic-pattern double --haptic-intensity 75%
@@ -133,7 +152,7 @@ PocketPad uses its own versioned JSON envelope because there is no broadly adopt
 
 Each setup stores its own keypad-level preferences. Select a setup in the Keypad editor to show the right-side keypad inspector, where you can choose the device canvas, attach a Mac application with the native file browser, set custom device dimensions, change the iPhone background fill, and toggle System/Light/Dark view modes while editing. Attached applications sync with the setup, including the selected app icon; when the iPhone is connected, the top bar shows that app icon as a button that asks the Mac helper to launch or refocus the pre-approved app. Use **Saved Mode** to choose whether that setup follows the device, always uses light mode, or always uses dark mode; per-button light and dark fills and keypad background fills are saved separately with the setup. The same settings are scriptable with `pocketpad customization set --appearance light|dark|system --device iphone-17-pro --background '#101014'`, `pocketpad customization set --background-gradient '#101014,#4338CA'`, `pocketpad element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'`, and `pocketpad profile attach-app PROFILE --path /Applications/App.app`.
 
-Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder. Select a joystick and edit **Fill → Thumbstick** to recolor the moving thumb separately from the joystick base; the CLI equivalent is `pocketpad element set "Right Stick" --thumb-fill '#22C55E'` (or light/dark variants such as `--light-thumb-fill`).
+Layouts can include up to two virtual joysticks via **Layout tools → Add Joystick**. Each joystick maps its up/down/left/right directions to normal PocketPad shortcut slots, so you can build shooter-style dual-stick layouts while still using the existing keyboard-binding recorder. In the joystick inspector, **Look → Thumbstick** turns the control into a compact center nub: touches must start on the small ball, then can drag through the larger invisible range without stealing taps from neighboring face buttons. The CLI equivalent is `pocketpad element add joystick --thumbstick --target right-stick --no-digital-directions`. Select a joystick and edit **Fill → Thumbstick** to recolor the moving thumb separately from the joystick base; the CLI equivalent is `pocketpad element set "Right Stick" --thumb-fill '#22C55E'` (or light/dark variants such as `--light-thumb-fill`).
 
 The Keypad editor now has a foundational design layer: a layer-ordered component list, grid/snap preferences saved in the profile, reusable style tokens, per-control icons/haptics, copy/paste style, basic alignment/distribution, and style-aware preview rendering. Per-control haptics include style, pattern/rhythm, intensity, sharpness, and duration; iPhone haptics are still device-wide, so these distinguish controls by feel rather than screen location. The same data is scriptable with `pocketpad style`, `pocketpad layer`, `pocketpad group`, `pocketpad asset`, and richer `pocketpad element set` options such as `--style`, `--icon`, `--haptic`, `--haptic-pattern`, `--haptic-intensity`, `--stroke`, `--glow`, and `--pressed-fill`.
 
@@ -182,7 +201,7 @@ Use **Default** for a single button or **Reset All** to restore the starter keyp
 - macOS throttles input debug/status publishing so UI work does not compete with key injection.
 - During physical tap testing, the Mac debug panel shows missing transport frames, recovered duplicate-down edges, and ignored duplicate/orphan input edges separately.
 - iOS sends a heartbeat every 500 ms.
-- Smart Connect stores a trusted reconnect token after successful pairing, advertises the Mac as `_pocketpad._tcp` on the local network, and avoids reusing stale six-digit pairing codes.
+- Smart Connect stores a trusted reconnect token after successful pairing, advertises the Mac as `_pocketpad._tcp` on the local network with peer-to-peer discovery enabled, and avoids reusing stale six-digit pairing codes.
 - macOS releases all held keys after 1500 ms without heartbeat, but keeps the socket open so brief focus/app-launch stalls can recover.
 - macOS keeps a latency-critical activity while the helper is running to avoid App Nap when the target app is focused.
 - macOS releases all held keys on client disconnect, server stop, or manual Release All.

@@ -73,7 +73,7 @@
         <section id="overview" class="doc-section">
           <p class="eyebrow">overview</p>
           <h2>What PocketPad does</h2>
-          <p>PocketPad turns an iPhone into a programmable control surface for a Mac. The macOS helper hosts a local pairing server, stores keypad profiles, and sends keyboard, pointer, or virtual gamepad output to the focused app. The iOS app displays the synced keypad and sends low-latency button, joystick, trigger, and trackpad input over your local network.</p>
+          <p>PocketPad turns an iPhone into a programmable control surface for a Mac. The macOS helper hosts a local pairing server, stores keypad profiles, and sends keyboard, pointer, or virtual gamepad output to the focused app. The iOS app displays the synced keypad and sends low-latency button, joystick, trigger, and trackpad input over your local network or a nearby peer-to-peer path.</p>
 
           <div class="doc-card-grid three">
             <div class="doc-card">
@@ -100,7 +100,7 @@
           <ul class="doc-checklist">
             <li><strong>macOS 14 or newer</strong> running PocketPad Mac.</li>
             <li><strong>iOS 17 or newer</strong> running PocketPad on iPhone.</li>
-            <li><strong>Same local network</strong> for Smart Connect, QR pairing, and realtime input.</li>
+            <li><strong>Same local network or nearby peer-to-peer</strong> for Smart Connect, QR pairing, and realtime input.</li>
             <li><strong>Accessibility permission on Mac</strong> so PocketPad can inject keyboard and pointer events.</li>
             <li><strong>Local Network permission</strong> if iOS or macOS prompts for it.</li>
             <li><strong>Camera permission on iPhone</strong> only if you scan the Mac QR code.</li>
@@ -121,7 +121,7 @@
             </li>
             <li>
               <strong>Open PocketPad on iPhone.</strong>
-              <p>The iOS onboarding explains Local Network and Camera prompts. Tap Smart Connect, or use Scan Mac QR Code if this is the first pairing.</p>
+              <p>The iOS onboarding explains Local Network and Camera prompts. Tap Smart Connect, or use Scan Mac QR Code if this is the first pairing. For airplane/offline use, keep Wi‑Fi and Bluetooth enabled after enabling Airplane Mode so peer-to-peer discovery can run.</p>
             </li>
             <li>
               <strong>Pair securely.</strong>
@@ -263,7 +263,7 @@ pocketpad release-all</code></pre>
 
           <details open>
             <summary>Smart Connect does not find my Mac</summary>
-            <p>Make sure both devices are on the same Wi‑Fi network, PocketPad Mac is running, Local Network permission is allowed, and the Mac helper shows a local address. Use QR pairing as a fallback.</p>
+            <p>Make sure PocketPad Mac is running, Local Network permission is allowed, and both devices are on the same Wi‑Fi network or have Wi‑Fi/Bluetooth enabled nearby for peer-to-peer. Use QR pairing as a fallback.</p>
           </details>
           <details>
             <summary>QR pairing fails</summary>
@@ -288,7 +288,7 @@ pocketpad release-all</code></pre>
           <h2>Local, authenticated, and recoverable input</h2>
           <ul>
             <li>Pairing uses a six-digit setup challenge and trusted reconnect token.</li>
-            <li>Input travels over the local network; Smart Connect advertises as <code>_pocketpad._tcp</code>.</li>
+            <li>Input travels over the local network or nearby peer-to-peer; Smart Connect advertises as <code>_pocketpad._tcp</code>.</li>
             <li>Button state transitions use compact authenticated UDP frames with WebSocket mirroring for recovery.</li>
             <li>macOS releases held keys after heartbeat timeout, disconnect, server stop, manual Release All, and app quit.</li>
             <li>iOS sends a best-effort Release All when disconnecting, backgrounding, or becoming inactive.</li>

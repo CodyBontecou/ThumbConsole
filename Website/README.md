@@ -7,8 +7,10 @@ Pixel-art landing page for PocketPad with a Cloudflare Pages Function that saves
 - `index.html` / `styles.css` / `script.js` — static landing page, screenshot gallery, and launch-list form.
 - `docs.html` — comprehensive PocketPad documentation for setup, pairing, editor workflows, outputs, CLI, troubleshooting, and safety behavior.
 - `functions/api/subscribe.js` — Cloudflare Pages Function for `POST /api/subscribe`.
+- `functions/api/releases/latest-mac.js` — serves the current macOS release manifest from R2.
+- `functions/api/download-mac.js` — streams the latest/versioned macOS release zip from R2.
 - `schema.sql` — D1 table and indexes.
-- `wrangler.toml` — Pages + D1 binding config. Replace the placeholder `database_id` before deploy.
+- `wrangler.toml` — Pages + D1/R2 binding config. Replace the placeholder `database_id` before deploy.
 - `config.js` — optional public Turnstile site key.
 
 ## Cloudflare setup
@@ -26,9 +28,10 @@ Copy the returned database ID into `wrangler.toml`, replacing `REPLACE_WITH_D1_D
 wrangler d1 execute pocketpad-waitlist --file=./schema.sql --remote
 ```
 
-Create the Pages project, then add a salt used for hashing IPs in consent/abuse records:
+Create the release bucket and Pages project, then add a salt used for hashing IPs in consent/abuse records:
 
 ```bash
+wrangler r2 bucket create pocketpad-releases
 wrangler pages project create pocketpad-site --production-branch main
 openssl rand -hex 32 | wrangler pages secret put IP_HASH_SALT --project-name pocketpad-site
 ```
@@ -45,6 +48,7 @@ For a Git-connected Pages project, set:
 - Build command: empty
 - Build output directory: `.`
 - D1 binding: `DB` → `pocketpad-waitlist`
+- R2 binding: `RELEASES` → `pocketpad-releases`
 
 ## Optional Cloudflare Turnstile
 
@@ -57,6 +61,16 @@ wrangler pages secret put TURNSTILE_SECRET_KEY --project-name pocketpad-site
 ```
 
 If `TURNSTILE_SECRET_KEY` is set, the API requires a valid Turnstile token.
+
+## macOS release upload
+
+From the repo root, build, notarize, upload the zip to R2, and update `macos/latest.json`:
+
+```bash
+scripts/release/macos-cloudflare.sh --version 1.0.0 --build-number 1
+```
+
+Use `--skip-upload` for a local dry run, or `--skip-notarize` only for unsigned internal previews. The script uploads to the remote R2 bucket with `wrangler r2 object put --remote` and can notarize through the configured `asc` API key.
 
 ## Local development
 

@@ -7,6 +7,46 @@ if (tickerTrack) {
   tickerTrack.innerHTML += tickerTrack.innerHTML;
 }
 
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function hydrateMacRelease() {
+  const link = document.querySelector("[data-mac-download-link]");
+  const versionNode = document.querySelector("[data-mac-release-version]");
+  const statusNode = document.querySelector("[data-mac-release-status]");
+  const shaNode = document.querySelector("[data-mac-release-sha]");
+  if (!link || !versionNode || !statusNode || !shaNode) return;
+
+  try {
+    const response = await fetch("/api/releases/latest-mac", {
+      headers: { Accept: "application/json" }
+    });
+    const release = await response.json().catch(() => ({}));
+    if (!response.ok || release.ok === false) {
+      throw new Error(release.message || "Mac build coming soon");
+    }
+
+    link.href = release.downloadURL || release.downloadPath || "/api/download-mac";
+    link.textContent = `download v${release.version || "1.0"}`;
+    link.removeAttribute("aria-disabled");
+    versionNode.textContent = `${release.version || "—"} (${release.buildNumber || "—"})`;
+    statusNode.textContent = `${release.notarized ? "notarized" : "unsigned preview"} · ${formatBytes(release.sizeBytes)}`;
+    shaNode.textContent = release.sha256 ? release.sha256.slice(0, 16) + "…" : "—";
+  } catch (error) {
+    link.textContent = "mac build coming soon";
+    link.setAttribute("aria-disabled", "true");
+    versionNode.textContent = "not uploaded yet";
+    statusNode.textContent = error.message || "waiting for first release";
+    shaNode.textContent = "—";
+  }
+}
+
+hydrateMacRelease();
+
 const TURNSTILE_SITE_KEY = window.POCKETPAD_TURNSTILE_SITE_KEY || "";
 let turnstileReady = Promise.resolve(null);
 

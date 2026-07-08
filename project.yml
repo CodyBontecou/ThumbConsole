@@ -7,6 +7,9 @@ options:
 settings:
   base:
     SWIFT_VERSION: 5.9
+    MARKETING_VERSION: 1.0.0
+    CURRENT_PROJECT_VERSION: 1
+    VERSIONING_SYSTEM: apple-generic
     ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
 targets:
   PocketPadMac:
@@ -77,6 +80,22 @@ targets:
         DEVELOPMENT_TEAM: 67KC823C9A
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
 schemes:
+  PocketPadMac:
+    build:
+      targets:
+        PocketPadMac: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  PocketPadiOS:
+    build:
+      targets:
+        PocketPadiOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
   PocketPadCLI:
     build:
       targets:

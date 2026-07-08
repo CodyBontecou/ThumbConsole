@@ -10,3 +10,10 @@ pages_build_output_dir = "."
 binding = "DB"
 database_name = "pocketpad-waitlist"
 database_id = "018ff4bd-ae0e-4a12-847f-263e97e4f8cd"
+
+# Stores notarized macOS release zips and macos/latest.json.
+# Create once with:
+#   wrangler r2 bucket create pocketpad-releases
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "pocketpad-releases"

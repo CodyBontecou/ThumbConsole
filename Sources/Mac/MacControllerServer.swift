@@ -31,7 +31,14 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var port: UInt16 = MacControllerServer.preferredPort
 
     var pairingPayload: String {
-        let payload = PairingPayload(urls: localURLs, pairingCode: pairingCode)
+        let payload = PairingPayload(
+            urls: localURLs,
+            pairingCode: pairingCode,
+            serviceName: bonjourServiceName,
+            serviceType: Self.bonjourServiceEndpointType,
+            serviceDomain: Self.bonjourServiceDomain,
+            serverID: serverID
+        )
         guard let data = try? JSONEncoder().encode(payload) else { return "" }
         return String(decoding: data, as: UTF8.self)
     }
@@ -65,6 +72,8 @@ final class MacControllerServer: ObservableObject {
     private static let serverIdentityDefaultsKey = "PocketPadMac.serverIdentity.v1"
     private static let trustedClientsDefaultsKey = "PocketPadMac.trustedClients.v1"
     private static let bonjourServiceType = "_pocketpad._tcp."
+    private static let bonjourServiceEndpointType = "_pocketpad._tcp"
+    private static let bonjourServiceDomain = "local"
     private static let externalProfileStoreChangedNotificationName = Notification.Name("com.codybontecou.PocketPadMac.profileStoreChanged")
     private static let notificationProfileStateDataKey = "profileStateData"
     private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
@@ -77,11 +86,12 @@ final class MacControllerServer: ObservableObject {
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let buttonReorderDelayNanoseconds: UInt64 = 4_000_000
     // The iPhone re-sends every active touch on each heartbeat (500 ms). If a
-    // button-up packet is the one packet we lose, client heartbeats continue but
-    // that button stops being refreshed. Expire only that stale hold instead of
-    // waiting for a full connection heartbeat timeout.
-    private static let physicalHoldRefreshTimeoutNanoseconds: UInt64 = 1_600_000_000
+    // button-up packet is lost, heartbeats continue but that button stops being
+    // refreshed. Expire that stale hold after one missed refresh plus jitter,
+    // instead of letting a direction feel stuck until the full heartbeat timeout.
+    private static let physicalHoldRefreshTimeoutNanoseconds: UInt64 = 850_000_000
     private let serverID: String
+    private let bonjourServiceName: String
     private var trustedClients: [String: TrustedClient]
     private var listener: NWListener?
     private var datagramListener: NWListener?
@@ -121,6 +131,8 @@ final class MacControllerServer: ObservableObject {
     private var heldBindingCounts: [MacKeyBinding: Int] = [:]
     private var heldGamepadButtonCounts: [VirtualGamepadButton: Int] = [:]
     private var lastAnalogSequenceNumberByKey: [String: UInt64] = [:]
+    private var activeAnalogStickLastSeenByStick: [VirtualGamepadStick: UInt64] = [:]
+    private var activeAnalogTriggerLastSeenByTrigger: [VirtualGamepadTrigger: UInt64] = [:]
     private var activePointerButtons: Set<ControllerPointerButton> = []
     private var recentPointerButtonEvents: [PointerButtonEventFingerprint: UInt64] = [:]
     private static let pointerButtonDuplicateWindowNanoseconds: UInt64 = 2_000_000_000
@@ -169,6 +181,7 @@ final class MacControllerServer: ObservableObject {
 
     init() {
         serverID = Self.loadOrCreateServerID()
+        bonjourServiceName = Self.defaultBonjourServiceName()
         trustedClients = Self.loadTrustedClients()
 
         let initialPairingCode = Self.generatePairingCode()
@@ -284,6 +297,7 @@ final class MacControllerServer: ObservableObject {
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        parameters.includePeerToPeer = true
         let websocketOptions = NWProtocolWebSocket.Options()
         websocketOptions.autoReplyPing = true
         parameters.defaultProtocolStack.applicationProtocols.insert(websocketOptions, at: 0)
@@ -1150,6 +1164,8 @@ final class MacControllerServer: ObservableObject {
         resetPhysicalInputTrackingOnNetworkQueue()
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
         lastAnalogSequenceNumberByKey.removeAll()
+        activeAnalogStickLastSeenByStick.removeAll()
+        activeAnalogTriggerLastSeenByTrigger.removeAll()
 
         guard !inputPressedButtons.isEmpty || !inputPressedElementInputs.isEmpty || !heldBindingCounts.isEmpty || !heldGamepadButtonCounts.isEmpty || !activePointerButtons.isEmpty else {
             virtualGamepadInjector.reset()
@@ -1246,6 +1262,7 @@ final class MacControllerServer: ObservableObject {
 
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
         let parameters = NWParameters.udp
+        parameters.includePeerToPeer = true
         parameters.allowLocalEndpointReuse = true
 
         do {
@@ -1852,6 +1869,11 @@ final class MacControllerServer: ObservableObject {
 
             let x = message.analogX ?? 0
             let y = message.analogY ?? 0
+            if abs(x) < 0.001 && abs(y) < 0.001 {
+                activeAnalogStickLastSeenByStick[stick] = nil
+            } else {
+                activeAnalogStickLastSeenByStick[stick] = DispatchTime.now().uptimeNanoseconds
+            }
             virtualGamepadInjector.setStick(stick, x: x, y: y)
             logInputEvent("gamepad_analog source=\(source) stick=\(stick.rawValue) x=\(String(format: "%.3f", x)) y=\(String(format: "%.3f", y))")
             return
@@ -1862,6 +1884,11 @@ final class MacControllerServer: ObservableObject {
             guard acceptAnalogSequence(message.analogSequence, key: sequenceKey, source: source) else { return }
 
             let value = message.analogValue ?? 0
+            if value < 0.001 {
+                activeAnalogTriggerLastSeenByTrigger[trigger] = nil
+            } else {
+                activeAnalogTriggerLastSeenByTrigger[trigger] = DispatchTime.now().uptimeNanoseconds
+            }
             virtualGamepadInjector.setTrigger(trigger, value: value)
             logInputEvent("gamepad_analog source=\(source) trigger=\(trigger.rawValue) value=\(String(format: "%.3f", value))")
             return
@@ -2648,6 +2675,19 @@ final class MacControllerServer: ObservableObject {
             }
         }
 
+        let sticksNeedingNeutral = activeAnalogStickLastSeenByStick.compactMap { stick, lastSeen -> VirtualGamepadStick? in
+            guard now >= lastSeen,
+                  now - lastSeen > Self.physicalHoldRefreshTimeoutNanoseconds
+            else { return nil }
+            return stick
+        }
+        let triggersNeedingNeutral = activeAnalogTriggerLastSeenByTrigger.compactMap { trigger, lastSeen -> VirtualGamepadTrigger? in
+            guard now >= lastSeen,
+                  now - lastSeen > Self.physicalHoldRefreshTimeoutNanoseconds
+            else { return nil }
+            return trigger
+        }
+
         for button in buttonsNeedingRelease {
             noteRecoveredButtonEdge(button: button, state: .up, reason: "stale_hold_timeout")
             handleButtonOnNetworkQueue(button, state: .up, source: "Stale hold timeout")
@@ -2656,6 +2696,18 @@ final class MacControllerServer: ObservableObject {
         for input in elementInputsNeedingRelease {
             logDebug("recovered_element_input_edge reason=stale_hold_timeout input=\(input.storageKey) state=up")
             handleElementInputEdgeOnNetworkQueue(input, state: .up, source: "Stale hold timeout")
+        }
+
+        for stick in sticksNeedingNeutral {
+            activeAnalogStickLastSeenByStick[stick] = nil
+            virtualGamepadInjector.setStick(stick, x: 0, y: 0)
+            logDebug("recovered_gamepad_analog reason=stale_hold_timeout stick=\(stick.rawValue) x=0.000 y=0.000")
+        }
+
+        for trigger in triggersNeedingNeutral {
+            activeAnalogTriggerLastSeenByTrigger[trigger] = nil
+            virtualGamepadInjector.setTrigger(trigger, value: 0)
+            logDebug("recovered_gamepad_analog reason=stale_hold_timeout trigger=\(trigger.rawValue) value=0.000")
         }
     }
 
@@ -2855,7 +2907,7 @@ final class MacControllerServer: ObservableObject {
     private func publishBonjourService(on port: UInt16) {
         stopBonjourService()
 
-        let serviceName = Self.defaultBonjourServiceName()
+        let serviceName = bonjourServiceName
         let service = NetService(
             domain: "local.",
             type: Self.bonjourServiceType,
@@ -3287,6 +3339,10 @@ final class MacControllerServer: ObservableObject {
             isRunning: isRunning,
             isClientConnected: isClientConnected,
             localURLs: localURLs,
+            bonjourServiceName: bonjourServiceName,
+            bonjourServiceType: Self.bonjourServiceEndpointType,
+            bonjourServiceDomain: Self.bonjourServiceDomain,
+            serverID: serverID,
             pairingCode: pairingCode,
             isPairingPending: isPairingPending,
             pendingPairingClientName: pendingPairingClientName,

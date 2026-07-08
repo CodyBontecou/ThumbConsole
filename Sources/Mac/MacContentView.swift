@@ -6,10 +6,12 @@ import AppKit
 struct MacContentView: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.undoManager) private var undoManager
     @AppStorage("PocketPadMac.onboarding.completed.v1") private var hasCompletedOnboarding = false
     @State private var selectedSection: MacSidebarSection? = .home
     @State private var advancedConfigExpanded = false
     @State private var isShowingOnboarding = false
+    @State private var gamepadEditorUndoTarget = MacGamepadEditorUndoTarget()
 
     var body: some View {
         NavigationSplitView {
@@ -1101,6 +1103,15 @@ struct MacContentView: View {
                     defaultProfileID: defaultProfileID
                 )
             },
+            onRegisterProfileUndoSnapshot: { actionName in
+                registerMacGamepadUndoSnapshot(
+                    server.editorUndoSnapshot(),
+                    undoManager: undoManager,
+                    undoTarget: gamepadEditorUndoTarget,
+                    server: server,
+                    actionName: actionName
+                )
+            },
             onLaunchProfileTarget: { profileID in
                 server.launchAttachedApplication(for: profileID, source: "mac")
             },
@@ -1313,7 +1324,7 @@ struct MacContentView: View {
 
             if server.localURLs.isEmpty {
                 MessageRow(
-                    text: "No local IPv4 address found. Enable Wi‑Fi and refresh the server.",
+                    text: "No manual IPv4 address found. Smart Connect can still try nearby peer-to-peer; enable Wi‑Fi/Bluetooth for offline use.",
                     tone: .warning
                 )
             } else {
@@ -1611,7 +1622,7 @@ private enum MacOnboardingStep: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .welcome: "What PocketPad does"
         case .permissions: "Allow shortcuts and local discovery"
-        case .connect: "Pair over your local network"
+        case .connect: "Pair over local or nearby network"
         case .editor: "Build and sync your controls"
         }
     }
@@ -1799,20 +1810,20 @@ private struct MacOnboardingView: View {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: Geist.Spacing.s4) {
                     MacOnboardingFeatureCard(title: "Mac helper", subtitle: "Runs the secure pairing server and sends shortcuts into the app you focus.", systemImage: "macbook")
-                    MacOnboardingFeatureCard(title: "iPhone keypad", subtitle: "Connects over Wi‑Fi, shows your synced setup, and sends low-latency presses.", systemImage: "iphone.gen3.radiowaves.left.and.right")
+                    MacOnboardingFeatureCard(title: "iPhone keypad", subtitle: "Connects over Wi‑Fi or nearby peer-to-peer, shows your synced setup, and sends low-latency presses.", systemImage: "iphone.gen3.radiowaves.left.and.right")
                     MacOnboardingFeatureCard(title: "Keypad editor", subtitle: "Create profiles, move controls, record shortcuts, and choose the matching iPhone canvas.", systemImage: "slider.horizontal.3")
                 }
 
                 VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
                     MacOnboardingFeatureCard(title: "Mac helper", subtitle: "Runs the secure pairing server and sends shortcuts into the app you focus.", systemImage: "macbook")
-                    MacOnboardingFeatureCard(title: "iPhone keypad", subtitle: "Connects over Wi‑Fi, shows your synced setup, and sends low-latency presses.", systemImage: "iphone.gen3.radiowaves.left.and.right")
+                    MacOnboardingFeatureCard(title: "iPhone keypad", subtitle: "Connects over Wi‑Fi or nearby peer-to-peer, shows your synced setup, and sends low-latency presses.", systemImage: "iphone.gen3.radiowaves.left.and.right")
                     MacOnboardingFeatureCard(title: "Keypad editor", subtitle: "Create profiles, move controls, record shortcuts, and choose the matching iPhone canvas.", systemImage: "slider.horizontal.3")
                 }
             }
 
             MacOnboardingCallout(
                 title: "Before you start",
-                text: "Keep this Mac and your iPhone on the same Wi‑Fi network. Open PocketPad on both devices and leave the Mac helper running while you use the keypad.",
+                text: "Keep this Mac and your iPhone on the same Wi‑Fi network, or leave Wi‑Fi/Bluetooth enabled for nearby peer-to-peer. Open PocketPad on both devices and leave the Mac helper running while you use the keypad.",
                 systemImage: "wifi"
             )
         }
@@ -1959,8 +1970,8 @@ private struct MacOnboardingView: View {
 
                 if server.localURLs.isEmpty {
                     MacOnboardingCallout(
-                        title: "No Wi‑Fi address found",
-                        text: "Connect to Wi‑Fi or restart the helper after the network is available.",
+                        title: "No manual address found",
+                        text: "Connect to Wi‑Fi for manual addresses, or use Smart Connect/QR with Wi‑Fi and Bluetooth enabled for nearby peer-to-peer.",
                         systemImage: "wifi.exclamationmark"
                     )
                 } else {
@@ -2538,22 +2549,26 @@ private struct MacKeypadPreviewControl: View {
     private var joystickFace: some View {
         let knobFillColor = control.layoutCustomization.joystickKnobFill(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
         let knobStrokeColor = control.layoutCustomization.joystickKnobStroke(accentStyle: resolvedAccentStyle, isPressed: false, scheme: colorScheme)
+        let isThumbstick = control.layoutCustomization.joystickVisualStyle == .thumbstick
+        let knobRatio: CGFloat = isThumbstick ? 0.72 : 0.34
 
         return ZStack {
-            Circle()
-                .stroke(controlForeground.opacity(0.24), lineWidth: max(0.75, 1 * scale))
-                .frame(width: visualSize.width * 0.70, height: visualSize.height * 0.70)
+            if !isThumbstick {
+                Circle()
+                    .stroke(controlForeground.opacity(0.24), lineWidth: max(0.75, 1 * scale))
+                    .frame(width: visualSize.width * 0.70, height: visualSize.height * 0.70)
+            }
             Circle()
                 .fill(knobFillColor)
                 .overlay(Circle().stroke(knobStrokeColor, lineWidth: max(0.75, 1 * scale)))
                 .frame(
-                    width: min(visualSize.width, visualSize.height) * 0.34,
-                    height: min(visualSize.width, visualSize.height) * 0.34
+                    width: min(visualSize.width, visualSize.height) * knobRatio,
+                    height: min(visualSize.width, visualSize.height) * knobRatio
                 )
 
-            if customization.showsButtonLabels {
+            if customization.showsButtonLabels && !isThumbstick {
                 controlLabel
-                    .offset(y: visualSize.height * 0.34)
+                    .offset(y: visualSize.height * (isThumbstick ? 0.58 : 0.34))
             }
         }
     }

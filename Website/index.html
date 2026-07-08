@@ -23,6 +23,7 @@
     <nav aria-label="Primary navigation">
       <a href="#screens">Screens</a>
       <a href="#details">Details</a>
+      <a href="#download">Download</a>
       <a href="/docs.html">Docs</a>
       <a class="nav-cta" href="#waitlist">Waitlist</a>
     </nav>
@@ -36,7 +37,8 @@
         <p class="lede">PocketPad pairs your iPhone with a macOS helper so every tap can become a shortcut, controller press, pointer gesture, or custom workflow control.</p>
 
         <div class="hero-actions">
-          <a class="pixel-button" href="/docs.html">read the docs</a>
+          <a class="pixel-button" href="#download">download mac</a>
+          <a class="pixel-button pixel-button-secondary" href="/docs.html">read the docs</a>
           <a class="pixel-button pixel-button-secondary" href="#screens">see screenshots</a>
         </div>
 
@@ -187,6 +189,39 @@
         <span>emulators</span>
         <span>trackpad controls</span>
         <span>custom layouts</span>
+      </div>
+    </section>
+
+    <section id="download" class="download section-shell">
+      <div class="section-heading">
+        <p class="eyebrow">download</p>
+        <h2>install the Mac helper, join the iOS beta.</h2>
+      </div>
+
+      <div class="download-grid">
+        <article class="download-card" data-mac-release-card>
+          <span>macOS helper</span>
+          <h3>direct download via Cloudflare</h3>
+          <p>PocketPad Mac is distributed as a Developer ID signed and notarized zip from Cloudflare R2 through this Pages site.</p>
+          <a class="pixel-button" href="/api/download-mac" data-mac-download-link>checking latest build…</a>
+          <dl class="release-meta">
+            <div><dt>latest</dt><dd data-mac-release-version>not uploaded yet</dd></div>
+            <div><dt>status</dt><dd data-mac-release-status>waiting for first release</dd></div>
+            <div><dt>sha256</dt><dd data-mac-release-sha>—</dd></div>
+          </dl>
+        </article>
+
+        <article class="download-card">
+          <span>iOS controller</span>
+          <h3>TestFlight beta</h3>
+          <p>The iPhone controller is shipped through App Store Connect TestFlight. Join the launch list and we’ll send an invite when the current build is approved for testing.</p>
+          <a class="pixel-button pixel-button-secondary" href="#waitlist">join launch list</a>
+          <dl class="release-meta">
+            <div><dt>channel</dt><dd>TestFlight</dd></div>
+            <div><dt>target</dt><dd>iOS 17+</dd></div>
+            <div><dt>pairing</dt><dd>Mac helper required</dd></div>
+          </dl>
+        </article>
       </div>
     </section>
 

@@ -214,6 +214,10 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
     public var isRunning: Bool
     public var isClientConnected: Bool
     public var localURLs: [String]
+    public var bonjourServiceName: String?
+    public var bonjourServiceType: String?
+    public var bonjourServiceDomain: String?
+    public var serverID: String?
     public var pairingCode: String
     public var isPairingPending: Bool
     public var pendingPairingClientName: String?
@@ -247,6 +251,10 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         isRunning: Bool,
         isClientConnected: Bool,
         localURLs: [String],
+        bonjourServiceName: String? = nil,
+        bonjourServiceType: String? = nil,
+        bonjourServiceDomain: String? = nil,
+        serverID: String? = nil,
         pairingCode: String,
         isPairingPending: Bool,
         pendingPairingClientName: String?,
@@ -279,6 +287,10 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         self.isRunning = isRunning
         self.isClientConnected = isClientConnected
         self.localURLs = localURLs
+        self.bonjourServiceName = bonjourServiceName
+        self.bonjourServiceType = bonjourServiceType
+        self.bonjourServiceDomain = bonjourServiceDomain
+        self.serverID = serverID
         self.pairingCode = pairingCode
         self.isPairingPending = isPairingPending
         self.pendingPairingClientName = pendingPairingClientName
