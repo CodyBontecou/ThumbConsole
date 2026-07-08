@@ -1122,7 +1122,8 @@ final class ControllerClient: ObservableObject {
                     trailing: Double($0.right)
                 )
             },
-            interfaceOrientation: window?.windowScene?.interfaceOrientation.deviceInfoName
+            interfaceOrientation: window?.windowScene?.interfaceOrientation.deviceInfoName,
+            interfaceStyle: window?.traitCollection.userInterfaceStyle.deviceInfoName
         )
     }
 
@@ -1706,6 +1707,17 @@ private extension UIInterfaceOrientation {
         case .landscapeLeft: "landscapeLeft"
         case .landscapeRight: "landscapeRight"
         case .unknown: "unknown"
+        @unknown default: "unknown"
+        }
+    }
+}
+
+private extension UIUserInterfaceStyle {
+    var deviceInfoName: String {
+        switch self {
+        case .light: "light"
+        case .dark: "dark"
+        case .unspecified: "unspecified"
         @unknown default: "unknown"
         }
     }

@@ -57,6 +57,22 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertNil(added.legacySlot)
     }
 
+    func testAddedJoystickDefaultsToKeyboardDigitalDirections() throws {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-00000000D1D1")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addJoystick(id: id)
+
+        let joystick = try XCTUnwrap(customization.normalized.customButtons.first(where: { $0.id == id })?.normalized)
+        XCTAssertEqual(joystick.label, "Arrow Keys")
+        XCTAssertEqual(joystick.mappedButton, .up)
+        XCTAssertEqual(joystick.joystickMapping, .movement)
+        XCTAssertEqual(joystick.joystickOutputSettings, Optional(GamepadJoystickOutputSettings.defaultValue.normalized))
+
+        let element = try XCTUnwrap(customization.normalized.elements.first { $0.id == id && $0.kind == .joystick })
+        XCTAssertEqual(element.joystickMapping, .movement)
+        XCTAssertEqual(element.joystickOutputSettings, Optional(GamepadJoystickOutputSettings.defaultValue.normalized))
+    }
+
     func testElementInputMessageRoundTrips() throws {
         let elementID = UUID(uuidString: "00000000-0000-0000-0000-00000000E1E1")!
         let message = ControllerMessage(

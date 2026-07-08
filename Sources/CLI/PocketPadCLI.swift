@@ -33,6 +33,10 @@ struct PocketPadCLI {
         "--no-digital-directions", "--invert-x", "--invert-y", "--snap-to-cardinal", "--snap-cardinal",
         "--joystick-style", "--stick-style", "--thumbstick", "--classic-joystick"
     ]
+    private static let elementOutputOptionNames = [
+        "--keyboard", "--key", "--sequence", "--gamepad-button", "--gamepad",
+        "--clear-output", "--clear-keyboard", "--clear-gamepad"
+    ]
 
     private struct StoredProfileState: Codable {
         var profiles: [GamepadConfigurationProfile]
@@ -2044,7 +2048,7 @@ struct PocketPadCLI {
                 try printJSON(summaries)
             } else {
                 for item in summaries {
-                    print("\(item.id)\t\(item.kind)\t\(item.label)\t→ \(item.mappedButton.rawValue)\t\(item.isHidden ? "hidden" : "visible")\(item.isLocationLocked ? " locked" : "")")
+                    print("\(item.id)\t\(item.kind)\t\(item.label)\t\(item.isHidden ? "hidden" : "visible")\(item.isLocationLocked ? " locked" : "")")
                 }
             }
         case "add":
@@ -2128,6 +2132,9 @@ struct PocketPadCLI {
                 customButton.trackpadSettings = try trackpadSettings(from: arguments)
             }
             customization.customButtons.append(customButton)
+            if hasAnyOption(elementOutputOptionNames, in: arguments) {
+                try applyElementOutputOptions(arguments, target: .custom(id), to: &customization)
+            }
         }
         print("Added \(kind.displayName.lowercased()).")
     }
@@ -2181,8 +2188,84 @@ struct PocketPadCLI {
                 }
                 try applyLayoutOptions(arguments, to: &customization.customButtons[index].layout)
             }
+
+            if hasAnyOption(elementOutputOptionNames, in: arguments) {
+                try applyElementOutputOptions(arguments, target: target, to: &customization)
+            }
         }
         print("Updated element \"\(targetText)\".")
+    }
+
+    private static func applyElementOutputOptions(_ arguments: [String], target: ElementTarget, to customization: inout GamepadCustomization) throws {
+        let part = try parseElementInputPart(optionValue("--part", in: arguments) ?? optionValue("--input", in: arguments))
+        let keyboardText = optionValue("--keyboard", in: arguments) ?? optionValue("--key", in: arguments)
+        let sequenceText = optionValue("--sequence", in: arguments)
+        let gamepadButtonText = optionValue("--gamepad-button", in: arguments) ?? optionValue("--gamepad", in: arguments)
+        let clearOutput = arguments.contains("--clear-output")
+        let clearKeyboard = arguments.contains("--clear-keyboard")
+        let clearGamepad = arguments.contains("--clear-gamepad")
+
+        var normalizedCustomization = customization.normalized
+        let identity: GamepadControlIdentity = switch target {
+        case .builtin(let button): .builtin(button)
+        case .custom(let id): .custom(id)
+        }
+        guard let elementID = normalizedCustomization.elementID(for: identity),
+              let index = normalizedCustomization.elements.firstIndex(where: { $0.id == elementID })
+        else {
+            throw CLIError.message("Element is not visible in this layout variant")
+        }
+
+        var output = normalizedCustomization.elements[index]
+            .outputBinding(for: part)
+            .map(MacControlOutputBinding.init(shared:)) ?? MacControlOutputBinding()
+        if clearOutput {
+            output = MacControlOutputBinding()
+        }
+        if clearKeyboard {
+            output.keyboard = nil
+        }
+        if let sequenceText {
+            output.keyboard = try parseKeyBindingSequence(sequenceText)
+        } else if let keyboardText {
+            output.keyboard = try parseKeyBindingSequence(keyboardText)
+        }
+        if clearGamepad {
+            output.gamepadButtons.removeAll()
+        }
+        if let gamepadButtonText {
+            let normalized = gamepadButtonText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized == "none" || normalized == "clear" || normalized == "off" {
+                output.gamepadButtons.removeAll()
+            } else {
+                output.setGamepadButton(try parseVirtualGamepadButton(gamepadButtonText))
+            }
+        }
+
+        normalizedCustomization.elements[index].setOutputBinding(output.isEmpty ? nil : output.sharedBinding, for: part)
+        customization = normalizedCustomization.normalized
+    }
+
+    private static func parseElementInputPart(_ text: String?) throws -> KeypadElementInputPart {
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .primary }
+        let normalized = normalizedLookup(text)
+        switch normalized {
+        case "primary", "press", "button", "tap":
+            return .primary
+        case "up", "joystickup", "stickup":
+            return .joystickUp
+        case "down", "joystickdown", "stickdown":
+            return .joystickDown
+        case "left", "joystickleft", "stickleft":
+            return .joystickLeft
+        case "right", "joystickright", "stickright":
+            return .joystickRight
+        case "trigger", "triggerdigital", "digitaltrigger", "digital":
+            return .triggerDigital
+        default:
+            if let part = KeypadElementInputPart(rawValue: text) { return part }
+            throw CLIError.message("Unknown element output part: \(text)")
+        }
     }
 
     private static func nudgeElement(arguments: [String]) throws {
@@ -3806,7 +3889,7 @@ struct PocketPadCLI {
         summaries += customization.customButtons.map { custom in
             let normalized = custom.normalized
             let kind = normalized.isJoystick ? "joystick" : (normalized.isTrigger ? "trigger" : (normalized.isTrackpad ? "trackpad" : "button"))
-            let fallbackLabel = normalized.isTrigger ? (normalized.triggerSettings ?? .defaultValue).normalized.target.shortName : (normalized.isTrackpad ? "Trackpad" : normalized.mappedButton.displayName)
+            let fallbackLabel = normalized.isTrigger ? (normalized.triggerSettings ?? .defaultValue).normalized.target.shortName : (normalized.isTrackpad ? "Trackpad" : "Button")
             return ElementSummary(
                 id: normalized.id.uuidString,
                 kind: kind,
@@ -3874,7 +3957,7 @@ struct PocketPadCLI {
         let optionsWithValues: Set<String> = [
             "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from",
             "--layout-preview", "--preview-output", "--path", "--app", "--application", "--bundle-id", "--bundle", "--image-scale", "--render-scale",
-            "--sequence", "--keyboard", "--key", "--gamepad-button", "--gamepad", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
+            "--sequence", "--keyboard", "--key", "--gamepad-button", "--gamepad", "--part", "--input", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
             "--appearance", "--color-scheme", "--scheme", "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
             "--background", "--bg", "--light-background", "--background-light", "--dark-background", "--background-dark",
             "--background-gradient", "--bg-gradient", "--background-tile", "--bg-tile", "--background-image", "--bg-image",
@@ -4068,11 +4151,12 @@ struct PocketPadCLI {
           pocketpad device set iphone-17-pro --orientation landscape
           pocketpad device set custom --size 844x390
           pocketpad element list
-          pocketpad element add button --label Fire --maps-to custom1 --x 0.5 --y 0.8 --light-fill '#6B7280' --dark-fill '#374151'
-          pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
+          pocketpad element add button --label Fire --keyboard Space --gamepad south --x 0.5 --y 0.8 --light-fill '#6B7280' --dark-fill '#374151'
+          pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --part up --keyboard W
           pocketpad element add joystick --label Nub --thumbstick --target right-stick --no-digital-directions --x 0.5 --y 0.58
           pocketpad element add trigger --target left --orientation horizontal --sensitivity 1.2
           pocketpad element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
+          pocketpad element set jump --keyboard Space --gamepad south
           pocketpad element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2
           pocketpad element set "Right Stick" --thumb-fill '#22C55E'
           pocketpad element set jump --fill-gradient '#000000,#666666' --gradient-angle 0

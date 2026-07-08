@@ -1504,7 +1504,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
     public init(
         id: UUID = UUID(),
         mappedButton: GameButton = .custom1,
-        label: String = "Shape",
+        label: String = "Button",
         layout: GamepadButtonCustomization = GamepadButtonCustomization(
             centerX: 0.5,
             centerY: 0.5,
@@ -1533,7 +1533,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         mappedButton = try container.decodeIfPresent(GameButton.self, forKey: .mappedButton) ?? .custom1
-        label = try container.decodeIfPresent(String.self, forKey: .label) ?? "Shape"
+        label = try container.decodeIfPresent(String.self, forKey: .label) ?? "Button"
         layout = try container.decodeIfPresent(GamepadButtonCustomization.self, forKey: .layout) ?? GamepadButtonCustomization(
             centerX: 0.5,
             centerY: 0.5,
@@ -1955,7 +1955,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         let customButton = GamepadCustomButton(
             id: id,
             mappedButton: targetButton,
-            label: "Shape",
+            label: "Button",
             layout: GamepadButtonCustomization(
                 centerX: 0.5,
                 centerY: 0.5,
@@ -1968,17 +1968,28 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         upsertElementMirror(for: customButton, migratesLegacySlot: mappedButton != nil)
     }
 
-    public mutating func addJoystick(id: UUID = UUID()) {
+    public mutating func addJoystick(
+        id: UUID = UUID(),
+        label: String? = nil,
+        mapping: GamepadJoystickMapping? = nil,
+        outputSettings: GamepadJoystickOutputSettings? = nil
+    ) {
         let joystickCount = customButtons.filter { $0.normalized.isJoystick }.count
         guard customButtons.count < Self.maximumCustomButtons,
               joystickCount < Self.maximumJoysticks
         else { return }
 
         let isPrimaryJoystick = joystickCount == 0
+        let resolvedMapping = mapping ?? (isPrimaryJoystick ? .movement : .secondary)
+        let resolvedOutputSettings = (outputSettings ?? .defaultValue).normalized
+        let resolvedLabel = label ?? Self.defaultJoystickLabel(
+            isPrimaryJoystick: isPrimaryJoystick,
+            outputSettings: resolvedOutputSettings
+        )
         let customButton = GamepadCustomButton(
             id: id,
-            mappedButton: isPrimaryJoystick ? .up : .custom1,
-            label: isPrimaryJoystick ? "Left Stick" : "Right Stick",
+            mappedButton: resolvedMapping.up,
+            label: resolvedLabel,
             layout: GamepadButtonCustomization(
                 centerX: isPrimaryJoystick ? 0.22 : 0.78,
                 centerY: 0.64,
@@ -1988,11 +1999,25 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
                 accentStyle: isPrimaryJoystick ? .blue : .purple
             ),
             controlKind: .joystick,
-            joystickMapping: isPrimaryJoystick ? .movement : .secondary,
-            joystickOutputSettings: isPrimaryJoystick ? .analogLeftStick : .analogRightStick
+            joystickMapping: resolvedMapping,
+            joystickOutputSettings: resolvedOutputSettings
         )
         customButtons.append(customButton)
         upsertElementMirror(for: customButton, migratesLegacySlot: false)
+    }
+
+    private static func defaultJoystickLabel(
+        isPrimaryJoystick: Bool,
+        outputSettings: GamepadJoystickOutputSettings
+    ) -> String {
+        switch outputSettings.normalized.analogTarget {
+        case .none:
+            return isPrimaryJoystick ? "Arrow Keys" : "Directions"
+        case .leftStick:
+            return "Left Stick"
+        case .rightStick:
+            return "Right Stick"
+        }
     }
 
     public mutating func addTrigger(id: UUID = UUID(), target: VirtualGamepadTrigger? = nil, mappedTo mappedButton: GameButton? = nil) {
@@ -3203,7 +3228,7 @@ public enum GamepadProfileOutputMode: String, Codable, CaseIterable, Identifiabl
         case .controller:
             "Send this keypad as a virtual Xbox-style controller using PocketPad’s default controller map."
         case .custom:
-            "Use per-button output bindings. This can mix keyboard shortcuts and virtual controller buttons."
+            "Use per-element output bindings. This can mix keyboard shortcuts and virtual controller buttons."
         }
     }
 }
@@ -4138,8 +4163,8 @@ enum GamepadConfigurationProfilePersistence {
 
         var dualStick = GamepadCustomization.blankCanvas
         dualStick.accentStyle = .blue
-        dualStick.addJoystick()
-        dualStick.addJoystick()
+        dualStick.addJoystick(outputSettings: .analogLeftStick)
+        dualStick.addJoystick(outputSettings: .analogRightStick)
         dualStick.addCustomButton(mappedTo: .jump)
         if let jumpIndex = dualStick.customButtons.indices.last {
             dualStick.customButtons[jumpIndex].label = "Fire"
@@ -5257,7 +5282,7 @@ struct GamepadCustomizationEditor: View {
     private let onLaunchProfileTarget: ((UUID) -> Void)?
     private let defaultLabelProvider: ((GameButton) -> String?)?
     private let profileOutputModeContent: (() -> AnyView)?
-    private let selectedKeyBindingContent: ((GameButton) -> AnyView)?
+    private let selectedElementOutputContent: ((KeypadElementInputID) -> AnyView)?
     private let connectedDeviceInfo: ControllerClientDeviceInfo?
 
     private static let configurationSidebarMinWidth: CGFloat = 180
@@ -5325,7 +5350,7 @@ struct GamepadCustomizationEditor: View {
         onLaunchProfileTarget: ((UUID) -> Void)? = nil,
         defaultLabelProvider: ((GameButton) -> String?)? = nil,
         profileOutputModeContent: (() -> AnyView)? = nil,
-        selectedKeyBindingContent: ((GameButton) -> AnyView)? = nil,
+        selectedElementOutputContent: ((KeypadElementInputID) -> AnyView)? = nil,
         connectedDeviceInfo: ControllerClientDeviceInfo? = nil
     ) {
         let loadedProfiles: GamepadConfigurationProfilePersistence.LoadedState
@@ -5353,7 +5378,7 @@ struct GamepadCustomizationEditor: View {
         self.onLaunchProfileTarget = onLaunchProfileTarget
         self.defaultLabelProvider = defaultLabelProvider
         self.profileOutputModeContent = profileOutputModeContent
-        self.selectedKeyBindingContent = selectedKeyBindingContent
+        self.selectedElementOutputContent = selectedElementOutputContent
         self.connectedDeviceInfo = connectedDeviceInfo
         self._selectedControlID = State(initialValue: .builtin(.jump))
         self._selectedControlIDs = State(initialValue: [])
@@ -5389,7 +5414,22 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var activeKeypadColorScheme: ColorScheme {
-        editorColorScheme.resolvedColorScheme(system: colorScheme)
+        switch editorColorScheme {
+        case .system:
+            return customization.resolvedColorScheme(system: connectedDeviceSystemColorScheme ?? colorScheme)
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
+
+    private var connectedDeviceSystemColorScheme: ColorScheme? {
+        switch connectedDeviceInfo?.interfaceStyle?.lowercased() {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
+        }
     }
 
     private var editorColorSchemeBinding: Binding<GamepadEditorColorScheme> {
@@ -6983,11 +7023,7 @@ struct GamepadCustomizationEditor: View {
 
             controlSelectionPicker
             selectedElementLabelControls
-
-            if let shortcutButton = selectedShortcutButton,
-               let selectedKeyBindingContent {
-                selectedKeyBindingContent(shortcutButton)
-            }
+            selectedElementOutputControls
 
             componentStateControls
 
@@ -7130,13 +7166,30 @@ struct GamepadCustomizationEditor: View {
                     text: labelBinding(for: button)
                 )
                 .geistInput(size: .small)
-                Text("Leave blank to use the recorded shortcut label (\(defaultLabel(for: button))).")
+                Text("Leave blank to use the element’s output label (\(defaultLabel(for: button))).")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             }
         case .custom(let id):
             if customButton(id: id) != nil {
                 customButtonControls(id: id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var selectedElementOutputControls: some View {
+        if let selectedElementOutputContent,
+           let input = selectedPrimaryElementInputID {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("Output")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                selectedElementOutputContent(input)
+                Text("This output is saved directly on the selected element. It can be a keyboard shortcut, a virtual controller button, or both.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -8204,8 +8257,8 @@ struct GamepadCustomizationEditor: View {
                 let buttonCustomization = customization.buttonCustomization(for: button)
                 return GamepadEditorComponentItem(
                     identity: .builtin(button),
-                    title: button.displayName,
-                    subtitle: visualLabel(for: button),
+                    title: visualLabel(for: button),
+                    subtitle: "Button",
                     systemImage: "diamond.fill",
                     isHidden: buttonCustomization.isHidden,
                     isLocationLocked: buttonCustomization.isLocationLocked
@@ -8217,7 +8270,7 @@ struct GamepadCustomizationEditor: View {
 
         let customItems = customization.customButtons.map { customButton -> GamepadEditorComponentItem in
             let normalizedButton = customButton.normalized
-            let title = normalizedButton.visualLabel(fallback: visualLabel(for: normalizedButton.mappedButton))
+            let title = normalizedButton.visualLabel(fallback: customButtonFallbackLabel(for: normalizedButton))
             let subtitle: String
             let systemImage: String
             if normalizedButton.isJoystick {
@@ -8232,7 +8285,7 @@ struct GamepadCustomizationEditor: View {
                 subtitle = "Trackpad → cursor, click, scroll"
                 systemImage = "rectangle.and.hand.point.up.left"
             } else {
-                subtitle = "Shape → \(normalizedButton.mappedButton.displayName)"
+                subtitle = "Button"
                 systemImage = "plus.square.fill"
             }
             return GamepadEditorComponentItem(
@@ -8276,9 +8329,9 @@ struct GamepadCustomizationEditor: View {
     private func controlSelectionLabel(for identity: GamepadControlIdentity) -> String {
         switch identity {
         case .builtin(let button):
-            return button.displayName
+            return visualLabel(for: button)
         case .custom(let id):
-            guard let customButton = customButton(id: id)?.normalized else { return "Shape" }
+            guard let customButton = customButton(id: id)?.normalized else { return "Button" }
             return customButton.visualLabel(fallback: customButtonFallbackLabel(for: customButton))
         }
     }
@@ -8293,21 +8346,15 @@ struct GamepadCustomizationEditor: View {
             trackpadControls(id: id)
         } else {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                HStack(spacing: Geist.Spacing.s3) {
-                    Text("Sends")
-                        .geistTypography(.label13)
-                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    Spacer()
-                    GeistMenuPicker(title: "Sends", options: GameButton.allCases, selection: customMappedButtonBinding(id: id)) { button in
-                        button.displayName
-                    }
-                }
+                Text("Label")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
 
-                let mappedButton = customButton(id: id)?.mappedButton ?? .jump
-                TextField(defaultLabel(for: mappedButton), text: customLabelBinding(id: id))
+                let fallbackLabel = customButton(id: id).map { customButtonFallbackLabel(for: $0.normalized) } ?? "Button"
+                TextField(fallbackLabel, text: customLabelBinding(id: id))
                     .geistInput(size: .small)
 
-                Text("Shapes send the selected shortcut slot; record that shortcut below.")
+                Text("Use Output to assign the keyboard shortcut or virtual controller button this element sends.")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -8334,24 +8381,6 @@ struct GamepadCustomizationEditor: View {
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
-            }
-
-            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Directions")
-                    .geistTypography(.label13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-
-                ForEach(GamepadJoystickDirection.allCases) { direction in
-                    HStack(spacing: Geist.Spacing.s3) {
-                        Text(direction.displayName)
-                            .geistTypography(.label13)
-                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                        Spacer()
-                        GeistMenuPicker(title: "\(direction.displayName) sends", options: GameButton.allCases, selection: joystickDirectionBinding(id: id, direction: direction)) { button in
-                            button.displayName
-                        }
-                    }
-                }
             }
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
@@ -8387,15 +8416,20 @@ struct GamepadCustomizationEditor: View {
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
 
-            if joystickOutputSettingsValue(id: id).sendsDigitalDirections, let selectedKeyBindingContent {
+            if joystickOutputSettingsValue(id: id).sendsDigitalDirections,
+               let selectedElementOutputContent {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
                     ForEach(GamepadJoystickDirection.allCases) { direction in
-                        let button = joystickMappingValue(id: id)[direction]
                         VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                            Text("\(direction.displayName) shortcut")
+                            Text("\(direction.displayName) output")
                                 .geistTypography(.label13)
                                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                            selectedKeyBindingContent(button)
+                            selectedElementOutputContent(
+                                KeypadElementInputID(
+                                    elementID: id,
+                                    part: KeypadElementInputPart(direction: direction)
+                                )
+                            )
                         }
                     }
                 }
@@ -8443,25 +8477,23 @@ struct GamepadCustomizationEditor: View {
             )
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                GeistCheckboxToggle(title: "Also send a digital shortcut", isOn: triggerSendsDigitalBinding(id: id))
+                GeistCheckboxToggle(title: "Also send a digital output", isOn: triggerSendsDigitalBinding(id: id))
                 if triggerSettingsValue(id: id).sendsDigitalButton {
-                    HStack(spacing: Geist.Spacing.s3) {
-                        Text("Digital sends")
-                            .geistTypography(.label13)
-                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                        Spacer()
-                        GeistMenuPicker(title: "Digital trigger sends", options: GameButton.allCases, selection: customMappedButtonBinding(id: id)) { button in
-                            button.displayName
-                        }
-                    }
                     valueSlider(
                         title: "Threshold",
                         value: triggerDigitalThresholdBinding(id: id),
                         range: 0.01...1.0,
                         valueText: "\(Int((triggerSettingsValue(id: id).digitalThreshold * 100).rounded()))%"
                     )
-                    if let selectedKeyBindingContent {
-                        selectedKeyBindingContent(customButton(id: id)?.mappedButton ?? .custom1)
+                    if let selectedElementOutputContent {
+                        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                            Text("Digital output")
+                                .geistTypography(.label13)
+                                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                            selectedElementOutputContent(
+                                KeypadElementInputID(elementID: id, part: .triggerDigital)
+                            )
+                        }
                     }
                 }
             }
@@ -8737,9 +8769,9 @@ struct GamepadCustomizationEditor: View {
     private var selectedControlTitle: String {
         switch selectedControlID {
         case .builtin(let button):
-            return button.displayName
+            return "Button: \(visualLabel(for: button))"
         case .custom(let id):
-            guard let customButton = customButton(id: id)?.normalized else { return "Shape" }
+            guard let customButton = customButton(id: id)?.normalized else { return "Button" }
             let kindLabel = customControlKindLabel(for: customButton)
             let fallback = customButtonFallbackLabel(for: customButton)
             return "\(kindLabel): \(customButton.visualLabel(fallback: fallback))"
@@ -8750,28 +8782,22 @@ struct GamepadCustomizationEditor: View {
         if customButton.isJoystick { return "Joystick" }
         if customButton.isTrigger { return "Trigger" }
         if customButton.isTrackpad { return "Trackpad" }
-        return "Shape"
+        return "Button"
     }
 
     private func customButtonFallbackLabel(for customButton: GamepadCustomButton) -> String {
         if customButton.isJoystick { return "Joystick" }
         if customButton.isTrigger { return (customButton.triggerSettings ?? .defaultValue).normalized.target.shortName }
         if customButton.isTrackpad { return "Trackpad" }
-        return visualLabel(for: customButton.mappedButton)
+        return "Button"
     }
 
     private func deleteTitle(for customButton: GamepadCustomButton) -> String {
         "Delete \(customControlKindLabel(for: customButton))"
     }
 
-    private var selectedShortcutButton: GameButton? {
-        switch selectedControlID {
-        case .builtin(let button):
-            return button
-        case .custom(let id):
-            let customButton = customButton(id: id)?.normalized
-            return customButton?.isJoystick == true || customButton?.isTrigger == true || customButton?.isTrackpad == true ? nil : customButton?.mappedButton
-        }
+    private var selectedPrimaryElementInputID: KeypadElementInputID? {
+        customization.elementID(for: selectedControlID).map { KeypadElementInputID(elementID: $0, part: .primary) }
     }
 
     private var selectedProfile: GamepadConfigurationProfile? {
@@ -10581,7 +10607,7 @@ struct GamepadCustomizationEditor: View {
                     $0.triggerSettings = nil
                     $0.trackpadSettings = .defaultValue
                 case .button:
-                    $0.label = "Shape"
+                    $0.label = "Button"
                     $0.layout = GamepadButtonCustomization(
                         centerX: 0.5,
                         centerY: 0.5,
@@ -11974,7 +12000,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
             }
 
             if let nudgeDirection = Self.nudgeDirection(for: event) {
-                return onNudge(nudgeDirection, Self.isShiftOnlyModifierEvent(event)) ? nil : event
+                return onNudge(nudgeDirection, Self.isShiftModifierEvent(event)) ? nil : event
             }
 
             return event
@@ -12005,11 +12031,10 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
         private static func isNudgeModifierEvent(_ event: NSEvent) -> Bool {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             return !flags.contains(.command)
-                && !flags.contains(.option)
                 && !flags.contains(.control)
         }
 
-        private static func isShiftOnlyModifierEvent(_ event: NSEvent) -> Bool {
+        private static func isShiftModifierEvent(_ event: NSEvent) -> Bool {
             event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.shift)
         }
 
@@ -14770,38 +14795,27 @@ private struct GamepadDesignerButton: View {
 
     var body: some View {
         ZStack {
-            background(isSelected: false)
+            GamepadRenderedControlFace(
+                control: control,
+                customization: customization,
+                state: .normal
+            )
 
-            if control.isJoystick {
-                joystickFace
-            } else if control.isTrackpad {
-                trackpadFace
-            } else if customization.showsButtonLabels {
-                Text(control.label)
-                    .geistTypography(control.size.width <= 44 ? .button12 : .button14)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .foregroundStyle(resolvedPresentation.foregroundSwiftUIColor)
-                    .padding(.horizontal, 4)
-            }
-        }
-        .frame(width: control.size.width, height: control.size.height)
-        .overlay {
             if isSelected {
                 background(isSelected: true)
                     .foregroundStyle(.clear)
             }
-        }
-        .overlay {
+
             if isSelected && showsSelectionHandles {
                 selectionHandles
             }
         }
+        .frame(width: control.size.width, height: control.size.height)
         .shadow(
-            color: isSelected ? Color.black.opacity(0.12 * resolvedShadowStrength) : resolvedPresentation.shadowSwiftUIColor,
-            radius: isSelected ? 5 * max(0.25, resolvedShadowStrength) : resolvedPresentation.shadowRadius,
-            x: isSelected ? 0 : resolvedPresentation.shadowX,
-            y: isSelected ? 3 * resolvedShadowStrength : resolvedPresentation.shadowY
+            color: isSelected ? Color.black.opacity(0.12 * resolvedShadowStrength) : .clear,
+            radius: isSelected ? 5 * max(0.25, resolvedShadowStrength) : 0,
+            x: 0,
+            y: isSelected ? 3 * resolvedShadowStrength : 0
         )
         .accessibilityLabel(control.label)
     }

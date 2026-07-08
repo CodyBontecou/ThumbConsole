@@ -162,6 +162,7 @@ public struct ControllerClientDeviceInfo: Codable, Equatable, Sendable {
     public var nativeScale: Double
     public var safeAreaInsets: ControllerClientDeviceInsets?
     public var interfaceOrientation: String?
+    public var interfaceStyle: String?
 
     public init(
         deviceName: String,
@@ -175,7 +176,8 @@ public struct ControllerClientDeviceInfo: Codable, Equatable, Sendable {
         scale: Double,
         nativeScale: Double,
         safeAreaInsets: ControllerClientDeviceInsets? = nil,
-        interfaceOrientation: String? = nil
+        interfaceOrientation: String? = nil,
+        interfaceStyle: String? = nil
     ) {
         self.deviceName = deviceName
         self.modelIdentifier = modelIdentifier
@@ -189,6 +191,7 @@ public struct ControllerClientDeviceInfo: Codable, Equatable, Sendable {
         self.nativeScale = nativeScale
         self.safeAreaInsets = safeAreaInsets
         self.interfaceOrientation = interfaceOrientation
+        self.interfaceStyle = interfaceStyle
     }
 }
 

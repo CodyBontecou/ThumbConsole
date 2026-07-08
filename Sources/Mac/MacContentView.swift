@@ -1124,9 +1124,9 @@ struct MacContentView: View {
                         .environmentObject(server)
                 )
             },
-            selectedKeyBindingContent: { button in
+            selectedElementOutputContent: { input in
                 AnyView(
-                    MacGamepadSelectedKeyBindingInspector(button: button)
+                    MacKeypadElementOutputInspector(input: input)
                         .environmentObject(server)
                 )
             },
@@ -2769,6 +2769,82 @@ private struct MacGamepadOutputModeInspector: View {
     }
 }
 
+private struct MacKeypadElementOutputInspector: View {
+    @EnvironmentObject private var server: MacControllerServer
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.undoManager) private var undoManager
+    @State private var undoTarget = MacGamepadEditorUndoTarget()
+    let input: KeypadElementInputID
+
+    private var gamepadButtonSelection: Binding<VirtualGamepadButton?> {
+        Binding(
+            get: { server.gamepadButtonBinding(for: input) },
+            set: { gamepadButton in
+                performUndoableMacGamepadChange(
+                    undoManager: undoManager,
+                    undoTarget: undoTarget,
+                    server: server,
+                    actionName: "Change Element Gamepad Output"
+                ) {
+                    server.setGamepadButtonBinding(gamepadButton, for: input)
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s2) {
+                Text("Shortcut")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Button("Clear") {
+                    performUndoableMacGamepadChange(
+                        undoManager: undoManager,
+                        undoTarget: undoTarget,
+                        server: server,
+                        actionName: "Clear Element Output"
+                    ) {
+                        server.clearElementOutputBinding(for: input)
+                    }
+                }
+                .geistButtonStyle(.tertiary, size: .small)
+                .disabled(server.directElementOutputBinding(for: input) == nil)
+            }
+
+            MacElementKeyBindingRecorderField(input: input)
+
+            HStack(spacing: Geist.Spacing.s3) {
+                Text("Gamepad")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                Spacer(minLength: Geist.Spacing.s2)
+                Picker("Gamepad output", selection: gamepadButtonSelection) {
+                    Text("None").tag(nil as VirtualGamepadButton?)
+                    ForEach(VirtualGamepadButton.allCases) { gamepadButton in
+                        Text(gamepadButton.displayName).tag(Optional(gamepadButton))
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+
+            Text("Element outputs are saved directly and can mix keyboard and controller output.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Virtual gamepad output appears as a system HID controller when the Mac app is signed with Apple’s HID Virtual Device entitlement; keyboard output continues to work without it.")
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray700, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 private struct MacGamepadSelectedKeyBindingInspector: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
@@ -2904,6 +2980,183 @@ private struct MacGamepadKeyBindingsInspector: View {
             RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
+    }
+}
+
+private struct MacElementKeyBindingRecorderField: View {
+    @EnvironmentObject private var server: MacControllerServer
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.undoManager) private var undoManager
+    @State private var undoTarget = MacGamepadEditorUndoTarget()
+
+    let input: KeypadElementInputID
+    @State private var isRecording = false
+    @State private var eventMonitor: Any?
+    @State private var recordedStrokes: [MacKeyStroke] = []
+    @State private var pendingModifierStroke: MacKeyStroke?
+    @State private var commitWorkItem: DispatchWorkItem?
+
+    private let sequenceCommitDelay: TimeInterval = 0.85
+
+    var body: some View {
+        Button(action: handleTap) {
+            HStack(spacing: Geist.Spacing.s2) {
+                Text(fieldText)
+                    .geistTypography(.label13Mono)
+                    .foregroundStyle(fieldForeground)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: isRecording ? "record.circle.fill" : "keyboard")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isRecording ? Geist.color(.red900, scheme: colorScheme) : Geist.color(.gray900, scheme: colorScheme))
+            }
+            .padding(.horizontal, Geist.Spacing.s3)
+            .frame(height: Geist.Spacing.s8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(fieldBackground, in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                    .stroke(fieldBorder, lineWidth: isRecording ? 1.5 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(isRecording ? "Recording element shortcut" : "Click to record element shortcut")
+        .accessibilityLabel("Element shortcut")
+        .accessibilityValue(fieldText)
+        .onDisappear {
+            if isRecording {
+                commitRecording()
+            }
+        }
+    }
+
+    private var fieldText: String {
+        if isRecording {
+            if !recordedStrokes.isEmpty {
+                return MacKeyBinding(strokes: recordedStrokes).displayName
+            }
+            if let pendingModifierStroke {
+                return pendingModifierStroke.displayName
+            }
+            return "Press shortcut…"
+        }
+
+        return server.elementOutputLabel(for: input)
+    }
+
+    private var isShowingPlaceholder: Bool {
+        isRecording && recordedStrokes.isEmpty && pendingModifierStroke == nil
+    }
+
+    private var fieldForeground: Color {
+        isShowingPlaceholder ? Geist.color(.gray900, scheme: colorScheme) : Geist.color(.gray1000, scheme: colorScheme)
+    }
+
+    private var fieldBackground: Color {
+        isRecording ? Geist.color(.blue100, scheme: colorScheme) : Geist.color(.background100, scheme: colorScheme)
+    }
+
+    private var fieldBorder: Color {
+        isRecording ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme)
+    }
+
+    private func handleTap() {
+        if isRecording {
+            commitRecording()
+        } else {
+            startRecording()
+        }
+    }
+
+    private func startRecording() {
+        stopRecording()
+        isRecording = true
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+            guard isRecording else { return event }
+
+            switch event.type {
+            case .keyDown:
+                handleKeyDown(event)
+            case .flagsChanged:
+                handleFlagsChanged(event)
+            default:
+                break
+            }
+
+            return nil
+        }
+    }
+
+    private func handleKeyDown(_ event: NSEvent) {
+        guard !event.isARepeat else { return }
+        pendingModifierStroke = nil
+        recordedStrokes.append(MacKeyStroke(event: event))
+        scheduleCommit(after: sequenceCommitDelay)
+    }
+
+    private func handleFlagsChanged(_ event: NSEvent) {
+        guard recordedStrokes.isEmpty else { return }
+
+        let keyCode = CGKeyCode(event.keyCode)
+        guard let modifier = MacVirtualKey.keyModifier(for: keyCode) else { return }
+        let activeModifiers = MacKeyModifiers(eventFlags: event.modifierFlags)
+
+        if activeModifiers.contains(modifier) {
+            pendingModifierStroke = MacKeyStroke(keyCode: keyCode)
+        } else if let pendingModifierStroke, pendingModifierStroke.keyCode == keyCode {
+            recordedStrokes = [pendingModifierStroke]
+            self.pendingModifierStroke = nil
+            scheduleCommit(after: 0.15)
+        }
+    }
+
+    private func scheduleCommit(after delay: TimeInterval) {
+        commitWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            commitRecording()
+        }
+        commitWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func commitRecording() {
+        let strokesToSave: [MacKeyStroke]
+        if recordedStrokes.isEmpty, let pendingModifierStroke {
+            strokesToSave = [pendingModifierStroke]
+        } else {
+            strokesToSave = recordedStrokes
+        }
+
+        guard !strokesToSave.isEmpty else {
+            stopRecording()
+            return
+        }
+
+        performUndoableMacGamepadChange(
+            undoManager: undoManager,
+            undoTarget: undoTarget,
+            server: server,
+            actionName: "Record Element Shortcut"
+        ) {
+            server.setElementKeyBinding(MacKeyBinding(strokes: strokesToSave), for: input)
+        }
+        stopRecording()
+    }
+
+    private func stopRecording() {
+        commitWorkItem?.cancel()
+        commitWorkItem = nil
+
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+        eventMonitor = nil
+
+        isRecording = false
+        recordedStrokes.removeAll(keepingCapacity: true)
+        pendingModifierStroke = nil
     }
 }
 

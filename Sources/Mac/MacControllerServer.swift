@@ -629,6 +629,95 @@ final class MacControllerServer: ObservableObject {
         setOutputBinding(outputBinding, for: button, reason: gamepadButton.map { "Mapped \(button.displayName) to \($0.shortName)" } ?? "Cleared gamepad output for \(button.displayName)")
     }
 
+    func elementOutputLabel(for input: KeypadElementInputID) -> String {
+        elementOutputBinding(for: input)?.displayName ?? "Unmapped"
+    }
+
+    func elementOutputBinding(for input: KeypadElementInputID) -> MacControlOutputBinding? {
+        guard let element = gamepadCustomization.element(for: input.elementID) else { return nil }
+        if let directOutput = element.outputBinding(for: input.part) {
+            return MacControlOutputBinding(shared: directOutput)
+        }
+        guard let legacyButton = Self.legacyButton(for: input.part, element: element) else { return nil }
+        return outputBindings[legacyButton] ?? keyBindings[legacyButton].map { MacControlOutputBinding.keyboard($0) }
+    }
+
+    func directElementOutputBinding(for input: KeypadElementInputID) -> MacControlOutputBinding? {
+        guard let element = gamepadCustomization.element(for: input.elementID),
+              let directOutput = element.outputBinding(for: input.part)
+        else { return nil }
+        return MacControlOutputBinding(shared: directOutput)
+    }
+
+    func gamepadButtonBinding(for input: KeypadElementInputID) -> VirtualGamepadButton? {
+        elementOutputBinding(for: input)?.gamepadButtons.sortedForDisplay.first
+    }
+
+    func setElementKeyBinding(_ binding: MacKeyBinding, for input: KeypadElementInputID) {
+        var outputBinding = elementOutputBinding(for: input) ?? MacControlOutputBinding()
+        outputBinding.keyboard = binding
+        setElementOutputBinding(outputBinding, for: input, reason: "Mapped element to \(binding.displayName)")
+    }
+
+    func setGamepadButtonBinding(_ gamepadButton: VirtualGamepadButton?, for input: KeypadElementInputID) {
+        var outputBinding = elementOutputBinding(for: input) ?? MacControlOutputBinding()
+        outputBinding.setGamepadButton(gamepadButton)
+        setElementOutputBinding(outputBinding, for: input, reason: gamepadButton.map { "Mapped element to \($0.shortName)" } ?? "Cleared element gamepad output")
+    }
+
+    func clearElementOutputBinding(for input: KeypadElementInputID) {
+        setElementOutputBinding(nil, for: input, reason: "Cleared element output")
+    }
+
+    func setElementOutputBinding(_ binding: MacControlOutputBinding?, for input: KeypadElementInputID, reason: String? = nil) {
+        guard let activeProfileIndex = gamepadProfiles.firstIndex(where: { $0.id == activeGamepadProfileID }) else { return }
+        let sharedBinding = binding?.isEmpty == true ? nil : binding?.sharedBinding
+
+        func update(_ customization: inout GamepadCustomization) -> Bool {
+            var normalizedCustomization = customization.normalized
+            guard let index = normalizedCustomization.elements.firstIndex(where: { $0.id == input.elementID }) else { return false }
+            normalizedCustomization.elements[index].setOutputBinding(sharedBinding, for: input.part)
+            customization = normalizedCustomization.normalized
+            return true
+        }
+
+        var didChange = update(&gamepadProfiles[activeProfileIndex].customization)
+        if var landscapeCustomization = gamepadProfiles[activeProfileIndex].landscapeCustomization {
+            didChange = update(&landscapeCustomization) || didChange
+            gamepadProfiles[activeProfileIndex].landscapeCustomization = landscapeCustomization
+        }
+        if var portraitCustomization = gamepadProfiles[activeProfileIndex].portraitCustomization {
+            didChange = update(&portraitCustomization) || didChange
+            gamepadProfiles[activeProfileIndex].portraitCustomization = portraitCustomization
+        }
+        guard didChange else { return }
+
+        setActiveProfileOutputMode(.custom)
+        gamepadProfiles[activeProfileIndex].updatedAt = Date.currentMilliseconds
+        let activeOrientation = gamepadCustomization.deviceCanvas.editorDeviceFrame.orientation
+        gamepadCustomization = gamepadProfiles[activeProfileIndex].customization(for: activeOrientation).normalized.stampedForLocalUpdate
+        profileOutputBindings[activeGamepadProfileID] = outputBindings
+        profileKeyBindings[activeGamepadProfileID] = keyBindings
+
+        let updatedProfiles = gamepadProfiles
+        let updatedCustomization = gamepadCustomization
+        syncOnNetworkQueue {
+            releaseElementInputIfPressedOnNetworkQueue(input)
+            realtimeOutputMode = .custom
+            realtimeGamepadCustomization = updatedCustomization
+            realtimeGamepadProfiles = updatedProfiles
+            sendGamepadProfileStateOnNetworkQueue()
+        }
+        persistGamepadProfileState()
+        GamepadCustomizationPersistence.save(gamepadCustomization)
+        saveProfileKeyBindings()
+        saveProfileOutputBindings()
+        lastReceivedEvent = reason ?? "Updated element output"
+        logDebug("element_output_binding profile=\(activeGamepadProfileID.uuidString) input=\(input.storageKey) binding=\(binding?.displayName ?? "Unmapped")")
+        refreshVirtualGamepadMaterialization(reason: "element_output_binding", publish: false)
+        publishRuntimeStatus()
+    }
+
     func setOutputMode(_ mode: GamepadProfileOutputMode) {
         guard let activeProfileIndex = gamepadProfiles.firstIndex(where: { $0.id == activeGamepadProfileID }) else { return }
         var profiles = gamepadProfiles
@@ -2054,11 +2143,11 @@ final class MacControllerServer: ObservableObject {
         if let directOutput = element.outputBinding(for: input.part) {
             return MacControlOutputBinding(shared: directOutput)
         }
-        guard let legacyButton = legacyButton(for: input.part, element: element) else { return nil }
+        guard let legacyButton = Self.legacyButton(for: input.part, element: element) else { return nil }
         return realtimeOutputBindings[legacyButton] ?? realtimeKeyBindings[legacyButton].map { MacControlOutputBinding.keyboard($0) }
     }
 
-    private func legacyButton(for part: KeypadElementInputPart, element: KeypadElement) -> GameButton? {
+    private static func legacyButton(for part: KeypadElementInputPart, element: KeypadElement) -> GameButton? {
         switch part {
         case .primary, .triggerDigital:
             return element.legacySlot
@@ -2573,6 +2662,13 @@ final class MacControllerServer: ObservableObject {
         anonymousPressLastSeenByButton[button] = nil
     }
 
+    private func clearPhysicalHoldsOnNetworkQueue(for input: KeypadElementInputID) {
+        activePressIdentifiersByElementInput[input] = nil
+        activePressLastSeenByElementInput[input] = nil
+        anonymousPressCountsByElementInput[input] = nil
+        anonymousPressLastSeenByElementInput[input] = nil
+    }
+
     private func removeLastSeenOnNetworkQueue(_ button: GameButton, pressIdentifier: UInt64) {
         guard var lastSeenByIdentifier = activePressLastSeenByButton[button] else { return }
         lastSeenByIdentifier[pressIdentifier] = nil
@@ -2756,6 +2852,16 @@ final class MacControllerServer: ObservableObject {
             deactivateOutput(activeOutput)
         } else if let activeBinding = activeBindings.removeValue(forKey: button) {
             deactivateBinding(activeBinding)
+        }
+        publishControllerDebug(pressedButtons: inputPressedButtons, immediately: true)
+    }
+
+    private func releaseElementInputIfPressedOnNetworkQueue(_ input: KeypadElementInputID) {
+        clearPhysicalHoldsOnNetworkQueue(for: input)
+        guard inputPressedElementInputs.contains(input) else { return }
+        inputPressedElementInputs.remove(input)
+        if let activeOutput = activeElementOutputBindings.removeValue(forKey: input) {
+            deactivateOutput(activeOutput)
         }
         publishControllerDebug(pressedButtons: inputPressedButtons, immediately: true)
     }
@@ -3294,13 +3400,20 @@ final class MacControllerServer: ObservableObject {
         outputBindings: [GameButton: MacControlOutputBinding],
         customization: GamepadCustomization
     ) -> Bool {
-        guard outputMode != .keyboard else { return false }
-
-        if outputBindings.values.contains(where: { !$0.gamepadButtons.isEmpty }) {
+        if outputMode != .keyboard,
+           outputBindings.values.contains(where: { !$0.gamepadButtons.isEmpty }) {
             return true
         }
 
-        return customization.normalized.customButtons.contains { customButton in
+        let normalizedCustomization = customization.normalized
+        if normalizedCustomization.elements.contains(where: { element in
+            element.output?.gamepadButtons.isEmpty == false
+                || element.partOutputs.values.contains { !$0.gamepadButtons.isEmpty }
+        }) {
+            return true
+        }
+
+        return normalizedCustomization.customButtons.contains { customButton in
             let normalizedButton = customButton.normalized
             if normalizedButton.isTrigger {
                 return true
