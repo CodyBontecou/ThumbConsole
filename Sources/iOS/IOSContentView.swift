@@ -109,44 +109,6 @@ private extension EnvironmentValues {
     }
 }
 
-private enum GeistInterfaceTone {
-    case neutral
-    case success
-    case warning
-    case error
-    case accent
-
-    func foreground(scheme: ColorScheme) -> Color {
-        switch self {
-        case .neutral: Geist.color(.gray900, scheme: scheme)
-        case .success: Geist.color(.blue900, scheme: scheme)
-        case .warning: Geist.color(.gray1000, scheme: scheme)
-        case .error: Geist.color(.red900, scheme: scheme)
-        case .accent: Geist.color(.blue900, scheme: scheme)
-        }
-    }
-
-    func background(scheme: ColorScheme) -> Color {
-        switch self {
-        case .neutral: Geist.color(.gray100, scheme: scheme)
-        case .success: Geist.color(.blue100, scheme: scheme)
-        case .warning: Geist.color(.gray100, scheme: scheme)
-        case .error: Geist.color(.red100, scheme: scheme)
-        case .accent: Geist.color(.blue100, scheme: scheme)
-        }
-    }
-
-    func border(scheme: ColorScheme) -> Color {
-        switch self {
-        case .neutral: Geist.color(.grayAlpha400, scheme: scheme)
-        case .success: Geist.color(.blue400, scheme: scheme)
-        case .warning: Geist.color(.grayAlpha600, scheme: scheme)
-        case .error: Geist.color(.red400, scheme: scheme)
-        case .accent: Geist.color(.blue400, scheme: scheme)
-        }
-    }
-}
-
 private struct ConnectionView: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
@@ -879,27 +841,6 @@ private struct PairingCodeInput: View {
     }
 }
 
-private struct StatusPill: View {
-    @Environment(\.colorScheme) private var colorScheme
-    let title: String
-    let systemImage: String
-    let tone: GeistInterfaceTone
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .geistTypography(.label13)
-            .lineLimit(1)
-            .minimumScaleFactor(0.82)
-            .foregroundStyle(tone.foreground(scheme: colorScheme))
-            .padding(.horizontal, Geist.Spacing.s3)
-            .padding(.vertical, Geist.Spacing.s2)
-            .background(tone.background(scheme: colorScheme), in: Capsule())
-            .overlay(Capsule().stroke(tone.border(scheme: colorScheme), lineWidth: 1))
-            .fixedSize(horizontal: true, vertical: false)
-            .layoutPriority(1)
-    }
-}
-
 private struct MessageBanner: View {
     @Environment(\.colorScheme) private var colorScheme
     let text: String
@@ -1044,6 +985,7 @@ private struct KeypadHapticsToggleRow: View {
 private struct KeypadSettingsMenu: View {
     @Binding var isHapticFeedbackEnabled: Bool
     @Binding var colorSchemePreference: GamepadColorSchemePreference
+    let customization: GamepadCustomization
     let onShowGuide: (() -> Void)?
     let onReleaseAllInputs: () -> Void
 
@@ -1079,11 +1021,15 @@ private struct KeypadSettingsMenu: View {
                 Label("Release All Keys", systemImage: "keyboard.chevron.compact.down")
             }
         } label: {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28)
+            GamepadControlBarItemIcon(
+                customization: customization,
+                item: .settings,
+                defaultSystemImage: "gearshape.fill",
+                fontSize: 13,
+                frameWidth: 28
+            )
         }
-        .geistButtonStyle(.secondary, size: .small)
+        .gamepadControlBarButtonStyle(customization: customization, item: .settings)
         .accessibilityLabel("Keypad settings")
         .accessibilityHint("Opens settings for keypad appearance, feedback, and input reset.")
     }
@@ -1131,9 +1077,10 @@ private struct ControllerPadView: View {
                     isVisible: $isTopBarVisible,
                     safeAreaInsets: proxy.safeAreaInsets,
                     isLandscape: isLandscape,
+                    activationFrame: activeCustomization.topBarActivationFrame(in: proxy.size),
                     collapsedTitle: ""
                 ) {
-                    topBar(isLandscape: isLandscape)
+                    topBar(customization: activeCustomization, isLandscape: isLandscape)
                 }
             }
             .background {
@@ -1332,85 +1279,74 @@ private struct ControllerPadView: View {
         }
     }
 
+    private func topBar(customization: GamepadCustomization, isLandscape: Bool) -> some View {
+        GamepadControlBarLayout(
+            items: customization.normalized.controlBarItems.filter {
+                !customization.controlBarItemCustomization(for: $0).isHidden
+            },
+            isLandscape: isLandscape
+        ) { item, isCompact in
+            controlBarItem(item, isCompact: isCompact, customization: customization)
+        }
+    }
+
     @ViewBuilder
-    private func topBar(isLandscape: Bool) -> some View {
-        if isLandscape {
-            landscapeTopBar
-        } else {
-            portraitTopBar
-        }
-    }
-
-    private var landscapeTopBar: some View {
-        HStack(spacing: Geist.Spacing.s3) {
-            StatusPill(title: controllerStatusTitle, systemImage: controllerStatusSystemImage, tone: controllerStatusTone)
-
+    private func controlBarItem(_ item: GamepadControlBarItem, isCompact: Bool, customization: GamepadCustomization) -> some View {
+        switch item {
+        case .connectionStatus:
+            GamepadControlBarStatusPill(
+                customization: customization,
+                title: controllerStatusTitle,
+                systemImage: controllerStatusSystemImage,
+                tone: controllerStatusTone
+            )
+        case .profileMenu:
             if !client.gamepadProfiles.isEmpty {
-                keypadProfileMenu
+                keypadProfileMenu(customization: customization, isCompact: isCompact)
             }
-
+        case .launchTarget:
             if client.selectedGamepadProfile?.launchTarget != nil {
-                launchProfileTargetButton(isCompact: false)
+                launchProfileTargetButton(isCompact: isCompact, customization: customization)
             }
-
-            keypadEditModeButton
-            keypadSettingsMenu
-
-            Spacer(minLength: Geist.Spacing.s2)
-
-            homeButton
-            connectionActionButton(isCompact: false)
+        case .spacer:
+            Spacer(minLength: (isCompact ? 2 : Geist.Spacing.s2) * customization.controlBarItemCustomization(for: .spacer).widthScale)
+        case .editLayout:
+            keypadEditModeButton(customization: customization)
+        case .settings:
+            keypadSettingsMenu(customization: customization)
+        case .home:
+            homeButton(customization: customization)
+        case .connectionAction:
+            connectionActionButton(isCompact: isCompact, customization: customization)
         }
-        .padding(Geist.Spacing.s2)
-        .background(Geist.color(.background100, scheme: colorScheme), in: Capsule())
-        .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
     }
 
-    private var portraitTopBar: some View {
-        HStack(spacing: Geist.Spacing.s2) {
-            StatusPill(title: controllerStatusTitle, systemImage: controllerStatusSystemImage, tone: controllerStatusTone)
-
-            if !client.gamepadProfiles.isEmpty {
-                compactKeypadProfileMenu
-            }
-
-            if client.selectedGamepadProfile?.launchTarget != nil {
-                launchProfileTargetButton(isCompact: true)
-            }
-
-            Spacer(minLength: 0)
-
-            keypadEditModeButton
-            keypadSettingsMenu
-            homeButton
-            connectionActionButton(isCompact: true)
-        }
-        .padding(Geist.Spacing.s2)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Geist.color(.background100, scheme: colorScheme),
-            in: RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
-                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-        )
-    }
-
-    private func launchProfileTargetButton(isCompact: Bool) -> some View {
+    private func launchProfileTargetButton(isCompact: Bool, customization: GamepadCustomization) -> some View {
         Button {
             client.launchSelectedProfileTarget()
         } label: {
-            if let launchTarget = client.selectedGamepadProfile?.launchTarget {
+            if customization.controlBarItemCustomization(for: .launchTarget).icon != nil {
+                GamepadControlBarItemIcon(
+                    customization: customization,
+                    item: .launchTarget,
+                    defaultSystemImage: "app.badge.fill",
+                    fontSize: isCompact ? 18 : 20,
+                    frameWidth: 28
+                )
+            } else if let launchTarget = client.selectedGamepadProfile?.launchTarget {
                 launchTargetIcon(launchTarget, size: isCompact ? 18 : 20)
                     .frame(width: 28, height: 28)
             } else {
-                Image(systemName: "app.badge.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 28)
+                GamepadControlBarItemIcon(
+                    customization: customization,
+                    item: .launchTarget,
+                    defaultSystemImage: "app.badge.fill",
+                    fontSize: 13,
+                    frameWidth: 28
+                )
             }
         }
-        .geistButtonStyle(.secondary, size: .small)
+        .gamepadControlBarButtonStyle(customization: customization, item: .launchTarget)
         .disabled(!client.isConnected)
         .accessibilityLabel("Launch \(client.selectedGamepadProfile?.launchTarget?.displayName ?? "attached application")")
         .accessibilityHint("Asks the paired Mac to open the application attached to this keypad setup.")
@@ -1432,64 +1368,102 @@ private struct ControllerPadView: View {
         }
     }
 
-    private var keypadEditModeButton: some View {
+    private func keypadEditModeButton(customization: GamepadCustomization) -> some View {
         Button {
             toggleKeypadLayoutEditing()
         } label: {
-            Image(systemName: isEditingKeypadLayout ? "lock.open.fill" : "lock.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28)
+            GamepadControlBarItemIcon(
+                customization: customization,
+                item: .editLayout,
+                defaultSystemImage: isEditingKeypadLayout ? "lock.open.fill" : "lock.fill",
+                fontSize: 13,
+                frameWidth: 28
+            )
         }
-        .geistButtonStyle(isEditingKeypadLayout ? .primary : .secondary, size: .small)
+        .gamepadControlBarButtonStyle(
+            customization: customization,
+            item: .editLayout,
+            variant: isEditingKeypadLayout ? .primary : .secondary
+        )
         .accessibilityLabel(isEditingKeypadLayout ? "Lock keypad layout" : "Unlock keypad layout")
         .accessibilityHint(isEditingKeypadLayout ? "Stops editing controls and keeps the saved layout." : "Lets you move, resize, rotate, or delete keypad elements.")
     }
 
-    private var homeButton: some View {
+    private func homeButton(customization: GamepadCustomization) -> some View {
         Button {
             showConnectionPage()
         } label: {
-            Image(systemName: "house.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28)
+            GamepadControlBarItemIcon(
+                customization: customization,
+                item: .home,
+                defaultSystemImage: "house.fill",
+                fontSize: 13,
+                frameWidth: 28
+            )
         }
-        .geistButtonStyle(.secondary, size: .small)
+        .gamepadControlBarButtonStyle(customization: customization, item: .home)
         .disabled(onShowConnectionPage == nil)
         .accessibilityLabel("Home")
         .accessibilityHint("Returns to the connection page.")
     }
 
     @ViewBuilder
-    private func connectionActionButton(isCompact: Bool) -> some View {
+    private func connectionActionButton(isCompact: Bool, customization: GamepadCustomization) -> some View {
         if client.isConnected {
             Button {
                 client.disconnect(sendReleaseAll: true)
             } label: {
                 if isCompact {
-                    Image(systemName: "wifi.slash")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28)
+                    GamepadControlBarItemIcon(
+                        customization: customization,
+                        item: .connectionAction,
+                        defaultSystemImage: "wifi.slash",
+                        fontSize: 13,
+                        frameWidth: 28
+                    )
+                } else if customization.controlBarItemCustomization(for: .connectionAction).icon != nil {
+                    HStack(spacing: Geist.Spacing.s1) {
+                        GamepadControlBarItemIcon(
+                            customization: customization,
+                            item: .connectionAction,
+                            defaultSystemImage: "wifi.slash",
+                            fontSize: 13
+                        )
+                        Text("Disconnect")
+                    }
                 } else {
                     Text("Disconnect")
                 }
             }
-            .geistButtonStyle(.error, size: .small)
-            .clipShape(Capsule())
-            .contentShape(Capsule())
+            .gamepadControlBarButtonStyle(customization: customization, item: .connectionAction, variant: .error)
             .accessibilityLabel("Disconnect")
         } else {
             Button {
                 onShowConnectionPage?()
             } label: {
                 if isCompact {
-                    Image(systemName: "link")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28)
+                    GamepadControlBarItemIcon(
+                        customization: customization,
+                        item: .connectionAction,
+                        defaultSystemImage: "link",
+                        fontSize: 13,
+                        frameWidth: 28
+                    )
+                } else if customization.controlBarItemCustomization(for: .connectionAction).icon != nil {
+                    HStack(spacing: Geist.Spacing.s1) {
+                        GamepadControlBarItemIcon(
+                            customization: customization,
+                            item: .connectionAction,
+                            defaultSystemImage: "link",
+                            fontSize: 13
+                        )
+                        Text("Connect Mac")
+                    }
                 } else {
                     Text("Connect Mac")
                 }
             }
-            .geistButtonStyle(.secondary, size: .small)
+            .gamepadControlBarButtonStyle(customization: customization, item: .connectionAction)
             .disabled(onShowConnectionPage == nil)
             .accessibilityLabel("Connect Mac")
         }
@@ -1564,10 +1538,11 @@ private struct ControllerPadView: View {
         PocketPadKeypadConfigurationExport.suggestedFilename(activeProfileName: client.selectedGamepadProfileName)
     }
 
-    private var keypadSettingsMenu: some View {
+    private func keypadSettingsMenu(customization: GamepadCustomization) -> some View {
         KeypadSettingsMenu(
             isHapticFeedbackEnabled: $isKeypadHapticsEnabled,
             colorSchemePreference: keypadColorSchemePreferenceBinding,
+            customization: customization,
             onShowGuide: onShowOnboarding
         ) {
             TouchCaptureUIView.deactivateAllRegisteredTouches()
@@ -1582,33 +1557,35 @@ private struct ControllerPadView: View {
         )
     }
 
-    private var keypadProfileMenu: some View {
+    private func keypadProfileMenu(customization: GamepadCustomization, isCompact: Bool) -> some View {
         Menu {
             keypadProfileMenuItems
         } label: {
-            HStack(spacing: Geist.Spacing.s1) {
-                Image(systemName: client.isSelectedGamepadProfileDefault ? "star.fill" : "rectangle.grid.2x2")
-                    .font(.system(size: 11, weight: .semibold))
-                Text(client.selectedGamepadProfileName)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+            if isCompact {
+                GamepadControlBarItemIcon(
+                    customization: customization,
+                    item: .profileMenu,
+                    defaultSystemImage: client.isSelectedGamepadProfileDefault ? "star.fill" : "rectangle.grid.2x2",
+                    fontSize: 13,
+                    frameWidth: 28
+                )
+            } else {
+                HStack(spacing: Geist.Spacing.s1) {
+                    GamepadControlBarItemIcon(
+                        customization: customization,
+                        item: .profileMenu,
+                        defaultSystemImage: client.isSelectedGamepadProfileDefault ? "star.fill" : "rectangle.grid.2x2",
+                        fontSize: 11
+                    )
+                    Text(client.selectedGamepadProfileName)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+                .frame(maxWidth: 160)
             }
-            .frame(maxWidth: 160)
         }
-        .geistButtonStyle(.secondary, size: .small)
-        .accessibilityLabel("Keypad setup")
-    }
-
-    private var compactKeypadProfileMenu: some View {
-        Menu {
-            keypadProfileMenuItems
-        } label: {
-            Image(systemName: client.isSelectedGamepadProfileDefault ? "star.fill" : "rectangle.grid.2x2")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28)
-        }
-        .geistButtonStyle(.secondary, size: .small)
-        .accessibilityLabel("Keypad setup: \(client.selectedGamepadProfileName)")
+        .gamepadControlBarButtonStyle(customization: customization, item: .profileMenu)
+        .accessibilityLabel(isCompact ? "Keypad setup: \(client.selectedGamepadProfileName)" : "Keypad setup")
     }
 
     @ViewBuilder
@@ -1649,6 +1626,7 @@ private struct ControllerTopBarDrawer<Content: View>: View {
     @Binding var isVisible: Bool
     let safeAreaInsets: EdgeInsets
     let isLandscape: Bool
+    let activationFrame: CGRect
     let collapsedTitle: String
     let content: Content
 
@@ -1656,12 +1634,14 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         isVisible: Binding<Bool>,
         safeAreaInsets: EdgeInsets,
         isLandscape: Bool,
+        activationFrame: CGRect = .null,
         collapsedTitle: String = "Controls",
         @ViewBuilder content: () -> Content
     ) {
         self._isVisible = isVisible
         self.safeAreaInsets = safeAreaInsets
         self.isLandscape = isLandscape
+        self.activationFrame = activationFrame
         self.collapsedTitle = collapsedTitle
         self.content = content()
     }
@@ -1685,9 +1665,10 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         .contentShape(Rectangle())
         .highPriorityGesture(drawerDragGesture)
         .background {
-            ControllerTopBarSwipeBridge(isVisible: $isVisible, animation: drawerAnimation)
+            ControllerTopBarSwipeBridge(isVisible: $isVisible, animation: drawerAnimation, activationFrame: activationFrame)
         }
         .animation(drawerAnimation, value: isVisible)
+        .animation(drawerAnimation, value: activationFrame)
         .zIndex(10)
     }
 
@@ -1807,9 +1788,10 @@ private struct ControllerTopBarDrawer<Content: View>: View {
 private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
     @Binding var isVisible: Bool
     let animation: Animation
+    let activationFrame: CGRect
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isVisible: $isVisible, animation: animation)
+        Coordinator(isVisible: $isVisible, animation: animation, activationFrame: activationFrame)
     }
 
     func makeUIView(context: Context) -> ActivationView {
@@ -1821,6 +1803,7 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
     func updateUIView(_ uiView: ActivationView, context: Context) {
         context.coordinator.isVisible = $isVisible
         context.coordinator.animation = animation
+        context.coordinator.configuredActivationFrame = activationFrame
         uiView.updateActivationFrame()
         uiView.scheduleActivationFrameUpdate()
     }
@@ -1870,6 +1853,7 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var isVisible: Binding<Bool>
         var animation: Animation
+        var configuredActivationFrame: CGRect
         fileprivate var activationFrame = CGRect.null
         private weak var window: UIWindow?
         private lazy var panRecognizer: UIPanGestureRecognizer = {
@@ -1882,9 +1866,10 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
             return recognizer
         }()
 
-        init(isVisible: Binding<Bool>, animation: Animation) {
+        init(isVisible: Binding<Bool>, animation: Animation, activationFrame: CGRect) {
             self.isVisible = isVisible
             self.animation = animation
+            self.configuredActivationFrame = activationFrame
         }
 
         deinit {
@@ -1905,9 +1890,17 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
             else { return false }
 
             let location = touch.location(in: hostView)
-            let paddedFrame = activationFrame.insetBy(dx: -24, dy: -24)
-            if !paddedFrame.isNull, paddedFrame.width > 1, paddedFrame.height > 1, paddedFrame.contains(location) {
-                return true
+
+            if isVisible.wrappedValue {
+                let paddedFrame = activationFrame.insetBy(dx: -24, dy: -24)
+                if !paddedFrame.isNull, paddedFrame.width > 1, paddedFrame.height > 1, paddedFrame.contains(location) {
+                    return true
+                }
+            } else {
+                let paddedFrame = configuredActivationFrame.insetBy(dx: -24, dy: -24)
+                if !paddedFrame.isNull, paddedFrame.width > 1, paddedFrame.height > 1 {
+                    return paddedFrame.contains(location)
+                }
             }
 
             // On a cold launch into the saved keypad, SwiftUI can install the
@@ -2080,7 +2073,7 @@ private struct GamepadFreeformControllerCanvas: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let controls = customization.resolvedControls(in: proxy.size)
+            let controls = customization.resolvedControls(in: proxy.size).filter { $0.id != .system(.topBarActivation) }
 
             ZStack {
                 if isEditingLayout {
@@ -2795,6 +2788,9 @@ private extension GamepadCustomization {
         case .custom(let id):
             guard next.customButtons.contains(where: { $0.id == id }) else { return nil }
             next.removeCustomButton(id: id)
+
+        case .system(.topBarActivation), .controlBarItem:
+            return nil
         }
 
         let normalizedNext = next.normalized
@@ -2844,7 +2840,7 @@ private enum IOSKeypadResizeHandleCorner: CaseIterable, Identifiable {
 private extension GamepadCustomization {
     func iosExistingControlFrames(excluding identity: GamepadControlIdentity, canvasSize: CGSize) -> [CGRect] {
         resolvedControls(in: canvasSize).compactMap { control in
-            control.id == identity ? nil : control.frame
+            (control.id == identity || control.id == .system(.topBarActivation)) ? nil : control.frame
         }
     }
 
@@ -2861,6 +2857,10 @@ private extension GamepadCustomization {
         case .custom(let id):
             guard let index = next.customButtons.firstIndex(where: { $0.id == id }) else { return nil }
             mutate(&next.customButtons[index].layout)
+        case .system(.topBarActivation):
+            mutate(&next.topBarActivationRegion)
+        case .controlBarItem:
+            return nil
         }
 
         let normalizedNext = next.normalized
@@ -3231,7 +3231,7 @@ private struct GamepadTrigger: View {
     }
 }
 
-private final class KeypadHapticPlayer {
+final class KeypadHapticPlayer {
     static let shared = KeypadHapticPlayer()
 
     private var engine: CHHapticEngine?

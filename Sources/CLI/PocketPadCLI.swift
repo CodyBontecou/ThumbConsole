@@ -161,7 +161,7 @@ struct PocketPadCLI {
     private struct ElementSummary: Codable {
         var id: String
         var kind: String
-        var mappedButton: GameButton
+        var mappedButton: GameButton?
         var label: String
         var isHidden: Bool
         var isLocationLocked: Bool
@@ -184,9 +184,19 @@ struct PocketPadCLI {
         var modelIdentifiers: [String]
     }
 
+    private struct ControlBarItemSummary: Codable {
+        var order: Int
+        var id: String
+        var title: String
+        var description: String
+        var systemImage: String
+        var appearance: GamepadButtonCustomization
+    }
+
     private enum ElementTarget: Equatable {
         case builtin(GameButton)
         case custom(UUID)
+        case system(GamepadSystemControl)
     }
 
     static func main() {
@@ -234,6 +244,8 @@ struct PocketPadCLI {
             try device(arguments: rest)
         case "element", "control", "controls":
             try element(arguments: rest)
+        case "control-bar", "controlbar", "top-bar", "topbar":
+            try controlBar(arguments: rest)
         case "style", "styles":
             try style(arguments: rest)
         case "layer", "layers":
@@ -1771,6 +1783,12 @@ struct PocketPadCLI {
         case .custom(let id):
             let custom = customization.customButtons.first { $0.id == id }?.normalized
             return LayerSummary(id: identity.id, kind: custom?.controlKind.rawValue ?? "custom", label: custom?.label ?? id.uuidString, zIndex: custom?.layout.zIndex ?? 0, isHidden: custom?.layout.isHidden ?? false, isLocked: custom?.layout.isLocationLocked ?? false)
+        case .system(.topBarActivation):
+            let layout = customization.topBarActivationRegion.normalized
+            return LayerSummary(id: identity.id, kind: "system", label: GamepadSystemControl.topBarActivation.displayName, zIndex: layout.zIndex, isHidden: layout.isHidden, isLocked: layout.isLocationLocked)
+        case .controlBarItem(let item):
+            let layout = customization.controlBarItemCustomization(for: item)
+            return LayerSummary(id: identity.id, kind: "control_bar_item", label: item.displayName, zIndex: 0, isHidden: layout.isHidden, isLocked: true)
         }
     }
 
@@ -1915,6 +1933,8 @@ struct PocketPadCLI {
         case .custom(let id):
             guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { throw CLIError.message("Custom element not found") }
             try mutate(&customization.customButtons[index].layout)
+        case .system(.topBarActivation):
+            try mutate(&customization.topBarActivationRegion)
         }
     }
 
@@ -1922,13 +1942,17 @@ struct PocketPadCLI {
         switch target {
         case .builtin(let button): .builtin(button)
         case .custom(let id): .custom(id)
+        case .system(let control): .system(control)
         }
     }
 
-    private static func target(for identity: GamepadControlIdentity) -> ElementTarget {
+    private static func target(for identity: GamepadControlIdentity) throws -> ElementTarget {
         switch identity {
         case .builtin(let button): .builtin(button)
         case .custom(let id): .custom(id)
+        case .system(let control): .system(control)
+        case .controlBarItem:
+            throw CLIError.message("Control-bar items cannot belong to freeform layer groups.")
         }
     }
 
@@ -2168,6 +2192,176 @@ struct PocketPadCLI {
         )
     }
 
+    // MARK: - Control bar
+
+    private static func controlBar(arguments: [String]) throws {
+        guard let subcommand = arguments.first else { throw CLIError.message("Missing control-bar subcommand") }
+        let rest = Array(arguments.dropFirst())
+        switch subcommand {
+        case "list", "ls", "show":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            let customization = try customization(for: profile, arguments: rest).normalized
+            let summaries = controlBarItemSummaries(customization)
+            if rest.contains("--json") {
+                try printJSON(summaries)
+            } else if summaries.isEmpty {
+                print("No controls are pinned to the iPhone control bar for \"\(profile.name)\".")
+            } else {
+                for summary in summaries {
+                    print("\(summary.order).\t\(summary.id)\t\(summary.title)")
+                }
+            }
+        case "set":
+            let items = try parseControlBarItems(from: rest)
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
+                customization.controlBarItems = items
+            }
+            print("Updated control bar controls.")
+        case "add", "append":
+            guard let itemText = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad control-bar add <item>") }
+            let item = try parseControlBarItem(itemText)
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
+                customization.addControlBarItem(item)
+            }
+            print("Added \(item.displayName) to the control bar.")
+        case "remove", "rm", "delete", "hide":
+            guard let itemText = firstPositional(in: rest) else { throw CLIError.message("Usage: pocketpad control-bar remove <item>") }
+            let item = try parseControlBarItem(itemText)
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
+                customization.removeControlBarItem(item)
+            }
+            print("Removed \(item.displayName) from the control bar.")
+        case "move":
+            let positional = positionals(in: rest)
+            guard positional.count >= 2 else { throw CLIError.message("Usage: pocketpad control-bar move <item> <up|down>") }
+            let item = try parseControlBarItem(positional[0])
+            let direction = normalizedLookup(positional[1])
+            let offset: Int
+            switch direction {
+            case "up", "left", "back", "backward", "earlier": offset = -1
+            case "down", "right", "forward", "later": offset = 1
+            default: throw CLIError.message("Unknown move direction: \(positional[1]). Use up or down.")
+            }
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
+                let items = GamepadCustomization.normalizedControlBarItems(customization.controlBarItems)
+                guard let index = items.firstIndex(of: item) else { return }
+                let destination = min(max(index + offset, 0), max(items.count - 1, 0))
+                guard destination != index else { return }
+                customization.moveControlBarItem(item, to: destination)
+            }
+            print("Moved \(item.displayName) \(positional[1]).")
+        case "item":
+            try controlBarItem(arguments: rest)
+        case "reset":
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
+                customization.resetControlBar()
+            }
+            print("Reset control bar controls and item appearances.")
+        default:
+            throw CLIError.message("Unknown control-bar subcommand: \(subcommand)")
+        }
+    }
+
+    private static func controlBarItemSummaries(_ customization: GamepadCustomization) -> [ControlBarItemSummary] {
+        customization.normalized.controlBarItems.enumerated().map { index, item in
+            ControlBarItemSummary(
+                order: index + 1,
+                id: item.rawValue,
+                title: item.displayName,
+                description: item.subtitle,
+                systemImage: item.systemImage,
+                appearance: customization.controlBarItemCustomization(for: item)
+            )
+        }
+    }
+
+    private static func controlBarItem(arguments: [String]) throws {
+        let positional = positionals(in: arguments)
+        guard positional.count >= 2 else {
+            throw CLIError.message("Usage: pocketpad control-bar item <show|set|reset> <item> [appearance options]")
+        }
+        let action = normalizedLookup(positional[0])
+        let item = try parseControlBarItem(positional[1])
+        let profileTarget = optionValue("--profile", in: arguments)
+        let variant = try customizationVariant(in: arguments)
+
+        switch action {
+        case "show", "get", "inspect":
+            let store = loadStore()
+            let profile = try resolveProfile(profileTarget, in: store)
+            let customization = try customization(for: profile, arguments: arguments).normalized
+            guard let index = customization.controlBarItems.firstIndex(of: item) else {
+                throw CLIError.message("\(item.displayName) is not currently in the control bar.")
+            }
+            let summary = ControlBarItemSummary(
+                order: index + 1,
+                id: item.rawValue,
+                title: item.displayName,
+                description: item.subtitle,
+                systemImage: item.systemImage,
+                appearance: customization.controlBarItemCustomization(for: item)
+            )
+            if arguments.contains("--json") {
+                try printJSON(summary)
+            } else {
+                print("\(summary.title) (#\(summary.order))")
+                print("  icon: \(summary.appearance.icon?.value ?? summary.systemImage)")
+                print("  size: \(summary.appearance.widthScale)x\(summary.appearance.heightScale)")
+                print("  hidden: \(summary.appearance.isHidden)")
+            }
+        case "set", "edit", "style":
+            try mutateCustomization(profileTarget: profileTarget, variant: variant) { customization in
+                guard customization.normalized.controlBarItems.contains(item) else {
+                    throw CLIError.message("\(item.displayName) is not currently in the control bar. Add it first.")
+                }
+                var appearance = customization.controlBarItemCustomization(for: item)
+                try applyLayoutOptions(arguments, to: &appearance)
+                customization.setControlBarItemCustomization(appearance, for: item)
+            }
+            print("Updated \(item.displayName) appearance.")
+        case "reset":
+            try mutateCustomization(profileTarget: profileTarget, variant: variant) { customization in
+                customization.resetControlBarItemAppearance(item)
+            }
+            print("Reset \(item.displayName) appearance.")
+        default:
+            throw CLIError.message("Unknown control-bar item action: \(positional[0]). Use show, set, or reset.")
+        }
+    }
+
+    private static func parseControlBarItems(from arguments: [String]) throws -> [GamepadControlBarItem] {
+        let itemText = optionValue("--items", in: arguments) ?? optionValue("--controls", in: arguments) ?? positionals(in: arguments).joined(separator: ",")
+        let parts = itemText
+            .split { $0 == "," || $0 == ";" || $0.isWhitespace }
+            .map(String.init)
+        guard !parts.isEmpty else { throw CLIError.message("Usage: pocketpad control-bar set status,profiles,spacer,edit,settings,home,connection") }
+        return GamepadCustomization.normalizedControlBarItems(try parts.map(parseControlBarItem))
+    }
+
+    private static func parseControlBarItem(_ text: String) throws -> GamepadControlBarItem {
+        switch normalizedLookup(text) {
+        case "status", "connectionstatus", "indicator", "pill":
+            return .connectionStatus
+        case "profile", "profiles", "profilemenu", "profilepicker", "keypad", "keypads", "setup", "setups":
+            return .profileMenu
+        case "launch", "launcher", "launchtarget", "app", "application", "launchapp", "target":
+            return .launchTarget
+        case "spacer", "space", "flex", "flexiblespace", "gap":
+            return .spacer
+        case "edit", "editlayout", "layout", "lock", "unlock":
+            return .editLayout
+        case "settings", "setting", "gear", "keypadsettings":
+            return .settings
+        case "home", "connectionpage", "start":
+            return .home
+        case "connection", "connect", "disconnect", "connectdisconnect", "connectmac", "mac":
+            return .connectionAction
+        default:
+            throw CLIError.message("Unknown control bar item: \(text). Use status, profiles, launch, spacer, edit, settings, home, or connection.")
+        }
+    }
+
     // MARK: - Elements
 
     private static func element(arguments: [String]) throws {
@@ -2340,6 +2534,11 @@ struct PocketPadCLI {
                     customization.customButtons[index].trackpadSettings = nil
                 }
                 try applyLayoutOptions(arguments, to: &customization.customButtons[index].layout)
+            case .system(.topBarActivation):
+                if optionValue("--label", in: arguments) != nil || optionValue("--maps-to", in: arguments) != nil || optionValue("--kind", in: arguments) != nil {
+                    throw CLIError.message("The control bar hotspot only supports layout options")
+                }
+                try applyLayoutOptions(arguments, to: &customization.topBarActivationRegion)
             }
 
             if hasAnyOption(elementOutputOptionNames, in: arguments) {
@@ -2366,6 +2565,8 @@ struct PocketPadCLI {
         let identity: GamepadControlIdentity = switch target {
         case .builtin(let button): .builtin(button)
         case .custom(let id): .custom(id)
+        case .system:
+            throw CLIError.message("The control bar hotspot does not send output")
         }
         guard let elementID = normalizedCustomization.elementID(for: identity),
               let index = normalizedCustomization.elements.firstIndex(where: { $0.id == elementID })
@@ -2442,6 +2643,7 @@ struct PocketPadCLI {
         let identity: GamepadControlIdentity = switch target {
         case .builtin(let button): .builtin(button)
         case .custom(let id): .custom(id)
+        case .system(let control): .system(control)
         }
 
         guard let nudgedCustomization = sourceCustomization.nudgedControls([identity], by: translation, in: canvasSize) else {
@@ -2474,6 +2676,8 @@ struct PocketPadCLI {
                 customization.setButtonCustomization(layout, for: button)
             case .custom(let id):
                 customization.removeCustomButton(id: id)
+            case .system(.topBarActivation):
+                customization.topBarActivationRegion.isHidden = true
             }
         }
         print("Deleted/hidden element \"\(targetText)\".")
@@ -2556,6 +2760,8 @@ struct PocketPadCLI {
                     customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].trackpadSettings = nil
                 }
+            case .system(.topBarActivation):
+                customization.topBarActivationRegion = GamepadCustomization.defaultTopBarActivationRegion
             }
         }
         print("Reset element \"\(targetText)\".")
@@ -4264,13 +4470,16 @@ struct PocketPadCLI {
     }
 
     private static func resolveElementTarget(_ text: String, in customization: GamepadCustomization) throws -> ElementTarget {
+        let normalized = normalizedLookup(text)
+        if normalized == "controlbar" || normalized == "topbar" || normalized == "iosbar" || normalized == "controlbarhotspot" || normalized == "topbaractivation" {
+            return .system(.topBarActivation)
+        }
         if let uuid = UUID(uuidString: text), customization.customButtons.contains(where: { $0.id == uuid }) { return .custom(uuid) }
         if let button = try? parseButton(text) {
             if GameButton.builtInControls.contains(button) { return .builtin(button) }
             let matches = customization.customButtons.filter { $0.mappedButton == button }
             if matches.count == 1 { return .custom(matches[0].id) }
         }
-        let normalized = normalizedLookup(text)
         let matches = customization.customButtons.filter { normalizedLookup($0.visualLabel(fallback: $0.mappedButton.displayName)) == normalized || normalizedLookup($0.label) == normalized }
         if matches.count == 1 { return .custom(matches[0].id) }
         if matches.count > 1 { throw CLIError.message("Element is ambiguous: \(text)") }
@@ -4312,6 +4521,22 @@ struct PocketPadCLI {
                 trackpadSettings: normalized.trackpadSettings
             )
         }
+        let topBarLayout = customization.topBarActivationRegion.normalized
+        summaries.append(
+            ElementSummary(
+                id: GamepadControlIdentity.system(.topBarActivation).id,
+                kind: "system",
+                mappedButton: nil,
+                label: GamepadSystemControl.topBarActivation.displayName,
+                isHidden: topBarLayout.isHidden,
+                isLocationLocked: topBarLayout.isLocationLocked,
+                layout: topBarLayout,
+                joystickMapping: nil,
+                joystickOutputSettings: nil,
+                triggerSettings: nil,
+                trackpadSettings: nil
+            )
+        )
         return summaries
     }
 
@@ -4393,7 +4618,7 @@ struct PocketPadCLI {
             "--highlight", "--highlight-color", "--highlight-radius", "--highlight-x", "--highlight-y", "--highlight-opacity",
             "--bevel", "--bevel-highlight", "--bevel-shadow", "--bevel-width", "--pressed-fill", "--pressed-color", "--press-scale", "--scale-on-press",
             "--material", "--material-preset", "--shadow-layers", "--shadows",
-            "--to", "--before", "--after", "--role"
+            "--to", "--before", "--after", "--role", "--items", "--controls"
         ]
         for argument in arguments {
             if skipNext {
@@ -4438,6 +4663,8 @@ struct PocketPadCLI {
         print("Background: light \(lightBackground.displayName) \(lightBackground.representativeColor.hexString), dark \(darkBackground.displayName) \(darkBackground.representativeColor.hexString)")
         print("Accent: \(profile.customization.accentStyle.displayName)")
         print("Labels: \(profile.customization.showsButtonLabels ? "shown" : "hidden")")
+        let controlBar = profile.customization.normalized.controlBarItems.map(\.shortName).joined(separator: ", ")
+        print("Control Bar: \(controlBar.isEmpty ? "none" : controlBar)")
         print("Custom elements: \(profile.customization.customButtons.count)")
     }
 
@@ -4595,6 +4822,12 @@ struct PocketPadCLI {
           pocketpad device list
           pocketpad device set iphone-17-pro --orientation landscape
           pocketpad device set custom --size 844x390
+          pocketpad control-bar list
+          pocketpad control-bar set status,profiles,spacer,edit,settings,home,connection
+          pocketpad control-bar remove home
+          pocketpad control-bar item set settings --icon sf:slider.horizontal.3 --fill '#111827' --corner 12
+          pocketpad control-bar item set connection --width 1.25 --height 1.1
+          pocketpad control-bar item reset settings
           pocketpad element list
           pocketpad element add button --label Fire --keyboard Space --gamepad south --x 0.5 --y 0.8 --light-fill '#6B7280' --dark-fill '#374151'
           pocketpad element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --part up --keyboard W
@@ -4611,6 +4844,7 @@ struct PocketPadCLI {
           pocketpad element set focus --icon sf:sparkles --haptic medium --haptic-pattern double --haptic-intensity 75% --haptic-duration 70ms --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9'
           pocketpad element set jump --text-color '#7C61A8' --inner-shadow '#B8B2C2' --inner-shadow-radius 5 --highlight '#FFFFFF' --highlight-opacity 45% --highlight-x -4 --highlight-y -4 --bevel-width 1.5
           pocketpad element set jump --material soft-white --shadow-layers '#FFFFFF,14,-7,-7,96%;#9B91AA,20,8,9,24%'
+          pocketpad element set control-bar --x 0.2 --y 0.08 --width 1.4 --height 1.1
           pocketpad element nudge jump right --step 10 --canvas iphone-17-pro-landscape
           pocketpad style create SoftWhite --material soft-white --fill '#F8F6F7' --text-color '#7C61A8'
           pocketpad style create Soul --fill '#F8FAFC' --stroke '#38BDF8' --pressed-fill '#0EA5E9' --icon sf:sparkles

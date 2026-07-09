@@ -3159,7 +3159,11 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func gamepadCustomizationForClient(_ customization: GamepadCustomization) -> GamepadCustomization {
-        var clientCustomization = customization.normalized
+        // Realtime customizations are normalized on the main/editor side before being
+        // copied to the Network framework queue. Avoid re-normalizing the full value
+        // here: GCD network worker threads have small stacks, and the nested Swift
+        // value-type normalization can exhaust them during client handshake.
+        var clientCustomization = customization
         for button in GameButton.allCases where clientCustomization.labelOverride(for: button) == nil {
             if let output = realtimeOutputBindings[button], !output.isEmpty {
                 clientCustomization.setLabel(output.displayName, for: button)
@@ -3167,7 +3171,7 @@ final class MacControllerServer: ObservableObject {
                 clientCustomization.setLabel(binding.displayName, for: button)
             }
         }
-        return clientCustomization.normalized
+        return clientCustomization
     }
 
     private func gamepadProfilesForClient(_ profiles: [GamepadConfigurationProfile]) -> [GamepadConfigurationProfile] {
@@ -3176,7 +3180,8 @@ final class MacControllerServer: ObservableObject {
             clientProfile.customization = gamepadCustomizationForClient(profile.customization)
             clientProfile.landscapeCustomization = profile.landscapeCustomization.map(gamepadCustomizationForClient)
             clientProfile.portraitCustomization = profile.portraitCustomization.map(gamepadCustomizationForClient)
-            return clientProfile.normalized
+            clientProfile.launchTarget = profile.launchTarget?.normalized
+            return clientProfile
         }
     }
 

@@ -180,6 +180,65 @@ enum Geist {
     ]
 }
 
+enum GeistInterfaceTone {
+    case neutral
+    case success
+    case warning
+    case error
+    case accent
+
+    func foreground(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.gray900, scheme: scheme)
+        case .success: Geist.color(.blue900, scheme: scheme)
+        case .warning: Geist.color(.gray1000, scheme: scheme)
+        case .error: Geist.color(.red900, scheme: scheme)
+        case .accent: Geist.color(.blue900, scheme: scheme)
+        }
+    }
+
+    func background(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.gray100, scheme: scheme)
+        case .success: Geist.color(.blue100, scheme: scheme)
+        case .warning: Geist.color(.gray100, scheme: scheme)
+        case .error: Geist.color(.red100, scheme: scheme)
+        case .accent: Geist.color(.blue100, scheme: scheme)
+        }
+    }
+
+    func border(scheme: ColorScheme) -> Color {
+        switch self {
+        case .neutral: Geist.color(.grayAlpha400, scheme: scheme)
+        case .success: Geist.color(.blue400, scheme: scheme)
+        case .warning: Geist.color(.grayAlpha600, scheme: scheme)
+        case .error: Geist.color(.red400, scheme: scheme)
+        case .accent: Geist.color(.blue400, scheme: scheme)
+        }
+    }
+}
+
+struct StatusPill: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let systemImage: String
+    let tone: GeistInterfaceTone
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .geistTypography(.label13)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .foregroundStyle(tone.foreground(scheme: colorScheme))
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+            .background(tone.background(scheme: colorScheme), in: Capsule())
+            .overlay(Capsule().stroke(tone.border(scheme: colorScheme), lineWidth: 1))
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
+    }
+}
+
 struct GeistTypographyModifier: ViewModifier {
     let token: Geist.TypographyToken
 

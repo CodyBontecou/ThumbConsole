@@ -686,7 +686,7 @@ extension GamepadFillStyle: Codable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        switch normalized {
+        switch self {
         case .solid(let color):
             try container.encode(Kind.solid, forKey: .kind)
             try container.encode(color, forKey: .color)
@@ -1249,18 +1249,18 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         try container.encodeIfPresent(fillColor, forKey: .fillColor)
         try container.encodeIfPresent(lightFillColor, forKey: .lightFillColor)
         try container.encodeIfPresent(darkFillColor, forKey: .darkFillColor)
-        try container.encodeIfPresent(fillStyle?.normalized, forKey: .fillStyle)
-        try container.encodeIfPresent(lightFillStyle?.normalized, forKey: .lightFillStyle)
-        try container.encodeIfPresent(darkFillStyle?.normalized, forKey: .darkFillStyle)
+        try container.encodeIfPresent(fillStyle, forKey: .fillStyle)
+        try container.encodeIfPresent(lightFillStyle, forKey: .lightFillStyle)
+        try container.encodeIfPresent(darkFillStyle, forKey: .darkFillStyle)
         try container.encodeIfPresent(joystickKnobColor?.normalized, forKey: .joystickKnobColor)
         try container.encodeIfPresent(lightJoystickKnobColor?.normalized, forKey: .lightJoystickKnobColor)
         try container.encodeIfPresent(darkJoystickKnobColor?.normalized, forKey: .darkJoystickKnobColor)
         try container.encodeIfPresent(joystickVisualStyle, forKey: .joystickVisualStyle)
         try container.encodeIfPresent(styleID, forKey: .styleID)
-        try container.encodeIfPresent(visualStyle?.normalized, forKey: .visualStyle)
-        try container.encodeIfPresent(icon?.normalized, forKey: .icon)
+        try container.encodeIfPresent(visualStyle, forKey: .visualStyle)
+        try container.encodeIfPresent(icon, forKey: .icon)
         try container.encodeIfPresent(hapticStyle, forKey: .hapticStyle)
-        try container.encodeIfPresent(hapticFeedback?.normalized, forKey: .hapticFeedback)
+        try container.encodeIfPresent(hapticFeedback, forKey: .hapticFeedback)
         try container.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
         try container.encodeIfPresent(cornerRadii, forKey: .cornerRadii)
         try container.encode(shadowStrength, forKey: .shadowStrength)
@@ -1715,9 +1715,15 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
     }
 
     public var normalized: KeypadElement {
+        normalized(layoutIsAlreadyNormalized: false)
+    }
+
+    fileprivate func normalized(layoutIsAlreadyNormalized: Bool) -> KeypadElement {
         var copy = self
         copy.label = normalizedGamepadLabel(label)
-        copy.layout = layout.normalized
+        if !layoutIsAlreadyNormalized {
+            copy.layout = layout.normalized
+        }
         copy.output = output?.isEmpty == true ? nil : output
         copy.partOutputs = partOutputs.compactMapValues { $0.isEmpty ? nil : $0 }
 
@@ -1764,6 +1770,23 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
         return copy
     }
 
+    fileprivate var synchronizationMetadata: KeypadElement {
+        KeypadElement(
+            id: id,
+            label: normalizedGamepadLabel(label),
+            kind: kind,
+            layout: .defaultValue,
+            builtInButton: builtInButton,
+            legacySlot: legacySlot,
+            output: output?.isEmpty == true ? nil : output,
+            partOutputs: partOutputs.compactMapValues { $0.isEmpty ? nil : $0 },
+            joystickMapping: joystickMapping,
+            joystickOutputSettings: joystickOutputSettings,
+            triggerSettings: triggerSettings,
+            trackpadSettings: trackpadSettings
+        )
+    }
+
     public func outputBinding(for part: KeypadElementInputPart = .primary) -> KeypadElementOutputBinding? {
         part == .primary ? output : partOutputs[part]
     }
@@ -1801,12 +1824,491 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public enum GamepadControlBarItem: String, Codable, CaseIterable, Identifiable, Sendable {
+    case connectionStatus = "status"
+    case profileMenu = "profile_menu"
+    case launchTarget = "launch_target"
+    case spacer
+    case editLayout = "edit_layout"
+    case settings
+    case home
+    case connectionAction = "connection"
+
+    public var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .connectionStatus: "Connection Status"
+        case .profileMenu: "Profile Picker"
+        case .launchTarget: "Launch App"
+        case .spacer: "Flexible Space"
+        case .editLayout: "Edit Layout"
+        case .settings: "Settings"
+        case .home: "Home"
+        case .connectionAction: "Connect / Disconnect"
+        }
+    }
+
+    var shortName: String {
+        switch self {
+        case .connectionStatus: "Status"
+        case .profileMenu: "Profiles"
+        case .launchTarget: "Launch"
+        case .spacer: "Spacer"
+        case .editLayout: "Edit"
+        case .settings: "Settings"
+        case .home: "Home"
+        case .connectionAction: "Connection"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .connectionStatus: "Shows whether the iPhone is paired with the Mac."
+        case .profileMenu: "Lets users switch keypad setups from the iPhone."
+        case .launchTarget: "Opens the Mac app attached to the selected setup."
+        case .spacer: "Pushes the following controls to the far edge of the bar."
+        case .editLayout: "Unlocks the on-device layout editor."
+        case .settings: "Opens keypad appearance, feedback, and reset options."
+        case .home: "Returns to the connection page."
+        case .connectionAction: "Connects to or disconnects from the paired Mac."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .connectionStatus: "dot.radiowaves.left.and.right"
+        case .profileMenu: "rectangle.grid.2x2"
+        case .launchTarget: "app.badge.fill"
+        case .spacer: "arrow.left.and.right"
+        case .editLayout: "lock.open.fill"
+        case .settings: "gearshape.fill"
+        case .home: "house.fill"
+        case .connectionAction: "link"
+        }
+    }
+}
+
+/// The visible control-bar chrome shared by the iPhone runtime and Mac editor preview.
+/// Item content stays at the call site so the runtime can provide live menus and actions.
+struct GamepadControlBarLayout<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let items: [GamepadControlBarItem]
+    let isLandscape: Bool
+    private let content: (GamepadControlBarItem, Bool) -> Content
+
+    init(
+        items: [GamepadControlBarItem],
+        isLandscape: Bool,
+        @ViewBuilder content: @escaping (GamepadControlBarItem, Bool) -> Content
+    ) {
+        self.items = items
+        self.isLandscape = isLandscape
+        self.content = content
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if isLandscape {
+            HStack(spacing: Geist.Spacing.s3) {
+                ForEach(items) { item in
+                    content(item, false)
+                }
+            }
+            .padding(Geist.Spacing.s2)
+            .background(Geist.color(.background100, scheme: colorScheme), in: Capsule())
+            .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
+        } else {
+            HStack(spacing: Geist.Spacing.s2) {
+                ForEach(items) { item in
+                    content(item, true)
+                }
+            }
+            .padding(Geist.Spacing.s2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Geist.color(.background100, scheme: colorScheme),
+                in: RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+            )
+        }
+    }
+}
+
+private struct GamepadControlBarItemSurface<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let customization: GamepadCustomization
+    let item: GamepadControlBarItem
+    let state: GamepadControlPresentationState
+    let baseHeight: CGFloat
+    let baseHorizontalPadding: CGFloat
+    let fallbackForeground: Color
+    let fallbackBackground: Color
+    let fallbackBorder: Color
+    let fallbackBorderWidth: CGFloat
+    let defaultCornerRadius: CGFloat
+    let content: Content
+
+    init(
+        customization: GamepadCustomization,
+        item: GamepadControlBarItem,
+        state: GamepadControlPresentationState,
+        baseHeight: CGFloat,
+        baseHorizontalPadding: CGFloat,
+        fallbackForeground: Color,
+        fallbackBackground: Color,
+        fallbackBorder: Color,
+        fallbackBorderWidth: CGFloat,
+        defaultCornerRadius: CGFloat = Geist.Radius.sm,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.customization = customization
+        self.item = item
+        self.state = state
+        self.baseHeight = baseHeight
+        self.baseHorizontalPadding = baseHorizontalPadding
+        self.fallbackForeground = fallbackForeground
+        self.fallbackBackground = fallbackBackground
+        self.fallbackBorder = fallbackBorder
+        self.fallbackBorderWidth = fallbackBorderWidth
+        self.defaultCornerRadius = defaultCornerRadius
+        self.content = content()
+    }
+
+    @ViewBuilder
+    var body: some View {
+        let appearance = customization.controlBarItemCustomization(for: item)
+        let widthScale = GamepadButtonCustomization.clamp(appearance.widthScale, lower: 0.25, upper: 3)
+        let heightScale = GamepadButtonCustomization.clamp(appearance.heightScale, lower: 0.5, upper: 2)
+        let height = max(22, baseHeight * heightScale)
+        let horizontalPadding = baseHorizontalPadding * widthScale
+
+        if appearance.hasControlBarSurfaceOverrides {
+            let presentation = customization.resolvedPresentation(
+                for: appearance,
+                fallbackAccentStyle: appearance.accentStyle ?? customization.accentStyle,
+                controlKind: .button,
+                state: state,
+                scheme: colorScheme
+            )
+            let shape = resolvedShape(for: appearance, height: height, widthScale: widthScale)
+
+            content
+                .foregroundStyle(presentation.foregroundSwiftUIColor)
+                .padding(.horizontal, horizontalPadding)
+                .frame(height: height)
+                .background(GamepadFillShapeLayer(shape: shape, fillStyle: presentation.fillStyle))
+                .overlay(shape.stroke(presentation.strokeSwiftUIColor, lineWidth: presentation.strokeWidth))
+                .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
+                .gamepadOuterShadows(presentation)
+                .opacity(presentation.opacity)
+                .blur(radius: presentation.blurRadius)
+                .scaleEffect(presentation.scale)
+                .contentShape(shape)
+        } else {
+            let shape = AnyShape(RoundedRectangle(cornerRadius: defaultCornerRadius, style: .continuous))
+            content
+                .foregroundStyle(fallbackForeground)
+                .padding(.horizontal, horizontalPadding)
+                .frame(height: height)
+                .background(shape.fill(fallbackBackground))
+                .overlay(shape.stroke(fallbackBorder, lineWidth: fallbackBorderWidth))
+                .contentShape(shape)
+        }
+    }
+
+    private func resolvedShape(
+        for appearance: GamepadButtonCustomization,
+        height: CGFloat,
+        widthScale: CGFloat
+    ) -> AnyShape {
+        let shape = appearance.resolvedShape(defaultShape: .roundedRectangle)
+        let estimatedSize = CGSize(width: max(32, 44 * widthScale), height: height)
+        let radii = appearance.resolvedCornerRadii(defaultRadius: shape.defaultEditableCornerRadius(in: estimatedSize))
+        switch shape {
+        case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
+            return AnyShape(UnevenRoundedRectangle(cornerRadii: radii.rectangleCornerRadii, style: .continuous))
+        case .polygon:
+            return AnyShape(GamepadRegularPolygonButtonShape(sides: 3))
+        case .star:
+            return AnyShape(GamepadStarButtonShape(points: 5))
+        }
+    }
+}
+
+struct GamepadControlBarButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+    let customization: GamepadCustomization
+    let item: GamepadControlBarItem
+    var variant: Geist.ButtonVariant = .secondary
+    var size: Geist.ControlSize = .small
+
+    func makeBody(configuration: Configuration) -> some View {
+        let state: GamepadControlPresentationState = !isEnabled ? .disabled : (configuration.isPressed ? .pressed : .normal)
+        return GamepadControlBarItemSurface(
+            customization: customization,
+            item: item,
+            state: state,
+            baseHeight: size.height,
+            baseHorizontalPadding: size.horizontalPadding,
+            fallbackForeground: fallbackForeground,
+            fallbackBackground: fallbackBackground(isPressed: configuration.isPressed),
+            fallbackBorder: fallbackBorder(isPressed: configuration.isPressed),
+            fallbackBorderWidth: fallbackBorderWidth,
+            defaultCornerRadius: item == .connectionAction && variant == .error ? 100 : Geist.Radius.sm
+        ) {
+            configuration.label
+                .geistTypography(size.buttonTypography)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .gamepadControlBarHapticFeedback(
+            customization.controlBarItemCustomization(for: item).resolvedHapticFeedback,
+            isPressed: configuration.isPressed,
+            isEnabled: isEnabled
+        )
+    }
+
+    private var fallbackForeground: Color {
+        guard isEnabled else { return Geist.color(.gray700, scheme: colorScheme) }
+        return switch variant {
+        case .primary: Geist.color(.background100, scheme: colorScheme)
+        case .secondary, .tertiary: Geist.color(.gray1000, scheme: colorScheme)
+        case .error: Color.white
+        }
+    }
+
+    private func fallbackBackground(isPressed: Bool) -> Color {
+        guard isEnabled else { return Geist.color(.gray100, scheme: colorScheme) }
+        return switch variant {
+        case .primary: isPressed ? Geist.color(.gray900, scheme: colorScheme) : Geist.color(.gray1000, scheme: colorScheme)
+        case .secondary: isPressed ? Geist.color(.grayAlpha200, scheme: colorScheme) : Geist.color(.background100, scheme: colorScheme)
+        case .tertiary: isPressed ? Geist.color(.grayAlpha200, scheme: colorScheme) : Color.clear
+        case .error: isPressed ? Geist.color(.red900, scheme: colorScheme) : Geist.color(.red800, scheme: colorScheme)
+        }
+    }
+
+    private var fallbackBorderWidth: CGFloat {
+        variant == .secondary || !isEnabled ? 1 : 0
+    }
+
+    private func fallbackBorder(isPressed: Bool) -> Color {
+        guard isEnabled else { return Geist.color(.grayAlpha400, scheme: colorScheme) }
+        guard variant == .secondary else { return .clear }
+        return isPressed ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme)
+    }
+}
+
+#if os(iOS)
+private struct GamepadControlBarHapticModifier: ViewModifier {
+    let feedback: GamepadHapticFeedback
+    let isPressed: Bool
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                if isEnabled { KeypadHapticPlayer.shared.prepare(feedback) }
+            }
+            .onChange(of: isPressed) { _, pressed in
+                guard pressed, isEnabled else { return }
+                KeypadHapticPlayer.shared.play(feedback)
+            }
+    }
+}
+#endif
+
+private extension View {
+    @ViewBuilder
+    func gamepadControlBarHapticFeedback(
+        _ feedback: GamepadHapticFeedback,
+        isPressed: Bool,
+        isEnabled: Bool
+    ) -> some View {
+#if os(iOS)
+        modifier(GamepadControlBarHapticModifier(feedback: feedback, isPressed: isPressed, isEnabled: isEnabled))
+#else
+        self
+#endif
+    }
+}
+
+struct GamepadControlBarStatusPill: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let customization: GamepadCustomization
+    let title: String
+    let systemImage: String
+    let tone: GeistInterfaceTone
+
+    var body: some View {
+        GamepadControlBarItemSurface(
+            customization: customization,
+            item: .connectionStatus,
+            state: .normal,
+            baseHeight: Geist.ControlSize.small.height,
+            baseHorizontalPadding: Geist.Spacing.s3,
+            fallbackForeground: tone.foreground(scheme: colorScheme),
+            fallbackBackground: tone.background(scheme: colorScheme),
+            fallbackBorder: tone.border(scheme: colorScheme),
+            fallbackBorderWidth: 1,
+            defaultCornerRadius: 100
+        ) {
+            Label {
+                Text(title)
+            } icon: {
+                GamepadControlBarItemIcon(
+                    customization: customization,
+                    item: .connectionStatus,
+                    defaultSystemImage: systemImage,
+                    fontSize: 13
+                )
+            }
+            .geistTypography(.label13)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(1)
+    }
+}
+
+struct GamepadControlBarItemIcon: View {
+    let customization: GamepadCustomization
+    let item: GamepadControlBarItem
+    let defaultSystemImage: String
+    var fontSize: CGFloat = 13
+    var weight: Font.Weight = .semibold
+    var frameWidth: CGFloat? = nil
+
+    @ViewBuilder
+    var body: some View {
+        let icon = customization.controlBarItemCustomization(for: item).icon?.normalized
+        if let tint = icon?.tintColor?.swiftUIColor {
+            iconContent(icon)
+                .foregroundStyle(tint)
+        } else {
+            iconContent(icon)
+        }
+    }
+
+    @ViewBuilder
+    private func iconContent(_ icon: GamepadControlIcon?) -> some View {
+        Group {
+            if let icon {
+                switch icon.source {
+                case .sfSymbol:
+                    Image(systemName: icon.value)
+                        .symbolRenderingMode(icon.renderingMode == .multicolor ? .multicolor : .monochrome)
+                case .text:
+                    Text(icon.value)
+                case .asset:
+                    Image(systemName: "photo")
+                }
+            } else {
+                Image(systemName: defaultSystemImage)
+            }
+        }
+        .font(.system(size: fontSize * (icon?.scale ?? 1), weight: weight))
+        .frame(width: frameWidth)
+    }
+}
+
+extension View {
+    func gamepadControlBarButtonStyle(
+        customization: GamepadCustomization,
+        item: GamepadControlBarItem,
+        variant: Geist.ButtonVariant = .secondary,
+        size: Geist.ControlSize = .small
+    ) -> some View {
+        buttonStyle(GamepadControlBarButtonStyle(customization: customization, item: item, variant: variant, size: size))
+    }
+}
+
+public struct GamepadControlBarItemCustomization: Codable, Equatable, Identifiable, Sendable {
+    public var item: GamepadControlBarItem
+    public var appearance: GamepadButtonCustomization
+
+    public var id: GamepadControlBarItem { item }
+
+    public init(item: GamepadControlBarItem, appearance: GamepadButtonCustomization = .defaultValue) {
+        self.item = item
+        self.appearance = appearance
+    }
+
+    var normalized: GamepadControlBarItemCustomization {
+        var normalizedAppearance = appearance.normalized
+        // Control-bar children are constrained by the bar layout rather than the
+        // freeform canvas. Keep their visual and sizing properties, but discard
+        // coordinates and layer-only properties that cannot affect the output.
+        normalizedAppearance.centerX = nil
+        normalizedAppearance.centerY = nil
+        normalizedAppearance.rotationDegrees = 0
+        normalizedAppearance.zIndex = 0
+        normalizedAppearance.isLocationLocked = false
+        normalizedAppearance.joystickKnobColor = nil
+        normalizedAppearance.lightJoystickKnobColor = nil
+        normalizedAppearance.darkJoystickKnobColor = nil
+        normalizedAppearance.joystickVisualStyle = nil
+        if item == .spacer {
+            normalizedAppearance = GamepadButtonCustomization(
+                widthScale: normalizedAppearance.widthScale,
+                isHidden: normalizedAppearance.isHidden
+            )
+        }
+        return GamepadControlBarItemCustomization(item: item, appearance: normalizedAppearance)
+    }
+}
+
+private extension GamepadButtonCustomization {
+    var hasControlBarSurfaceOverrides: Bool {
+        shape != nil
+            || accentStyle != nil
+            || fillColor != nil
+            || lightFillColor != nil
+            || darkFillColor != nil
+            || fillStyle != nil
+            || lightFillStyle != nil
+            || darkFillStyle != nil
+            || styleID != nil
+            || visualStyle != nil
+            || cornerRadius != nil
+            || cornerRadii != nil
+            || abs(shadowStrength - GamepadButtonCustomization.defaultShadowStrength) > 0.001
+    }
+}
+
 public struct GamepadCustomization: Codable, Equatable, Sendable {
     public static let maximumLabelLength = gamepadMaximumLabelLength
     public static let maximumCustomButtons = 64
     public static let maximumJoysticks = 2
     public static let maximumTriggers = 2
     public static let maximumTrackpads = 1
+    public static let defaultTopBarActivationRegion = GamepadButtonCustomization(
+        centerX: 0.5,
+        centerY: 0.115,
+        widthScale: 1.0,
+        heightScale: 1.0,
+        zIndex: GamepadButtonCustomization.maximumZIndex,
+        shape: .capsule,
+        accentStyle: .blue,
+        icon: GamepadControlIcon.sfSymbol("chevron.down"),
+        cornerRadius: 18,
+        shadowStrength: 0.35
+    )
+    public static let defaultControlBarItems: [GamepadControlBarItem] = [
+        .connectionStatus,
+        .profileMenu,
+        .launchTarget,
+        .spacer,
+        .editLayout,
+        .settings,
+        .home,
+        .connectionAction
+    ]
     public static let defaultValue = GamepadCustomization()
     public static var blankCanvas: GamepadCustomization {
         var customization = GamepadCustomization.defaultValue
@@ -1834,6 +2336,9 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     public var buttonCustomizations: [GameButton: GamepadButtonCustomization]
     public var customButtons: [GamepadCustomButton]
     public var elements: [KeypadElement]
+    public var topBarActivationRegion: GamepadButtonCustomization
+    public var controlBarItems: [GamepadControlBarItem]
+    public var controlBarItemCustomizations: [GamepadControlBarItemCustomization]
     public var designMetadata: GamepadDesignMetadata?
     public var styleLibrary: GamepadStyleLibrary
     public var assetLibrary: GamepadAssetLibrary
@@ -1855,6 +2360,9 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         buttonCustomizations: [GameButton: GamepadButtonCustomization] = [:],
         customButtons: [GamepadCustomButton] = [],
         elements: [KeypadElement] = [],
+        topBarActivationRegion: GamepadButtonCustomization = GamepadCustomization.defaultTopBarActivationRegion,
+        controlBarItems: [GamepadControlBarItem] = GamepadCustomization.defaultControlBarItems,
+        controlBarItemCustomizations: [GamepadControlBarItemCustomization] = [],
         designMetadata: GamepadDesignMetadata? = nil,
         styleLibrary: GamepadStyleLibrary = .empty,
         assetLibrary: GamepadAssetLibrary = .empty,
@@ -1875,6 +2383,9 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         self.buttonCustomizations = buttonCustomizations
         self.customButtons = customButtons
         self.elements = elements
+        self.topBarActivationRegion = topBarActivationRegion
+        self.controlBarItems = controlBarItems
+        self.controlBarItemCustomizations = controlBarItemCustomizations
         self.designMetadata = designMetadata
         self.styleLibrary = styleLibrary
         self.assetLibrary = assetLibrary
@@ -1898,6 +2409,9 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         buttonCustomizations = try container.decodeIfPresent([GameButton: GamepadButtonCustomization].self, forKey: .buttonCustomizations) ?? [:]
         customButtons = try container.decodeIfPresent([GamepadCustomButton].self, forKey: .customButtons) ?? []
         elements = try container.decodeIfPresent([KeypadElement].self, forKey: .elements) ?? []
+        topBarActivationRegion = try container.decodeIfPresent(GamepadButtonCustomization.self, forKey: .topBarActivationRegion) ?? Self.defaultTopBarActivationRegion
+        controlBarItems = try container.decodeIfPresent([GamepadControlBarItem].self, forKey: .controlBarItems) ?? Self.defaultControlBarItems
+        controlBarItemCustomizations = try container.decodeIfPresent([GamepadControlBarItemCustomization].self, forKey: .controlBarItemCustomizations) ?? []
         designMetadata = try container.decodeIfPresent(GamepadDesignMetadata.self, forKey: .designMetadata)
         styleLibrary = try container.decodeIfPresent(GamepadStyleLibrary.self, forKey: .styleLibrary) ?? .empty
         assetLibrary = try container.decodeIfPresent(GamepadAssetLibrary.self, forKey: .assetLibrary) ?? .empty
@@ -1920,8 +2434,20 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         try container.encode(labelOverrides, forKey: .labelOverrides)
         try container.encode(buttonCustomizations, forKey: .buttonCustomizations)
         try container.encode(customButtons, forKey: .customButtons)
-        let normalizedElements = normalized.elements
+        let normalizedElements = synchronizedElements(migratesLegacySlots: elements.isEmpty, controlsAreNormalized: true)
         if !normalizedElements.isEmpty { try container.encode(normalizedElements, forKey: .elements) }
+        let normalizedTopBarActivationRegion = topBarActivationRegion.normalized
+        if normalizedTopBarActivationRegion != Self.defaultTopBarActivationRegion.normalized {
+            try container.encode(normalizedTopBarActivationRegion, forKey: .topBarActivationRegion)
+        }
+        let normalizedControlBarItems = Self.normalizedControlBarItems(controlBarItems)
+        if normalizedControlBarItems != Self.defaultControlBarItems {
+            try container.encode(normalizedControlBarItems, forKey: .controlBarItems)
+        }
+        let normalizedControlBarItemCustomizations = normalized.controlBarItemCustomizations
+        if !normalizedControlBarItemCustomizations.isEmpty {
+            try container.encode(normalizedControlBarItemCustomizations, forKey: .controlBarItemCustomizations)
+        }
         try container.encodeIfPresent(designMetadata?.normalized(availableControls: allControlIdentitiesForDesign), forKey: .designMetadata)
         if !styleLibrary.normalized.isEmpty { try container.encode(styleLibrary.normalized, forKey: .styleLibrary) }
         if !assetLibrary.normalized.isEmpty { try container.encode(assetLibrary.normalized, forKey: .assetLibrary) }
@@ -1992,6 +2518,12 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             guard let index = customButtons.firstIndex(where: { $0.id == id }) else { return }
             customButtons[index].layout.centerX = normalizedPosition.x
             customButtons[index].layout.centerY = normalizedPosition.y
+
+        case .system(.topBarActivation):
+            topBarActivationRegion.centerX = normalizedPosition.x
+            topBarActivationRegion.centerY = normalizedPosition.y
+        case .controlBarItem:
+            break
         }
     }
 
@@ -2184,6 +2716,8 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             return normalized.elements.first { $0.builtInButton == button }
         case .custom(let id):
             return normalized.elements.first { $0.id == id }
+        case .system, .controlBarItem:
+            return nil
         }
     }
 
@@ -2195,6 +2729,64 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         guard let element = element(for: elementID) else { return nil }
         if let builtInButton = element.builtInButton { return .builtin(builtInButton) }
         return .custom(element.id)
+    }
+
+    public func topBarActivationFrame(in canvasSize: CGSize) -> CGRect {
+        guard canvasSize.width > 1, canvasSize.height > 1 else { return .null }
+        let controls = GamepadLayoutResolver.preferredControls(for: normalized, in: canvasSize)
+        return controls.first { $0.id == .system(.topBarActivation) }?.frame ?? .null
+    }
+
+    public static func normalizedControlBarItems(_ items: [GamepadControlBarItem]) -> [GamepadControlBarItem] {
+        var seen = Set<GamepadControlBarItem>()
+        var normalizedItems: [GamepadControlBarItem] = []
+        normalizedItems.reserveCapacity(items.count)
+        for item in items where seen.insert(item).inserted {
+            normalizedItems.append(item)
+        }
+        return normalizedItems
+    }
+
+    public func controlBarItemCustomization(for item: GamepadControlBarItem) -> GamepadButtonCustomization {
+        controlBarItemCustomizations.last { $0.item == item }?.normalized.appearance ?? .defaultValue
+    }
+
+    public mutating func setControlBarItemCustomization(_ appearance: GamepadButtonCustomization, for item: GamepadControlBarItem) {
+        controlBarItemCustomizations.removeAll { $0.item == item }
+        let normalizedAppearance = GamepadControlBarItemCustomization(item: item, appearance: appearance).normalized.appearance
+        if !normalizedAppearance.isDefault {
+            controlBarItemCustomizations.append(GamepadControlBarItemCustomization(item: item, appearance: normalizedAppearance))
+        }
+    }
+
+    public mutating func addControlBarItem(_ item: GamepadControlBarItem, at index: Int? = nil) {
+        var items = Self.normalizedControlBarItems(controlBarItems)
+        guard !items.contains(item) else { return }
+        let insertionIndex = min(max(index ?? items.count, 0), items.count)
+        items.insert(item, at: insertionIndex)
+        controlBarItems = items
+    }
+
+    public mutating func removeControlBarItem(_ item: GamepadControlBarItem) {
+        controlBarItems.removeAll { $0 == item }
+        controlBarItemCustomizations.removeAll { $0.item == item }
+    }
+
+    public mutating func moveControlBarItem(_ item: GamepadControlBarItem, to index: Int) {
+        var items = Self.normalizedControlBarItems(controlBarItems)
+        guard let sourceIndex = items.firstIndex(of: item) else { return }
+        items.remove(at: sourceIndex)
+        items.insert(item, at: min(max(index, 0), items.count))
+        controlBarItems = items
+    }
+
+    public mutating func resetControlBarItemAppearance(_ item: GamepadControlBarItem) {
+        controlBarItemCustomizations.removeAll { $0.item == item }
+    }
+
+    public mutating func resetControlBar() {
+        controlBarItems = Self.defaultControlBarItems
+        controlBarItemCustomizations.removeAll()
     }
 
     private mutating func upsertElementMirror(for customButton: GamepadCustomButton, migratesLegacySlot: Bool) {
@@ -2213,7 +2805,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             joystickOutputSettings: normalizedButton.joystickOutputSettings,
             triggerSettings: normalizedButton.triggerSettings,
             trackpadSettings: normalizedButton.trackpadSettings
-        ).normalized
+        ).normalized(layoutIsAlreadyNormalized: true)
         if let index = elements.firstIndex(where: { $0.id == element.id }) {
             elements[index] = element
         } else {
@@ -2221,11 +2813,16 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         }
     }
 
-    private func synchronizedElements(migratesLegacySlots: Bool) -> [KeypadElement] {
+    private func synchronizedElements(migratesLegacySlots: Bool, controlsAreNormalized: Bool = false) -> [KeypadElement] {
         var existingByID: [UUID: KeypadElement] = [:]
         var existingByBuiltIn: [GameButton: KeypadElement] = [:]
         for element in elements {
-            let normalizedElement = element.normalized
+            let normalizedElement: KeypadElement
+            if controlsAreNormalized {
+                normalizedElement = element.synchronizationMetadata
+            } else {
+                normalizedElement = element.normalized
+            }
             existingByID[normalizedElement.id] = normalizedElement
             if let builtInButton = normalizedElement.builtInButton {
                 existingByBuiltIn[builtInButton] = normalizedElement
@@ -2235,7 +2832,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         var seenIDs = Set<UUID>()
 
         for button in GameButton.builtInControls {
-            let layout = buttonCustomization(for: button)
+            let layout = controlsAreNormalized ? (buttonCustomizations[button] ?? .defaultValue) : buttonCustomization(for: button)
             guard !layout.isHidden else { continue }
             let existing = existingByBuiltIn[button]
             let id = existing?.id ?? KeypadElement.builtInID(for: button)
@@ -2250,12 +2847,12 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
                     legacySlot: existing?.legacySlot ?? button,
                     output: existing?.output,
                     partOutputs: existing?.partOutputs ?? [:]
-                ).normalized
+                ).normalized(layoutIsAlreadyNormalized: true)
             )
         }
 
         for customButton in customButtons {
-            let normalizedButton = customButton.normalized
+            let normalizedButton = controlsAreNormalized ? customButton : customButton.normalized
             let existing = existingByID[normalizedButton.id]
             guard seenIDs.insert(normalizedButton.id).inserted else { continue }
             next.append(
@@ -2272,7 +2869,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
                     joystickOutputSettings: normalizedButton.joystickOutputSettings,
                     triggerSettings: normalizedButton.triggerSettings,
                     trackpadSettings: normalizedButton.trackpadSettings
-                ).normalized
+                ).normalized(layoutIsAlreadyNormalized: true)
             )
         }
 
@@ -2320,7 +2917,20 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             if normalizedCustomButtons.count >= Self.maximumCustomButtons { break }
         }
         copy.customButtons = normalizedCustomButtons
-        copy.elements = copy.synchronizedElements(migratesLegacySlots: elements.isEmpty)
+        copy.elements = copy.synchronizedElements(migratesLegacySlots: elements.isEmpty, controlsAreNormalized: true)
+        copy.topBarActivationRegion = topBarActivationRegion.normalized
+        if copy.topBarActivationRegion.centerX == nil { copy.topBarActivationRegion.centerX = Self.defaultTopBarActivationRegion.centerX }
+        if copy.topBarActivationRegion.centerY == nil { copy.topBarActivationRegion.centerY = Self.defaultTopBarActivationRegion.centerY }
+        if copy.topBarActivationRegion.shape == nil { copy.topBarActivationRegion.shape = .capsule }
+        copy.controlBarItems = Self.normalizedControlBarItems(controlBarItems)
+        var latestControlBarAppearance: [GamepadControlBarItem: GamepadControlBarItemCustomization] = [:]
+        for customization in controlBarItemCustomizations {
+            latestControlBarAppearance[customization.item] = customization.normalized
+        }
+        copy.controlBarItemCustomizations = copy.controlBarItems.compactMap { item in
+            guard let customization = latestControlBarAppearance[item], !customization.appearance.isDefault else { return nil }
+            return customization
+        }
         copy.styleLibrary = styleLibrary.normalized
         copy.assetLibrary = assetLibrary.normalized
         copy.designMetadata = designMetadata?.normalized(availableControls: copy.allControlIdentitiesForDesign)
@@ -2349,6 +2959,9 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             && normalized.buttonCustomizations == other.normalized.buttonCustomizations
             && normalized.customButtons == other.normalized.customButtons
             && normalized.elements == other.normalized.elements
+            && normalized.topBarActivationRegion == other.normalized.topBarActivationRegion
+            && normalized.controlBarItems == other.normalized.controlBarItems
+            && normalized.controlBarItemCustomizations == other.normalized.controlBarItemCustomizations
             && normalized.designMetadata == other.normalized.designMetadata
             && normalized.styleLibrary == other.normalized.styleLibrary
             && normalized.assetLibrary == other.normalized.assetLibrary
@@ -2398,6 +3011,9 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         case buttonCustomizations
         case customButtons
         case elements
+        case topBarActivationRegion
+        case controlBarItems
+        case controlBarItemCustomizations
         case designMetadata
         case styleLibrary
         case assetLibrary
@@ -2405,14 +3021,42 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     }
 }
 
+public enum GamepadSystemControl: String, Codable, CaseIterable, Identifiable, Sendable {
+    case topBarActivation = "top_bar_activation"
+
+    public var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .topBarActivation: "Control Bar"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .topBarActivation: "iPhone control bar hotspot & contents"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .topBarActivation: "arrow.down.to.line.compact"
+        }
+    }
+}
+
 public enum GamepadControlIdentity: Hashable, Identifiable, Sendable {
     case builtin(GameButton)
     case custom(UUID)
+    case system(GamepadSystemControl)
+    case controlBarItem(GamepadControlBarItem)
 
     public var id: String {
         switch self {
         case .builtin(let button): "builtin.\(button.rawValue)"
         case .custom(let id): "custom.\(id.uuidString)"
+        case .system(let control): "system.\(control.rawValue)"
+        case .controlBarItem(let item): "control_bar_item.\(item.rawValue)"
         }
     }
 }
@@ -2787,7 +3431,54 @@ enum GamepadLayoutResolver {
             )
         }
 
-        return builtinControls + customControls
+        let systemControls = systemControls(for: customization, in: canvasSize)
+        return builtinControls + customControls + systemControls
+    }
+
+    private static func systemControls(for customization: GamepadCustomization, in canvasSize: CGSize) -> [GamepadResolvedControl] {
+        let layout = customization.topBarActivationRegion.normalized
+        guard !layout.isHidden else { return [] }
+
+        let shape = layout.resolvedShape(defaultShape: .capsule)
+        let baseControlSize = topBarActivationBaseSize(for: customization, in: canvasSize)
+        let scaledSize = effectiveSize(
+            CGSize(
+                width: baseControlSize.width * layout.widthScale,
+                height: baseControlSize.height * layout.heightScale
+            ),
+            shape: shape
+        )
+        let defaultCenter = CGPoint(
+            x: GamepadCustomization.defaultTopBarActivationRegion.centerX ?? 0.5,
+            y: GamepadCustomization.defaultTopBarActivationRegion.centerY ?? 0.075
+        )
+        let normalizedCenter = CGPoint(
+            x: layout.centerX ?? defaultCenter.x,
+            y: layout.centerY ?? defaultCenter.y
+        )
+        let center = clampedPixelCenter(normalizedCenter, visualSize: scaledSize, in: canvasSize)
+
+        return [
+            GamepadResolvedControl(
+                id: .system(.topBarActivation),
+                elementID: nil,
+                mappedButton: .pause,
+                label: GamepadSystemControl.topBarActivation.displayName,
+                normalizedCenter: CGPoint(x: center.x / canvasSize.width, y: center.y / canvasSize.height),
+                center: center,
+                size: scaledSize,
+                shape: shape,
+                rotationDegrees: layout.rotationDegrees,
+                layoutCustomization: layout,
+                isCustom: false,
+                isLocationLocked: layout.isLocationLocked,
+                controlKind: .decoration,
+                joystickMapping: nil,
+                joystickOutputSettings: nil,
+                triggerSettings: nil,
+                trackpadSettings: nil
+            )
+        ]
     }
 
     static func defaultShape(for button: GameButton) -> GamepadButtonShapeStyle {
@@ -3019,6 +3710,31 @@ enum GamepadLayoutResolver {
         let scale = controlScale.multiplier
         let width = min(230 * scale, max(142 * scale, shortestSide * (isLandscape ? 0.48 : 0.42) * scale))
         let height = min(150 * scale, max(92 * scale, shortestSide * (isLandscape ? 0.28 : 0.24) * scale))
+        return CGSize(width: width, height: height)
+    }
+
+    private static func topBarActivationBaseSize(for customization: GamepadCustomization, in canvasSize: CGSize) -> CGSize {
+        let isLandscape = canvasSize.width >= canvasSize.height
+        let horizontalPadding: CGFloat
+        if isLandscape {
+            let estimatedSafeSideInset: CGFloat = switch customization.deviceCanvas.editorDeviceFrame.frameStyle {
+            case .dynamicIsland: 59
+            case .notch: 44
+            case .homeButton: 0
+            }
+            horizontalPadding = max(Geist.Spacing.s6, estimatedSafeSideInset + Geist.Spacing.s3)
+        } else {
+            horizontalPadding = Geist.Spacing.s4
+        }
+
+        // Match ControllerTopBarDrawer's available width. Height follows the
+        // tallest visible child (32pt at 100%), bar padding, spacing, and handle.
+        let width = max(120, canvasSize.width - horizontalPadding * 2)
+        let tallestItemScale = customization.normalized.controlBarItems
+            .filter { $0 != .spacer && !customization.controlBarItemCustomization(for: $0).isHidden }
+            .map { customization.controlBarItemCustomization(for: $0).heightScale }
+            .max() ?? 1
+        let height = 41 + (32 * GamepadButtonCustomization.clamp(tallestItemScale, lower: 0.5, upper: 2))
         return CGSize(width: width, height: height)
     }
 
@@ -3561,9 +4277,9 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
-        try container.encode(customization.normalized, forKey: .customization)
-        try container.encodeIfPresent(landscapeCustomization?.normalized, forKey: .landscapeCustomization)
-        try container.encodeIfPresent(portraitCustomization?.normalized, forKey: .portraitCustomization)
+        try container.encode(customization, forKey: .customization)
+        try container.encodeIfPresent(landscapeCustomization, forKey: .landscapeCustomization)
+        try container.encodeIfPresent(portraitCustomization, forKey: .portraitCustomization)
         try container.encode(outputMode, forKey: .outputMode)
         try container.encodeIfPresent(launchTarget?.normalized, forKey: .launchTarget)
         try container.encode(updatedAt, forKey: .updatedAt)
@@ -5260,44 +5976,90 @@ private struct GamepadOuterShadowModifier: ViewModifier {
     }
 }
 
+private struct GamepadControlBarPreviewContext: Equatable {
+    var profileName: String
+    var hasProfiles: Bool
+    var isSelectedProfileDefault: Bool
+    var launchTarget: GamepadProfileLaunchTarget?
+    var isConnected: Bool
+
+    static let placeholder = GamepadControlBarPreviewContext(
+        profileName: "Current Setup",
+        hasProfiles: true,
+        isSelectedProfileDefault: false,
+        launchTarget: nil,
+        isConnected: false
+    )
+}
+
+private struct GamepadControlBarPreviewContextKey: EnvironmentKey {
+    static let defaultValue = GamepadControlBarPreviewContext.placeholder
+}
+
+private extension EnvironmentValues {
+    var gamepadControlBarPreviewContext: GamepadControlBarPreviewContext {
+        get { self[GamepadControlBarPreviewContextKey.self] }
+        set { self[GamepadControlBarPreviewContextKey.self] = newValue }
+    }
+}
+
 struct GamepadRenderedControlFace: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.gamepadControlBarPreviewContext) private var controlBarPreviewContext
     let control: GamepadResolvedControl
     let customization: GamepadCustomization
     var state: GamepadControlPresentationState = .normal
+    var selectedControlBarItem: GamepadControlBarItem? = nil
+    var onSelectControlBarItem: ((GamepadControlBarItem) -> Void)? = nil
+    var onMoveControlBarItem: ((GamepadControlBarItem, Int) -> Void)? = nil
 
+    @ViewBuilder
     var body: some View {
-        let presentation = resolvedPresentation
+        if control.id == .system(.topBarActivation) {
+            GamepadControlBarOutputPreview(
+                customization: customization,
+                items: customization.normalized.controlBarItems,
+                isLandscape: customization.deviceCanvas.editorDeviceFrame.isLandscape,
+                context: controlBarPreviewContext,
+                selectedItem: selectedControlBarItem,
+                onSelectItem: onSelectControlBarItem,
+                onMoveItem: onMoveControlBarItem
+            )
+            .frame(width: control.size.width, height: control.size.height, alignment: .top)
+            .accessibilityLabel(control.label)
+        } else {
+            let presentation = resolvedPresentation
 
-        ZStack {
-            if let glowColor = presentation.glowSwiftUIColor, presentation.glowRadius > 0 {
-                controlSilhouette(fill: glowColor)
-                    .blur(radius: presentation.glowRadius)
-                    .opacity(0.68)
-                    .allowsHitTesting(false)
-            }
-
-            controlBackground(presentation: presentation)
-                .gamepadOuterShadows(presentation)
-
-            if control.isDecoration {
-                if let icon = presentation.icon {
-                    controlIcon(icon, presentation: presentation)
-                        .padding(.horizontal, 4)
+            ZStack {
+                if let glowColor = presentation.glowSwiftUIColor, presentation.glowRadius > 0 {
+                    controlSilhouette(fill: glowColor)
+                        .blur(radius: presentation.glowRadius)
+                        .opacity(0.68)
+                        .allowsHitTesting(false)
                 }
-            } else if control.isJoystick {
-                joystickFace(presentation: presentation)
-            } else if control.isTrackpad {
-                trackpadFace(presentation: presentation)
-            } else {
-                buttonContent(presentation: presentation)
+
+                controlBackground(presentation: presentation)
+                    .gamepadOuterShadows(presentation)
+
+                if control.isDecoration {
+                    if let icon = presentation.icon {
+                        controlIcon(icon, presentation: presentation)
+                            .padding(.horizontal, 4)
+                    }
+                } else if control.isJoystick {
+                    joystickFace(presentation: presentation)
+                } else if control.isTrackpad {
+                    trackpadFace(presentation: presentation)
+                } else {
+                    buttonContent(presentation: presentation)
+                }
             }
+            .opacity(presentation.opacity)
+            .blur(radius: presentation.blurRadius)
+            .scaleEffect(presentation.scale)
+            .frame(width: control.size.width, height: control.size.height)
+            .accessibilityLabel(control.label)
         }
-        .opacity(presentation.opacity)
-        .blur(radius: presentation.blurRadius)
-        .scaleEffect(presentation.scale)
-        .frame(width: control.size.width, height: control.size.height)
-        .accessibilityLabel(control.label)
     }
 
     private var resolvedPresentation: GamepadResolvedControlPresentation {
@@ -5479,6 +6241,297 @@ struct GamepadRenderedControlFace: View {
     }
 }
 
+private struct GamepadControlBarEditorItem<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let item: GamepadControlBarItem
+    let isSelected: Bool
+    let onSelect: ((GamepadControlBarItem) -> Void)?
+    let onMove: ((GamepadControlBarItem, Int) -> Void)?
+    @ViewBuilder let content: Content
+
+    init(
+        item: GamepadControlBarItem,
+        isSelected: Bool,
+        onSelect: ((GamepadControlBarItem) -> Void)?,
+        onMove: ((GamepadControlBarItem, Int) -> Void)?,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.item = item
+        self.isSelected = isSelected
+        self.onSelect = onSelect
+        self.onMove = onMove
+        self.content = content()
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if let onSelect {
+            content
+                .overlay {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                            .stroke(Geist.color(.blue700, scheme: colorScheme), lineWidth: 2)
+                            .padding(-3)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in onSelect(item) }
+                        .onEnded { value in
+                            let stepWidth: CGFloat = 44
+                            let offset = Int((value.translation.width / stepWidth).rounded())
+                            if offset != 0 {
+                                onMove?(item, offset)
+                            }
+                        }
+                )
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityHint("Select and drag horizontally to reorder this control-bar item")
+        } else {
+            content
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+private struct GamepadControlBarOutputPreview: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let customization: GamepadCustomization
+    let items: [GamepadControlBarItem]
+    let isLandscape: Bool
+    let context: GamepadControlBarPreviewContext
+    let selectedItem: GamepadControlBarItem?
+    let onSelectItem: ((GamepadControlBarItem) -> Void)?
+    let onMoveItem: ((GamepadControlBarItem, Int) -> Void)?
+
+    var body: some View {
+        VStack(spacing: Geist.Spacing.s1) {
+            GamepadControlBarLayout(
+                items: visibleItems,
+                isLandscape: isLandscape
+            ) { item, isCompact in
+                GamepadControlBarEditorItem(
+                    item: item,
+                    isSelected: selectedItem == item,
+                    onSelect: onSelectItem,
+                    onMove: onMoveItem
+                ) {
+                    previewItem(item, isCompact: isCompact)
+                }
+            }
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.08), radius: 10, y: 4)
+
+            revealHandle
+                .allowsHitTesting(onSelectItem == nil)
+        }
+    }
+
+    private var visibleItems: [GamepadControlBarItem] {
+        items.filter { !customization.controlBarItemCustomization(for: $0).isHidden }
+    }
+
+    @ViewBuilder
+    private func previewItem(_ item: GamepadControlBarItem, isCompact: Bool) -> some View {
+        switch item {
+        case .connectionStatus:
+            GamepadControlBarStatusPill(
+                customization: customization,
+                title: context.isConnected ? "Connected" : "Saved Keypad",
+                systemImage: context.isConnected ? "wifi" : "rectangle.grid.2x2",
+                tone: context.isConnected ? .success : .neutral
+            )
+        case .profileMenu:
+            if context.hasProfiles {
+                if isCompact {
+                    compactProfileButton
+                } else {
+                    profileButton
+                }
+            }
+        case .launchTarget:
+            if let launchTarget = context.launchTarget {
+                launchTargetButton(launchTarget, isCompact: isCompact)
+            }
+        case .spacer:
+            Spacer(minLength: (isCompact ? 2 : Geist.Spacing.s2) * customization.controlBarItemCustomization(for: .spacer).widthScale)
+        case .editLayout:
+            iconButton(item: .editLayout, systemImage: "lock.fill")
+        case .settings:
+            iconButton(item: .settings, systemImage: "gearshape.fill")
+        case .home:
+            iconButton(item: .home, systemImage: "house.fill")
+        case .connectionAction:
+            connectionButton(isCompact: isCompact)
+        }
+    }
+
+    private var profileButton: some View {
+        Button(action: {}) {
+            HStack(spacing: Geist.Spacing.s1) {
+                GamepadControlBarItemIcon(
+                    customization: customization,
+                    item: .profileMenu,
+                    defaultSystemImage: context.isSelectedProfileDefault ? "star.fill" : "rectangle.grid.2x2",
+                    fontSize: 11
+                )
+                Text(context.profileName)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+            .frame(maxWidth: 160)
+        }
+        .gamepadControlBarButtonStyle(customization: customization, item: .profileMenu)
+    }
+
+    private var compactProfileButton: some View {
+        Button(action: {}) {
+            GamepadControlBarItemIcon(
+                customization: customization,
+                item: .profileMenu,
+                defaultSystemImage: context.isSelectedProfileDefault ? "star.fill" : "rectangle.grid.2x2",
+                fontSize: 13,
+                frameWidth: 28
+            )
+        }
+        .gamepadControlBarButtonStyle(customization: customization, item: .profileMenu)
+    }
+
+    private func launchTargetButton(_ launchTarget: GamepadProfileLaunchTarget, isCompact: Bool) -> some View {
+        Button(action: {}) {
+            if customization.controlBarItemCustomization(for: .launchTarget).icon != nil {
+                GamepadControlBarItemIcon(
+                    customization: customization,
+                    item: .launchTarget,
+                    defaultSystemImage: "app.badge.fill",
+                    fontSize: isCompact ? 18 : 20,
+                    frameWidth: 28
+                )
+            } else {
+                launchTargetIcon(launchTarget, size: isCompact ? 18 : 20)
+                    .frame(width: 28, height: 28)
+            }
+        }
+        .gamepadControlBarButtonStyle(customization: customization, item: .launchTarget)
+        .disabled(!context.isConnected)
+    }
+
+    @ViewBuilder
+    private func launchTargetIcon(_ launchTarget: GamepadProfileLaunchTarget, size: CGFloat) -> some View {
+#if os(macOS)
+        if let data = launchTarget.iconPNGData, let image = GamepadImageDecodeCache.image(for: data) {
+            Image(nsImage: image)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: max(4, size * 0.22), style: .continuous))
+        } else {
+            fallbackLaunchTargetIcon(size: size)
+        }
+#elseif os(iOS)
+        if let data = launchTarget.iconPNGData, let image = GamepadImageDecodeCache.image(for: data) {
+            Image(uiImage: image)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: max(4, size * 0.22), style: .continuous))
+        } else {
+            fallbackLaunchTargetIcon(size: size)
+        }
+#endif
+    }
+
+    private func fallbackLaunchTargetIcon(size: CGFloat) -> some View {
+        Image(systemName: "app.badge.fill")
+            .font(.system(size: size, weight: .semibold))
+            .frame(width: size, height: size)
+    }
+
+    private func iconButton(item: GamepadControlBarItem, systemImage: String) -> some View {
+        Button(action: {}) {
+            GamepadControlBarItemIcon(
+                customization: customization,
+                item: item,
+                defaultSystemImage: systemImage,
+                fontSize: 13,
+                frameWidth: 28
+            )
+        }
+        .gamepadControlBarButtonStyle(customization: customization, item: item)
+    }
+
+    @ViewBuilder
+    private func connectionButton(isCompact: Bool) -> some View {
+        if context.isConnected {
+            Button(action: {}) {
+                if isCompact {
+                    GamepadControlBarItemIcon(
+                        customization: customization,
+                        item: .connectionAction,
+                        defaultSystemImage: "wifi.slash",
+                        fontSize: 13,
+                        frameWidth: 28
+                    )
+                } else if customization.controlBarItemCustomization(for: .connectionAction).icon != nil {
+                    HStack(spacing: Geist.Spacing.s1) {
+                        GamepadControlBarItemIcon(
+                            customization: customization,
+                            item: .connectionAction,
+                            defaultSystemImage: "wifi.slash",
+                            fontSize: 13
+                        )
+                        Text("Disconnect")
+                    }
+                } else {
+                    Text("Disconnect")
+                }
+            }
+            .gamepadControlBarButtonStyle(customization: customization, item: .connectionAction, variant: .error)
+        } else {
+            Button(action: {}) {
+                if isCompact {
+                    GamepadControlBarItemIcon(
+                        customization: customization,
+                        item: .connectionAction,
+                        defaultSystemImage: "link",
+                        fontSize: 13,
+                        frameWidth: 28
+                    )
+                } else if customization.controlBarItemCustomization(for: .connectionAction).icon != nil {
+                    HStack(spacing: Geist.Spacing.s1) {
+                        GamepadControlBarItemIcon(
+                            customization: customization,
+                            item: .connectionAction,
+                            defaultSystemImage: "link",
+                            fontSize: 13
+                        )
+                        Text("Connect Mac")
+                    }
+                } else {
+                    Text("Connect Mac")
+                }
+            }
+            .gamepadControlBarButtonStyle(customization: customization, item: .connectionAction)
+        }
+    }
+
+    private var revealHandle: some View {
+        VStack(spacing: 3) {
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .fill(Geist.color(.grayAlpha700, scheme: colorScheme))
+                .frame(width: 36, height: 5)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+        .background(
+            Capsule()
+                .fill(Geist.color(.background100, scheme: colorScheme).opacity(0.74))
+        )
+    }
+}
 
 #if os(macOS)
 private final class GamepadEditorUndoTarget {}
@@ -5563,13 +6616,21 @@ private struct GamepadEditorLayerModel {
         }
 
         let normalizedCustomButtons = customization.customButtons.map(\.normalized)
-        let allControlIdentities = builtInControls.map { GamepadControlIdentity.builtin($0) }
+        let systemControls = GamepadSystemControl.allCases
+        let allControlIdentities = systemControls.map { GamepadControlIdentity.system($0) }
+            + builtInControls.map { GamepadControlIdentity.builtin($0) }
             + normalizedCustomButtons.map { GamepadControlIdentity.custom($0.id) }
         let normalizedMetadata = customization.designMetadata?.normalized(availableControls: allControlIdentities)
         let orderedControlIdentities = normalizedMetadata?.layerOrder ?? allControlIdentities
 
         var zIndexLookup: [GamepadControlIdentity: Int] = [:]
         zIndexLookup.reserveCapacity(allControlIdentities.count)
+        for control in systemControls {
+            switch control {
+            case .topBarActivation:
+                zIndexLookup[.system(control)] = customization.topBarActivationRegion.normalized.zIndex
+            }
+        }
         for button in builtInControls {
             zIndexLookup[.builtin(button)] = builtInLayouts[button]?.zIndex ?? 0
         }
@@ -5590,13 +6651,41 @@ private struct GamepadEditorLayerModel {
             return lhsZIndex < rhsZIndex
         }
         let shouldListBuiltInComponents = builtInControls.contains { builtInLayouts[$0]?.isHidden == false }
-        self.controlSelectionOptions = (shouldListBuiltInComponents ? builtInControls.map { .builtin($0) } : [])
+        self.controlSelectionOptions = systemControls.map { .system($0) }
+            + customization.normalized.controlBarItems.map { .controlBarItem($0) }
+            + (shouldListBuiltInComponents ? builtInControls.map { .builtin($0) } : [])
             + normalizedCustomButtons.map { .custom($0.id) }
 
         let visualLabelForButton: (GameButton) -> String = { button in
             let providedLabel = defaultLabelProvider?(button).map(normalizedGamepadLabel) ?? ""
             let defaultLabel = providedLabel.isEmpty ? GamepadCustomization.defaultVisualLabel(for: button) : providedLabel
             return customization.visualLabel(for: button, defaultLabel: defaultLabel)
+        }
+
+        let systemItems = systemControls.map { control -> GamepadEditorComponentItem in
+            let layout: GamepadButtonCustomization = switch control {
+            case .topBarActivation: customization.topBarActivationRegion.normalized
+            }
+            return GamepadEditorComponentItem(
+                identity: .system(control),
+                title: control.displayName,
+                subtitle: control.subtitle,
+                systemImage: control.systemImage,
+                isHidden: layout.isHidden,
+                isLocationLocked: layout.isLocationLocked
+            )
+        }
+
+        let controlBarItems = customization.normalized.controlBarItems.map { item in
+            let appearance = customization.controlBarItemCustomization(for: item)
+            return GamepadEditorComponentItem(
+                identity: .controlBarItem(item),
+                title: item.displayName,
+                subtitle: "Control Bar Item",
+                systemImage: item.systemImage,
+                isHidden: appearance.isHidden,
+                isLocationLocked: true
+            )
         }
 
         let builtInItems: [GamepadEditorComponentItem]
@@ -5649,7 +6738,7 @@ private struct GamepadEditorLayerModel {
         }
 
         let zOrderLookup = Dictionary(uniqueKeysWithValues: zOrderedControlIdentities.enumerated().map { ($0.element, $0.offset) })
-        let componentItems = (builtInItems + customItems).sorted { lhs, rhs in
+        let componentItems = (systemItems + controlBarItems + builtInItems + customItems).sorted { lhs, rhs in
             let lhsIndex = zOrderLookup[lhs.identity] ?? Int.max
             let rhsIndex = zOrderLookup[rhs.identity] ?? Int.max
             if lhsIndex == rhsIndex { return lhs.title < rhs.title }
@@ -6294,6 +7383,7 @@ private struct GamepadEditorDeviceFrameView: View {
 private enum GamepadInspectorAccordionSection: Hashable {
     case output
     case selectedElementIdentity
+    case selectedElementControlBar
     case selectedElementArrangement
     case selectedElementStyle
     case selectedElementHaptic
@@ -6482,6 +7572,8 @@ struct GamepadCustomizationEditor: View {
     @AppStorage(PocketPadMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey) private var isFirstKeypadOnboardingReplayRequested = false
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
+    @AppStorage("PocketPad.GamepadEditor.configurationSidebarVisible") private var isConfigurationSidebarVisible = true
+    @AppStorage("PocketPad.GamepadEditor.inspectorSidebarVisible") private var isInspectorSidebarVisible = true
     @AppStorage("PocketPad.GamepadEditor.canvasZoom") private var canvasZoomValue: Double = 1.0
     @AppStorage(GamepadEditorDeviceCatalog.selectedFrameDefaultsKey) private var deviceFrameRawValue: String = GamepadEditorDeviceCatalog.defaultFrameID
     @AppStorage(GamepadEditorDeviceCatalog.didChooseFrameDefaultsKey) private var didChooseDeviceFrameManually = false
@@ -6585,6 +7677,17 @@ struct GamepadCustomizationEditor: View {
         case "dark": return .dark
         default: return nil
         }
+    }
+
+    private var controlBarPreviewContext: GamepadControlBarPreviewContext {
+        let trimmedProfileName = selectedProfileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return GamepadControlBarPreviewContext(
+            profileName: trimmedProfileName.isEmpty ? (selectedProfile?.name ?? "Current Setup") : trimmedProfileName,
+            hasProfiles: !profiles.isEmpty,
+            isSelectedProfileDefault: selectedProfileID == defaultProfileID,
+            launchTarget: selectedProfile?.launchTarget,
+            isConnected: connectedDeviceInfo != nil
+        )
     }
 
     private var editorColorSchemeBinding: Binding<GamepadEditorColorScheme> {
@@ -6702,36 +7805,40 @@ struct GamepadCustomizationEditor: View {
             let sidebarWidths = effectiveSidebarWidths(totalWidth: proxy.size.width)
 
             HStack(spacing: 0) {
-                configurationSidebar
-                    .frame(width: sidebarWidths.configuration)
+                if isConfigurationSidebarVisible {
+                    configurationSidebar
+                        .frame(width: sidebarWidths.configuration)
 
-                GamepadEditorResizeHandle(
-                    accessibilityLabel: "Resize setups sidebar",
-                    onDragChanged: { value in
-                        resizeConfigurationSidebar(with: value, totalWidth: proxy.size.width)
-                    },
-                    onDragEnded: {
-                        configurationSidebarDragStart = nil
-                        commitConfigurationSidebarWidthDraft()
-                    }
-                )
+                    GamepadEditorResizeHandle(
+                        accessibilityLabel: "Resize setups sidebar",
+                        onDragChanged: { value in
+                            resizeConfigurationSidebar(with: value, totalWidth: proxy.size.width)
+                        },
+                        onDragEnded: {
+                            configurationSidebarDragStart = nil
+                            commitConfigurationSidebarWidthDraft()
+                        }
+                    )
+                }
 
                 canvasStage
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                GamepadEditorResizeHandle(
-                    accessibilityLabel: "Resize inspector sidebar",
-                    onDragChanged: { value in
-                        resizeInspectorSidebar(with: value, totalWidth: proxy.size.width)
-                    },
-                    onDragEnded: {
-                        inspectorSidebarDragStart = nil
-                        commitInspectorSidebarWidthDraft()
-                    }
-                )
+                if isInspectorSidebarVisible {
+                    GamepadEditorResizeHandle(
+                        accessibilityLabel: "Resize inspector sidebar",
+                        onDragChanged: { value in
+                            resizeInspectorSidebar(with: value, totalWidth: proxy.size.width)
+                        },
+                        onDragEnded: {
+                            inspectorSidebarDragStart = nil
+                            commitInspectorSidebarWidthDraft()
+                        }
+                    )
 
-                inspectorSidebar
-                    .frame(width: sidebarWidths.inspector)
+                    inspectorSidebar
+                        .frame(width: sidebarWidths.inspector)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .background(Geist.color(.background100, scheme: colorScheme))
@@ -6741,10 +7848,14 @@ struct GamepadCustomizationEditor: View {
     private var compactEditor: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Geist.Spacing.s4) {
-                configurationCompactSection
+                if isConfigurationSidebarVisible {
+                    configurationCompactSection
+                }
                 canvasStage
                     .frame(height: 430)
-                inspectorCompactSection
+                if isInspectorSidebarVisible {
+                    inspectorCompactSection
+                }
             }
             .padding(Geist.Spacing.s4)
         }
@@ -7585,6 +8696,7 @@ struct GamepadCustomizationEditor: View {
                         }
                     )
                     .environment(\.colorScheme, activeKeypadColorScheme)
+                    .environment(\.gamepadControlBarPreviewContext, controlBarPreviewContext)
                     .frame(width: screenDisplayRect.width, height: screenDisplayRect.height)
                     .offset(x: screenDisplayRect.minX, y: screenDisplayRect.minY)
 
@@ -7608,6 +8720,10 @@ struct GamepadCustomizationEditor: View {
         .overlay(alignment: .bottom) {
             canvasFloatingCreationToolbar
                 .padding(.bottom, Geist.Spacing.s4)
+        }
+        .overlay(alignment: .topLeading) {
+            canvasSidebarToggleBar
+                .padding(Geist.Spacing.s4)
         }
         .overlay(alignment: .topTrailing) {
             canvasAppearanceBadge
@@ -7633,6 +8749,63 @@ struct GamepadCustomizationEditor: View {
                     commitCanvasZoomDraft()
                 }
         )
+    }
+
+    private var canvasSidebarToggleBar: some View {
+        HStack(spacing: Geist.Spacing.s1) {
+            canvasSidebarToggleButton(
+                title: "Setups",
+                systemImage: "sidebar.left",
+                isVisible: isConfigurationSidebarVisible,
+                shortcut: "1",
+                shortcutLabel: "⌥⌘1",
+                action: toggleConfigurationSidebarVisibility
+            )
+
+            canvasSidebarToggleButton(
+                title: "Inspector",
+                systemImage: "sidebar.right",
+                isVisible: isInspectorSidebarVisible,
+                shortcut: "2",
+                shortcutLabel: "⌥⌘2",
+                action: toggleInspectorSidebarVisibility
+            )
+        }
+        .padding(Geist.Spacing.s1)
+        .background(
+            RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                .fill(Geist.color(.background100, scheme: colorScheme).opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08), radius: 8, x: 0, y: 3)
+    }
+
+    private func canvasSidebarToggleButton(
+        title: String,
+        systemImage: String,
+        isVisible: Bool,
+        shortcut: KeyEquivalent,
+        shortcutLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isVisible ? Color.white : Geist.color(.gray1000, scheme: colorScheme))
+                .frame(width: 30, height: 30)
+                .background(
+                    isVisible ? Geist.color(.blue700, scheme: colorScheme) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(shortcut, modifiers: [.command, .option])
+        .accessibilityLabel("\(isVisible ? "Hide" : "Show") \(title) sidebar")
+        .help("\(isVisible ? "Hide" : "Show") \(title) sidebar (\(shortcutLabel))")
     }
 
     private var canvasAppearanceBadge: some View {
@@ -7920,7 +9093,9 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private var selectedElementInspector: some View {
-        if selectedControlIsEditable {
+        if case .controlBarItem(let item) = selectedControlID, selectedControlIsEditable {
+            controlBarItemInspector(item)
+        } else if selectedControlIsEditable {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if let profileOutputModeContent {
                     inspectorAccordionSection(.output, title: "Output") {
@@ -7931,6 +9106,12 @@ struct GamepadCustomizationEditor: View {
 
                 inspectorAccordionSection(.selectedElementIdentity, title: "Element", subtitle: selectedControlTitle) {
                     selectedElementIdentitySection
+                }
+                if selectedControlID == .system(.topBarActivation) {
+                    Divider()
+                    inspectorAccordionSection(.selectedElementControlBar, title: "Control Bar Contents", subtitle: controlBarItemsSummary) {
+                        controlBarContentsSection
+                    }
                 }
                 if shouldShowSelectedElementArrangementSection {
                     Divider()
@@ -7969,6 +9150,101 @@ struct GamepadCustomizationEditor: View {
             }
         } else {
             keypadLevelInspector
+        }
+    }
+
+    private func controlBarItemInspector(_ item: GamepadControlBarItem) -> some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            inspectorAccordionSection(.selectedElementIdentity, title: "Control Bar Item", subtitle: item.displayName) {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                    selectedElementLabelControls
+
+                    GeistCheckboxToggle(title: "Show in control bar", isOn: visibleBinding(for: .controlBarItem(item)))
+
+                    HStack(spacing: Geist.Spacing.s2) {
+                        Button {
+                            moveControlBarItem(item, by: -1)
+                        } label: {
+                            Label("Earlier", systemImage: "chevron.left")
+                        }
+                        .geistButtonStyle(.secondary, size: .small)
+                        .disabled(customization.normalized.controlBarItems.first == item)
+
+                        Button {
+                            moveControlBarItem(item, by: 1)
+                        } label: {
+                            Label("Later", systemImage: "chevron.right")
+                        }
+                        .geistButtonStyle(.secondary, size: .small)
+                        .disabled(customization.normalized.controlBarItems.last == item)
+                    }
+
+                    HStack(spacing: Geist.Spacing.s2) {
+                        Button("Reset Appearance") {
+                            resetSelectedControl()
+                        }
+                        .geistButtonStyle(.tertiary, size: .small)
+
+                        Button("Remove") {
+                            _ = deleteSelectedControl()
+                        }
+                        .geistButtonStyle(.error, size: .small)
+                    }
+                }
+            }
+            if item != .spacer {
+                Divider()
+                inspectorAccordionSection(.selectedElementStyle, title: "Reusable Style") {
+                    selectedElementStyleFoundationSection
+                }
+                Divider()
+                inspectorAccordionSection(.selectedElementHaptic, title: "Haptic") {
+                    selectedElementHapticControls
+                }
+                Divider()
+                inspectorAccordionSection(.selectedElementFill, title: "Fill") {
+                    selectedElementColorSection
+                }
+            }
+            Divider()
+            inspectorAccordionSection(.selectedElementLayout, title: "Size") {
+                controlBarItemSizeSection(item)
+            }
+            if item != .spacer {
+                Divider()
+                inspectorAccordionSection(.selectedElementCorners, title: "Shape & Corners") {
+                    selectedElementRadiusSection
+                }
+                Divider()
+                inspectorAccordionSection(.selectedElementEffects, title: "Effects") {
+                    selectedElementEffectsSection
+                }
+            }
+        }
+    }
+
+    private func controlBarItemSizeSection(_ item: GamepadControlBarItem) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            valueSlider(
+                title: "Width",
+                value: widthScaleBinding(for: .controlBarItem(item)),
+                range: 0.25...3,
+                valueText: "\(Int((widthScaleValue(for: .controlBarItem(item)) * 100).rounded()))%"
+            )
+
+            if item != .spacer {
+                valueSlider(
+                    title: "Height",
+                    value: heightScaleBinding(for: .controlBarItem(item)),
+                    range: 0.5...2,
+                    valueText: "\(Int((heightScaleValue(for: .controlBarItem(item)) * 100).rounded()))%"
+                )
+            }
+
+            Text(item == .spacer ? "The spacer width controls how much flexible room separates neighboring items." : "Control-bar items remain constrained to the bar while their width and height can be customized independently.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -8456,6 +9732,166 @@ struct GamepadCustomizationEditor: View {
             )
     }
 
+    private var controlBarItemsSummary: String {
+        let items = customization.normalized.controlBarItems.filter { $0 != .spacer }
+        guard !items.isEmpty else { return "No controls" }
+        return items.map(\.shortName).joined(separator: ", ")
+    }
+
+    private var controlBarContentsSection: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Text("Choose which controls appear when the iPhone control bar is open. Drag the Control Bar element on the canvas to move the activation hotspot; use this list to set the bar’s contents and order.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+
+            let items = customization.normalized.controlBarItems
+            if items.isEmpty {
+                Text("No controls are pinned to the bar.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .padding(Geist.Spacing.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                            .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                    )
+            } else {
+                VStack(spacing: Geist.Spacing.s2) {
+                    ForEach(items) { item in
+                        controlBarItemRow(item)
+                    }
+                }
+            }
+
+            HStack(spacing: Geist.Spacing.s2) {
+                Menu {
+                    ForEach(GamepadControlBarItem.allCases.filter { !items.contains($0) }) { item in
+                        Button {
+                            addControlBarItem(item)
+                        } label: {
+                            Label(item.displayName, systemImage: item.systemImage)
+                        }
+                    }
+                } label: {
+                    Label("Add Control", systemImage: "plus")
+                }
+                .geistButtonStyle(.secondary, size: .small)
+                .disabled(GamepadControlBarItem.allCases.allSatisfy { items.contains($0) })
+
+                Button("Reset") {
+                    resetControlBarItems()
+                }
+                .geistButtonStyle(.tertiary, size: .small)
+            }
+        }
+    }
+
+    private func controlBarItemRow(_ item: GamepadControlBarItem) -> some View {
+        let items = customization.normalized.controlBarItems
+        let index = items.firstIndex(of: item) ?? 0
+
+        return HStack(spacing: Geist.Spacing.s2) {
+            Image(systemName: item.systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.displayName)
+                    .geistTypography(.label14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text(item.subtitle)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: Geist.Spacing.s2)
+
+            HStack(spacing: 4) {
+                Button {
+                    moveControlBarItem(item, by: -1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(index == 0)
+                .accessibilityLabel("Move \(item.displayName) up")
+
+                Button {
+                    moveControlBarItem(item, by: 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(index >= items.count - 1)
+                .accessibilityLabel("Move \(item.displayName) down")
+
+                Button {
+                    removeControlBarItem(item)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(item.displayName)")
+            }
+            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+        }
+        .padding(Geist.Spacing.s2)
+        .background(
+            Geist.color(isControlSelectionActive && selectedControlID == .controlBarItem(item) ? .blue100 : .gray100, scheme: colorScheme),
+            in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(
+                    Geist.color(isControlSelectionActive && selectedControlID == .controlBarItem(item) ? .blue700 : .grayAlpha400, scheme: colorScheme),
+                    lineWidth: isControlSelectionActive && selectedControlID == .controlBarItem(item) ? 1.5 : 1
+                )
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectComponent(.controlBarItem(item))
+        }
+    }
+
+    private func addControlBarItem(_ item: GamepadControlBarItem) {
+        update { customization in
+            customization.addControlBarItem(item)
+        }
+        selectComponent(.controlBarItem(item))
+    }
+
+    private func removeControlBarItem(_ item: GamepadControlBarItem) {
+        update { customization in
+            customization.removeControlBarItem(item)
+        }
+        if selectedControlID == .controlBarItem(item) {
+            selectComponent(.system(.topBarActivation))
+        }
+    }
+
+    private func moveControlBarItem(_ item: GamepadControlBarItem, by offset: Int) {
+        update { customization in
+            let items = GamepadCustomization.normalizedControlBarItems(customization.controlBarItems)
+            guard let index = items.firstIndex(of: item) else { return }
+            let destination = min(max(index + offset, 0), max(items.count - 1, 0))
+            guard destination != index else { return }
+            customization.moveControlBarItem(item, to: destination)
+        }
+    }
+
+    private func resetControlBarItems() {
+        update { customization in
+            customization.resetControlBar()
+        }
+    }
+
     @ViewBuilder
     private var selectedElementIdentitySection: some View {
         if let selectedLayerGroup,
@@ -8681,6 +10117,26 @@ struct GamepadCustomizationEditor: View {
         case .custom(let id):
             if customButton(id: id) != nil {
                 customButtonControls(id: id)
+            }
+        case .system(let control):
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text(control.displayName)
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text("Drag this hotspot to choose where swiping down reveals the iPhone control bar. Resize it to make the activation area easier or harder to hit.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .controlBarItem(let item):
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text(item.displayName)
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text(item.subtitle)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -9819,10 +11275,12 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func controlSelectionOptions(for customization: GamepadCustomization) -> [GamepadControlIdentity] {
+        let systemItems = GamepadSystemControl.allCases.map { GamepadControlIdentity.system($0) }
+        let controlBarItems = customization.normalized.controlBarItems.map { GamepadControlIdentity.controlBarItem($0) }
         let builtinItems = shouldListBuiltInComponents(for: customization)
             ? GameButton.builtInControls.map { GamepadControlIdentity.builtin($0) }
             : []
-        return builtinItems + customization.customButtons.map { GamepadControlIdentity.custom($0.id) }
+        return systemItems + controlBarItems + builtinItems + customization.customButtons.map { GamepadControlIdentity.custom($0.id) }
     }
 
     private func shouldListBuiltInComponents(for customization: GamepadCustomization) -> Bool {
@@ -9976,7 +11434,12 @@ struct GamepadCustomizationEditor: View {
         isControlSelectionActive
             && selectedControlIDs.count > 1
             && selectedLayerGroup == nil
-            && selectedControlIDs.allSatisfy { controlSelectionOptions.contains($0) }
+            && selectedControlIDs.allSatisfy { identity in
+                controlSelectionOptions.contains(identity) && {
+                    if case .controlBarItem = identity { return false }
+                    return true
+                }()
+            }
     }
 
     private func isLayerGroupExpanded(_ groupID: UUID) -> Bool {
@@ -10113,6 +11576,10 @@ struct GamepadCustomizationEditor: View {
         case .custom(let id):
             guard let customButton = customButton(id: id)?.normalized else { return "Button" }
             return customButton.visualLabel(fallback: customButtonFallbackLabel(for: customButton))
+        case .system(let control):
+            return control.displayName
+        case .controlBarItem(let item):
+            return item.displayName
         }
     }
 
@@ -10375,29 +11842,61 @@ struct GamepadCustomizationEditor: View {
         "\(Int((effectiveCanvasZoom * 100).rounded()))%"
     }
 
+    private func toggleConfigurationSidebarVisibility() {
+        let animation: Animation? = accessibilityReduceMotion ? nil : .easeInOut(duration: 0.18)
+        withAnimation(animation) {
+            isConfigurationSidebarVisible.toggle()
+            configurationSidebarDragStart = nil
+            draftConfigurationSidebarWidth = nil
+        }
+    }
+
+    private func toggleInspectorSidebarVisibility() {
+        let animation: Animation? = accessibilityReduceMotion ? nil : .easeInOut(duration: 0.18)
+        withAnimation(animation) {
+            isInspectorSidebarVisible.toggle()
+            inspectorSidebarDragStart = nil
+            draftInspectorSidebarWidth = nil
+        }
+    }
+
     private func effectiveSidebarWidths(totalWidth: CGFloat) -> (configuration: CGFloat, inspector: CGFloat) {
         var configurationWidth = configurationSidebarWidth
         var inspectorWidth = inspectorSidebarWidth
+        let visibleHandleCount = (isConfigurationSidebarVisible ? 1 : 0) + (isInspectorSidebarVisible ? 1 : 0)
+        let minimumVisibleSidebarWidth = (isConfigurationSidebarVisible ? Self.configurationSidebarMinWidth : 0)
+            + (isInspectorSidebarVisible ? Self.inspectorSidebarMinWidth : 0)
         let availableSidebarWidth = max(
-            Self.configurationSidebarMinWidth + Self.inspectorSidebarMinWidth,
-            totalWidth - (Self.resizeHandleWidth * 2) - Self.minimumCanvasColumnWidth
+            minimumVisibleSidebarWidth,
+            totalWidth - (Self.resizeHandleWidth * CGFloat(visibleHandleCount)) - Self.minimumCanvasColumnWidth
         )
 
-        let currentSidebarWidth = configurationWidth + inspectorWidth
+        let currentSidebarWidth = (isConfigurationSidebarVisible ? configurationWidth : 0)
+            + (isInspectorSidebarVisible ? inspectorWidth : 0)
         if currentSidebarWidth > availableSidebarWidth {
             let overflow = currentSidebarWidth - availableSidebarWidth
-            let configurationFlex = max(0, configurationWidth - Self.configurationSidebarMinWidth)
-            let inspectorFlex = max(0, inspectorWidth - Self.inspectorSidebarMinWidth)
+            let configurationFlex = isConfigurationSidebarVisible ? max(0, configurationWidth - Self.configurationSidebarMinWidth) : 0
+            let inspectorFlex = isInspectorSidebarVisible ? max(0, inspectorWidth - Self.inspectorSidebarMinWidth) : 0
             let totalFlex = configurationFlex + inspectorFlex
 
             if totalFlex > 0 {
-                configurationWidth -= overflow * (configurationFlex / totalFlex)
-                inspectorWidth -= overflow * (inspectorFlex / totalFlex)
+                if isConfigurationSidebarVisible {
+                    configurationWidth -= overflow * (configurationFlex / totalFlex)
+                }
+                if isInspectorSidebarVisible {
+                    inspectorWidth -= overflow * (inspectorFlex / totalFlex)
+                }
+            } else if isConfigurationSidebarVisible && !isInspectorSidebarVisible {
+                configurationWidth = availableSidebarWidth
+            } else if isInspectorSidebarVisible && !isConfigurationSidebarVisible {
+                inspectorWidth = availableSidebarWidth
             }
         }
 
-        configurationWidth = Self.clamp(configurationWidth, lower: Self.configurationSidebarMinWidth, upper: Self.configurationSidebarMaxWidth)
-        inspectorWidth = Self.clamp(inspectorWidth, lower: Self.inspectorSidebarMinWidth, upper: Self.inspectorSidebarMaxWidth)
+        let configurationMaxWidth = isConfigurationSidebarVisible ? min(Self.configurationSidebarMaxWidth, max(Self.configurationSidebarMinWidth, availableSidebarWidth)) : Self.configurationSidebarMaxWidth
+        let inspectorMaxWidth = isInspectorSidebarVisible ? min(Self.inspectorSidebarMaxWidth, max(Self.inspectorSidebarMinWidth, availableSidebarWidth)) : Self.inspectorSidebarMaxWidth
+        configurationWidth = Self.clamp(configurationWidth, lower: Self.configurationSidebarMinWidth, upper: configurationMaxWidth)
+        inspectorWidth = Self.clamp(inspectorWidth, lower: Self.inspectorSidebarMinWidth, upper: inspectorMaxWidth)
 
         return (configurationWidth, inspectorWidth)
     }
@@ -10408,11 +11907,13 @@ struct GamepadCustomizationEditor: View {
             configurationSidebarDragStart = currentWidths.configuration
         }
 
+        let reservedInspectorWidth = isInspectorSidebarVisible ? currentWidths.inspector : 0
+        let visibleHandleCount = 1 + (isInspectorSidebarVisible ? 1 : 0)
         let maxWidth = max(
             Self.configurationSidebarMinWidth,
             min(
                 Self.configurationSidebarMaxWidth,
-                totalWidth - currentWidths.inspector - (Self.resizeHandleWidth * 2) - Self.minimumCanvasColumnWidth
+                totalWidth - reservedInspectorWidth - (Self.resizeHandleWidth * CGFloat(visibleHandleCount)) - Self.minimumCanvasColumnWidth
             )
         )
         let nextWidth = (configurationSidebarDragStart ?? currentWidths.configuration) + value.translation.width
@@ -10431,11 +11932,13 @@ struct GamepadCustomizationEditor: View {
             inspectorSidebarDragStart = currentWidths.inspector
         }
 
+        let reservedConfigurationWidth = isConfigurationSidebarVisible ? currentWidths.configuration : 0
+        let visibleHandleCount = 1 + (isConfigurationSidebarVisible ? 1 : 0)
         let maxWidth = max(
             Self.inspectorSidebarMinWidth,
             min(
                 Self.inspectorSidebarMaxWidth,
-                totalWidth - currentWidths.configuration - (Self.resizeHandleWidth * 2) - Self.minimumCanvasColumnWidth
+                totalWidth - reservedConfigurationWidth - (Self.resizeHandleWidth * CGFloat(visibleHandleCount)) - Self.minimumCanvasColumnWidth
             )
         )
         let nextWidth = (inspectorSidebarDragStart ?? currentWidths.inspector) - value.translation.width
@@ -10592,6 +12095,10 @@ struct GamepadCustomizationEditor: View {
             let kindLabel = customControlKindLabel(for: customButton)
             let fallback = customButtonFallbackLabel(for: customButton)
             return "\(kindLabel): \(customButton.visualLabel(fallback: fallback))"
+        case .system(let control):
+            return control.displayName
+        case .controlBarItem(let item):
+            return "Control Bar: \(item.shortName)"
         }
     }
 
@@ -11128,6 +12635,10 @@ struct GamepadCustomizationEditor: View {
             customization.buttonCustomization(for: button).isHidden
         case .custom(let id):
             customButton(id: id)?.layout.isHidden ?? false
+        case .system(.topBarActivation):
+            customization.topBarActivationRegion.isHidden
+        case .controlBarItem(let item):
+            customization.controlBarItemCustomization(for: item).isHidden
         }
     }
 
@@ -11137,6 +12648,10 @@ struct GamepadCustomizationEditor: View {
             customization.buttonCustomization(for: button).isLocationLocked
         case .custom(let id):
             customButton(id: id)?.layout.isLocationLocked ?? false
+        case .system(.topBarActivation):
+            customization.topBarActivationRegion.isLocationLocked
+        case .controlBarItem:
+            true
         }
     }
 
@@ -11153,6 +12668,12 @@ struct GamepadCustomizationEditor: View {
         case .custom(let id):
             guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { return }
             customization.customButtons[index].layout.isHidden = isHidden
+        case .system(.topBarActivation):
+            customization.topBarActivationRegion.isHidden = isHidden
+        case .controlBarItem(let item):
+            var appearance = customization.controlBarItemCustomization(for: item)
+            appearance.isHidden = isHidden
+            customization.setControlBarItemCustomization(appearance, for: item)
         }
     }
 
@@ -11169,6 +12690,10 @@ struct GamepadCustomizationEditor: View {
         case .custom(let id):
             guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { return }
             customization.customButtons[index].layout.isLocationLocked = isLocked
+        case .system(.topBarActivation):
+            customization.topBarActivationRegion.isLocationLocked = isLocked
+        case .controlBarItem:
+            break
         }
     }
 
@@ -11178,6 +12703,10 @@ struct GamepadCustomizationEditor: View {
             return customization.buttonCustomization(for: button)
         case .custom(let id):
             return customButton(id: id)?.layout.normalized ?? .defaultValue
+        case .system(.topBarActivation):
+            return customization.topBarActivationRegion.normalized
+        case .controlBarItem(let item):
+            return customization.controlBarItemCustomization(for: item)
         }
     }
 
@@ -11311,6 +12840,12 @@ struct GamepadCustomizationEditor: View {
         case .custom(let id):
             guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { return }
             customization.customButtons[index].layout.applyStyleSnapshot(snapshot)
+        case .system(.topBarActivation):
+            customization.topBarActivationRegion.applyStyleSnapshot(snapshot)
+        case .controlBarItem(let item):
+            var appearance = customization.controlBarItemCustomization(for: item)
+            appearance.applyStyleSnapshot(snapshot)
+            customization.setControlBarItemCustomization(appearance, for: item)
         }
     }
 
@@ -11367,6 +12902,14 @@ struct GamepadCustomizationEditor: View {
             }
         case .custom(let id):
             updateCustomButton(id: id) { mutate(&$0.layout) }
+        case .system(.topBarActivation):
+            update { mutate(&$0.topBarActivationRegion) }
+        case .controlBarItem(let item):
+            update {
+                var appearance = $0.controlBarItemCustomization(for: item)
+                mutate(&appearance)
+                $0.setControlBarItemCustomization(appearance, for: item)
+            }
         }
     }
 
@@ -12370,6 +13913,12 @@ struct GamepadCustomizationEditor: View {
                         $0.layout.cornerRadius = nil
                         $0.layout.cornerRadii = nil
                     }
+                case .system(.topBarActivation), .controlBarItem:
+                    updateLayoutCustomization(for: identity) {
+                        $0.shape = shape
+                        $0.cornerRadius = nil
+                        $0.cornerRadii = nil
+                    }
                 }
             }
         )
@@ -12474,6 +14023,10 @@ struct GamepadCustomizationEditor: View {
                     return Double(customization.buttonCustomization(for: button)[keyPath: keyPath])
                 case .custom(let id):
                     return Double(customButton(id: id)?.layout[keyPath: keyPath] ?? 1.0)
+                case .system(.topBarActivation):
+                    return Double(customization.topBarActivationRegion[keyPath: keyPath])
+                case .controlBarItem(let item):
+                    return Double(customization.controlBarItemCustomization(for: item)[keyPath: keyPath])
                 }
             },
             set: { newValue in
@@ -12487,6 +14040,17 @@ struct GamepadCustomizationEditor: View {
         for identity: GamepadControlIdentity,
         keyPath: WritableKeyPath<GamepadButtonCustomization, CGFloat>
     ) {
+        if case .controlBarItem = identity {
+            updateLayoutCustomization(for: identity) { appearance in
+                appearance[keyPath: keyPath] = GamepadButtonCustomization.clamp(
+                    value,
+                    lower: GamepadButtonCustomization.minimumScale,
+                    upper: GamepadButtonCustomization.maximumScale
+                )
+            }
+            return
+        }
+
         guard var frame = selectedControlFrame(for: identity),
               let control = resolvedControl(for: identity)
         else { return }
@@ -12520,6 +14084,10 @@ struct GamepadCustomizationEditor: View {
         case .custom(let id):
             guard let customButton = customButton(id: id) else { return .roundedRectangle }
             return customButton.layout.resolvedShape(defaultShape: GamepadLayoutResolver.defaultShape(for: customButton.mappedButton))
+        case .system(.topBarActivation):
+            return customization.topBarActivationRegion.resolvedShape(defaultShape: .capsule)
+        case .controlBarItem(let item):
+            return customization.controlBarItemCustomization(for: item).resolvedShape(defaultShape: .roundedRectangle)
         }
     }
 
@@ -12527,6 +14095,8 @@ struct GamepadCustomizationEditor: View {
         switch identity {
         case .builtin(let button): customization.buttonCustomization(for: button).widthScale
         case .custom(let id): customButton(id: id)?.layout.widthScale ?? 1.0
+        case .system(.topBarActivation): customization.topBarActivationRegion.widthScale
+        case .controlBarItem(let item): customization.controlBarItemCustomization(for: item).widthScale
         }
     }
 
@@ -12534,6 +14104,8 @@ struct GamepadCustomizationEditor: View {
         switch identity {
         case .builtin(let button): customization.buttonCustomization(for: button).heightScale
         case .custom(let id): customButton(id: id)?.layout.heightScale ?? 1.0
+        case .system(.topBarActivation): customization.topBarActivationRegion.heightScale
+        case .controlBarItem(let item): customization.controlBarItemCustomization(for: item).heightScale
         }
     }
 
@@ -12621,6 +14193,10 @@ struct GamepadCustomizationEditor: View {
                     $0.trackpadSettings = nil
                 }
             }
+        case .system(.topBarActivation):
+            update { $0.topBarActivationRegion = GamepadCustomization.defaultTopBarActivationRegion }
+        case .controlBarItem(let item):
+            update { $0.resetControlBarItemAppearance(item) }
         }
     }
 
@@ -12910,6 +14486,13 @@ struct GamepadCustomizationEditor: View {
             return deleteBuiltInControl(button)
         case .custom(let id):
             return deleteCustomButton(id: id)
+        case .system:
+            return false
+        case .controlBarItem(let item):
+            var next = customization
+            next.removeControlBarItem(item)
+            applyCustomization(next, selecting: .system(.topBarActivation), undoActionName: "Remove Control Bar Item")
+            return true
         }
     }
 
@@ -15574,6 +17157,10 @@ private struct GamepadLayoutDesigner: View {
             )
             let selectedDesignerControls = currentSelectedControls(in: controls)
             let isMultiSelection = selectedDesignerControls.count > 1
+            let selectedControlBarItem = selectedControlIDs.lazy.compactMap { identity -> GamepadControlBarItem? in
+                if case .controlBarItem(let item) = identity { return item }
+                return nil
+            }.first
 
             ZStack(alignment: .topLeading) {
                 GamepadFillShapeLayer(
@@ -15596,6 +17183,13 @@ private struct GamepadLayoutDesigner: View {
                         isSelected: isSelected,
                         showsSelectionHandles: !isMultiSelection,
                         displayScale: resolvedDisplayScale,
+                        selectedControlBarItem: selectedControlBarItem,
+                        onSelectControlBarItem: { item in
+                            selectOnly(.controlBarItem(item))
+                        },
+                        onMoveControlBarItem: { item, offset in
+                            reorderControlBarItem(item, by: offset)
+                        },
                         onResizeChanged: { corner, value in
                             selectOnly(control.id)
                             guard !control.isLocationLocked else { return }
@@ -15997,6 +17591,7 @@ private struct GamepadLayoutDesigner: View {
     }
 
     private func selectOnly(_ identity: GamepadControlIdentity) {
+        guard !isControlSelectionActive || selectedControlID != identity || selectedControlIDs != [identity] else { return }
         selectedControlID = identity
         selectedControlIDs = [identity]
         isControlSelectionActive = true
@@ -16023,6 +17618,20 @@ private struct GamepadLayoutDesigner: View {
         selectedControlIDs = nextSelectionIDs
         isControlSelectionActive = true
         return nextSelectionIDs
+    }
+
+    private func reorderControlBarItem(_ item: GamepadControlBarItem, by offset: Int) {
+        let items = customization.normalized.controlBarItems
+        guard let sourceIndex = items.firstIndex(of: item) else { return }
+        let destination = min(max(sourceIndex + offset, 0), max(items.count - 1, 0))
+        guard destination != sourceIndex else { return }
+
+        onBeginUndoableChange("Reorder Control Bar")
+        var next = customization
+        next.moveControlBarItem(item, to: destination)
+        customization = next.normalized
+        selectOnly(.controlBarItem(item))
+        onEndEditingGesture()
     }
 
     private func beginDrag(
@@ -16719,6 +18328,13 @@ private struct GamepadLayoutDesigner: View {
                 next.customButtons[index].layout.heightScale = frame.height / control.baseSize.height
                 next.customButtons[index].layout.centerX = center.x / max(canvasSize.width, 1)
                 next.customButtons[index].layout.centerY = center.y / max(canvasSize.height, 1)
+            case .system(.topBarActivation):
+                next.topBarActivationRegion.widthScale = frame.width / control.baseSize.width
+                next.topBarActivationRegion.heightScale = frame.height / control.baseSize.height
+                next.topBarActivationRegion.centerX = center.x / max(canvasSize.width, 1)
+                next.topBarActivationRegion.centerY = center.y / max(canvasSize.height, 1)
+            case .controlBarItem:
+                continue
             }
         }
         customization = next.normalized
@@ -16897,6 +18513,10 @@ private struct GamepadLayoutDesigner: View {
             customization.buttonCustomization(for: button)
         case .custom(let id):
             customization.customButtons.first { $0.id == id }?.layout.normalized ?? .defaultValue
+        case .system(.topBarActivation):
+            customization.topBarActivationRegion.normalized
+        case .controlBarItem(let item):
+            customization.controlBarItemCustomization(for: item)
         }
     }
 
@@ -16910,6 +18530,12 @@ private struct GamepadLayoutDesigner: View {
         case .custom(let id):
             guard let index = next.customButtons.firstIndex(where: { $0.id == id }) else { return }
             mutate(&next.customButtons[index].layout)
+        case .system(.topBarActivation):
+            mutate(&next.topBarActivationRegion)
+        case .controlBarItem(let item):
+            var appearance = next.controlBarItemCustomization(for: item)
+            mutate(&appearance)
+            next.setControlBarItemCustomization(appearance, for: item)
         }
         customization = next.normalized
     }
@@ -17212,6 +18838,9 @@ private struct GamepadDesignerButton: View {
     let isSelected: Bool
     let showsSelectionHandles: Bool
     let displayScale: CGFloat
+    var selectedControlBarItem: GamepadControlBarItem? = nil
+    var onSelectControlBarItem: ((GamepadControlBarItem) -> Void)? = nil
+    var onMoveControlBarItem: ((GamepadControlBarItem, Int) -> Void)? = nil
     let onResizeChanged: (GamepadResizeHandleCorner, DragGesture.Value) -> Void
     let onResizeEnded: () -> Void
     let onRadiusChanged: (DragGesture.Value) -> Void
@@ -17222,7 +18851,10 @@ private struct GamepadDesignerButton: View {
             GamepadRenderedControlFace(
                 control: control,
                 customization: customization,
-                state: .normal
+                state: .normal,
+                selectedControlBarItem: selectedControlBarItem,
+                onSelectControlBarItem: onSelectControlBarItem,
+                onMoveControlBarItem: onMoveControlBarItem
             )
 
             if isSelected {
@@ -17235,6 +18867,7 @@ private struct GamepadDesignerButton: View {
             }
         }
         .frame(width: control.size.width, height: control.size.height)
+        .contentShape(Rectangle())
         .shadow(
             color: isSelected ? Color.black.opacity(0.12 * resolvedShadowStrength) : .clear,
             radius: isSelected ? 5 * max(0.25, resolvedShadowStrength) : 0,

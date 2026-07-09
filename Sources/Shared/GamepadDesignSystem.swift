@@ -989,11 +989,15 @@ extension GamepadControlIdentity: Codable {
         case kind
         case button
         case id
+        case system
+        case controlBarItem
     }
 
     private enum Kind: String, Codable {
         case builtin
         case custom
+        case system
+        case controlBarItem
     }
 
     public init(from decoder: Decoder) throws {
@@ -1010,6 +1014,21 @@ extension GamepadControlIdentity: Codable {
                     self = .custom(id)
                     return
                 }
+            } else if raw.hasPrefix("system.") {
+                let systemRaw = String(raw.dropFirst("system.".count))
+                if let control = GamepadSystemControl(rawValue: systemRaw) {
+                    self = .system(control)
+                    return
+                }
+            } else if raw.hasPrefix("control_bar_item.") {
+                let itemRaw = String(raw.dropFirst("control_bar_item.".count))
+                if let item = GamepadControlBarItem(rawValue: itemRaw) {
+                    self = .controlBarItem(item)
+                    return
+                }
+            } else if let control = GamepadSystemControl(rawValue: raw) {
+                self = .system(control)
+                return
             } else if let button = GameButton(rawValue: raw) {
                 self = .builtin(button)
                 return
@@ -1026,6 +1045,14 @@ extension GamepadControlIdentity: Codable {
             self = .builtin(try container.decode(GameButton.self, forKey: .button))
         case .custom:
             self = .custom(try container.decode(UUID.self, forKey: .id))
+        case .system:
+            if let control = try container.decodeIfPresent(GamepadSystemControl.self, forKey: .system) {
+                self = .system(control)
+            } else {
+                self = .system(try container.decode(GamepadSystemControl.self, forKey: .id))
+            }
+        case .controlBarItem:
+            self = .controlBarItem(try container.decode(GamepadControlBarItem.self, forKey: .controlBarItem))
         }
     }
 
@@ -1038,6 +1065,12 @@ extension GamepadControlIdentity: Codable {
         case .custom(let id):
             try container.encode(Kind.custom, forKey: .kind)
             try container.encode(id, forKey: .id)
+        case .system(let control):
+            try container.encode(Kind.system, forKey: .kind)
+            try container.encode(control, forKey: .system)
+        case .controlBarItem(let item):
+            try container.encode(Kind.controlBarItem, forKey: .kind)
+            try container.encode(item, forKey: .controlBarItem)
         }
     }
 }
@@ -1714,7 +1747,9 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
 
 extension GamepadCustomization {
     var allControlIdentitiesForDesign: [GamepadControlIdentity] {
-        GameButton.builtInControls.map { .builtin($0) } + customButtons.map { .custom($0.id) }
+        GamepadSystemControl.allCases.map { .system($0) }
+            + GameButton.builtInControls.map { .builtin($0) }
+            + customButtons.map { .custom($0.id) }
     }
 
     var orderedControlIdentitiesForDesign: [GamepadControlIdentity] {
@@ -1733,6 +1768,12 @@ extension GamepadCustomization {
         zIndexLookup.reserveCapacity(controls.count)
         for button in GameButton.builtInControls {
             zIndexLookup[.builtin(button)] = buttonCustomization(for: button).zIndex
+        }
+        for control in GamepadSystemControl.allCases {
+            switch control {
+            case .topBarActivation:
+                zIndexLookup[.system(control)] = topBarActivationRegion.normalized.zIndex
+            }
         }
         for customButton in customButtons {
             let normalizedButton = customButton.normalized
@@ -1757,6 +1798,10 @@ extension GamepadCustomization {
             return buttonCustomization(for: button).zIndex
         case .custom(let id):
             return customButtons.first { $0.id == id }?.normalized.layout.zIndex ?? 0
+        case .system(.topBarActivation):
+            return topBarActivationRegion.normalized.zIndex
+        case .controlBarItem:
+            return 0
         }
     }
 

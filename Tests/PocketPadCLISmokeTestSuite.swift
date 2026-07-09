@@ -57,6 +57,104 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertNil(added.legacySlot)
     }
 
+    func testControlBarItemsNormalizeAndRoundTrip() throws {
+        var customization = GamepadCustomization.defaultValue
+        customization.controlBarItems = [.home, .settings, .home, .connectionAction]
+
+        XCTAssertEqual(customization.normalized.controlBarItems, [.home, .settings, .connectionAction])
+
+        let data = try JSONEncoder().encode(customization)
+        let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data)
+        XCTAssertEqual(decoded.normalized.controlBarItems, [.home, .settings, .connectionAction])
+    }
+
+    func testControlBarItemAppearancesNormalizeAndRoundTrip() throws {
+        var customization = GamepadCustomization.defaultValue
+        var settingsAppearance = GamepadButtonCustomization(
+            centerX: 0.2,
+            centerY: 0.8,
+            widthScale: 1.35,
+            heightScale: 1.2,
+            shape: .capsule,
+            fillColor: GamepadRGBAColor(hexString: "#112233"),
+            icon: .sfSymbol("slider.horizontal.3"),
+            cornerRadius: 14,
+            isLocationLocked: true
+        )
+        settingsAppearance.hapticStyle = .medium
+        customization.setControlBarItemCustomization(settingsAppearance, for: .settings)
+
+        let normalizedAppearance = customization.normalized.controlBarItemCustomization(for: .settings)
+        XCTAssertNil(normalizedAppearance.centerX)
+        XCTAssertNil(normalizedAppearance.centerY)
+        XCTAssertFalse(normalizedAppearance.isLocationLocked)
+        XCTAssertEqual(normalizedAppearance.widthScale, 1.35, accuracy: 0.001)
+        XCTAssertEqual(normalizedAppearance.heightScale, 1.2, accuracy: 0.001)
+        XCTAssertEqual(normalizedAppearance.icon?.value, "slider.horizontal.3")
+        XCTAssertEqual(normalizedAppearance.hapticStyle, .medium)
+
+        let data = try JSONEncoder().encode(customization)
+        let json = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(json.contains("controlBarItemCustomizations"))
+
+        let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data).normalized
+        XCTAssertEqual(decoded.controlBarItemCustomization(for: .settings), normalizedAppearance)
+        XCTAssertFalse(GamepadCustomization.defaultValue.hasSamePresentation(as: decoded))
+
+        var reordered = decoded
+        reordered.moveControlBarItem(.settings, to: 0)
+        XCTAssertEqual(reordered.normalized.controlBarItems.first, .settings)
+        XCTAssertEqual(reordered.controlBarItemCustomization(for: .settings), normalizedAppearance)
+
+        reordered.removeControlBarItem(.settings)
+        XCTAssertFalse(reordered.normalized.controlBarItems.contains(.settings))
+        XCTAssertTrue(reordered.normalized.controlBarItemCustomizations.isEmpty)
+    }
+
+    func testControlBarItemIdentityRoundTrips() throws {
+        let identity = GamepadControlIdentity.controlBarItem(.connectionAction)
+        let data = try JSONEncoder().encode(identity)
+        XCTAssertEqual(try JSONDecoder().decode(GamepadControlIdentity.self, from: data), identity)
+    }
+
+    func testStyledProfilePayloadEncodesOnNetworkQueue() throws {
+        var customization = GamepadCustomization.defaultValue.normalized
+        let visualStyle = GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(
+                fillStyle: .solid(GamepadRGBAColor(hexString: "#F7F4F8") ?? .defaultValue),
+                foregroundColor: GamepadRGBAColor(hexString: "#7C61A8") ?? .defaultValue,
+                strokeColor: GamepadRGBAColor(hexString: "#FFFFFF") ?? .defaultValue,
+                strokeWidth: 1,
+                shadowColor: GamepadRGBAColor(hexString: "#00000066") ?? .defaultValue,
+                shadowRadius: 8
+            ),
+            pressed: GamepadControlStateStyle(opacity: 0.86, scale: 0.94)
+        )
+
+        for button in GameButton.builtInControls {
+            var layout = customization.buttonCustomization(for: button)
+            layout.visualStyle = visualStyle
+            customization.setButtonCustomization(layout, for: button)
+        }
+
+        let profile = GamepadConfigurationProfile(name: "Styled Network Payload", customization: customization)
+        let message = ControllerMessage(
+            type: .gamepadProfiles,
+            gamepadCustomization: customization,
+            gamepadProfiles: [profile],
+            gamepadProfileID: profile.id,
+            defaultGamepadProfileID: profile.id
+        )
+        let queue = DispatchQueue(label: "PocketPad.Tests.NetworkStack")
+        let data = try queue.sync {
+            try ControllerWireCodec.encode(message, using: JSONEncoder())
+        }
+
+        XCTAssertFalse(data.isEmpty)
+        let decoded = try ControllerWireCodec.decode(data, using: JSONDecoder())
+        XCTAssertEqual(decoded.gamepadProfiles?.first?.customization.normalized.buttonCustomizations.count, GameButton.builtInControls.count)
+    }
+
     func testAddedJoystickDefaultsToKeyboardDigitalDirections() throws {
         let id = UUID(uuidString: "00000000-0000-0000-0000-00000000D1D1")!
         var customization = GamepadCustomization.blankCanvas

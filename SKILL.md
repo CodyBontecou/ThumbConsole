@@ -13,6 +13,7 @@ Use this skill to configure PocketPad from the command line. PocketPad turns an 
 - User wants an emulator/controller-style layout → use `template list` / `template install`.
 - User wants to change shortcuts → use `binding` commands.
 - User wants shape/color/joystick/layout changes → use `customization` or `element` commands.
+- User wants to customize the iPhone control bar or one of its buttons → use `control-bar` commands.
 - User wants backup/restore/share → use `profile export` / `profile import`.
 - User wants pairing/status/server/accessibility/test/release-all → use runtime commands.
 
@@ -262,6 +263,23 @@ Appearance/design flags:
 - `element set BUTTON --z-index -100...100` sets explicit stack order; `layer list|move|front|back|bring-forward|send-backward` still manages same-z tie order.
 - `group list|create|ungroup|hide|show|lock|unlock` stores editor groups and can apply group visibility/lock to child controls.
 - `asset import|list|remove` stores profile-local design assets for future icon/background workflows.
+
+## iPhone control bar
+
+Control-bar items keep their built-in actions, but their order, visibility, icon, size, fill, shape, corners, effects, and haptics can be customized per portrait/landscape variant:
+
+```bash
+"$POCKETPAD_CLI" control-bar list --json
+"$POCKETPAD_CLI" control-bar set status,profiles,launch,spacer,edit,settings,home,connection
+"$POCKETPAD_CLI" control-bar move settings earlier
+"$POCKETPAD_CLI" control-bar item show settings --json
+"$POCKETPAD_CLI" control-bar item set settings --icon sf:slider.horizontal.3 --fill '#111827' --corner 12
+"$POCKETPAD_CLI" control-bar item set connection --width 1.25 --height 1.1 --haptic medium
+"$POCKETPAD_CLI" control-bar item reset settings
+"$POCKETPAD_CLI" control-bar reset
+```
+
+Use `--variant portrait|landscape` and `--profile PROFILE` as needed. A control-bar item's semantic action is fixed: styling `home`, for example, cannot turn it into a keyboard shortcut.
 
 ## Runtime Mac helper commands
 
