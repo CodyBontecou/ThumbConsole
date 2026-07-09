@@ -73,6 +73,40 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(element.joystickOutputSettings, Optional(GamepadJoystickOutputSettings.defaultValue.normalized))
     }
 
+    func testCaptureEventRoundTripsThroughJSONCodec() throws {
+        let event = PocketPadCaptureEvent(
+            sequence: 42,
+            recordedAt: 123_456,
+            uptimeNanoseconds: 789,
+            kind: "button",
+            source: "iPhone UDP",
+            messageType: .button,
+            button: .jump,
+            state: .down,
+            binding: "Space",
+            inputSequence: 7,
+            pressIdentifier: 99,
+            latencyMS: 4,
+            pressedButtons: [.jump],
+            detail: "smoke"
+        )
+
+        let data = try JSONEncoder().encode(event)
+        let decoded = try JSONDecoder().decode(PocketPadCaptureEvent.self, from: data)
+        XCTAssertEqual(decoded.sequence, 42)
+        XCTAssertEqual(decoded.kind, "button")
+        XCTAssertEqual(decoded.source, "iPhone UDP")
+        XCTAssertEqual(decoded.messageType, .button)
+        XCTAssertEqual(decoded.button, .jump)
+        XCTAssertEqual(decoded.state, .down)
+        XCTAssertEqual(decoded.binding, "Space")
+        XCTAssertEqual(decoded.inputSequence, 7)
+        XCTAssertEqual(decoded.pressIdentifier, 99)
+        XCTAssertEqual(decoded.latencyMS, 4)
+        XCTAssertEqual(decoded.pressedButtons, [.jump])
+        XCTAssertEqual(decoded.detail, "smoke")
+    }
+
     func testElementInputMessageRoundTrips() throws {
         let elementID = UUID(uuidString: "00000000-0000-0000-0000-00000000E1E1")!
         let message = ControllerMessage(
@@ -80,7 +114,8 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
             elementID: elementID,
             elementPart: .primary,
             state: .down,
-            timestamp: ControllerWireCodec.inputSequenceTimestamp(for: 42, pressIdentifier: 7)
+            timestamp: ControllerWireCodec.inputSequenceTimestamp(for: 42, pressIdentifier: 7),
+            sentAt: 123_456
         )
         let data = try ControllerWireCodec.encode(message, using: JSONEncoder())
         let decoded = try ControllerWireCodec.decode(data, using: JSONDecoder())
@@ -88,6 +123,7 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(decoded.elementID, elementID)
         XCTAssertEqual(decoded.elementPart, .primary)
         XCTAssertEqual(decoded.state, .down)
+        XCTAssertEqual(decoded.sentAt, 123_456)
         XCTAssertEqual(ControllerWireCodec.inputSequenceNumber(from: decoded), 42)
         XCTAssertEqual(ControllerWireCodec.inputPressIdentifier(from: decoded), 7)
     }

@@ -69,6 +69,17 @@ struct PocketPadCLI {
         var makeDefault = true
     }
 
+    private struct MonitorOptions {
+        var jsonLines = false
+        var clear = false
+        var follow = true
+        var fromStart = false
+        var duration: TimeInterval?
+        var pathOverride: String?
+        var printPath = false
+        var pollInterval: TimeInterval = 0.05
+    }
+
     private struct ProfileExportEnvelope: Codable {
         var schema: String = PocketPadKeypadConfigurationExport.schemaIdentifier
         var version: Int = PocketPadKeypadConfigurationExport.currentVersion
@@ -233,6 +244,8 @@ struct PocketPadCLI {
             try asset(arguments: rest)
         case "status", "diagnostics":
             try printRuntimeStatus(json: rest.contains("--json"))
+        case "monitor", "capture":
+            try monitor(arguments: rest)
         case "latency":
             try latency(arguments: rest)
         case "server":
@@ -3217,9 +3230,206 @@ struct PocketPadCLI {
         case "quit":
             try quitApp()
             print("Requested PocketPad Mac quit.")
+        case "replay-onboarding", "onboarding", "reset-onboarding":
+            try replayOnboarding()
+            print("Reset onboarding and opened PocketPad Mac.")
         default:
             throw CLIError.message("Unknown app subcommand: \(subcommand)")
         }
+    }
+
+    private static func monitor(arguments: [String]) throws {
+        let options = try parseMonitorOptions(arguments)
+        let logPath: String
+        if let pathOverride = options.pathOverride {
+            logPath = pathOverride
+        } else if let status = try? readFreshRuntimeStatus(), let path = status.captureLogPath, !path.isEmpty {
+            logPath = path
+        } else {
+            logPath = PocketPadMacIPC.captureLogPath
+        }
+
+        if options.printPath {
+            print(logPath)
+            return
+        }
+
+        let url = URL(fileURLWithPath: logPath)
+        if options.clear {
+            try? FileManager.default.removeItem(at: url)
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+
+        var offset = options.fromStart ? UInt64(0) : fileSize(at: url)
+        var pending = Data()
+        let startedAt = Date()
+
+        if !options.jsonLines {
+            fputs("Streaming PocketPad capture from \(logPath)\n", stderr)
+            fputs("Press Ctrl-C to stop. Use --jsonl for raw JSON lines.\n", stderr)
+        }
+
+        while true {
+            if let duration = options.duration, Date().timeIntervalSince(startedAt) >= duration {
+                break
+            }
+
+            let currentSize = fileSize(at: url)
+            if currentSize < offset {
+                offset = 0
+                pending.removeAll(keepingCapacity: true)
+            }
+
+            if currentSize > offset {
+                let handle = try FileHandle(forReadingFrom: url)
+                defer { try? handle.close() }
+                try handle.seek(toOffset: offset)
+                let chunk = try handle.readToEnd() ?? Data()
+                offset += UInt64(chunk.count)
+                pending.append(chunk)
+                try printCompleteCaptureLines(from: &pending, jsonLines: options.jsonLines)
+            }
+
+            if !options.follow {
+                break
+            }
+            Thread.sleep(forTimeInterval: options.pollInterval)
+        }
+    }
+
+    private static func parseMonitorOptions(_ arguments: [String]) throws -> MonitorOptions {
+        var options = MonitorOptions()
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            switch argument {
+            case "--jsonl", "--json-lines", "--json":
+                options.jsonLines = true
+            case "--clear", "--reset":
+                options.clear = true
+                options.fromStart = true
+            case "--from-start", "--all":
+                options.fromStart = true
+            case "--no-follow", "--snapshot":
+                options.follow = false
+                options.fromStart = true
+            case "--path":
+                options.printPath = true
+            case "--file", "--log":
+                index += 1
+                guard index < arguments.count else { throw CLIError.message("Missing value for \(argument)") }
+                options.pathOverride = arguments[index]
+            case "--duration", "--seconds":
+                index += 1
+                guard index < arguments.count, let value = TimeInterval(arguments[index]), value >= 0 else {
+                    throw CLIError.message("Missing or invalid value for \(argument)")
+                }
+                options.duration = value
+            case "--interval":
+                index += 1
+                guard index < arguments.count, let value = TimeInterval(arguments[index]), value > 0 else {
+                    throw CLIError.message("Missing or invalid value for --interval")
+                }
+                options.pollInterval = value
+            case "--help", "-h":
+                throw CLIError.message("Usage: pocketpad monitor [--jsonl] [--clear] [--from-start] [--duration seconds] [--file capture.jsonl] [--path]")
+            default:
+                throw CLIError.message("Unknown monitor option: \(argument)")
+            }
+            index += 1
+        }
+        return options
+    }
+
+    private static func fileSize(at url: URL) -> UInt64 {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber
+        else { return 0 }
+        return size.uint64Value
+    }
+
+    private static func printCompleteCaptureLines(from pending: inout Data, jsonLines: Bool) throws {
+        while let newline = pending.firstIndex(of: 0x0A) {
+            let line = pending[..<newline]
+            pending.removeSubrange(pending.startIndex...newline)
+            guard !line.isEmpty else { continue }
+            if jsonLines {
+                if let text = String(data: line, encoding: .utf8) {
+                    print(text)
+                }
+            } else {
+                let event = try JSONDecoder().decode(PocketPadCaptureEvent.self, from: Data(line))
+                print(formatCaptureEvent(event))
+            }
+            fflush(stdout)
+        }
+    }
+
+    private static func formatCaptureEvent(_ event: PocketPadCaptureEvent) -> String {
+        let sequence = event.sequence.map { "#\($0)" } ?? "#?"
+        let timestamp = formatCaptureTimestamp(event.recordedAt)
+        let latency = event.latencyMS.map { " latency=\($0)ms" } ?? ""
+        let pressed = formatCapturePressed(event.pressedButtons)
+        let detail = event.detail.map { " detail=\($0)" } ?? ""
+
+        switch event.kind {
+        case "button":
+            let button = event.button?.rawValue ?? "?"
+            let state = event.state?.rawValue ?? "?"
+            let binding = event.binding.map { " binding=\($0)" } ?? ""
+            return "\(timestamp) \(sequence) button \(button) \(state)\(binding)\(latency)\(pressed)\(detail)"
+        case "element_input":
+            let label = event.elementLabel ?? event.elementInput?.storageKey ?? "?"
+            let state = event.state?.rawValue ?? "?"
+            let binding = event.binding.map { " binding=\($0)" } ?? ""
+            return "\(timestamp) \(sequence) element \(label) \(state)\(binding)\(latency)\(pressed)\(detail)"
+        case "gamepad_analog":
+            if let stick = event.analogStick {
+                return "\(timestamp) \(sequence) analog stick=\(stick.rawValue) x=\(formatDouble(event.analogX)) y=\(formatDouble(event.analogY))\(latency)\(pressed)\(detail)"
+            }
+            if let trigger = event.analogTrigger {
+                return "\(timestamp) \(sequence) analog trigger=\(trigger.rawValue) value=\(formatDouble(event.analogValue))\(latency)\(pressed)\(detail)"
+            }
+            return "\(timestamp) \(sequence) analog\(latency)\(pressed)\(detail)"
+        case "pointer":
+            let pointerEvent = event.pointerEvent?.rawValue ?? "?"
+            let button = event.pointerButton.map { " button=\($0.rawValue)" } ?? ""
+            let state = event.state.map { " state=\($0.rawValue)" } ?? ""
+            let dx = event.deltaX.map { " dx=\(String(format: "%.2f", $0))" } ?? ""
+            let dy = event.deltaY.map { " dy=\(String(format: "%.2f", $0))" } ?? ""
+            return "\(timestamp) \(sequence) pointer \(pointerEvent)\(button)\(state)\(dx)\(dy)\(latency)\(pressed)\(detail)"
+        case "ignored_button_edge", "recovered_button_edge":
+            let button = event.button?.rawValue ?? "?"
+            let state = event.state?.rawValue ?? "?"
+            return "\(timestamp) \(sequence) \(event.kind) \(button) \(state)\(latency)\(pressed)\(detail)"
+        case "ignored_element_input_edge":
+            let label = event.elementLabel ?? event.elementInput?.storageKey ?? "?"
+            let state = event.state?.rawValue ?? "?"
+            return "\(timestamp) \(sequence) \(event.kind) \(label) \(state)\(latency)\(pressed)\(detail)"
+        default:
+            return "\(timestamp) \(sequence) \(event.kind)\(latency)\(pressed)\(detail)"
+        }
+    }
+
+    private static func formatCaptureTimestamp(_ milliseconds: Int64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    private static func formatCapturePressed(_ buttons: [GameButton]?) -> String {
+        guard let buttons else { return "" }
+        if buttons.isEmpty { return " pressed=[]" }
+        return " pressed=[\(buttons.map(\.rawValue).joined(separator: ","))]"
+    }
+
+    private static func formatDouble(_ value: Double?) -> String {
+        String(format: "%.3f", value ?? 0)
     }
 
     private static func postRuntimeCommand(_ command: PocketPadMacCLICommand, button: GameButton? = nil, reason: String? = nil) {
@@ -3283,6 +3493,9 @@ struct PocketPadCLI {
                 if let pressed = status.virtualGamepadPressedButtons, !pressed.isEmpty {
                     print("Virtual Gamepad Pressed: \(pressed.map(\.shortName).joined(separator: ", "))")
                 }
+            }
+            if let captureLogPath = status.captureLogPath, !captureLogPath.isEmpty {
+                print("Capture Log: \(captureLogPath)")
             }
             print("Frames: missing=\(status.missedButtonFrames) ignored=\(status.ignoredButtonEdges) recovered=\(status.recoveredButtonEdges)")
         }
@@ -4272,6 +4485,38 @@ struct PocketPadCLI {
         }
     }
 
+    private static func replayOnboarding() throws {
+        resetOnboardingDefaults()
+        terminateRunningAppIfNeeded()
+        try openApp()
+    }
+
+    private static func resetOnboardingDefaults() {
+        var domain = loadAppDomain()
+        domain[PocketPadMacIPC.onboardingCompletedDefaultsKey] = false
+        domain[PocketPadMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey] = false
+        domain[PocketPadMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey] = true
+        UserDefaults.standard.setPersistentDomain(domain, forName: appDefaultsDomain)
+        UserDefaults.standard.synchronize()
+    }
+
+    private static func terminateRunningAppIfNeeded() {
+        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: appDefaultsDomain)
+        guard !runningApps.isEmpty else { return }
+        for app in runningApps {
+            app.terminate()
+        }
+
+        let deadline = Date().addingTimeInterval(2.0)
+        while Date() < deadline, runningApps.contains(where: { !$0.isTerminated }) {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        for app in runningApps where !app.isTerminated {
+            app.forceTerminate()
+        }
+    }
+
     private static func openApp() throws {
         try runProcess("/usr/bin/open", arguments: ["-b", appDefaultsDomain])
         Thread.sleep(forTimeInterval: 0.35)
@@ -4379,8 +4624,9 @@ struct PocketPadCLI {
           pocketpad asset import ./icon.png --role icon --name SoulOrb
 
         Runtime:
-          pocketpad app open|quit
+          pocketpad app open|quit|replay-onboarding
           pocketpad status [--json]
+          pocketpad monitor [--jsonl] [--clear] [--from-start] [--duration seconds]
           pocketpad latency simulate [--pattern hollow-knight] [--mode compare] [--log report.json]
           pocketpad latency verify [--max-ms 4] [--p95-ms 4] [--log report.json]
           pocketpad server start|stop|restart|addresses

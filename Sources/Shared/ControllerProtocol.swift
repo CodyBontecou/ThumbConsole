@@ -119,6 +119,10 @@ public enum PocketPadMacIPC {
     public static let commandNotificationName = "com.codybontecou.PocketPadMac.cliCommand"
     public static let commandDataKey = "commandData"
     public static let runtimeStatusDefaultsKey = "PocketPadMac.runtimeStatus.v1"
+    public static let onboardingCompletedDefaultsKey = "PocketPadMac.onboarding.completed.v1"
+    public static let editorFirstKeypadOnboardingCompletedDefaultsKey = "PocketPad.GamepadEditor.firstKeypadOnboardingCompleted.v1"
+    public static let editorFirstKeypadOnboardingReplayRequestedDefaultsKey = "PocketPad.GamepadEditor.firstKeypadOnboardingReplayRequested.v1"
+    public static let captureLogPath = "/tmp/pocketpad-capture.jsonl"
 }
 
 public enum PocketPadMacCLICommand: String, Codable, Sendable {
@@ -133,6 +137,118 @@ public enum PocketPadMacCLICommand: String, Codable, Sendable {
     case releaseAll
     case testDown
     case testUp
+}
+
+public struct PocketPadCaptureEvent: Codable, Sendable {
+    public var schemaVersion: Int
+    public var sequence: UInt64?
+    public var recordedAt: Int64
+    public var uptimeNanoseconds: UInt64?
+    public var kind: String
+    public var source: String?
+    public var messageType: ControllerMessageType?
+    public var button: GameButton?
+    public var elementInput: KeypadElementInputID?
+    public var elementLabel: String?
+    public var state: ButtonPressState?
+    public var binding: String?
+    public var pointerEvent: ControllerPointerEventKind?
+    public var pointerButton: ControllerPointerButton?
+    public var deltaX: Double?
+    public var deltaY: Double?
+    public var analogStick: VirtualGamepadStick?
+    public var analogTrigger: VirtualGamepadTrigger?
+    public var analogX: Double?
+    public var analogY: Double?
+    public var analogValue: Double?
+    public var inputSequence: UInt64?
+    public var expectedSequence: UInt64?
+    public var receivedSequence: UInt64?
+    public var missedFrameCount: UInt64?
+    public var totalMissedButtonFrames: Int?
+    public var pressIdentifier: UInt64?
+    public var latencyMS: Int?
+    public var pressedButtons: [GameButton]?
+    public var pressedElementInputs: [String]?
+    public var activePointerButtons: [ControllerPointerButton]?
+    public var statusText: String?
+    public var clientName: String?
+    public var isClientConnected: Bool?
+    public var detail: String?
+
+    public init(
+        schemaVersion: Int = 1,
+        sequence: UInt64? = nil,
+        recordedAt: Int64 = Date.currentMilliseconds,
+        uptimeNanoseconds: UInt64? = nil,
+        kind: String,
+        source: String? = nil,
+        messageType: ControllerMessageType? = nil,
+        button: GameButton? = nil,
+        elementInput: KeypadElementInputID? = nil,
+        elementLabel: String? = nil,
+        state: ButtonPressState? = nil,
+        binding: String? = nil,
+        pointerEvent: ControllerPointerEventKind? = nil,
+        pointerButton: ControllerPointerButton? = nil,
+        deltaX: Double? = nil,
+        deltaY: Double? = nil,
+        analogStick: VirtualGamepadStick? = nil,
+        analogTrigger: VirtualGamepadTrigger? = nil,
+        analogX: Double? = nil,
+        analogY: Double? = nil,
+        analogValue: Double? = nil,
+        inputSequence: UInt64? = nil,
+        expectedSequence: UInt64? = nil,
+        receivedSequence: UInt64? = nil,
+        missedFrameCount: UInt64? = nil,
+        totalMissedButtonFrames: Int? = nil,
+        pressIdentifier: UInt64? = nil,
+        latencyMS: Int? = nil,
+        pressedButtons: [GameButton]? = nil,
+        pressedElementInputs: [String]? = nil,
+        activePointerButtons: [ControllerPointerButton]? = nil,
+        statusText: String? = nil,
+        clientName: String? = nil,
+        isClientConnected: Bool? = nil,
+        detail: String? = nil
+    ) {
+        self.schemaVersion = schemaVersion
+        self.sequence = sequence
+        self.recordedAt = recordedAt
+        self.uptimeNanoseconds = uptimeNanoseconds
+        self.kind = kind
+        self.source = source
+        self.messageType = messageType
+        self.button = button
+        self.elementInput = elementInput
+        self.elementLabel = elementLabel
+        self.state = state
+        self.binding = binding
+        self.pointerEvent = pointerEvent
+        self.pointerButton = pointerButton
+        self.deltaX = deltaX
+        self.deltaY = deltaY
+        self.analogStick = analogStick
+        self.analogTrigger = analogTrigger
+        self.analogX = analogX
+        self.analogY = analogY
+        self.analogValue = analogValue
+        self.inputSequence = inputSequence
+        self.expectedSequence = expectedSequence
+        self.receivedSequence = receivedSequence
+        self.missedFrameCount = missedFrameCount
+        self.totalMissedButtonFrames = totalMissedButtonFrames
+        self.pressIdentifier = pressIdentifier
+        self.latencyMS = latencyMS
+        self.pressedButtons = pressedButtons
+        self.pressedElementInputs = pressedElementInputs
+        self.activePointerButtons = activePointerButtons
+        self.statusText = statusText
+        self.clientName = clientName
+        self.isClientConnected = isClientConnected
+        self.detail = detail
+    }
 }
 
 public struct ControllerClientDeviceInsets: Codable, Equatable, Sendable {
@@ -247,6 +363,7 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
     public var virtualGamepadRightStickY: Double?
     public var virtualGamepadLeftTrigger: Double?
     public var virtualGamepadRightTrigger: Double?
+    public var captureLogPath: String?
 
     public init(
         updatedAt: Int64,
@@ -283,7 +400,8 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         virtualGamepadRightStickX: Double? = nil,
         virtualGamepadRightStickY: Double? = nil,
         virtualGamepadLeftTrigger: Double? = nil,
-        virtualGamepadRightTrigger: Double? = nil
+        virtualGamepadRightTrigger: Double? = nil,
+        captureLogPath: String? = nil
     ) {
         self.updatedAt = updatedAt
         self.statusText = statusText
@@ -320,6 +438,7 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         self.virtualGamepadRightStickY = virtualGamepadRightStickY
         self.virtualGamepadLeftTrigger = virtualGamepadLeftTrigger
         self.virtualGamepadRightTrigger = virtualGamepadRightTrigger
+        self.captureLogPath = captureLogPath
     }
 }
 
@@ -368,6 +487,7 @@ public struct ControllerMessage: Codable, Sendable {
     public var elementPart: KeypadElementInputPart?
     public var state: ButtonPressState?
     public var timestamp: Int64
+    public var sentAt: Int64?
     public var pairingCode: String?
     public var clientName: String?
     public var message: String?
@@ -397,6 +517,7 @@ public struct ControllerMessage: Codable, Sendable {
         elementPart: KeypadElementInputPart? = nil,
         state: ButtonPressState? = nil,
         timestamp: Int64 = Date.currentMilliseconds,
+        sentAt: Int64? = nil,
         pairingCode: String? = nil,
         clientName: String? = nil,
         message: String? = nil,
@@ -425,6 +546,7 @@ public struct ControllerMessage: Codable, Sendable {
         self.elementPart = elementPart
         self.state = state
         self.timestamp = timestamp
+        self.sentAt = sentAt
         self.pairingCode = pairingCode
         self.clientName = clientName
         self.message = message

@@ -4678,6 +4678,28 @@ enum GamepadConfigurationProfilePersistence {
     }
 
     static let defaultsKey = "PocketPad.gamepadConfigurationProfiles.v1"
+    private static let legacySeededDefaultProfileNames = [
+        "Current Setup",
+        "NES",
+        "Super Nintendo",
+        "Nintendo 64",
+        "GameCube",
+        "Game Boy",
+        "Game Boy Advance",
+        "Genesis 6-Button",
+        "Sega Saturn",
+        "Dreamcast",
+        "Arcade Stick",
+        "PSP",
+        "PlayStation",
+        "Xbox",
+        "Soft White Pro",
+        "Navigation Left",
+        "Actions Left",
+        "Dual Stick Shooter",
+        "Large Blue",
+        "Compact Minimal"
+    ]
 
     static func load(activeCustomization: GamepadCustomization) -> LoadedState {
         let activeCustomization = activeCustomization.normalized
@@ -4685,6 +4707,14 @@ enum GamepadConfigurationProfilePersistence {
         if let data = UserDefaults.standard.data(forKey: defaultsKey),
            let stored = try? JSONDecoder().decode(StoredState.self, from: data) {
             var profiles = normalizedUniqueProfiles(stored.profiles)
+            if let migratedState = migratedLegacySeededDefaultStateIfNeeded(
+                profiles: profiles,
+                activeProfileID: stored.activeProfileID,
+                activeCustomization: activeCustomization
+            ) {
+                return migratedState
+            }
+
             if !profiles.isEmpty {
                 let preferredActiveID = stored.activeProfileID ?? profiles[0].id
                 let activeProfileID: UUID
@@ -4764,66 +4794,54 @@ enum GamepadConfigurationProfilePersistence {
         return profileID
     }
 
+    private static func migratedLegacySeededDefaultStateIfNeeded(
+        profiles: [GamepadConfigurationProfile],
+        activeProfileID: UUID?,
+        activeCustomization: GamepadCustomization
+    ) -> LoadedState? {
+        guard isLegacySeededDefaultProfileList(profiles) else { return nil }
+
+        let selectedProfileID = validProfileID(activeProfileID, in: profiles) ?? profiles[0].id
+        var starterProfile = profiles.first { $0.id == selectedProfileID } ?? profiles[0]
+        let normalizedActiveCustomization = activeCustomization.normalized
+        let activeLooksLikeOldDefault = normalizedActiveCustomization.hasSamePresentation(as: GamepadCustomization.defaultValue.normalized)
+            || normalizedActiveCustomization.hasSamePresentation(as: GamepadCustomization.blankCanvas)
+
+        if starterProfile.name == "Current Setup", activeLooksLikeOldDefault {
+            starterProfile.name = "My First Keypad"
+            starterProfile.customization = GamepadCustomization.blankCanvas
+        } else {
+            starterProfile.customization = normalizedActiveCustomization
+        }
+
+        starterProfile.landscapeCustomization = nil
+        starterProfile.portraitCustomization = nil
+        starterProfile.updatedAt = Date.currentMilliseconds
+        let normalizedProfile = starterProfile.normalized
+        return LoadedState(
+            profiles: [normalizedProfile],
+            activeProfileID: normalizedProfile.id,
+            defaultProfileID: normalizedProfile.id
+        )
+    }
+
+    private static func isLegacySeededDefaultProfileList(_ profiles: [GamepadConfigurationProfile]) -> Bool {
+        profiles.map(\.name) == legacySeededDefaultProfileNames
+    }
+
     private static func defaultProfiles(activeCustomization: GamepadCustomization) -> [GamepadConfigurationProfile] {
-        var standard = GamepadCustomization.defaultValue
-        standard.accentStyle = .monochrome
-
-        var southpaw = GamepadCustomization.defaultValue
-        southpaw.layoutMode = .southpaw
-        southpaw.accentStyle = .purple
-
-        var largeBlue = GamepadCustomization.defaultValue
-        largeBlue.controlScale = .large
-        largeBlue.accentStyle = .blue
-
-        var compact = GamepadCustomization.defaultValue
-        compact.controlScale = .compact
-        compact.showsButtonLabels = false
-
-        var dualStick = GamepadCustomization.blankCanvas
-        dualStick.accentStyle = .blue
-        dualStick.addJoystick(outputSettings: .analogLeftStick)
-        dualStick.addJoystick(outputSettings: .analogRightStick)
-        dualStick.addCustomButton(mappedTo: .jump)
-        if let jumpIndex = dualStick.customButtons.indices.last {
-            dualStick.customButtons[jumpIndex].label = "Fire"
-            dualStick.customButtons[jumpIndex].layout.centerX = 0.50
-            dualStick.customButtons[jumpIndex].layout.centerY = 0.78
-            dualStick.customButtons[jumpIndex].layout.widthScale = 1.08
-            dualStick.customButtons[jumpIndex].layout.heightScale = 1.08
-            dualStick.customButtons[jumpIndex].layout.accentStyle = .monochrome
-        }
-        dualStick.addCustomButton(mappedTo: .attack)
-        if let actionIndex = dualStick.customButtons.indices.last {
-            dualStick.customButtons[actionIndex].label = "Action"
-            dualStick.customButtons[actionIndex].layout.centerX = 0.50
-            dualStick.customButtons[actionIndex].layout.centerY = 0.52
-            dualStick.customButtons[actionIndex].layout.widthScale = 0.96
-            dualStick.customButtons[actionIndex].layout.heightScale = 0.96
-            dualStick.customButtons[actionIndex].layout.accentStyle = .purple
-        }
+        let normalizedActiveCustomization = activeCustomization.normalized
+        let defaultCustomization = GamepadCustomization.defaultValue.normalized
+        let blankCustomization = GamepadCustomization.blankCanvas
+        let hasLegacyCustomization = !normalizedActiveCustomization.hasSamePresentation(as: defaultCustomization)
+            && !normalizedActiveCustomization.hasSamePresentation(as: blankCustomization)
+        let starterCustomization = hasLegacyCustomization
+            ? normalizedActiveCustomization
+            : GamepadCustomization.blankCanvas
+        let starterName = hasLegacyCustomization ? "Current Setup" : "My First Keypad"
 
         return [
-            GamepadConfigurationProfile(name: "Current Setup", customization: activeCustomization),
-            GamepadControllerTemplate.nes.makeProfile(),
-            GamepadControllerTemplate.snes.makeProfile(),
-            GamepadControllerTemplate.nintendo64.makeProfile(),
-            GamepadControllerTemplate.gameCube.makeProfile(),
-            GamepadControllerTemplate.gameBoy.makeProfile(),
-            GamepadControllerTemplate.gameBoyAdvance.makeProfile(),
-            GamepadControllerTemplate.genesisSixButton.makeProfile(),
-            GamepadControllerTemplate.saturn.makeProfile(),
-            GamepadControllerTemplate.dreamcast.makeProfile(),
-            GamepadControllerTemplate.arcadeStick.makeProfile(),
-            GamepadControllerTemplate.psp.makeProfile(),
-            GamepadControllerTemplate.playStation.makeProfile(),
-            GamepadControllerTemplate.xbox.makeProfile(),
-            GamepadControllerTemplate.softWhite.makeProfile(),
-            GamepadConfigurationProfile(name: "Navigation Left", customization: standard),
-            GamepadConfigurationProfile(name: "Actions Left", customization: southpaw),
-            GamepadConfigurationProfile(name: "Dual Stick Shooter", customization: dualStick),
-            GamepadConfigurationProfile(name: "Large Blue", customization: largeBlue),
-            GamepadConfigurationProfile(name: "Compact Minimal", customization: compact)
+            GamepadConfigurationProfile(name: starterName, customization: starterCustomization)
         ]
     }
 }
@@ -6293,6 +6311,97 @@ private enum GamepadInspectorAccordionSection: Hashable {
     case keypadComponents
 }
 
+private enum GamepadEditorOnboardingTarget: Hashable {
+    case setups
+    case canvas
+    case toolbar
+    case inspector
+}
+
+private enum GamepadEditorFirstKeypadStep: Int, CaseIterable, Identifiable, Equatable {
+    case setups
+    case canvas
+    case toolbar
+    case inspector
+
+    var id: Int { rawValue }
+
+    var target: GamepadEditorOnboardingTarget {
+        switch self {
+        case .setups: .setups
+        case .canvas: .canvas
+        case .toolbar: .toolbar
+        case .inspector: .inspector
+        }
+    }
+
+    var eyebrow: String {
+        "Step \(rawValue + 1) of \(Self.allCases.count)"
+    }
+
+    var title: String {
+        switch self {
+        case .setups:
+            "Start with one blank setup"
+        case .canvas:
+            "Build the keypad on the canvas"
+        case .toolbar:
+            "Add controls from the toolbar"
+        case .inspector:
+            "Tune shortcuts in the inspector"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .setups:
+            "PocketPad no longer preloads every controller template. Your first setup starts empty so you can name it, duplicate it, or add templates only when you need them."
+        case .canvas:
+            "This iPhone canvas is where your controls will live. Use the starter card to show default controls, add a joystick, or switch into draw mode for a custom button."
+        case .toolbar:
+            "The floating toolbar is the fastest path: choose Layout tools for default controls, joysticks, triggers, or trackpads; choose Shape tools to draw your own keys."
+        case .inspector:
+            "Select any control to edit its label, shortcut output, fill, size, haptics, and positioning. Keypad-level settings live here while nothing is selected."
+        }
+    }
+
+    var nextTitle: String {
+        next == nil ? "Finish" : "Next"
+    }
+
+    var next: GamepadEditorFirstKeypadStep? {
+        switch self {
+        case .setups:
+            .canvas
+        case .canvas:
+            .toolbar
+        case .toolbar:
+            .inspector
+        case .inspector:
+            nil
+        }
+    }
+}
+
+private struct GamepadEditorOnboardingTargetPreferenceKey: PreferenceKey {
+    static var defaultValue: [GamepadEditorOnboardingTarget: Anchor<CGRect>] = [:]
+
+    static func reduce(
+        value: inout [GamepadEditorOnboardingTarget: Anchor<CGRect>],
+        nextValue: () -> [GamepadEditorOnboardingTarget: Anchor<CGRect>]
+    ) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+private extension View {
+    func gamepadEditorOnboardingTarget(_ target: GamepadEditorOnboardingTarget) -> some View {
+        anchorPreference(key: GamepadEditorOnboardingTargetPreferenceKey.self, value: .bounds) { anchor in
+            [target: anchor]
+        }
+    }
+}
+
 struct GamepadCustomizationEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
@@ -6367,7 +6476,10 @@ struct GamepadCustomizationEditor: View {
     @State private var draftInspectorSidebarWidth: CGFloat?
     @State private var draftCanvasZoom: CGFloat?
     @State private var undoTarget = GamepadEditorUndoTarget()
+    @State private var activeFirstKeypadOnboardingStep: GamepadEditorFirstKeypadStep?
     @FocusState private var isProfileNameFieldFocused: Bool
+    @AppStorage(PocketPadMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey) private var hasCompletedFirstKeypadOnboarding = false
+    @AppStorage(PocketPadMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey) private var isFirstKeypadOnboardingReplayRequested = false
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
     @AppStorage("PocketPad.GamepadEditor.canvasZoom") private var canvasZoomValue: Double = 1.0
@@ -6512,6 +6624,22 @@ struct GamepadCustomizationEditor: View {
                 }
             }
         }
+        .overlayPreferenceValue(GamepadEditorOnboardingTargetPreferenceKey.self) { anchors in
+            GeometryReader { proxy in
+                if let step = activeFirstKeypadOnboardingStep {
+                    GamepadEditorFirstKeypadOverlay(
+                        step: step,
+                        targetRect: anchors[step.target].map { proxy[$0] },
+                        containerSize: proxy.size,
+                        onNext: advanceFirstKeypadOnboarding,
+                        onSkip: completeFirstKeypadOnboarding
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.985)))
+                }
+            }
+            .allowsHitTesting(activeFirstKeypadOnboardingStep != nil)
+        }
+        .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.16) : .spring(response: 0.34, dampingFraction: 0.88), value: activeFirstKeypadOnboardingStep)
         .onChange(of: observedExternalProfiles) { _, _ in
             syncExternalProfileState()
         }
@@ -6527,6 +6655,13 @@ struct GamepadCustomizationEditor: View {
         .onAppear {
             applyConnectedDeviceFrameIfAvailable()
             applySelectedProfileCustomizationForCurrentOrientation()
+            presentFirstKeypadOnboardingIfNeeded()
+        }
+        .onChange(of: isFirstKeypadOnboardingReplayRequested) { _, requested in
+            if requested {
+                hasCompletedFirstKeypadOnboarding = false
+                presentFirstKeypadOnboardingIfNeeded()
+            }
         }
         .onChange(of: customization.deviceCanvas) { _, _ in
             selectedProfileOrientation = activeDeviceFrame.orientation
@@ -6534,6 +6669,13 @@ struct GamepadCustomizationEditor: View {
         }
         .onChange(of: connectedDeviceInfo) { _, _ in
             applyConnectedDeviceFrameIfAvailable()
+        }
+        .onChange(of: componentListItems.count) { _, newCount in
+            if newCount > 0 {
+                completeFirstKeypadOnboarding()
+            } else {
+                presentFirstKeypadOnboardingIfNeeded()
+            }
         }
         .onChange(of: isProfileNameFieldFocused) { _, isFocused in
             if !isFocused {
@@ -6617,7 +6759,7 @@ struct GamepadCustomizationEditor: View {
                         Text("Setups")
                             .geistTypography(.heading20)
                             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                        Text("Switch keypad setups quickly.")
+                        Text("Create and organize keypad setups.")
                             .geistTypography(.copy13)
                             .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     }
@@ -6659,6 +6801,7 @@ struct GamepadCustomizationEditor: View {
             }
         }
         .background(Geist.color(.background200, scheme: colorScheme))
+        .gamepadEditorOnboardingTarget(.setups)
     }
 
     private var configurationCompactSection: some View {
@@ -6668,7 +6811,7 @@ struct GamepadCustomizationEditor: View {
                     Text("Setups")
                         .geistTypography(.heading20)
                         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    Text("Choose a saved setup before editing.")
+                    Text("Create a setup, then add the controls you need.")
                         .geistTypography(.copy13)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 }
@@ -6705,6 +6848,7 @@ struct GamepadCustomizationEditor: View {
             configurationFooter
         }
         .geistPanel(padding: Geist.Spacing.s4, radius: Geist.Radius.md, raised: false)
+        .gamepadEditorOnboardingTarget(.setups)
     }
 
     private func templateMenu(showsTitle: Bool) -> some View {
@@ -7258,6 +7402,72 @@ struct GamepadCustomizationEditor: View {
         }
     }
 
+    private var isFirstKeypadBlank: Bool {
+        profiles.count == 1 && componentListItems.isEmpty
+    }
+
+    private var shouldOfferFirstKeypadOnboarding: Bool {
+        showsPreview && !hasCompletedFirstKeypadOnboarding && (isFirstKeypadBlank || isFirstKeypadOnboardingReplayRequested)
+    }
+
+    private var shouldShowBlankSetupCanvasCard: Bool {
+        componentListItems.isEmpty && activeCanvasTool == .select
+    }
+
+    private var blankSetupCanvasCard: some View {
+        GamepadEditorBlankSetupCard(
+            onShowDefaultControls: {
+                setBuiltInControlsHidden(false)
+                completeFirstKeypadOnboarding()
+            },
+            onAddJoystick: {
+                addJoystickControl()
+                completeFirstKeypadOnboarding()
+            },
+            onDrawButton: {
+                activeCanvasTool = .rectangle
+                completeFirstKeypadOnboarding()
+            },
+            onShowTour: {
+                restartFirstKeypadOnboarding()
+            }
+        )
+    }
+
+    private func presentFirstKeypadOnboardingIfNeeded() {
+        guard shouldOfferFirstKeypadOnboarding, activeFirstKeypadOnboardingStep == nil else { return }
+        DispatchQueue.main.async {
+            guard shouldOfferFirstKeypadOnboarding, activeFirstKeypadOnboardingStep == nil else { return }
+            activeFirstKeypadOnboardingStep = .setups
+        }
+    }
+
+    private func restartFirstKeypadOnboarding() {
+        isFirstKeypadOnboardingReplayRequested = true
+        hasCompletedFirstKeypadOnboarding = false
+        activeFirstKeypadOnboardingStep = .setups
+    }
+
+    private func advanceFirstKeypadOnboarding() {
+        guard let currentStep = activeFirstKeypadOnboardingStep else {
+            presentFirstKeypadOnboardingIfNeeded()
+            return
+        }
+
+        if let nextStep = currentStep.next {
+            activeFirstKeypadOnboardingStep = nextStep
+        } else {
+            completeFirstKeypadOnboarding()
+        }
+    }
+
+    private func completeFirstKeypadOnboarding() {
+        guard activeFirstKeypadOnboardingStep != nil || !hasCompletedFirstKeypadOnboarding || isFirstKeypadOnboardingReplayRequested else { return }
+        hasCompletedFirstKeypadOnboarding = true
+        isFirstKeypadOnboardingReplayRequested = false
+        activeFirstKeypadOnboardingStep = nil
+    }
+
     private var defaultProfileButton: some View {
         Button {
             setSelectedProfileAsDefault()
@@ -7324,6 +7534,7 @@ struct GamepadCustomizationEditor: View {
                 noteCanvasLayoutSize(width: deviceFrame.screenRect.width, height: deviceFrame.screenRect.height)
             }
         }
+        .gamepadEditorOnboardingTarget(.canvas)
     }
 
     private func canvasViewport(
@@ -7387,6 +7598,13 @@ struct GamepadCustomizationEditor: View {
             .frame(width: max(viewportWidth, outerWidth), height: max(viewportHeight, outerHeight))
         }
         .frame(height: viewportHeight)
+        .overlay {
+            if shouldShowBlankSetupCanvasCard {
+                blankSetupCanvasCard
+                    .padding(Geist.Spacing.s6)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
         .overlay(alignment: .bottom) {
             canvasFloatingCreationToolbar
                 .padding(.bottom, Geist.Spacing.s4)
@@ -7529,6 +7747,7 @@ struct GamepadCustomizationEditor: View {
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.38 : 0.16), radius: 18, x: 0, y: 8)
+        .gamepadEditorOnboardingTarget(.toolbar)
     }
 
     private func canvasToolButton(_ tool: GamepadCanvasTool) -> some View {
@@ -7652,6 +7871,7 @@ struct GamepadCustomizationEditor: View {
             }
         }
         .background(Geist.color(.background200, scheme: colorScheme))
+        .gamepadEditorOnboardingTarget(.inspector)
     }
 
     private var inspectorCompactSection: some View {
@@ -7660,6 +7880,7 @@ struct GamepadCustomizationEditor: View {
             inspectorContent
         }
         .geistPanel(padding: Geist.Spacing.s4, radius: Geist.Radius.md, raised: false)
+        .gamepadEditorOnboardingTarget(.inspector)
     }
 
     private var inspectorHeader: some View {
@@ -13173,6 +13394,324 @@ struct GamepadCustomizationEditor: View {
             defaultProfileID: state.defaultProfileID
         )
         onProfilesChanged?(state.profiles, state.activeProfileID, state.defaultProfileID)
+    }
+}
+
+private struct GamepadEditorBlankSetupCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @State private var isHoverPulseActive = false
+
+    var onShowDefaultControls: () -> Void
+    var onAddJoystick: () -> Void
+    var onDrawButton: () -> Void
+    var onShowTour: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            HStack(alignment: .top, spacing: Geist.Spacing.s3) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                        .fill(Geist.color(.blue100, scheme: colorScheme))
+                        .frame(width: 48, height: 48)
+
+                    Image(systemName: "hand.point.up.left.and.text")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
+
+                    if !accessibilityReduceMotion {
+                        RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                            .stroke(Geist.color(.blue700, scheme: colorScheme), lineWidth: 1.5)
+                            .frame(width: 48, height: 48)
+                            .scaleEffect(isHoverPulseActive ? 1.32 : 1.0)
+                            .opacity(isHoverPulseActive ? 0.02 : 0.55)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                    Text("Create your first keypad")
+                        .geistTypography(.heading20)
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    Text("Start from a blank canvas. Add only the controls you need, then select each one to assign labels, shortcuts, and style.")
+                        .geistTypography(.copy13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: Geist.Spacing.s2)], alignment: .leading, spacing: Geist.Spacing.s2) {
+                GamepadEditorStarterStepCard(step: "1", title: "Add controls", text: "Use default buttons, a joystick, or draw a custom key.")
+                GamepadEditorStarterStepCard(step: "2", title: "Bind actions", text: "Select an element and set its keyboard or gamepad output.")
+                GamepadEditorStarterStepCard(step: "3", title: "Test on iPhone", text: "Pair your phone and the active setup syncs automatically.")
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Geist.Spacing.s2) {
+                    starterButtons
+                }
+
+                VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                    starterButtons
+                }
+            }
+        }
+        .padding(Geist.Spacing.s4)
+        .frame(maxWidth: 560, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                .fill(Geist.color(.background100, scheme: colorScheme).opacity(0.96))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.38 : 0.12), radius: 24, x: 0, y: 14)
+        .onAppear(perform: startPulseIfNeeded)
+    }
+
+    @ViewBuilder
+    private var starterButtons: some View {
+        Button(action: onShowDefaultControls) {
+            Label("Show Default Controls", systemImage: "square.grid.3x3")
+        }
+        .geistButtonStyle(.primary, size: .small)
+
+        Button(action: onAddJoystick) {
+            Label("Add Joystick", systemImage: "circle.circle")
+        }
+        .geistButtonStyle(.secondary, size: .small)
+
+        Button(action: onDrawButton) {
+            Label("Draw Button", systemImage: "rectangle.roundedtop")
+        }
+        .geistButtonStyle(.secondary, size: .small)
+
+        Button(action: onShowTour) {
+            Label("Tour UI", systemImage: "sparkles")
+        }
+        .geistButtonStyle(.tertiary, size: .small)
+    }
+
+    private func startPulseIfNeeded() {
+        guard !accessibilityReduceMotion else { return }
+        withAnimation(.easeOut(duration: 1.45).repeatForever(autoreverses: false)) {
+            isHoverPulseActive = true
+        }
+    }
+}
+
+private struct GamepadEditorStarterStepCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let step: String
+    let title: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Geist.Spacing.s2) {
+            Text(step)
+                .geistTypography(.label12)
+                .foregroundStyle(Color.white)
+                .frame(width: 22, height: 22)
+                .background(Geist.color(.gray1000, scheme: colorScheme), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text(text)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Geist.Spacing.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+}
+
+private struct GamepadEditorFirstKeypadOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @State private var isPulseActive = false
+
+    var step: GamepadEditorFirstKeypadStep
+    var targetRect: CGRect?
+    var containerSize: CGSize
+    var onNext: () -> Void
+    var onSkip: () -> Void
+
+    var body: some View {
+        let highlight = highlightedRect
+
+        ZStack(alignment: .topLeading) {
+            GamepadEditorSpotlightScrim(targetRect: highlight)
+
+            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                .stroke(Geist.color(.blue700, scheme: colorScheme), lineWidth: 2)
+                .frame(width: highlight.width, height: highlight.height)
+                .offset(x: highlight.minX, y: highlight.minY)
+
+            if !accessibilityReduceMotion {
+                RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                    .stroke(Geist.color(.blue700, scheme: colorScheme).opacity(0.58), lineWidth: 2)
+                    .frame(width: highlight.width, height: highlight.height)
+                    .scaleEffect(isPulseActive ? 1.08 : 1.0)
+                    .opacity(isPulseActive ? 0.03 : 0.7)
+                    .offset(x: highlight.minX, y: highlight.minY)
+            }
+
+            coachCard
+                .frame(width: cardWidth)
+                .offset(x: cardOrigin.x, y: cardOrigin.y)
+        }
+        .onAppear(perform: startPulseIfNeeded)
+        .onChange(of: step) { _, _ in
+            restartPulse()
+        }
+    }
+
+    private var coachCard: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            HStack(spacing: Geist.Spacing.s2) {
+                Text(step.eyebrow.uppercased())
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Button(action: onSkip) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        .frame(width: 28, height: 28)
+                        .background(Geist.color(.gray100, scheme: colorScheme), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Skip first keypad tour")
+            }
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text(step.title)
+                    .geistTypography(.heading20)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(step.message)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: Geist.Spacing.s2) {
+                Button("Skip", action: onSkip)
+                    .geistButtonStyle(.tertiary, size: .small)
+
+                Spacer(minLength: Geist.Spacing.s2)
+
+                Button(action: onNext) {
+                    Label(step.nextTitle, systemImage: step.next == nil ? "checkmark" : "arrow.right")
+                }
+                .geistButtonStyle(.primary, size: .small)
+            }
+        }
+        .padding(Geist.Spacing.s4)
+        .background(Geist.color(.background100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.36 : 0.14), radius: 22, x: 0, y: 12)
+    }
+
+    private var highlightedRect: CGRect {
+        let source = targetRect?.standardized ?? fallbackRect
+        let padded = source.insetBy(dx: -12, dy: -12)
+        let bounds = CGRect(origin: .zero, size: containerSize).insetBy(dx: 8, dy: 8)
+        let clipped = padded.intersection(bounds)
+        return clipped.isNull || clipped.isEmpty ? fallbackRect : clipped
+    }
+
+    private var fallbackRect: CGRect {
+        switch step.target {
+        case .setups:
+            CGRect(x: 16, y: 24, width: min(280, max(180, containerSize.width * 0.26)), height: max(180, containerSize.height - 48))
+        case .canvas:
+            CGRect(x: max(24, containerSize.width * 0.30), y: max(48, containerSize.height * 0.18), width: max(220, containerSize.width * 0.40), height: max(180, containerSize.height * 0.46))
+        case .toolbar:
+            CGRect(x: max(40, containerSize.width * 0.35), y: max(80, containerSize.height - 120), width: max(260, containerSize.width * 0.30), height: 76)
+        case .inspector:
+            CGRect(x: max(24, containerSize.width - min(360, containerSize.width * 0.32) - 16), y: 24, width: min(360, max(220, containerSize.width * 0.32)), height: max(180, containerSize.height - 48))
+        }
+    }
+
+    private var cardWidth: CGFloat {
+        min(360, max(280, containerSize.width - 32))
+    }
+
+    private var cardOrigin: CGPoint {
+        let highlight = highlightedRect
+        let estimatedHeight: CGFloat = 236
+        let wantsBelow = highlight.midY < containerSize.height * 0.52
+        let rawY = wantsBelow ? highlight.maxY + 18 : highlight.minY - estimatedHeight - 18
+        let rawX: CGFloat
+
+        switch step.target {
+        case .setups:
+            rawX = highlight.maxX + 18
+        case .inspector:
+            rawX = highlight.minX - cardWidth - 18
+        default:
+            rawX = highlight.midX - cardWidth / 2
+        }
+
+        let maxX = max(16, containerSize.width - cardWidth - 16)
+        let maxY = max(18, containerSize.height - estimatedHeight - 18)
+
+        return CGPoint(
+            x: min(max(rawX, 16), maxX),
+            y: min(max(rawY, 18), maxY)
+        )
+    }
+
+    private func startPulseIfNeeded() {
+        guard !accessibilityReduceMotion else { return }
+        withAnimation(.easeOut(duration: 1.35).repeatForever(autoreverses: false)) {
+            isPulseActive = true
+        }
+    }
+
+    private func restartPulse() {
+        guard !accessibilityReduceMotion else { return }
+        isPulseActive = false
+        DispatchQueue.main.async {
+            startPulseIfNeeded()
+        }
+    }
+}
+
+private struct GamepadEditorSpotlightScrim: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var targetRect: CGRect
+
+    var body: some View {
+        Canvas { context, size in
+            var path = Path(CGRect(origin: .zero, size: size))
+            path.addRoundedRect(
+                in: targetRect,
+                cornerSize: CGSize(width: Geist.Radius.lg, height: Geist.Radius.lg),
+                style: .continuous
+            )
+            context.fill(
+                path,
+                with: .color(Geist.color(.background100, scheme: colorScheme).opacity(colorScheme == .dark ? 0.78 : 0.68)),
+                style: FillStyle(eoFill: true)
+            )
+        }
+        .ignoresSafeArea()
     }
 }
 

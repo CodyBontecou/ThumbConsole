@@ -136,7 +136,8 @@ private final class ControllerInputTransport {
                 timestamp: ControllerWireCodec.inputSequenceTimestamp(
                     for: snapshot.sequenceNumber,
                     pressIdentifier: pressIdentifier
-                )
+                ),
+                sentAt: Date.currentMilliseconds
             )
             guard let data = try? ControllerWireCodec.encode(message, using: encoder) else { return }
 

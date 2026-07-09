@@ -95,7 +95,9 @@ final class MacControllerServer: ObservableObject {
     private let pointerInjector = PointerInjector()
     private let virtualGamepadInjector = VirtualGamepadInjector()
     private let debugLogURL = URL(fileURLWithPath: "/tmp/pocketpad-mac-events.log")
+    private let captureLogURL = URL(fileURLWithPath: PocketPadMacIPC.captureLogPath)
     private let logQueue = DispatchQueue(label: "PocketPad.DebugLog", qos: .utility)
+    private let captureLogQueue = DispatchQueue(label: "PocketPad.CaptureLog", qos: .utility)
     private static let preferredPort: UInt16 = 8765
     private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
     private static let legacyKeyBindingsDefaultsKey = "PocketPadMac.keyBindings.v1"
@@ -166,6 +168,7 @@ final class MacControllerServer: ObservableObject {
     private var activeElementOutputBindings: [KeypadElementInputID: MacControlOutputBinding] = [:]
     private var heldBindingCounts: [MacKeyBinding: Int] = [:]
     private var heldGamepadButtonCounts: [VirtualGamepadButton: Int] = [:]
+    private var captureLogSequence: UInt64 = 0
     private var lastAnalogSequenceNumberByKey: [String: UInt64] = [:]
     private var activeAnalogStickLastSeenByStick: [VirtualGamepadStick: UInt64] = [:]
     private var activeAnalogTriggerLastSeenByTrigger: [VirtualGamepadTrigger: UInt64] = [:]
@@ -1291,6 +1294,7 @@ final class MacControllerServer: ObservableObject {
         lastAnalogSequenceNumberByKey.removeAll()
         activeAnalogStickLastSeenByStick.removeAll()
         activeAnalogTriggerLastSeenByTrigger.removeAll()
+        captureSystemEventOnNetworkQueue(kind: "release_all", detail: reason)
 
         guard !inputPressedButtons.isEmpty || !inputPressedElementInputs.isEmpty || !heldBindingCounts.isEmpty || !heldGamepadButtonCounts.isEmpty || !activePointerButtons.isEmpty else {
             virtualGamepadInjector.reset()
@@ -1928,12 +1932,36 @@ final class MacControllerServer: ObservableObject {
             let deltaX = message.deltaX ?? 0
             let deltaY = message.deltaY ?? 0
             pointerInjector.moveBy(deltaX: deltaX, deltaY: deltaY)
+            appendCaptureEvent(PocketPadCaptureEvent(
+                kind: "pointer",
+                source: source,
+                messageType: .pointer,
+                pointerEvent: event,
+                deltaX: deltaX,
+                deltaY: deltaY,
+                latencyMS: oneWayLatencyMilliseconds(from: captureLatencyTimestamp(for: message)),
+                pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+                pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+                activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue()
+            ))
             logInputEvent("pointer source=\(source) event=move dx=\(String(format: "%.2f", deltaX)) dy=\(String(format: "%.2f", deltaY))")
 
         case .scroll:
             let deltaX = message.deltaX ?? 0
             let deltaY = message.deltaY ?? 0
             pointerInjector.scrollBy(deltaX: deltaX, deltaY: deltaY)
+            appendCaptureEvent(PocketPadCaptureEvent(
+                kind: "pointer",
+                source: source,
+                messageType: .pointer,
+                pointerEvent: event,
+                deltaX: deltaX,
+                deltaY: deltaY,
+                latencyMS: oneWayLatencyMilliseconds(from: captureLatencyTimestamp(for: message)),
+                pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+                pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+                activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue()
+            ))
             logInputEvent("pointer source=\(source) event=scroll dx=\(String(format: "%.2f", deltaX)) dy=\(String(format: "%.2f", deltaY))")
 
         case .button:
@@ -1961,6 +1989,18 @@ final class MacControllerServer: ObservableObject {
                 rememberPointerButtonEvent(fingerprint)
                 pointerInjector.setButton(pointerButton, pressed: false)
             }
+            appendCaptureEvent(PocketPadCaptureEvent(
+                kind: "pointer",
+                source: source,
+                messageType: .pointer,
+                state: state,
+                pointerEvent: event,
+                pointerButton: pointerButton,
+                latencyMS: oneWayLatencyMilliseconds(from: captureLatencyTimestamp(for: message)),
+                pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+                pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+                activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue()
+            ))
             logInputEvent("pointer source=\(source) event=button button=\(pointerButton.rawValue) state=\(state.rawValue)")
         }
     }
@@ -2000,6 +2040,19 @@ final class MacControllerServer: ObservableObject {
                 activeAnalogStickLastSeenByStick[stick] = DispatchTime.now().uptimeNanoseconds
             }
             virtualGamepadInjector.setStick(stick, x: x, y: y)
+            appendCaptureEvent(PocketPadCaptureEvent(
+                kind: "gamepad_analog",
+                source: source,
+                messageType: .gamepadAnalog,
+                analogStick: stick,
+                analogX: x,
+                analogY: y,
+                inputSequence: message.analogSequence,
+                latencyMS: oneWayLatencyMilliseconds(from: captureLatencyTimestamp(for: message)),
+                pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+                pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+                activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue()
+            ))
             logInputEvent("gamepad_analog source=\(source) stick=\(stick.rawValue) x=\(String(format: "%.3f", x)) y=\(String(format: "%.3f", y))")
             return
         }
@@ -2015,6 +2068,18 @@ final class MacControllerServer: ObservableObject {
                 activeAnalogTriggerLastSeenByTrigger[trigger] = DispatchTime.now().uptimeNanoseconds
             }
             virtualGamepadInjector.setTrigger(trigger, value: value)
+            appendCaptureEvent(PocketPadCaptureEvent(
+                kind: "gamepad_analog",
+                source: source,
+                messageType: .gamepadAnalog,
+                analogTrigger: trigger,
+                analogValue: value,
+                inputSequence: message.analogSequence,
+                latencyMS: oneWayLatencyMilliseconds(from: captureLatencyTimestamp(for: message)),
+                pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+                pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+                activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue()
+            ))
             logInputEvent("gamepad_analog source=\(source) trigger=\(trigger.rawValue) value=\(String(format: "%.3f", value))")
             return
         }
@@ -2088,7 +2153,8 @@ final class MacControllerServer: ObservableObject {
             state: state,
             source: source,
             sequenceInspection: inspection,
-            pressIdentifier: ControllerWireCodec.inputPressIdentifier(from: message)
+            pressIdentifier: ControllerWireCodec.inputPressIdentifier(from: message),
+            messageTimestamp: captureLatencyTimestamp(for: message)
         )
     }
 
@@ -2097,7 +2163,8 @@ final class MacControllerServer: ObservableObject {
         state: ButtonPressState,
         source: String,
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
-        pressIdentifier: UInt64?
+        pressIdentifier: UInt64?,
+        messageTimestamp: Int64? = nil
     ) {
         if sequenceInspection.isOutOfOrderOrReset, sequenceInspection.hasSequence {
             return
@@ -2118,19 +2185,19 @@ final class MacControllerServer: ObservableObject {
 
                 logDebug("recovered_element_input_edge reason=missing_release_before_down input=\(input.storageKey) state=\(state.rawValue)")
                 resetElementHoldsOnNetworkQueue(for: input, keeping: pressIdentifier)
-                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source)
-                handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source)
+                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_release_before_down")
+                handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_release_before_down")
                 return
             }
 
             if recordElementPressBeganOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
-                handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source)
+                handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
             }
 
         case .up:
             switch recordElementPressEndedOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
             case .shouldReleaseKey:
-                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source)
+                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
 
             case .stillHeld:
                 break
@@ -2140,16 +2207,43 @@ final class MacControllerServer: ObservableObject {
                    !hasElementPressOnNetworkQueue(input)
                 {
                     logDebug("recovered_element_input_edge reason=missing_down_before_up input=\(input.storageKey) state=\(state.rawValue)")
-                    handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source)
-                    handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source)
+                    handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_down_before_up")
+                    handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_down_before_up")
                 } else {
+                    appendCaptureEvent(PocketPadCaptureEvent(
+                        kind: "ignored_element_input_edge",
+                        source: source,
+                        messageType: .elementInput,
+                        elementInput: input,
+                        elementLabel: elementDebugLabelOnNetworkQueue(for: input),
+                        state: state,
+                        inputSequence: sequenceInspection.receivedSequence,
+                        expectedSequence: sequenceInspection.expectedSequence,
+                        receivedSequence: sequenceInspection.receivedSequence,
+                        missedFrameCount: sequenceInspection.missedFrameCount > 0 ? sequenceInspection.missedFrameCount : nil,
+                        totalMissedButtonFrames: sequenceInspection.totalMissedFrameCount > 0 ? sequenceInspection.totalMissedFrameCount : nil,
+                        pressIdentifier: pressIdentifier,
+                        latencyMS: messageTimestamp.flatMap(oneWayLatencyMilliseconds(from:)),
+                        pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+                        pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+                        activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue(),
+                        detail: "orphan_up"
+                    ))
                     logDebug("ignored_element_input_edge reason=orphan_up input=\(input.storageKey) state=\(state.rawValue)")
                 }
             }
         }
     }
 
-    private func handleElementInputEdgeOnNetworkQueue(_ input: KeypadElementInputID, state: ButtonPressState, source: String) {
+    private func handleElementInputEdgeOnNetworkQueue(
+        _ input: KeypadElementInputID,
+        state: ButtonPressState,
+        source: String,
+        sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
+        pressIdentifier: UInt64? = nil,
+        messageTimestamp: Int64? = nil,
+        detail: String? = nil
+    ) {
         guard let baseOutput = elementOutputBindingOnNetworkQueue(for: input), !baseOutput.isEmpty else { return }
 
         switch state {
@@ -2161,6 +2255,17 @@ final class MacControllerServer: ObservableObject {
             inputPressedElementInputs.insert(input)
             let label = elementDebugLabelOnNetworkQueue(for: input)
             publishControllerDebug(event: "\(source): \(label) down (\(effectiveOutput.displayName))", pressedButtons: inputPressedButtons)
+            captureElementInputEventOnNetworkQueue(
+                source: source,
+                input: input,
+                label: label,
+                state: state,
+                binding: effectiveOutput,
+                sequenceInspection: sequenceInspection,
+                pressIdentifier: pressIdentifier,
+                messageTimestamp: messageTimestamp,
+                detail: detail
+            )
             logInputEvent("element_input source=\(source) input=\(input.storageKey) state=down binding=\(effectiveOutput.displayName)")
 
         case .up:
@@ -2170,6 +2275,17 @@ final class MacControllerServer: ObservableObject {
             inputPressedElementInputs.remove(input)
             let label = elementDebugLabelOnNetworkQueue(for: input)
             publishControllerDebug(event: "\(source): \(label) up (\(releasedOutput.displayName))", pressedButtons: inputPressedButtons)
+            captureElementInputEventOnNetworkQueue(
+                source: source,
+                input: input,
+                label: label,
+                state: state,
+                binding: releasedOutput,
+                sequenceInspection: sequenceInspection,
+                pressIdentifier: pressIdentifier,
+                messageTimestamp: messageTimestamp,
+                detail: detail
+            )
             logInputEvent("element_input source=\(source) input=\(input.storageKey) state=up binding=\(releasedOutput.displayName)")
         }
     }
@@ -2334,7 +2450,8 @@ final class MacControllerServer: ObservableObject {
             state: state,
             source: source,
             sequenceInspection: sequenceInspection,
-            pressIdentifier: ControllerWireCodec.buttonPressIdentifier(from: message)
+            pressIdentifier: ControllerWireCodec.buttonPressIdentifier(from: message),
+            messageTimestamp: captureLatencyTimestamp(for: message)
         )
     }
 
@@ -2477,7 +2594,8 @@ final class MacControllerServer: ObservableObject {
         state: ButtonPressState,
         source: String,
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
-        pressIdentifier: UInt64? = nil
+        pressIdentifier: UInt64? = nil,
+        messageTimestamp: Int64? = nil
     ) {
         if sequenceInspection.isOutOfOrderOrReset, sequenceInspection.hasSequence {
             return
@@ -2498,19 +2616,19 @@ final class MacControllerServer: ObservableObject {
 
                 noteRecoveredButtonEdge(button: button, state: state, reason: "missing_release_before_down")
                 resetPhysicalHoldsOnNetworkQueue(for: button, keeping: pressIdentifier)
-                handleButtonOnNetworkQueue(button, state: .up, source: source)
-                handleButtonOnNetworkQueue(button, state: .down, source: source)
+                handleButtonOnNetworkQueue(button, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_release_before_down")
+                handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_release_before_down")
                 return
             }
 
             if recordPhysicalPressBeganOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
-                handleButtonOnNetworkQueue(button, state: .down, source: source)
+                handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
             }
 
         case .up:
             switch recordPhysicalPressEndedOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
             case .shouldReleaseKey:
-                handleButtonOnNetworkQueue(button, state: .up, source: source)
+                handleButtonOnNetworkQueue(button, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
 
             case .stillHeld:
                 break
@@ -2520,8 +2638,8 @@ final class MacControllerServer: ObservableObject {
                    !hasPhysicalPressOnNetworkQueue(button)
                 {
                     noteRecoveredButtonEdge(button: button, state: state, reason: "missing_down_before_up")
-                    handleButtonOnNetworkQueue(button, state: .down, source: source)
-                    handleButtonOnNetworkQueue(button, state: .up, source: source)
+                    handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_down_before_up")
+                    handleButtonOnNetworkQueue(button, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_down_before_up")
                 } else {
                     noteIgnoredButtonEdge(button: button, state: state, reason: "orphan_up")
                 }
@@ -2529,7 +2647,15 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func handleButtonOnNetworkQueue(_ button: GameButton, state: ButtonPressState, source: String) {
+    private func handleButtonOnNetworkQueue(
+        _ button: GameButton,
+        state: ButtonPressState,
+        source: String,
+        sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
+        pressIdentifier: UInt64? = nil,
+        messageTimestamp: Int64? = nil,
+        detail: String? = nil
+    ) {
         let baseOutput = realtimeOutputBindings[button] ?? realtimeKeyBindings[button].map { MacControlOutputBinding.keyboard($0) }
         guard let baseOutput, !baseOutput.isEmpty else { return }
 
@@ -2547,6 +2673,16 @@ final class MacControllerServer: ObservableObject {
             activateOutput(effectiveOutput)
             inputPressedButtons.insert(button)
             publishInputDebugIfDue(source: source, button: button, state: state, binding: effectiveOutput)
+            captureButtonEventOnNetworkQueue(
+                source: source,
+                button: button,
+                state: state,
+                binding: effectiveOutput,
+                sequenceInspection: sequenceInspection,
+                pressIdentifier: pressIdentifier,
+                messageTimestamp: messageTimestamp,
+                detail: detail
+            )
             logInputEvent("button source=\(source) button=\(button.rawValue) state=down binding=\(effectiveOutput.displayName) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
 
         case .up:
@@ -2561,6 +2697,16 @@ final class MacControllerServer: ObservableObject {
             deactivateOutput(releasedOutput)
             inputPressedButtons.remove(button)
             publishInputDebugIfDue(source: source, button: button, state: state, binding: releasedOutput)
+            captureButtonEventOnNetworkQueue(
+                source: source,
+                button: button,
+                state: state,
+                binding: releasedOutput,
+                sequenceInspection: sequenceInspection,
+                pressIdentifier: pressIdentifier,
+                messageTimestamp: messageTimestamp,
+                detail: detail
+            )
             logInputEvent("button source=\(source) button=\(button.rawValue) state=up binding=\(releasedOutput.displayName) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
         }
     }
@@ -2855,6 +3001,15 @@ final class MacControllerServer: ObservableObject {
         let totalIgnoredButtonEdges = ignoredButtonEdgeCount
         let event = "Ignored \(button.rawValue) \(state.rawValue) (\(reason)); total ignored \(totalIgnoredButtonEdges)"
         publishIgnoredButtonEdge(totalIgnoredButtonEdges: totalIgnoredButtonEdges, event: event)
+        appendCaptureEvent(PocketPadCaptureEvent(
+            kind: "ignored_button_edge",
+            button: button,
+            state: state,
+            pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+            pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+            activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue(),
+            detail: reason
+        ))
         logDebug("ignored_button_edge reason=\(reason) button=\(button.rawValue) state=\(state.rawValue) pressed=\(self.inputPressedButtons.map(\.rawValue).sorted())")
     }
 
@@ -2877,6 +3032,15 @@ final class MacControllerServer: ObservableObject {
         let totalRecoveredButtonEdges = recoveredButtonEdgeCount
         let event = "Recovered \(button.rawValue) \(state.rawValue) (\(reason)); total recovered \(totalRecoveredButtonEdges)"
         publishRecoveredButtonEdge(totalRecoveredButtonEdges: totalRecoveredButtonEdges, event: event)
+        appendCaptureEvent(PocketPadCaptureEvent(
+            kind: "recovered_button_edge",
+            button: button,
+            state: state,
+            pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+            pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+            activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue(),
+            detail: reason
+        ))
         logDebug("recovered_button_edge reason=\(reason) button=\(button.rawValue) state=\(state.rawValue)")
     }
 
@@ -3545,7 +3709,8 @@ final class MacControllerServer: ObservableObject {
             virtualGamepadRightStickX: virtualGamepadStatus.rightStickX,
             virtualGamepadRightStickY: virtualGamepadStatus.rightStickY,
             virtualGamepadLeftTrigger: virtualGamepadStatus.leftTrigger,
-            virtualGamepadRightTrigger: virtualGamepadStatus.rightTrigger
+            virtualGamepadRightTrigger: virtualGamepadStatus.rightTrigger,
+            captureLogPath: captureLogURL.path
         )
     }
 
@@ -3562,6 +3727,126 @@ final class MacControllerServer: ObservableObject {
         } else {
             networkQueue.async(execute: work)
         }
+    }
+
+    private func capturePressedButtonsSnapshotOnNetworkQueue() -> [GameButton] {
+        GameButton.allCases.filter { inputPressedButtons.contains($0) }
+    }
+
+    private func capturePressedElementInputsSnapshotOnNetworkQueue() -> [String] {
+        inputPressedElementInputs.map(\.storageKey).sorted()
+    }
+
+    private func captureActivePointerButtonsSnapshotOnNetworkQueue() -> [ControllerPointerButton] {
+        activePointerButtons.sorted { $0.rawValue < $1.rawValue }
+    }
+
+    private func appendCaptureEvent(_ event: PocketPadCaptureEvent) {
+        var stampedEvent = event
+        stampedEvent.recordedAt = Date.currentMilliseconds
+        stampedEvent.uptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        let capturedEvent = stampedEvent
+        let captureLogURL = captureLogURL
+
+        captureLogQueue.async { [weak self] in
+            guard let self else { return }
+            if self.captureLogSequence == UInt64.max {
+                self.captureLogSequence = 0
+            }
+            self.captureLogSequence += 1
+
+            var event = capturedEvent
+            event.sequence = self.captureLogSequence
+            guard var data = try? JSONEncoder().encode(event) else { return }
+            data.append(0x0A)
+
+            if !FileManager.default.fileExists(atPath: captureLogURL.path) {
+                FileManager.default.createFile(atPath: captureLogURL.path, contents: nil)
+            }
+            if let handle = try? FileHandle(forWritingTo: captureLogURL) {
+                defer { try? handle.close() }
+                _ = try? handle.seekToEnd()
+                try? handle.write(contentsOf: data)
+            }
+        }
+    }
+
+    private func captureButtonEventOnNetworkQueue(
+        source: String,
+        button: GameButton,
+        state: ButtonPressState,
+        binding: MacControlOutputBinding? = nil,
+        sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
+        pressIdentifier: UInt64? = nil,
+        messageTimestamp: Int64? = nil,
+        detail: String? = nil
+    ) {
+        appendCaptureEvent(PocketPadCaptureEvent(
+            kind: "button",
+            source: source,
+            messageType: .button,
+            button: button,
+            state: state,
+            binding: binding?.displayName,
+            inputSequence: sequenceInspection.receivedSequence,
+            expectedSequence: sequenceInspection.expectedSequence,
+            receivedSequence: sequenceInspection.receivedSequence,
+            missedFrameCount: sequenceInspection.missedFrameCount > 0 ? sequenceInspection.missedFrameCount : nil,
+            totalMissedButtonFrames: sequenceInspection.totalMissedFrameCount > 0 ? sequenceInspection.totalMissedFrameCount : nil,
+            pressIdentifier: pressIdentifier,
+            latencyMS: messageTimestamp.flatMap(oneWayLatencyMilliseconds(from:)),
+            pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+            pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+            activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue(),
+            detail: detail
+        ))
+    }
+
+    private func captureElementInputEventOnNetworkQueue(
+        source: String,
+        input: KeypadElementInputID,
+        label: String,
+        state: ButtonPressState,
+        binding: MacControlOutputBinding? = nil,
+        sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
+        pressIdentifier: UInt64? = nil,
+        messageTimestamp: Int64? = nil,
+        detail: String? = nil
+    ) {
+        appendCaptureEvent(PocketPadCaptureEvent(
+            kind: "element_input",
+            source: source,
+            messageType: .elementInput,
+            elementInput: input,
+            elementLabel: label,
+            state: state,
+            binding: binding?.displayName,
+            inputSequence: sequenceInspection.receivedSequence,
+            expectedSequence: sequenceInspection.expectedSequence,
+            receivedSequence: sequenceInspection.receivedSequence,
+            missedFrameCount: sequenceInspection.missedFrameCount > 0 ? sequenceInspection.missedFrameCount : nil,
+            totalMissedButtonFrames: sequenceInspection.totalMissedFrameCount > 0 ? sequenceInspection.totalMissedFrameCount : nil,
+            pressIdentifier: pressIdentifier,
+            latencyMS: messageTimestamp.flatMap(oneWayLatencyMilliseconds(from:)),
+            pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+            pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+            activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue(),
+            detail: detail
+        ))
+    }
+
+    private func captureSystemEventOnNetworkQueue(kind: String, source: String? = nil, detail: String? = nil) {
+        appendCaptureEvent(PocketPadCaptureEvent(
+            kind: kind,
+            source: source,
+            pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
+            pressedElementInputs: capturePressedElementInputsSnapshotOnNetworkQueue(),
+            activePointerButtons: captureActivePointerButtonsSnapshotOnNetworkQueue(),
+            statusText: statusText,
+            clientName: clientName,
+            isClientConnected: isClientConnected,
+            detail: detail
+        ))
     }
 
     private func logInputEvent(_ line: @autoclosure @escaping () -> String) {
@@ -3583,6 +3868,10 @@ final class MacControllerServer: ObservableObject {
                 try? handle.write(contentsOf: Data(entry.utf8))
             }
         }
+    }
+
+    private func captureLatencyTimestamp(for message: ControllerMessage) -> Int64 {
+        message.sentAt ?? message.timestamp
     }
 
     private func oneWayLatencyMilliseconds(from timestamp: Int64) -> Int? {

@@ -7,7 +7,7 @@ struct MacContentView: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
-    @AppStorage("PocketPadMac.onboarding.completed.v1") private var hasCompletedOnboarding = false
+    @AppStorage(PocketPadMacIPC.onboardingCompletedDefaultsKey) private var hasCompletedOnboarding = false
     @State private var selectedSection: MacSidebarSection? = .home
     @State private var advancedConfigExpanded = false
     @State private var isShowingOnboarding = false
@@ -1076,6 +1076,19 @@ struct MacContentView: View {
         pasteboard.setString(text, forType: .string)
     }
 
+#if DEBUG
+    private func replayOnboardingFromDebugSettings() {
+        hasCompletedOnboarding = false
+        UserDefaults.standard.set(false, forKey: PocketPadMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey)
+        UserDefaults.standard.set(true, forKey: PocketPadMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey)
+        UserDefaults.standard.synchronize()
+        isShowingOnboarding = false
+        DispatchQueue.main.async {
+            isShowingOnboarding = true
+        }
+    }
+#endif
+
     private func contentScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
@@ -1527,6 +1540,30 @@ struct MacContentView: View {
             )
 
             MacInputDiagnosticsRows(activity: server.liveActivity)
+
+#if DEBUG
+            Divider()
+                .overlay(Geist.color(.grayAlpha400, scheme: colorScheme))
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                SectionHeader(
+                    title: "Debug Tools",
+                    subtitle: "Developer-only actions for replaying first-run flows."
+                )
+
+                Button {
+                    replayOnboardingFromDebugSettings()
+                } label: {
+                    Label("Replay Onboarding", systemImage: "arrow.counterclockwise")
+                }
+                .geistButtonStyle(.secondary)
+
+                Text("Resets the Mac setup guide and first-keypad editor tour, then opens the setup guide from the beginning.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+#endif
         }
         .geistPanel()
     }
@@ -2124,7 +2161,7 @@ private struct MacOnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                MacOnboardingInstructionCard(step: "1", title: "Choose or create a setup", text: "Use the left setup list to switch templates, duplicate a profile, or mark the active profile as the default.")
+                MacOnboardingInstructionCard(step: "1", title: "Create your first setup", text: "The editor starts with a blank setup. Add controls from the canvas toolbar, or open the templates menu only when you want an emulator-style starting point.")
                 MacOnboardingInstructionCard(step: "2", title: "Match your iPhone canvas", text: "Select the connected iPhone frame, then edit portrait and landscape variants so controls land where your thumbs expect.")
                 MacOnboardingInstructionCard(step: "3", title: "Move and style controls", text: "Drag controls on the canvas, use layout tools to add joysticks or trackpads, and adjust fills, icons, haptics, layers, and groups in the inspector.")
                 MacOnboardingInstructionCard(step: "4", title: "Record shortcuts", text: "Select a control, click the shortcut field, press the Mac shortcut or prefix sequence, then pause. The binding saves automatically.")
