@@ -1309,34 +1309,37 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     }
 
     var isDefault: Bool {
-        centerX == nil
-            && centerY == nil
-            && abs(widthScale - 1.0) < 0.001
-            && abs(heightScale - 1.0) < 0.001
-            && abs(rotationDegrees) < 0.001
-            && zIndex == 0
-            && shape == nil
-            && accentStyle == nil
-            && fillColor == nil
-            && lightFillColor == nil
-            && darkFillColor == nil
-            && fillStyle == nil
-            && lightFillStyle == nil
-            && darkFillStyle == nil
-            && joystickKnobColor == nil
-            && lightJoystickKnobColor == nil
-            && darkJoystickKnobColor == nil
-            && joystickVisualStyle == nil
-            && styleID == nil
-            && visualStyle == nil
-            && icon == nil
-            && hapticStyle == nil
-            && hapticFeedback == nil
-            && cornerRadius == nil
-            && cornerRadii == nil
-            && abs(shadowStrength - Self.defaultShadowStrength) < 0.001
-            && !isLocationLocked
-            && !isHidden
+        // Keep these checks sequential. In unoptimized builds, one long Boolean
+        // expression creates a 130+ KB stack frame for this frequently used getter.
+        if centerX != nil { return false }
+        if centerY != nil { return false }
+        if !(abs(widthScale - 1.0) < 0.001) { return false }
+        if !(abs(heightScale - 1.0) < 0.001) { return false }
+        if !(abs(rotationDegrees) < 0.001) { return false }
+        if zIndex != 0 { return false }
+        if shape != nil { return false }
+        if accentStyle != nil { return false }
+        if fillColor != nil { return false }
+        if lightFillColor != nil { return false }
+        if darkFillColor != nil { return false }
+        if fillStyle != nil { return false }
+        if lightFillStyle != nil { return false }
+        if darkFillStyle != nil { return false }
+        if joystickKnobColor != nil { return false }
+        if lightJoystickKnobColor != nil { return false }
+        if darkJoystickKnobColor != nil { return false }
+        if joystickVisualStyle != nil { return false }
+        if styleID != nil { return false }
+        if visualStyle != nil { return false }
+        if icon != nil { return false }
+        if hapticStyle != nil { return false }
+        if hapticFeedback != nil { return false }
+        if cornerRadius != nil { return false }
+        if cornerRadii != nil { return false }
+        if !(abs(shadowStrength - Self.defaultShadowStrength) < 0.001) { return false }
+        if isLocationLocked { return false }
+        if isHidden { return false }
+        return true
     }
 
     var hasCustomPosition: Bool {
@@ -2444,7 +2447,13 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         if normalizedControlBarItems != Self.defaultControlBarItems {
             try container.encode(normalizedControlBarItems, forKey: .controlBarItems)
         }
-        let normalizedControlBarItemCustomizations = normalized.controlBarItemCustomizations
+        // Do not normalize the entire customization from inside JSONEncoder. This runs
+        // on a 512 KB Network.framework dispatch stack during pairing, and the nested
+        // Codable frames plus a full GamepadCustomization copy can exhaust that stack.
+        let normalizedControlBarItemCustomizations = Self.normalizedControlBarItemCustomizations(
+            controlBarItemCustomizations,
+            for: normalizedControlBarItems
+        )
         if !normalizedControlBarItemCustomizations.isEmpty {
             try container.encode(normalizedControlBarItemCustomizations, forKey: .controlBarItemCustomizations)
         }
@@ -2747,6 +2756,20 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         return normalizedItems
     }
 
+    private static func normalizedControlBarItemCustomizations(
+        _ customizations: [GamepadControlBarItemCustomization],
+        for normalizedItems: [GamepadControlBarItem]
+    ) -> [GamepadControlBarItemCustomization] {
+        var latestAppearance: [GamepadControlBarItem: GamepadControlBarItemCustomization] = [:]
+        for customization in customizations {
+            latestAppearance[customization.item] = customization.normalized
+        }
+        return normalizedItems.compactMap { item in
+            guard let customization = latestAppearance[item], !customization.appearance.isDefault else { return nil }
+            return customization
+        }
+    }
+
     public func controlBarItemCustomization(for item: GamepadControlBarItem) -> GamepadButtonCustomization {
         controlBarItemCustomizations.last { $0.item == item }?.normalized.appearance ?? .defaultValue
     }
@@ -2923,14 +2946,10 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         if copy.topBarActivationRegion.centerY == nil { copy.topBarActivationRegion.centerY = Self.defaultTopBarActivationRegion.centerY }
         if copy.topBarActivationRegion.shape == nil { copy.topBarActivationRegion.shape = .capsule }
         copy.controlBarItems = Self.normalizedControlBarItems(controlBarItems)
-        var latestControlBarAppearance: [GamepadControlBarItem: GamepadControlBarItemCustomization] = [:]
-        for customization in controlBarItemCustomizations {
-            latestControlBarAppearance[customization.item] = customization.normalized
-        }
-        copy.controlBarItemCustomizations = copy.controlBarItems.compactMap { item in
-            guard let customization = latestControlBarAppearance[item], !customization.appearance.isDefault else { return nil }
-            return customization
-        }
+        copy.controlBarItemCustomizations = Self.normalizedControlBarItemCustomizations(
+            controlBarItemCustomizations,
+            for: copy.controlBarItems
+        )
         copy.styleLibrary = styleLibrary.normalized
         copy.assetLibrary = assetLibrary.normalized
         copy.designMetadata = designMetadata?.normalized(availableControls: copy.allControlIdentitiesForDesign)
@@ -9158,6 +9177,20 @@ struct GamepadCustomizationEditor: View {
             inspectorAccordionSection(.selectedElementIdentity, title: "Control Bar Item", subtitle: item.displayName) {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
                     selectedElementLabelControls
+
+#if os(macOS)
+                    if item == .launchTarget {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                            Text("Attached Application")
+                                .geistTypography(.heading14)
+                                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                            attachedApplicationSection
+                        }
+                    }
+#endif
 
                     GeistCheckboxToggle(title: "Show in control bar", isOn: visibleBinding(for: .controlBarItem(item)))
 

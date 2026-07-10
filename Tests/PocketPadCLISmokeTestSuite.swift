@@ -876,6 +876,203 @@ final class PocketPadCLISmokeTestSuite: XCTestCase {
         XCTAssertTrue(decoded.hasSamePresentation(as: customization.normalized))
     }
 
+    func testControllerLayoutRoutingSelectsStandardAndFreeformPresentations() {
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.layoutRoute(
+                orientation: .portrait,
+                isEditingLayout: false,
+                usesFreeformLayout: false
+            ),
+            .standard(.portrait)
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.layoutRoute(
+                orientation: .landscape,
+                isEditingLayout: false,
+                usesFreeformLayout: false
+            ),
+            .standard(.landscape)
+        )
+
+        for orientation in GamepadEditorDeviceOrientation.allCases {
+            XCTAssertEqual(
+                GamepadControllerPresentationRouting.layoutRoute(
+                    orientation: orientation,
+                    isEditingLayout: true,
+                    usesFreeformLayout: false
+                ),
+                .freeform(orientation)
+            )
+            XCTAssertEqual(
+                GamepadControllerPresentationRouting.layoutRoute(
+                    orientation: orientation,
+                    isEditingLayout: false,
+                    usesFreeformLayout: true
+                ),
+                .freeform(orientation)
+            )
+        }
+    }
+
+    func testControllerOrientationRoutingMatchesRuntimeGeometryRule() {
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.orientation(for: CGSize(width: 430, height: 932)),
+            .portrait
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.orientation(for: CGSize(width: 932, height: 430)),
+            .landscape
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.orientation(for: CGSize(width: 430, height: 430)),
+            .landscape
+        )
+    }
+
+    func testStandardControllerSlotsPreserveLayoutOrderWithoutBuilderBranches() {
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.standardSlots(
+                orientation: .landscape,
+                layoutMode: .standard
+            ),
+            [
+                .control(.dPad),
+                .flexibleSpace(0),
+                .control(.utilityButtons),
+                .flexibleSpace(1),
+                .control(.actionButtons)
+            ]
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.standardSlots(
+                orientation: .landscape,
+                layoutMode: .southpaw
+            ),
+            [
+                .control(.actionButtons),
+                .flexibleSpace(0),
+                .control(.utilityButtons),
+                .flexibleSpace(1),
+                .control(.dPad)
+            ]
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.standardSlots(
+                orientation: .portrait,
+                layoutMode: .standard
+            ),
+            [
+                .flexibleSpace(0),
+                .control(.dPad),
+                .control(.utilityButtons),
+                .control(.actionButtons),
+                .flexibleSpace(1)
+            ]
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.standardSlots(
+                orientation: .portrait,
+                layoutMode: .southpaw
+            ),
+            [
+                .flexibleSpace(0),
+                .control(.actionButtons),
+                .control(.utilityButtons),
+                .control(.dPad),
+                .flexibleSpace(1)
+            ]
+        )
+    }
+
+    func testControlBarRoutingFiltersUnavailableAndHiddenItemsInStableOrder() {
+        let items: [GamepadControlBarItem] = [
+            .profileMenu,
+            .home,
+            .profileMenu,
+            .launchTarget,
+            .settings,
+            .connectionStatus
+        ]
+
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.visibleControlBarItems(
+                items,
+                hiddenItems: [.settings],
+                hasProfiles: false,
+                hasLaunchTarget: false
+            ),
+            [.home, .connectionStatus]
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.visibleControlBarItems(
+                items,
+                hiddenItems: [],
+                hasProfiles: true,
+                hasLaunchTarget: true
+            ),
+            [.profileMenu, .home, .launchTarget, .settings, .connectionStatus]
+        )
+    }
+
+    func testResolvedControlRoutingPreservesSpecializedFallbacks() {
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.resolvedControlRoute(
+                kind: .decoration,
+                hasJoystickMapping: false,
+                hasTriggerSettings: false
+            ),
+            .decoration
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.resolvedControlRoute(
+                kind: .joystick,
+                hasJoystickMapping: true,
+                hasTriggerSettings: false
+            ),
+            .joystick
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.resolvedControlRoute(
+                kind: .joystick,
+                hasJoystickMapping: false,
+                hasTriggerSettings: false
+            ),
+            .button
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.resolvedControlRoute(
+                kind: .trigger,
+                hasJoystickMapping: false,
+                hasTriggerSettings: true
+            ),
+            .trigger
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.resolvedControlRoute(
+                kind: .trigger,
+                hasJoystickMapping: false,
+                hasTriggerSettings: false
+            ),
+            .button
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.resolvedControlRoute(
+                kind: .trackpad,
+                hasJoystickMapping: false,
+                hasTriggerSettings: false
+            ),
+            .trackpad
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.resolvedControlRoute(
+                kind: .button,
+                hasJoystickMapping: false,
+                hasTriggerSettings: false
+            ),
+            .button
+        )
+    }
+
     func testButtonPulseSequencerSmokeSuite() {
         ButtonPulseSequencerSmokeTests.main()
     }

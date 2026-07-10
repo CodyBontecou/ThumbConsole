@@ -29,6 +29,7 @@
 		4687661823546351CD6C1146 /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */; };
 		46D78851C48FE140E8B3F840 /* PointerInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A51251EA7E80E0F6DE48C2 /* PointerInjector.swift */; };
 		48299BA6EFD9AC53F8359174 /* GamepadLayoutResolverSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427655EF8F8DCCDDF4151EFD /* GamepadLayoutResolverSmokeTests.swift */; };
+		48F8907FA1D37A4F5B939D26 /* GamepadControllerPresentationRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 179904025CBB0DA827D3EFE8 /* GamepadControllerPresentationRouting.swift */; };
 		49CF065CF4DBF0EC25D0C2F2 /* ButtonPulseSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */; };
 		4E941CD6F638E01A06227B0B /* PocketPadCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30507A98A59620D45824305 /* PocketPadCLI.swift */; };
 		500B3137F3761D118DFA0802 /* PocketPadCLISmokeTestSuite.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2585E3D7919C41B0DD1E3732 /* PocketPadCLISmokeTestSuite.swift */; };
@@ -40,6 +41,7 @@
 		57FB2550A180A899489C75D9 /* GeistDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4588ADAD4AD4DB008BBFD16 /* GeistDesign.swift */; };
 		5CFB1D46E051BF18C690EE52 /* GamepadCustomization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 922775E765487887F3837392 /* GamepadCustomization.swift */; };
 		600038F03F8E323DDEFC0C29 /* ButtonPulseSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */; };
+		6109795BBBB8A16C850D6563 /* GamepadControllerPresentationRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 179904025CBB0DA827D3EFE8 /* GamepadControllerPresentationRouting.swift */; };
 		68BC0F7D9631B5D7BD50F487 /* GamepadOutputTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6E14C0396B7312432CF8E0 /* GamepadOutputTypes.swift */; };
 		6D9A335D0A47953AF7211A98 /* GamepadCustomization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 922775E765487887F3837392 /* GamepadCustomization.swift */; };
 		6DDE0A4FDE711087EBD7BEC3 /* KeypadConfigurationExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF66893E44A8CE1232825046 /* KeypadConfigurationExport.swift */; };
@@ -71,10 +73,12 @@
 		D2113CC27BF4077951FD74B7 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C2F6CF097E93197F4FD6CA8 /* MacContentView.swift */; };
 		D257549EE055E058B191547E /* GamepadLayoutQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA1A45662AC7C95053646856 /* GamepadLayoutQuality.swift */; };
 		D3C4D847C4BD79E1E49FA1AC /* KeypadConfigurationExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF66893E44A8CE1232825046 /* KeypadConfigurationExport.swift */; };
+		D4F6C6DF0F5F553A28A9FBA3 /* GamepadControllerPresentationRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 179904025CBB0DA827D3EFE8 /* GamepadControllerPresentationRouting.swift */; };
 		D5558ADF1D4BEC21EC65E5FE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D83664C1515CB78B79E90837 /* Assets.xcassets */; };
 		D8CA46B091015C9E09D8FDB4 /* GamepadDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3A0F4D2B5DA758A47BE78A /* GamepadDesignSystem.swift */; };
 		DC8E6F658D75509CDD7413DA /* VirtualGamepadInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEFA9CEFCA7FEE8A52FB94AE /* VirtualGamepadInjector.swift */; };
 		DFCCAEE5B80CCBD56D1DA19F /* KeyMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52DA2C9503876B04B5F82CED /* KeyMap.swift */; };
+		E55F63F2AF34193EA0F3E6E9 /* GamepadControllerPresentationRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 179904025CBB0DA827D3EFE8 /* GamepadControllerPresentationRouting.swift */; };
 		E5F19FD36059BCE180B0C61D /* GamepadEditorDeviceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA34DBC7CEC14A47E61489E /* GamepadEditorDeviceCatalog.swift */; };
 		E6463CACF06A58E8D36A7A0E /* ControllerActiveInputState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF870EDBA108E27F43D3B007 /* ControllerActiveInputState.swift */; };
 		E9777B1E6B22CB4D293A0DB9 /* TouchCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59D3034E486928F2E986F424 /* TouchCaptureView.swift */; };
@@ -88,6 +92,7 @@
 		0A6E14C0396B7312432CF8E0 /* GamepadOutputTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamepadOutputTypes.swift; sourceTree = "<group>"; };
 		0B6B6EC92CF5271AC7C1C5AC /* ButtonPulseSequencer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonPulseSequencer.swift; sourceTree = "<group>"; };
 		0C89F51B6A80B1068097A64E /* MacControllerServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacControllerServer.swift; sourceTree = "<group>"; };
+		179904025CBB0DA827D3EFE8 /* GamepadControllerPresentationRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamepadControllerPresentationRouting.swift; sourceTree = "<group>"; };
 		24683D0731B15D6DF61D6DCF /* ButtonPulseSequencerSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonPulseSequencerSmokeTests.swift; sourceTree = "<group>"; };
 		252777ED386D695443B445F6 /* PocketPadiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadiOSApp.swift; sourceTree = "<group>"; };
 		2585E3D7919C41B0DD1E3732 /* PocketPadCLISmokeTestSuite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadCLISmokeTestSuite.swift; sourceTree = "<group>"; };
@@ -170,6 +175,7 @@
 				EF870EDBA108E27F43D3B007 /* ControllerActiveInputState.swift */,
 				F31191DC6BBA1B5A23E1A5BA /* ControllerProtocol.swift */,
 				F6D8F46431AADCA454869111 /* GameKeypadGenerator.swift */,
+				179904025CBB0DA827D3EFE8 /* GamepadControllerPresentationRouting.swift */,
 				922775E765487887F3837392 /* GamepadCustomization.swift */,
 				8D3A0F4D2B5DA758A47BE78A /* GamepadDesignSystem.swift */,
 				6DA34DBC7CEC14A47E61489E /* GamepadEditorDeviceCatalog.swift */,
@@ -267,6 +273,7 @@
 			buildPhases = (
 				375D033A26419FC8280AA4BB /* Sources */,
 				EA3F7221383BDE13EE159B7F /* Resources */,
+				6DBB62B4D5FD17381A20645E /* Enforce Controller Stack Budget */,
 			);
 			buildRules = (
 			);
@@ -381,6 +388,28 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		6DBB62B4D5FD17381A20645E /* Enforce Controller Stack Budget */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Enforce Controller Stack Budget";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  python3 \"$SRCROOT/scripts/check-controller-stack-frames.py\" \\\n    --object-root \"${OBJECT_FILE_DIR_normal:-$OBJECT_FILE_DIR}\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		270D96E072EC178E87D66C90 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -392,6 +421,7 @@
 				530A5F92DD54A44268A2F110 /* ControllerActiveInputStateSmokeTests.swift in Sources */,
 				EF8D066BCD747261677E536A /* ControllerProtocol.swift in Sources */,
 				A7B2D43579605A1DAB888102 /* GameKeypadGenerator.swift in Sources */,
+				E55F63F2AF34193EA0F3E6E9 /* GamepadControllerPresentationRouting.swift in Sources */,
 				FB4488BF86CC171B27870AB7 /* GamepadCustomization.swift in Sources */,
 				352AE6CBE204A93C42C143D1 /* GamepadDesignSystem.swift in Sources */,
 				E5F19FD36059BCE180B0C61D /* GamepadEditorDeviceCatalog.swift in Sources */,
@@ -416,6 +446,7 @@
 				3BB1AE0B303818DE1B7AAD41 /* ControllerClient.swift in Sources */,
 				D0329A5F2B9E58AF0E701A1E /* ControllerProtocol.swift in Sources */,
 				526B15970673DD97D7EAC8B9 /* GameKeypadGenerator.swift in Sources */,
+				48F8907FA1D37A4F5B939D26 /* GamepadControllerPresentationRouting.swift in Sources */,
 				107405E3AE806F7FC3ACBDE6 /* GamepadCustomization.swift in Sources */,
 				334E14AB0FC604AAC2E6FE72 /* GamepadDesignSystem.swift in Sources */,
 				51E7979A47EC71A3FB7DE9B5 /* GamepadEditorDeviceCatalog.swift in Sources */,
@@ -440,6 +471,7 @@
 				E6463CACF06A58E8D36A7A0E /* ControllerActiveInputState.swift in Sources */,
 				4687661823546351CD6C1146 /* ControllerProtocol.swift in Sources */,
 				701820C62CC631B33C254E00 /* GameKeypadGenerator.swift in Sources */,
+				D4F6C6DF0F5F553A28A9FBA3 /* GamepadControllerPresentationRouting.swift in Sources */,
 				5CFB1D46E051BF18C690EE52 /* GamepadCustomization.swift in Sources */,
 				0E93A7C578442F1CD9ABB949 /* GamepadDesignSystem.swift in Sources */,
 				1D8B937A73EE3C3E3915A530 /* GamepadEditorDeviceCatalog.swift in Sources */,
@@ -468,6 +500,7 @@
 				7171DF3CC1D86D4BD09DD8C4 /* ControllerActiveInputState.swift in Sources */,
 				7E0425ED4D6D3B06013B1F3F /* ControllerProtocol.swift in Sources */,
 				A3DA9F5485B11EB360C1BC38 /* GameKeypadGenerator.swift in Sources */,
+				6109795BBBB8A16C850D6563 /* GamepadControllerPresentationRouting.swift in Sources */,
 				6D9A335D0A47953AF7211A98 /* GamepadCustomization.swift in Sources */,
 				D8CA46B091015C9E09D8FDB4 /* GamepadDesignSystem.swift in Sources */,
 				2EE262F8498497E662C63A0A /* GamepadEditorDeviceCatalog.swift in Sources */,
@@ -661,6 +694,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 67KC823C9A;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Resources/iOS/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -681,6 +715,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 67KC823C9A;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Resources/iOS/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
