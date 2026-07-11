@@ -5,9 +5,24 @@ import UIKit
 
 private final class ControllerInputTransport {
     private struct ButtonSendSnapshot {
+        let protocolVersion: Int?
+        let generation: UInt64?
         let sequenceNumber: UInt64
+        let mirrorGeneration: UInt64
         let reliableConnection: NWConnection
         let datagramConnection: NWConnection?
+    }
+
+    private enum AnalogPayload {
+        case stick(VirtualGamepadStick, x: Double, y: Double)
+        case trigger(VirtualGamepadTrigger, value: Double)
+
+        var key: String {
+            switch self {
+            case .stick(let stick, _, _): "stick.\(stick.rawValue)"
+            case .trigger(let trigger, _): "trigger.\(trigger.rawValue)"
+            }
+        }
     }
 
     private let networkQueue: DispatchQueue
@@ -15,7 +30,22 @@ private final class ControllerInputTransport {
     private var reliableConnection: NWConnection?
     private var realtimeDatagramConnection: NWConnection?
     private var isRealtimeDatagramReady = false
+    private var inputProtocolVersion = 1
+    private var inputGeneration: UInt64?
+    private var mirrorGeneration: UInt64 = 0
     private var buttonSequenceNumber: UInt64 = 0
+    private var pointerSequenceNumber: UInt64 = 0
+    private var lastPointerTimestamp: Int64 = 0
+    private var activeButtons = ControllerActiveInputState()
+    private var activeElementIdentifiers: [KeypadElementInputID: Set<UInt64>] = [:]
+    private var activeAnonymousElementCounts: [KeypadElementInputID: Int] = [:]
+    private var heartbeatTimer: DispatchSourceTimer?
+    private var analogSequenceNumber: UInt64 = 0
+    private var activeStickValues: [VirtualGamepadStick: (x: Double, y: Double)] = [:]
+    private var activeTriggerValues: [VirtualGamepadTrigger: Double] = [:]
+    private var lastAnalogSendUptimeByKey: [String: UInt64] = [:]
+    private var pendingAnalogPayloads: [String: AnalogPayload] = [:]
+    private var pendingAnalogWorkItems: [String: DispatchWorkItem] = [:]
     private let binaryMessageContext = NWConnection.ContentContext(
         identifier: "PocketPadInputMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
@@ -25,18 +55,39 @@ private final class ControllerInputTransport {
     // Keep TCP close behind UDP so packet-loss recovery stays below a tight
     // action-game frame budget while the UDP fast path still wins normal races.
     private static let reliableMirrorDelayNanoseconds: Int = 500_000
+    // Keep several refresh opportunities inside the Mac's stale-hold window.
+    // Physical iOS runs can coalesce 500 ms timers to roughly 1.5 seconds.
+    private static let heartbeatIntervalNanoseconds: UInt64 = 250_000_000
+    private static let analogSendIntervalNanoseconds: UInt64 = 16_000_000
 
     init(networkQueue: DispatchQueue) {
         self.networkQueue = networkQueue
     }
 
-    func setReliableConnection(_ connection: NWConnection?, resetSequence: Bool) {
+    func setReliableConnection(
+        _ connection: NWConnection?,
+        resetSequence: Bool,
+        inputProtocolVersion: Int
+    ) {
         lock.lock()
         reliableConnection = connection
+        self.inputProtocolVersion = inputProtocolVersion
         if resetSequence {
             buttonSequenceNumber = 0
+            pointerSequenceNumber = 0
+            lastPointerTimestamp = 0
+            mirrorGeneration &+= 1
+            if inputProtocolVersion >= ControllerWireCodec.currentInputProtocolVersion {
+                inputGeneration = Self.newInputGeneration()
+            } else {
+                inputGeneration = nil
+            }
+            activeButtons.removeAll()
+            activeElementIdentifiers.removeAll()
+            activeAnonymousElementCounts.removeAll()
         }
         lock.unlock()
+        startHeartbeatTimer()
     }
 
     func setRealtimeDatagramConnection(_ connection: NWConnection?, ready: Bool) {
@@ -68,8 +119,23 @@ private final class ControllerInputTransport {
         reliableConnection = nil
         realtimeDatagramConnection = nil
         isRealtimeDatagramReady = false
+        inputProtocolVersion = 1
+        inputGeneration = nil
+        mirrorGeneration &+= 1
         buttonSequenceNumber = 0
+        pointerSequenceNumber = 0
+        lastPointerTimestamp = 0
+        activeButtons.removeAll()
+        activeElementIdentifiers.removeAll()
+        activeAnonymousElementCounts.removeAll()
         lock.unlock()
+
+        networkQueue.async { [weak self] in
+            guard let self else { return }
+            self.heartbeatTimer?.cancel()
+            self.heartbeatTimer = nil
+            self.resetAnalogStateOnNetworkQueue()
+        }
     }
 
     @discardableResult
@@ -78,39 +144,24 @@ private final class ControllerInputTransport {
         state: ButtonPressState,
         pressIdentifier: UInt64?
     ) -> Bool {
-        guard let snapshot = makeButtonSendSnapshot() else { return false }
+        guard let snapshot = makeButtonSendSnapshot(
+            recording: button,
+            state: state,
+            pressIdentifier: pressIdentifier
+        ) else { return false }
 
         let messageContext = binaryMessageContext
         let sendQueue = networkQueue
-        sendQueue.async {
+        sendQueue.async { [weak self] in
+            guard let self else { return }
             let data = ControllerWireCodec.encodeButton(
                 button,
                 state: state,
                 sequenceNumber: snapshot.sequenceNumber,
-                pressIdentifier: pressIdentifier
+                pressIdentifier: pressIdentifier,
+                generation: snapshot.generation
             )
-
-            if let datagramConnection = snapshot.datagramConnection {
-                datagramConnection.send(
-                    content: data,
-                    contentContext: .defaultMessage,
-                    isComplete: true,
-                    completion: .idempotent
-                )
-                Self.sendReliableMirror(
-                    data,
-                    on: snapshot.reliableConnection,
-                    context: messageContext,
-                    queue: sendQueue
-                )
-            } else {
-                snapshot.reliableConnection.send(
-                    content: data,
-                    contentContext: messageContext,
-                    isComplete: true,
-                    completion: .idempotent
-                )
-            }
+            self.sendRealtimeInputData(data, snapshot: snapshot, context: messageContext)
         }
 
         return true
@@ -122,60 +173,90 @@ private final class ControllerInputTransport {
         state: ButtonPressState,
         pressIdentifier: UInt64?
     ) -> Bool {
-        guard let snapshot = makeButtonSendSnapshot() else { return false }
+        guard let snapshot = makeElementSendSnapshot(
+            recording: input,
+            state: state,
+            pressIdentifier: pressIdentifier
+        ) else { return false }
 
         let messageContext = binaryMessageContext
         let sendQueue = networkQueue
         let encoder = encoder
-        sendQueue.async {
+        sendQueue.async { [weak self] in
+            guard let self else { return }
             let message = ControllerMessage(
                 type: .elementInput,
                 elementID: input.elementID,
                 elementPart: input.part,
                 state: state,
-                timestamp: ControllerWireCodec.inputSequenceTimestamp(
-                    for: snapshot.sequenceNumber,
-                    pressIdentifier: pressIdentifier
-                ),
-                sentAt: Date.currentMilliseconds
+                timestamp: snapshot.generation == nil
+                    ? ControllerWireCodec.inputSequenceTimestamp(
+                        for: snapshot.sequenceNumber,
+                        pressIdentifier: pressIdentifier
+                    )
+                    : 0,
+                inputProtocolVersion: snapshot.protocolVersion,
+                inputGeneration: snapshot.generation,
+                inputSequence: snapshot.sequenceNumber,
+                pressIdentifier: pressIdentifier
             )
             guard let data = try? ControllerWireCodec.encode(message, using: encoder) else { return }
-
-            if let datagramConnection = snapshot.datagramConnection {
-                datagramConnection.send(
-                    content: data,
-                    contentContext: .defaultMessage,
-                    isComplete: true,
-                    completion: .idempotent
-                )
-                Self.sendReliableMirror(
-                    data,
-                    on: snapshot.reliableConnection,
-                    context: messageContext,
-                    queue: sendQueue
-                )
-            } else {
-                snapshot.reliableConnection.send(
-                    content: data,
-                    contentContext: messageContext,
-                    isComplete: true,
-                    completion: .idempotent
-                )
-            }
+            self.sendRealtimeInputData(data, snapshot: snapshot, context: messageContext)
         }
 
         return true
     }
 
-    private func makeButtonSendSnapshot() -> ButtonSendSnapshot? {
+    private func makeButtonSendSnapshot(
+        recording button: GameButton? = nil,
+        state: ButtonPressState? = nil,
+        pressIdentifier: UInt64? = nil,
+        expectedMirrorGeneration: UInt64? = nil,
+        refreshing press: ControllerActiveInputPress? = nil
+    ) -> ButtonSendSnapshot? {
         lock.lock()
         defer { lock.unlock() }
 
-        guard let reliableConnection else { return nil }
+        let isRefreshStillActive = press.map { activeButtons.activePresses.contains($0) } ?? true
+        guard let reliableConnection,
+              expectedMirrorGeneration == nil || expectedMirrorGeneration == mirrorGeneration,
+              isRefreshStillActive
+        else { return nil }
+        if let button, let state {
+            activeButtons.record(button: button, state: state, pressIdentifier: pressIdentifier)
+        }
+        return makeButtonSendSnapshotLocked(reliableConnection: reliableConnection)
+    }
+
+    private func makeElementSendSnapshot(
+        recording input: KeypadElementInputID? = nil,
+        state: ButtonPressState? = nil,
+        pressIdentifier: UInt64? = nil,
+        expectedMirrorGeneration: UInt64? = nil,
+        refreshing press: ControllerActiveElementInputPress? = nil
+    ) -> ButtonSendSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let isRefreshStillActive = press.map(isActiveElementPressLocked) ?? true
+        guard let reliableConnection,
+              expectedMirrorGeneration == nil || expectedMirrorGeneration == mirrorGeneration,
+              isRefreshStillActive
+        else { return nil }
+        if let input, let state {
+            recordActiveElementLocked(input, state: state, pressIdentifier: pressIdentifier)
+        }
+        return makeButtonSendSnapshotLocked(reliableConnection: reliableConnection)
+    }
+
+    private func makeButtonSendSnapshotLocked(reliableConnection: NWConnection) -> ButtonSendSnapshot {
         let sequenceNumber = nextButtonSequenceNumber()
         let datagramConnection = isRealtimeDatagramReady ? realtimeDatagramConnection : nil
         return ButtonSendSnapshot(
+            protocolVersion: inputGeneration == nil ? nil : inputProtocolVersion,
+            generation: inputGeneration,
             sequenceNumber: sequenceNumber,
+            mirrorGeneration: mirrorGeneration,
             reliableConnection: reliableConnection,
             datagramConnection: datagramConnection
         )
@@ -190,20 +271,464 @@ private final class ControllerInputTransport {
         return buttonSequenceNumber
     }
 
-    private static func sendReliableMirror(
+    private func sendRealtimeInputData(
         _ data: Data,
-        on connection: NWConnection,
-        context: NWConnection.ContentContext,
-        queue: DispatchQueue
+        snapshot: ButtonSendSnapshot,
+        context: NWConnection.ContentContext
     ) {
-        queue.asyncAfter(deadline: .now() + .nanoseconds(reliableMirrorDelayNanoseconds)) {
-            connection.send(
+        if let datagramConnection = snapshot.datagramConnection {
+            datagramConnection.send(
+                content: data,
+                contentContext: .defaultMessage,
+                isComplete: true,
+                completion: .idempotent
+            )
+            sendReliableMirror(data, snapshot: snapshot, context: context, queue: networkQueue)
+        } else {
+            snapshot.reliableConnection.send(
                 content: data,
                 contentContext: context,
                 isComplete: true,
                 completion: .idempotent
             )
         }
+    }
+
+    private func sendReliableMirror(
+        _ data: Data,
+        snapshot: ButtonSendSnapshot,
+        context: NWConnection.ContentContext,
+        queue: DispatchQueue
+    ) {
+        queue.asyncAfter(deadline: .now() + .nanoseconds(Self.reliableMirrorDelayNanoseconds)) { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let isCurrent = self.mirrorGeneration == snapshot.mirrorGeneration
+                && self.reliableConnection === snapshot.reliableConnection
+            self.lock.unlock()
+            guard isCurrent else { return }
+            snapshot.reliableConnection.send(
+                content: data,
+                contentContext: context,
+                isComplete: true,
+                completion: .idempotent
+            )
+        }
+    }
+
+    @discardableResult
+    func releaseAll(adoptingGeneration: UInt64? = nil) -> Bool {
+        lock.lock()
+        guard let reliableConnection else {
+            activeButtons.removeAll()
+            activeElementIdentifiers.removeAll()
+            activeAnonymousElementCounts.removeAll()
+            lock.unlock()
+            networkQueue.async { [weak self] in self?.resetAnalogStateOnNetworkQueue() }
+            return false
+        }
+
+        mirrorGeneration &+= 1
+        if inputProtocolVersion >= ControllerWireCodec.currentInputProtocolVersion {
+            inputGeneration = adoptingGeneration ?? Self.nextGeneration(after: inputGeneration)
+        } else {
+            inputGeneration = nil
+        }
+        buttonSequenceNumber = 0
+        activeButtons.removeAll()
+        activeElementIdentifiers.removeAll()
+        activeAnonymousElementCounts.removeAll()
+        let generation = inputGeneration
+        let protocolVersion = inputProtocolVersion
+        let datagramConnection = isRealtimeDatagramReady ? realtimeDatagramConnection : nil
+        lock.unlock()
+
+        networkQueue.async { [weak self] in
+            guard let self else { return }
+            self.resetAnalogStateOnNetworkQueue()
+            let message = ControllerMessage(
+                type: .releaseAll,
+                timestamp: 0,
+                inputProtocolVersion: protocolVersion,
+                inputGeneration: generation
+            )
+            guard let data = try? ControllerWireCodec.encode(message, using: self.encoder) else { return }
+            if let datagramConnection {
+                datagramConnection.send(
+                    content: data,
+                    contentContext: .defaultMessage,
+                    isComplete: true,
+                    completion: .idempotent
+                )
+            }
+            reliableConnection.send(
+                content: data,
+                contentContext: self.binaryMessageContext,
+                isComplete: true,
+                completion: .idempotent
+            )
+        }
+        return true
+    }
+
+    @discardableResult
+    func sendGamepadStick(
+        _ stick: VirtualGamepadStick,
+        x: Double,
+        y: Double,
+        isFinal: Bool
+    ) -> Bool {
+        guard let expectedMirrorGeneration = currentMirrorGenerationIfConnected else { return false }
+        networkQueue.async { [weak self] in
+            self?.queueAnalogPayload(
+                .stick(stick, x: x, y: y),
+                isFinal: isFinal,
+                expectedMirrorGeneration: expectedMirrorGeneration
+            )
+        }
+        return true
+    }
+
+    @discardableResult
+    func sendGamepadTrigger(
+        _ trigger: VirtualGamepadTrigger,
+        value: Double,
+        isFinal: Bool
+    ) -> Bool {
+        guard let expectedMirrorGeneration = currentMirrorGenerationIfConnected else { return false }
+        networkQueue.async { [weak self] in
+            self?.queueAnalogPayload(
+                .trigger(trigger, value: value),
+                isFinal: isFinal,
+                expectedMirrorGeneration: expectedMirrorGeneration
+            )
+        }
+        return true
+    }
+
+    func decoratingRealtimeMessage(_ message: ControllerMessage) -> ControllerMessage {
+        lock.lock()
+        defer { lock.unlock() }
+        var decorated = message
+        pointerSequenceNumber = pointerSequenceNumber == UInt64.max ? 1 : pointerSequenceNumber + 1
+        let wallClockTimestamp = Date.currentMilliseconds
+        lastPointerTimestamp = max(wallClockTimestamp, lastPointerTimestamp + 1)
+        decorated.timestamp = lastPointerTimestamp
+        if inputProtocolVersion >= ControllerWireCodec.currentInputProtocolVersion {
+            decorated.inputProtocolVersion = inputProtocolVersion
+            decorated.inputGeneration = inputGeneration
+            decorated.inputSequence = pointerSequenceNumber
+        }
+        return decorated
+    }
+
+    private var currentMirrorGenerationIfConnected: UInt64? {
+        lock.lock()
+        defer { lock.unlock() }
+        return reliableConnection == nil ? nil : mirrorGeneration
+    }
+
+    private func isCurrentMirrorGeneration(_ expected: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return reliableConnection != nil && mirrorGeneration == expected
+    }
+
+    private func queueAnalogPayload(
+        _ payload: AnalogPayload,
+        isFinal: Bool,
+        expectedMirrorGeneration: UInt64
+    ) {
+        guard isCurrentMirrorGeneration(expectedMirrorGeneration) else { return }
+        switch payload {
+        case .stick(let stick, let x, let y):
+            if abs(x) < 0.001, abs(y) < 0.001 {
+                activeStickValues[stick] = nil
+            } else {
+                activeStickValues[stick] = (x, y)
+            }
+        case .trigger(let trigger, let value):
+            activeTriggerValues[trigger] = value < 0.001 ? nil : value
+        }
+
+        let key = payload.key
+        let now = DispatchTime.now().uptimeNanoseconds
+        let last = lastAnalogSendUptimeByKey[key] ?? 0
+        if isFinal || now >= last + Self.analogSendIntervalNanoseconds {
+            pendingAnalogWorkItems[key]?.cancel()
+            pendingAnalogWorkItems[key] = nil
+            pendingAnalogPayloads[key] = nil
+            sendAnalogPayloadOnNetworkQueue(
+                payload,
+                mirrorsReliably: isFinal,
+                expectedMirrorGeneration: expectedMirrorGeneration
+            )
+            return
+        }
+
+        pendingAnalogPayloads[key] = payload
+        guard pendingAnalogWorkItems[key] == nil else { return }
+        let remaining = last + Self.analogSendIntervalNanoseconds - now
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingAnalogWorkItems[key] = nil
+            guard self.isCurrentMirrorGeneration(expectedMirrorGeneration),
+                  let latest = self.pendingAnalogPayloads.removeValue(forKey: key)
+            else { return }
+            self.sendAnalogPayloadOnNetworkQueue(
+                latest,
+                mirrorsReliably: false,
+                expectedMirrorGeneration: expectedMirrorGeneration
+            )
+        }
+        pendingAnalogWorkItems[key] = workItem
+        networkQueue.asyncAfter(deadline: .now() + .nanoseconds(Int(remaining)), execute: workItem)
+    }
+
+    private func sendAnalogPayloadOnNetworkQueue(
+        _ payload: AnalogPayload,
+        mirrorsReliably: Bool,
+        expectedMirrorGeneration: UInt64
+    ) {
+        lock.lock()
+        guard mirrorGeneration == expectedMirrorGeneration,
+              let reliableConnection
+        else {
+            lock.unlock()
+            return
+        }
+        let datagramConnection = isRealtimeDatagramReady ? realtimeDatagramConnection : nil
+        let protocolVersion = inputGeneration == nil ? nil : inputProtocolVersion
+        let generation = inputGeneration
+        lock.unlock()
+
+        analogSequenceNumber = analogSequenceNumber >= ControllerWireCodec.maximumButtonSequenceNumber
+            ? 1
+            : analogSequenceNumber + 1
+        let message: ControllerMessage
+        switch payload {
+        case .stick(let stick, let x, let y):
+            message = .init(
+                type: .gamepadAnalog,
+                timestamp: 0,
+                analogStick: stick,
+                analogX: x,
+                analogY: y,
+                analogSequence: analogSequenceNumber,
+                inputProtocolVersion: protocolVersion,
+                inputGeneration: generation
+            )
+        case .trigger(let trigger, let value):
+            message = .init(
+                type: .gamepadAnalog,
+                timestamp: 0,
+                analogTrigger: trigger,
+                analogValue: value,
+                analogSequence: analogSequenceNumber,
+                inputProtocolVersion: protocolVersion,
+                inputGeneration: generation
+            )
+        }
+        guard let data = try? ControllerWireCodec.encode(message, using: encoder) else { return }
+
+        if let datagramConnection {
+            datagramConnection.send(
+                content: data,
+                contentContext: .defaultMessage,
+                isComplete: true,
+                completion: .idempotent
+            )
+            if mirrorsReliably {
+                reliableConnection.send(
+                    content: data,
+                    contentContext: binaryMessageContext,
+                    isComplete: true,
+                    completion: .idempotent
+                )
+            }
+        } else {
+            reliableConnection.send(
+                content: data,
+                contentContext: binaryMessageContext,
+                isComplete: true,
+                completion: .idempotent
+            )
+        }
+        lastAnalogSendUptimeByKey[payload.key] = DispatchTime.now().uptimeNanoseconds
+    }
+
+    private func resetAnalogStateOnNetworkQueue() {
+        pendingAnalogWorkItems.values.forEach { $0.cancel() }
+        pendingAnalogWorkItems.removeAll()
+        pendingAnalogPayloads.removeAll()
+        lastAnalogSendUptimeByKey.removeAll()
+        activeStickValues.removeAll()
+        activeTriggerValues.removeAll()
+        analogSequenceNumber = 0
+    }
+
+    private func startHeartbeatTimer() {
+        networkQueue.async { [weak self] in
+            guard let self else { return }
+            self.heartbeatTimer?.cancel()
+            guard self.currentMirrorGenerationIfConnected != nil else {
+                self.heartbeatTimer = nil
+                return
+            }
+            let timer = DispatchSource.makeTimerSource(queue: self.networkQueue)
+            timer.schedule(
+                deadline: .now() + .nanoseconds(Int(Self.heartbeatIntervalNanoseconds)),
+                repeating: .nanoseconds(Int(Self.heartbeatIntervalNanoseconds)),
+                leeway: .milliseconds(20)
+            )
+            timer.setEventHandler { [weak self] in
+                self?.sendHeartbeatOnNetworkQueue()
+            }
+            self.heartbeatTimer = timer
+            timer.resume()
+        }
+    }
+
+    private func sendHeartbeatOnNetworkQueue() {
+        lock.lock()
+        guard let reliableConnection else {
+            lock.unlock()
+            return
+        }
+        let generation = inputGeneration
+        let protocolVersion = inputProtocolVersion
+        let heartbeatMirrorGeneration = mirrorGeneration
+        let buttonPresses = activeButtons.activePresses
+        let elementPresses = activeElementIdentifiers.flatMap { input, identifiers in
+            identifiers.map { ControllerActiveElementInputPress(input: input, pressIdentifier: $0) }
+        } + activeAnonymousElementCounts.flatMap { input, count in
+            Array(repeating: ControllerActiveElementInputPress(input: input, pressIdentifier: nil), count: count)
+        }
+        lock.unlock()
+
+        let heartbeat = ControllerMessage(
+            type: .heartbeat,
+            timestamp: 0,
+            inputProtocolVersion: protocolVersion,
+            inputGeneration: generation
+        )
+        if let data = try? ControllerWireCodec.encode(heartbeat, using: encoder) {
+            reliableConnection.send(
+                content: data,
+                contentContext: binaryMessageContext,
+                isComplete: true,
+                completion: .idempotent
+            )
+        }
+
+        for press in buttonPresses {
+            sendActiveButtonRefreshOnNetworkQueue(
+                press,
+                expectedMirrorGeneration: heartbeatMirrorGeneration
+            )
+        }
+        for press in elementPresses {
+            sendActiveElementRefreshOnNetworkQueue(
+                press,
+                expectedMirrorGeneration: heartbeatMirrorGeneration
+            )
+        }
+        for (stick, value) in activeStickValues {
+            sendAnalogPayloadOnNetworkQueue(
+                .stick(stick, x: value.x, y: value.y),
+                mirrorsReliably: false,
+                expectedMirrorGeneration: heartbeatMirrorGeneration
+            )
+        }
+        for (trigger, value) in activeTriggerValues {
+            sendAnalogPayloadOnNetworkQueue(
+                .trigger(trigger, value: value),
+                mirrorsReliably: false,
+                expectedMirrorGeneration: heartbeatMirrorGeneration
+            )
+        }
+    }
+
+    private func sendActiveButtonRefreshOnNetworkQueue(
+        _ press: ControllerActiveInputPress,
+        expectedMirrorGeneration: UInt64
+    ) {
+        guard let snapshot = makeButtonSendSnapshot(
+            expectedMirrorGeneration: expectedMirrorGeneration,
+            refreshing: press
+        ) else { return }
+        let data = ControllerWireCodec.encodeButton(
+            press.button,
+            state: .down,
+            sequenceNumber: snapshot.sequenceNumber,
+            pressIdentifier: press.pressIdentifier,
+            generation: snapshot.generation
+        )
+        sendRealtimeInputData(data, snapshot: snapshot, context: binaryMessageContext)
+    }
+
+    private func sendActiveElementRefreshOnNetworkQueue(
+        _ press: ControllerActiveElementInputPress,
+        expectedMirrorGeneration: UInt64
+    ) {
+        guard let snapshot = makeElementSendSnapshot(
+            expectedMirrorGeneration: expectedMirrorGeneration,
+            refreshing: press
+        ) else { return }
+        let message = ControllerMessage(
+            type: .elementInput,
+            elementID: press.input.elementID,
+            elementPart: press.input.part,
+            state: .down,
+            timestamp: snapshot.generation == nil
+                ? ControllerWireCodec.inputSequenceTimestamp(
+                    for: snapshot.sequenceNumber,
+                    pressIdentifier: press.pressIdentifier
+                )
+                : 0,
+            inputProtocolVersion: snapshot.protocolVersion,
+            inputGeneration: snapshot.generation,
+            inputSequence: snapshot.sequenceNumber,
+            pressIdentifier: press.pressIdentifier
+        )
+        guard let data = try? ControllerWireCodec.encode(message, using: encoder) else { return }
+        sendRealtimeInputData(data, snapshot: snapshot, context: binaryMessageContext)
+    }
+
+    private func isActiveElementPressLocked(_ press: ControllerActiveElementInputPress) -> Bool {
+        if let pressIdentifier = press.pressIdentifier {
+            return activeElementIdentifiers[press.input]?.contains(pressIdentifier) == true
+        }
+        return (activeAnonymousElementCounts[press.input] ?? 0) > 0
+    }
+
+    private func recordActiveElementLocked(
+        _ input: KeypadElementInputID,
+        state: ButtonPressState,
+        pressIdentifier: UInt64?
+    ) {
+        switch (state, pressIdentifier) {
+        case (.down, .some(let identifier)):
+            activeElementIdentifiers[input, default: []].insert(identifier)
+        case (.down, .none):
+            activeAnonymousElementCounts[input, default: 0] += 1
+        case (.up, .some(let identifier)):
+            guard var identifiers = activeElementIdentifiers[input] else { return }
+            identifiers.remove(identifier)
+            activeElementIdentifiers[input] = identifiers.isEmpty ? nil : identifiers
+        case (.up, .none):
+            let next = max((activeAnonymousElementCounts[input] ?? 0) - 1, 0)
+            activeAnonymousElementCounts[input] = next == 0 ? nil : next
+        }
+    }
+
+    private static func newInputGeneration() -> UInt64 {
+        UInt64.random(in: 1...UInt64.max)
+    }
+
+    private static func nextGeneration(after current: UInt64?) -> UInt64 {
+        guard let current else { return newInputGeneration() }
+        return current == UInt64.max ? 1 : current + 1
     }
 }
 
@@ -359,16 +884,9 @@ final class ControllerClient: ObservableObject {
     private var autoReconnectEnabled = false
     private var realtimeDatagramConnection: NWConnection?
     private var isRealtimeDatagramReady = false
-    private var heartbeatTask: Task<Void, Never>?
     private var realtimeDatagramHandshakeTask: Task<Void, Never>?
     private var lastSentEventUpdateTask: Task<Void, Never>?
     private var pendingLastSentEvent = "None"
-    private var activeInputState = ControllerActiveInputState()
-    private var activeElementInputState = ControllerActiveElementInputState()
-    private var activeStickValues: [VirtualGamepadStick: CGVector] = [:]
-    private var activeTriggerValues: [VirtualGamepadTrigger: Double] = [:]
-    private var lastAnalogSendUptimeByKey: [String: UInt64] = [:]
-    private var analogSequenceNumber: UInt64 = 0
     private let binaryMessageContext = NWConnection.ContentContext(
         identifier: "PocketPadMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
@@ -377,7 +895,6 @@ final class ControllerClient: ObservableObject {
     private let decoder = JSONDecoder()
     private static let liveInputStatusUpdatesEnabled = false
     private static let defaultPort: UInt16 = 8765
-    private static let analogSendIntervalNanoseconds: UInt64 = 16_000_000
     private static let trustedMacCredentialDefaultsKey = "PocketPad.iOS.trustedMacCredential.v1"
     private static let hasSavedKeypadSnapshotDefaultsKey = "PocketPad.iOS.hasSavedKeypadSnapshot.v1"
 
@@ -578,7 +1095,7 @@ final class ControllerClient: ObservableObject {
         currentServiceResolution = target.serviceResolution
         currentAuthToken = authToken?.nilIfBlank
         currentExpectedServerID = expectedServerID?.nilIfBlank
-        inputTransport.setReliableConnection(nil, resetSequence: true)
+        inputTransport.setReliableConnection(nil, resetSequence: true, inputProtocolVersion: 1)
 
         let deviceName = UIDevice.current.name
         let pairingCode = pairingCode.nilIfBlank
@@ -606,14 +1123,7 @@ final class ControllerClient: ObservableObject {
         if sendReleaseAll {
             releaseAll()
         }
-        activeInputState.removeAll()
-        activeElementInputState.removeAll()
-        activeStickValues.removeAll()
-        activeTriggerValues.removeAll()
-        lastAnalogSendUptimeByKey.removeAll()
         inputTransport.disconnect()
-        heartbeatTask?.cancel()
-        heartbeatTask = nil
         stopRealtimeDatagram()
         lastSentEventUpdateTask?.cancel()
         lastSentEventUpdateTask = nil
@@ -641,13 +1151,7 @@ final class ControllerClient: ObservableObject {
         let state: ButtonPressState = pressed ? .down : .up
         guard isConnected,
               inputTransport.sendButton(button, state: state, pressIdentifier: pressIdentifier)
-        else {
-            if !pressed {
-                activeInputState.record(button: button, state: .up, pressIdentifier: pressIdentifier)
-            }
-            return
-        }
-        activeInputState.record(button: button, state: state, pressIdentifier: pressIdentifier)
+        else { return }
         if Self.liveInputStatusUpdatesEnabled {
             updateLastSentEvent("\(button.rawValue) \(state.rawValue)")
         }
@@ -657,13 +1161,7 @@ final class ControllerClient: ObservableObject {
         let state: ButtonPressState = pressed ? .down : .up
         guard isConnected,
               inputTransport.sendElementInput(input, state: state, pressIdentifier: pressIdentifier)
-        else {
-            if !pressed {
-                activeElementInputState.record(input: input, state: .up, pressIdentifier: pressIdentifier)
-            }
-            return
-        }
-        activeElementInputState.record(input: input, state: state, pressIdentifier: pressIdentifier)
+        else { return }
         if Self.liveInputStatusUpdatesEnabled {
             updateLastSentEvent("\(input.storageKey) \(state.rawValue)")
         }
@@ -673,47 +1171,22 @@ final class ControllerClient: ObservableObject {
         guard isConnected else { return }
         let clampedX = Self.clamp(x, lower: -1, upper: 1)
         let clampedY = Self.clamp(y, lower: -1, upper: 1)
-        let vector = CGVector(dx: clampedX, dy: clampedY)
         let isNeutral = abs(clampedX) < 0.001 && abs(clampedY) < 0.001
-        if isNeutral {
-            activeStickValues[stick] = nil
-        } else {
-            activeStickValues[stick] = vector
-        }
-        guard shouldSendAnalog(key: "stick.\(stick.rawValue)", isFinal: isFinal || isNeutral) else { return }
-        send(
-            .init(
-                type: .gamepadAnalog,
-                timestamp: Date.currentMilliseconds,
-                analogStick: stick,
-                analogX: clampedX,
-                analogY: clampedY,
-                analogSequence: nextAnalogSequenceNumber()
-            ),
-            prefersRealtimeDatagram: true,
-            mirrorsReliably: isFinal || isNeutral
+        _ = inputTransport.sendGamepadStick(
+            stick,
+            x: clampedX,
+            y: clampedY,
+            isFinal: isFinal || isNeutral
         )
     }
 
     func setGamepadTrigger(_ trigger: VirtualGamepadTrigger, value: Double, isFinal: Bool = false) {
         guard isConnected else { return }
         let clampedValue = Self.clamp(value, lower: 0, upper: 1)
-        if clampedValue < 0.001 {
-            activeTriggerValues[trigger] = nil
-        } else {
-            activeTriggerValues[trigger] = clampedValue
-        }
-        guard shouldSendAnalog(key: "trigger.\(trigger.rawValue)", isFinal: isFinal || clampedValue < 0.001) else { return }
-        send(
-            .init(
-                type: .gamepadAnalog,
-                timestamp: Date.currentMilliseconds,
-                analogTrigger: trigger,
-                analogValue: clampedValue,
-                analogSequence: nextAnalogSequenceNumber()
-            ),
-            prefersRealtimeDatagram: true,
-            mirrorsReliably: isFinal || clampedValue < 0.001
+        _ = inputTransport.sendGamepadTrigger(
+            trigger,
+            value: clampedValue,
+            isFinal: isFinal || clampedValue < 0.001
         )
     }
 
@@ -747,14 +1220,16 @@ final class ControllerClient: ObservableObject {
     ) {
         guard isConnected else { return }
         send(
-            .init(
-                type: .pointer,
-                state: state,
-                timestamp: Date.currentMilliseconds,
-                pointerEvent: kind,
-                pointerButton: pointerButton,
-                deltaX: deltaX,
-                deltaY: deltaY
+            inputTransport.decoratingRealtimeMessage(
+                .init(
+                    type: .pointer,
+                    state: state,
+                    timestamp: 0,
+                    pointerEvent: kind,
+                    pointerButton: pointerButton,
+                    deltaX: deltaX,
+                    deltaY: deltaY
+                )
             ),
             prefersRealtimeDatagram: true,
             mirrorsReliably: mirrorsReliably
@@ -762,13 +1237,7 @@ final class ControllerClient: ObservableObject {
     }
 
     func releaseAll() {
-        activeInputState.removeAll()
-        activeElementInputState.removeAll()
-        activeStickValues.removeAll()
-        activeTriggerValues.removeAll()
-        lastAnalogSendUptimeByKey.removeAll()
-        guard connection != nil else { return }
-        send(.init(type: .releaseAll, timestamp: 0), prefersRealtimeDatagram: true)
+        guard inputTransport.releaseAll() else { return }
         updateLastSentEvent("release_all", immediately: true)
     }
 
@@ -968,13 +1437,6 @@ final class ControllerClient: ObservableObject {
         case .cancelled:
             guard connection === stateConnection else { return }
             inputTransport.disconnect()
-            activeInputState.removeAll()
-            activeElementInputState.removeAll()
-            activeStickValues.removeAll()
-            activeTriggerValues.removeAll()
-            lastAnalogSendUptimeByKey.removeAll()
-            heartbeatTask?.cancel()
-            heartbeatTask = nil
             stopRealtimeDatagram()
             lastSentEventUpdateTask?.cancel()
             lastSentEventUpdateTask = nil
@@ -1014,87 +1476,9 @@ final class ControllerClient: ObservableObject {
         }
     }
 
-    private func sendHeartbeat() {
-        send(.init(type: .heartbeat))
-        resendActiveInputs()
-    }
-
-    private func shouldSendAnalog(key: String, isFinal: Bool) -> Bool {
-        if isFinal {
-            lastAnalogSendUptimeByKey[key] = DispatchTime.now().uptimeNanoseconds
-            return true
-        }
-
-        let now = DispatchTime.now().uptimeNanoseconds
-        let last = lastAnalogSendUptimeByKey[key] ?? 0
-        guard now - last >= Self.analogSendIntervalNanoseconds else { return false }
-        lastAnalogSendUptimeByKey[key] = now
-        return true
-    }
-
-    private func nextAnalogSequenceNumber() -> UInt64 {
-        if analogSequenceNumber >= ControllerWireCodec.maximumButtonSequenceNumber {
-            analogSequenceNumber = 1
-        } else {
-            analogSequenceNumber += 1
-        }
-        return analogSequenceNumber
-    }
-
     private static func clamp(_ value: Double, lower: Double, upper: Double) -> Double {
         guard value.isFinite else { return lower }
         return min(max(value, lower), upper)
-    }
-
-    private func resendActiveInputs() {
-        guard isConnected,
-              !activeInputState.isEmpty || !activeElementInputState.isEmpty || !activeStickValues.isEmpty || !activeTriggerValues.isEmpty
-        else { return }
-
-        for activePress in activeInputState.activePresses {
-            _ = inputTransport.sendButton(
-                activePress.button,
-                state: .down,
-                pressIdentifier: activePress.pressIdentifier
-            )
-        }
-
-        for activePress in activeElementInputState.activePresses {
-            _ = inputTransport.sendElementInput(
-                activePress.input,
-                state: .down,
-                pressIdentifier: activePress.pressIdentifier
-            )
-        }
-
-        for (stick, vector) in activeStickValues {
-            send(
-                .init(
-                    type: .gamepadAnalog,
-                    timestamp: Date.currentMilliseconds,
-                    analogStick: stick,
-                    analogX: Double(vector.dx),
-                    analogY: Double(vector.dy),
-                    analogSequence: nextAnalogSequenceNumber()
-                ),
-                prefersRealtimeDatagram: true,
-                mirrorsReliably: false
-            )
-        }
-
-        for (trigger, value) in activeTriggerValues {
-            send(
-                .init(
-                    type: .gamepadAnalog,
-                    timestamp: Date.currentMilliseconds,
-                    analogTrigger: trigger,
-                    analogValue: value,
-                    analogSequence: nextAnalogSequenceNumber()
-                ),
-                prefersRealtimeDatagram: true,
-                mirrorsReliably: false
-            )
-        }
     }
 
     private static func currentDeviceInfo() -> ControllerClientDeviceInfo {
@@ -1245,7 +1629,8 @@ final class ControllerClient: ObservableObject {
                 message: decoded.message,
                 realtimeToken: decoded.realtimeToken,
                 authToken: decoded.authToken,
-                serverID: decoded.serverID
+                serverID: decoded.serverID,
+                inputProtocolVersion: decoded.inputProtocolVersion ?? 1
             )
 
         case .gamepadCustomization:
@@ -1257,6 +1642,13 @@ final class ControllerClient: ObservableObject {
         case .gamepadProfiles:
             applyGamepadProfileStateFromMac(decoded)
             updateLastSentEvent("keypad setups updated", immediately: true)
+
+        case .releaseAll:
+            _ = inputTransport.releaseAll(adoptingGeneration: decoded.inputGeneration)
+            updateLastSentEvent("release_all from Mac", immediately: true)
+
+        case .ping:
+            send(.init(type: .pong, timestamp: decoded.timestamp))
 
         case .pong:
             break
@@ -1282,7 +1674,8 @@ final class ControllerClient: ObservableObject {
         message: String?,
         realtimeToken: String?,
         authToken: String?,
-        serverID: String?
+        serverID: String?,
+        inputProtocolVersion: Int
     ) {
         guard connection === pairedConnection else { return }
         guard state != .connected else { return }
@@ -1298,9 +1691,12 @@ final class ControllerClient: ObservableObject {
         smartConnectStatus = nil
         lastSentEvent = message ?? "Pairing complete"
         UIApplication.shared.isIdleTimerDisabled = true
-        inputTransport.setReliableConnection(pairedConnection, resetSequence: true)
+        inputTransport.setReliableConnection(
+            pairedConnection,
+            resetSequence: true,
+            inputProtocolVersion: inputProtocolVersion
+        )
         startRealtimeDatagram(realtimeToken: realtimeToken)
-        startHeartbeat()
     }
 
     private func rememberTrustedMacIfAvailable(authToken: String?, serverID: String?) {
@@ -1413,14 +1809,7 @@ final class ControllerClient: ObservableObject {
     private func handleSocketError(_ error: Error, for failedConnection: NWConnection) {
         guard connection === failedConnection else { return }
         inputTransport.disconnect()
-        activeInputState.removeAll()
-        activeElementInputState.removeAll()
-        activeStickValues.removeAll()
-        activeTriggerValues.removeAll()
-        lastAnalogSendUptimeByKey.removeAll()
         lastError = error.localizedDescription
-        heartbeatTask?.cancel()
-        heartbeatTask = nil
         stopRealtimeDatagram()
         lastSentEventUpdateTask?.cancel()
         lastSentEventUpdateTask = nil
@@ -1541,16 +1930,6 @@ final class ControllerClient: ObservableObject {
         let portValue = url.port ?? Int(Self.defaultPort)
         guard let port = UInt16(exactly: portValue) else { return nil }
         return NWEndpoint.Port(rawValue: port)
-    }
-
-    private func startHeartbeat() {
-        heartbeatTask?.cancel()
-        heartbeatTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                self?.sendHeartbeat()
-            }
-        }
     }
 
     private static func loadTrustedMacCredential() -> TrustedMacCredential? {

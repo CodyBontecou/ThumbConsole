@@ -161,6 +161,7 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
     public var analogX: Double?
     public var analogY: Double?
     public var analogValue: Double?
+    public var inputGeneration: UInt64?
     public var inputSequence: UInt64?
     public var expectedSequence: UInt64?
     public var receivedSequence: UInt64?
@@ -168,6 +169,9 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
     public var totalMissedButtonFrames: Int?
     public var pressIdentifier: UInt64?
     public var latencyMS: Int?
+    public var decodeLatencyMS: Double?
+    public var receiveToProcessedMS: Double?
+    public var reorderWaitMS: Double?
     public var pressedButtons: [GameButton]?
     public var pressedElementInputs: [String]?
     public var activePointerButtons: [ControllerPointerButton]?
@@ -198,6 +202,7 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
         analogX: Double? = nil,
         analogY: Double? = nil,
         analogValue: Double? = nil,
+        inputGeneration: UInt64? = nil,
         inputSequence: UInt64? = nil,
         expectedSequence: UInt64? = nil,
         receivedSequence: UInt64? = nil,
@@ -205,6 +210,9 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
         totalMissedButtonFrames: Int? = nil,
         pressIdentifier: UInt64? = nil,
         latencyMS: Int? = nil,
+        decodeLatencyMS: Double? = nil,
+        receiveToProcessedMS: Double? = nil,
+        reorderWaitMS: Double? = nil,
         pressedButtons: [GameButton]? = nil,
         pressedElementInputs: [String]? = nil,
         activePointerButtons: [ControllerPointerButton]? = nil,
@@ -234,6 +242,7 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
         self.analogX = analogX
         self.analogY = analogY
         self.analogValue = analogValue
+        self.inputGeneration = inputGeneration
         self.inputSequence = inputSequence
         self.expectedSequence = expectedSequence
         self.receivedSequence = receivedSequence
@@ -241,6 +250,9 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
         self.totalMissedButtonFrames = totalMissedButtonFrames
         self.pressIdentifier = pressIdentifier
         self.latencyMS = latencyMS
+        self.decodeLatencyMS = decodeLatencyMS
+        self.receiveToProcessedMS = receiveToProcessedMS
+        self.reorderWaitMS = reorderWaitMS
         self.pressedButtons = pressedButtons
         self.pressedElementInputs = pressedElementInputs
         self.activePointerButtons = activePointerButtons
@@ -344,6 +356,13 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
     public var lastHeartbeatMilliseconds: Int64?
     public var lastReceivedEvent: String
     public var estimatedLatencyMS: Int?
+    public var roundTripLatencyMS: Int?
+    public var inputPipelineP50MS: Double?
+    public var inputPipelineP95MS: Double?
+    public var inputPipelineP99MS: Double?
+    public var inputProtocolVersion: Int?
+    public var activeInputGeneration: UInt64?
+    public var staleInputGenerationDrops: Int?
     public var pressedButtons: [GameButton]
     public var missedButtonFrames: Int
     public var ignoredButtonEdges: Int
@@ -382,6 +401,13 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         lastHeartbeatMilliseconds: Int64?,
         lastReceivedEvent: String,
         estimatedLatencyMS: Int?,
+        roundTripLatencyMS: Int? = nil,
+        inputPipelineP50MS: Double? = nil,
+        inputPipelineP95MS: Double? = nil,
+        inputPipelineP99MS: Double? = nil,
+        inputProtocolVersion: Int? = nil,
+        activeInputGeneration: UInt64? = nil,
+        staleInputGenerationDrops: Int? = nil,
         pressedButtons: [GameButton],
         missedButtonFrames: Int,
         ignoredButtonEdges: Int,
@@ -419,6 +445,13 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         self.lastHeartbeatMilliseconds = lastHeartbeatMilliseconds
         self.lastReceivedEvent = lastReceivedEvent
         self.estimatedLatencyMS = estimatedLatencyMS
+        self.roundTripLatencyMS = roundTripLatencyMS ?? estimatedLatencyMS
+        self.inputPipelineP50MS = inputPipelineP50MS
+        self.inputPipelineP95MS = inputPipelineP95MS
+        self.inputPipelineP99MS = inputPipelineP99MS
+        self.inputProtocolVersion = inputProtocolVersion
+        self.activeInputGeneration = activeInputGeneration
+        self.staleInputGenerationDrops = staleInputGenerationDrops
         self.pressedButtons = pressedButtons
         self.missedButtonFrames = missedButtonFrames
         self.ignoredButtonEdges = ignoredButtonEdges
@@ -509,6 +542,10 @@ public struct ControllerMessage: Codable, Sendable {
     public var analogY: Double?
     public var analogValue: Double?
     public var analogSequence: UInt64?
+    public var inputProtocolVersion: Int?
+    public var inputGeneration: UInt64?
+    public var inputSequence: UInt64?
+    public var pressIdentifier: UInt64?
 
     public init(
         type: ControllerMessageType,
@@ -538,7 +575,11 @@ public struct ControllerMessage: Codable, Sendable {
         analogX: Double? = nil,
         analogY: Double? = nil,
         analogValue: Double? = nil,
-        analogSequence: UInt64? = nil
+        analogSequence: UInt64? = nil,
+        inputProtocolVersion: Int? = nil,
+        inputGeneration: UInt64? = nil,
+        inputSequence: UInt64? = nil,
+        pressIdentifier: UInt64? = nil
     ) {
         self.type = type
         self.button = button
@@ -568,6 +609,10 @@ public struct ControllerMessage: Codable, Sendable {
         self.analogY = analogY
         self.analogValue = analogValue
         self.analogSequence = analogSequence
+        self.inputProtocolVersion = inputProtocolVersion
+        self.inputGeneration = inputGeneration
+        self.inputSequence = inputSequence
+        self.pressIdentifier = pressIdentifier
     }
 }
 
@@ -658,10 +703,17 @@ struct ButtonSequenceTracker {
 }
 
 public enum ControllerWireCodec {
+    public static let currentInputProtocolVersion = 2
+
     private static let magic: [UInt8] = [0x50, 0x50] // "PP"
     private static let version: UInt8 = 1
+    private static let inputVersion: UInt8 = UInt8(currentInputProtocolVersion)
     private static let emptyField: UInt8 = UInt8.max
     private static let compactMessageSize = 14
+    // v2 button: 0...1 magic, 2 version, 3 type, 4 button, 5 state, 6 flags,
+    // 7 reserved, 8...15 generation LE, 16...23 sequence LE, 24...31 press identifier LE.
+    private static let compactInputMessageSize = 32
+    private static let compactInputPressIdentifierPresent: UInt8 = 1 << 0
     private static let buttonSequenceMarker: UInt64 = UInt64(1) << 63
     private static let buttonSequenceBitCount: UInt64 = 48
     private static let buttonSequenceMask: UInt64 = (UInt64(1) << buttonSequenceBitCount) - 1
@@ -711,9 +763,20 @@ public enum ControllerWireCodec {
         _ button: GameButton,
         state: ButtonPressState,
         sequenceNumber: UInt64,
-        pressIdentifier: UInt64? = nil
+        pressIdentifier: UInt64? = nil,
+        generation: UInt64? = nil
     ) -> Data {
-        compactData(
+        if let generation {
+            return compactInputData(
+                button: button,
+                state: state,
+                generation: generation,
+                sequenceNumber: sequenceNumber,
+                pressIdentifier: pressIdentifier
+            )
+        }
+
+        return compactData(
             typeCode: ControllerMessageType.button.compactWireCode!,
             timestamp: buttonSequenceTimestamp(
                 for: sequenceNumber,
@@ -736,6 +799,9 @@ public enum ControllerWireCodec {
     }
 
     public static func inputSequenceNumber(from message: ControllerMessage) -> UInt64? {
+        if let inputSequence = message.inputSequence {
+            return inputSequence
+        }
         guard message.type == .button || message.type == .elementInput else { return nil }
 
         let timestampBits = UInt64(bitPattern: message.timestamp)
@@ -750,6 +816,9 @@ public enum ControllerWireCodec {
     }
 
     public static func inputPressIdentifier(from message: ControllerMessage) -> UInt64? {
+        if let pressIdentifier = message.pressIdentifier {
+            return pressIdentifier
+        }
         guard message.type == .button || message.type == .elementInput else { return nil }
 
         let timestampBits = UInt64(bitPattern: message.timestamp)
@@ -786,6 +855,29 @@ public enum ControllerWireCodec {
               let typeCode = message.type.compactWireCode
         else {
             return nil
+        }
+
+        let hasInputProtocolFields = message.inputProtocolVersion != nil
+            || message.inputGeneration != nil
+            || message.inputSequence != nil
+            || message.pressIdentifier != nil
+        if hasInputProtocolFields {
+            guard message.type == .button,
+                  message.inputProtocolVersion == currentInputProtocolVersion,
+                  let button = message.button,
+                  let state = message.state,
+                  let generation = message.inputGeneration,
+                  let sequenceNumber = message.inputSequence
+            else {
+                return nil
+            }
+            return compactInputData(
+                button: button,
+                state: state,
+                generation: generation,
+                sequenceNumber: sequenceNumber,
+                pressIdentifier: message.pressIdentifier
+            )
         }
 
         if message.type == .button, (message.button == nil || message.state == nil) {
@@ -826,6 +918,53 @@ public enum ControllerWireCodec {
         return data
     }
 
+    private static func compactInputData(
+        button: GameButton,
+        state: ButtonPressState,
+        generation: UInt64,
+        sequenceNumber: UInt64,
+        pressIdentifier: UInt64?
+    ) -> Data {
+        var data = Data(count: compactInputMessageSize)
+        data.withUnsafeMutableBytes { rawBuffer in
+            guard let bytes = rawBuffer.bindMemory(to: UInt8.self).baseAddress else { return }
+
+            bytes[0] = magic[0]
+            bytes[1] = magic[1]
+            bytes[2] = inputVersion
+            bytes[3] = ControllerMessageType.button.compactWireCode!
+            bytes[4] = button.compactWireCode
+            bytes[5] = state.compactWireCode
+            bytes[6] = pressIdentifier == nil ? 0 : compactInputPressIdentifierPresent
+            bytes[7] = 0
+            writeLittleEndian(generation, to: bytes, startingAt: 8)
+            writeLittleEndian(sequenceNumber, to: bytes, startingAt: 16)
+            writeLittleEndian(pressIdentifier ?? 0, to: bytes, startingAt: 24)
+        }
+        return data
+    }
+
+    private static func writeLittleEndian(
+        _ value: UInt64,
+        to bytes: UnsafeMutablePointer<UInt8>,
+        startingAt start: Int
+    ) {
+        for offset in 0..<8 {
+            bytes[start + offset] = UInt8(truncatingIfNeeded: value >> UInt64(offset * 8))
+        }
+    }
+
+    private static func readLittleEndian(
+        from bytes: UnsafePointer<UInt8>,
+        startingAt start: Int
+    ) -> UInt64 {
+        var value: UInt64 = 0
+        for offset in 0..<8 {
+            value |= UInt64(bytes[start + offset]) << UInt64(offset * 8)
+        }
+        return value
+    }
+
     private static func buttonSequenceTimestamp(
         for sequenceNumber: UInt64,
         pressIdentifier: UInt64?
@@ -837,6 +976,9 @@ public enum ControllerWireCodec {
     }
 
     private static func compactMessage(from data: Data) -> ControllerMessage? {
+        if data.count == compactInputMessageSize {
+            return compactInputMessage(from: data)
+        }
         guard data.count == compactMessageSize else { return nil }
 
         return data.withUnsafeBytes { rawBuffer -> ControllerMessage? in
@@ -866,6 +1008,37 @@ public enum ControllerWireCodec {
                 button: button,
                 state: state,
                 timestamp: Int64(bitPattern: timestampBits)
+            )
+        }
+    }
+
+    private static func compactInputMessage(from data: Data) -> ControllerMessage? {
+        data.withUnsafeBytes { rawBuffer -> ControllerMessage? in
+            guard let bytes = rawBuffer.bindMemory(to: UInt8.self).baseAddress,
+                  bytes[0] == magic[0],
+                  bytes[1] == magic[1],
+                  bytes[2] == inputVersion,
+                  bytes[3] == ControllerMessageType.button.compactWireCode!,
+                  bytes[6] & ~compactInputPressIdentifierPresent == 0,
+                  bytes[7] == 0,
+                  let button = GameButton(compactWireCode: bytes[4]),
+                  let state = ButtonPressState(compactWireCode: bytes[5])
+            else {
+                return nil
+            }
+
+            let hasPressIdentifier = bytes[6] & compactInputPressIdentifierPresent != 0
+            return ControllerMessage(
+                type: .button,
+                button: button,
+                state: state,
+                timestamp: 0,
+                inputProtocolVersion: currentInputProtocolVersion,
+                inputGeneration: readLittleEndian(from: bytes, startingAt: 8),
+                inputSequence: readLittleEndian(from: bytes, startingAt: 16),
+                pressIdentifier: hasPressIdentifier
+                    ? readLittleEndian(from: bytes, startingAt: 24)
+                    : nil
             )
         }
     }

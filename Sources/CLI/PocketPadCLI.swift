@@ -3351,7 +3351,7 @@ struct PocketPadCLI {
         _ report: PocketPadLatencyVerificationReport,
         logPath: String?
     ) {
-        print(report.passed ? "Latency verification passed" : "Latency verification failed")
+        print(report.passed ? "Synthetic latency-model verification passed" : "Synthetic latency-model verification failed")
         print("Budget: max <= \(formatMilliseconds(report.maxAllowedMilliseconds)) ms, p95 <= \(formatMilliseconds(report.p95AllowedMilliseconds)) ms")
 
         for simulation in report.reports {
@@ -3380,7 +3380,7 @@ struct PocketPadCLI {
         logPath: String?
     ) {
         guard let first = reports.first else { return }
-        print("Latency simulation: \(first.pattern.displayName)")
+        print("Synthetic latency model: \(first.pattern.displayName)")
         print("Pattern: \(first.pattern.rawValue)")
 
         for report in reports {
@@ -3608,6 +3608,14 @@ struct PocketPadCLI {
             let dx = event.deltaX.map { " dx=\(String(format: "%.2f", $0))" } ?? ""
             let dy = event.deltaY.map { " dy=\(String(format: "%.2f", $0))" } ?? ""
             return "\(timestamp) \(sequence) pointer \(pointerEvent)\(button)\(state)\(dx)\(dy)\(latency)\(pressed)\(detail)"
+        case "input_pipeline":
+            let type = event.messageType?.rawValue ?? "?"
+            let generation = event.inputGeneration.map { " generation=\($0)" } ?? ""
+            let inputSequence = event.inputSequence.map { " input=#\($0)" } ?? ""
+            let decode = event.decodeLatencyMS.map { " decode=\(String(format: "%.3f", $0))ms" } ?? ""
+            let reorder = event.reorderWaitMS.map { " reorder=\(String(format: "%.3f", $0))ms" } ?? ""
+            let pipeline = event.receiveToProcessedMS.map { " receive-to-processed=\(String(format: "%.3f", $0))ms" } ?? ""
+            return "\(timestamp) \(sequence) input_pipeline type=\(type)\(generation)\(inputSequence)\(decode)\(reorder)\(pipeline)\(detail)"
         case "ignored_button_edge", "recovered_button_edge":
             let button = event.button?.rawValue ?? "?"
             let state = event.state?.rawValue ?? "?"
@@ -3688,6 +3696,18 @@ struct PocketPadCLI {
                 for url in status.localURLs { print("- \(url)") }
             }
             print("Last Event: \(status.lastReceivedEvent)")
+            if let roundTripLatencyMS = status.roundTripLatencyMS ?? status.estimatedLatencyMS {
+                print("Round-trip Latency: \(roundTripLatencyMS) ms")
+            }
+            if let p50 = status.inputPipelineP50MS,
+               let p95 = status.inputPipelineP95MS,
+               let p99 = status.inputPipelineP99MS {
+                print(String(format: "Mac Input Pipeline: p50 %.3f ms, p95 %.3f ms, p99 %.3f ms", p50, p95, p99))
+            }
+            if let protocolVersion = status.inputProtocolVersion {
+                let generation = status.activeInputGeneration.map(String.init) ?? "legacy"
+                print("Input Protocol: v\(protocolVersion), generation \(generation), stale drops \(status.staleInputGenerationDrops ?? 0)")
+            }
             print("Pressed: \(status.pressedButtons.map(\.rawValue).sorted().joined(separator: ", "))")
             if status.virtualGamepadActive != nil || status.virtualGamepadAvailable != nil || status.virtualGamepadLastError != nil {
                 let active = status.virtualGamepadActive == true ? "active" : "inactive"

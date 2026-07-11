@@ -9,6 +9,7 @@ struct ButtonPulseSequencerSmokeTests {
 
     static func main() {
         testSingleFastTap()
+        testGenericElementFastTap()
         testRepeatedFastTapsProduceTwoPulses()
         testRawIOSFastTapEdgesRemainDistinctAtMac()
         testSecondFastTapCanBecomeHeldPress()
@@ -38,6 +39,32 @@ struct ButtonPulseSequencerSmokeTests {
         testCompactButtonSequenceRoundTrip()
         testCompactButtonPressIdentifierRoundTrip()
         print("ButtonPulseSequencer smoke tests passed")
+    }
+
+    private static func testGenericElementFastTap() {
+        let input = KeypadElementInputID(
+            elementID: UUID(uuidString: "C073AC1E-6527-4431-AF99-AEE99FAF80F0")!,
+            part: .primary
+        )
+        var sequencer = InputPulseSequencer<KeypadElementInputID>(
+            minimumTapDurationNanoseconds: minTap,
+            minimumInterTapGapNanoseconds: minGap
+        )
+        expectEqual(
+            sequencer.setButton(input, pressed: true, pressIdentifier: 99, now: 0),
+            [.send(input, .down)],
+            "generic element fast tap down"
+        )
+        expectEqual(
+            sequencer.setButton(input, pressed: false, pressIdentifier: 99, now: 2_000_000),
+            [.scheduleRelease(input, delayNanoseconds: minTap - 2_000_000)],
+            "generic element fast tap schedules minimum hold"
+        )
+        expectEqual(
+            sequencer.releaseTimerFired(for: input, now: minTap),
+            [.send(input, .up)],
+            "generic element fast tap releases after minimum hold"
+        )
     }
 
     private static func testSingleFastTap() {

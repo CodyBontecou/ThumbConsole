@@ -1,16 +1,18 @@
 import Foundation
 
-enum ButtonPulseCommand: Equatable {
-    case send(GameButton, ButtonPressState)
-    case scheduleRelease(GameButton, delayNanoseconds: UInt64)
-    case schedulePress(GameButton, delayNanoseconds: UInt64)
+enum InputPulseCommand<Input: Hashable>: Equatable {
+    case send(Input, ButtonPressState)
+    case scheduleRelease(Input, delayNanoseconds: UInt64)
+    case schedulePress(Input, delayNanoseconds: UInt64)
 }
 
-struct ButtonPulseSequencer {
+typealias ButtonPulseCommand = InputPulseCommand<GameButton>
+
+struct InputPulseSequencer<Input: Hashable> {
     // Keep synthesized tap edges visible across a 60 FPS game frame without
     // letting rapid same-button bursts back up behind overly conservative holds.
-    static let actionGameMinimumTapDurationNanoseconds: UInt64 = 22_000_000
-    static let actionGameMinimumInterTapGapNanoseconds: UInt64 = 18_000_000
+    static var actionGameMinimumTapDurationNanoseconds: UInt64 { 22_000_000 }
+    static var actionGameMinimumInterTapGapNanoseconds: UInt64 { 18_000_000 }
 
     private struct QueuedPress {
         let pressIdentifier: UInt64?
@@ -28,16 +30,16 @@ struct ButtonPulseSequencer {
     let minimumTapDurationNanoseconds: UInt64
     let minimumInterTapGapNanoseconds: UInt64
 
-    private var pressedButtons: Set<GameButton> = []
-    private var pressStartUptime: [GameButton: UInt64] = [:]
-    private var activePhysicalPressIdentifiers: [GameButton: Set<UInt64>] = [:]
-    private var activeAnonymousPhysicalHoldButtons: Set<GameButton> = []
-    private var pendingReleaseButtons: Set<GameButton> = []
-    private var pendingPressButtons: Set<GameButton> = []
-    private var pendingPressPhysicalIdentifiers: [GameButton: UInt64] = [:]
-    private var pendingAnonymousPressPhysicalHoldButtons: Set<GameButton> = []
-    private var pendingPressEmitsWhenReleased: [GameButton: Bool] = [:]
-    private var queuedPresses: [GameButton: [QueuedPress]] = [:]
+    private var pressedButtons: Set<Input> = []
+    private var pressStartUptime: [Input: UInt64] = [:]
+    private var activePhysicalPressIdentifiers: [Input: Set<UInt64>] = [:]
+    private var activeAnonymousPhysicalHoldButtons: Set<Input> = []
+    private var pendingReleaseButtons: Set<Input> = []
+    private var pendingPressButtons: Set<Input> = []
+    private var pendingPressPhysicalIdentifiers: [Input: UInt64] = [:]
+    private var pendingAnonymousPressPhysicalHoldButtons: Set<Input> = []
+    private var pendingPressEmitsWhenReleased: [Input: Bool] = [:]
+    private var queuedPresses: [Input: [QueuedPress]] = [:]
 
     init(
         minimumTapDurationNanoseconds: UInt64,
@@ -48,11 +50,11 @@ struct ButtonPulseSequencer {
     }
 
     mutating func setButton(
-        _ button: GameButton,
+        _ button: Input,
         pressed: Bool,
         pressIdentifier: UInt64? = nil,
         now: UInt64
-    ) -> [ButtonPulseCommand] {
+    ) -> [InputPulseCommand<Input>] {
         if pressed {
             if pendingReleaseButtons.contains(button) || pendingPressButtons.contains(button) {
                 enqueuePress(button, pressIdentifier: pressIdentifier, isPhysicallyHeld: true)
@@ -86,10 +88,10 @@ struct ButtonPulseSequencer {
     }
 
     mutating func recoverMissingReleaseBeforePress(
-        _ button: GameButton,
+        _ button: Input,
         pressIdentifier: UInt64? = nil,
         now: UInt64
-    ) -> [ButtonPulseCommand] {
+    ) -> [InputPulseCommand<Input>] {
         if let pressIdentifier {
             _ = removeActivePhysicalHold(for: button, pressIdentifier: pressIdentifier)
         } else {
@@ -115,10 +117,10 @@ struct ButtonPulseSequencer {
     }
 
     mutating func recoverMissingPressBeforeRelease(
-        _ button: GameButton,
+        _ button: Input,
         pressIdentifier: UInt64? = nil,
         now: UInt64
-    ) -> [ButtonPulseCommand] {
+    ) -> [InputPulseCommand<Input>] {
         if pendingReleaseButtons.contains(button) || pendingPressButtons.contains(button) {
             enqueuePress(button, pressIdentifier: pressIdentifier, isPhysicallyHeld: false)
             return []
@@ -139,12 +141,12 @@ struct ButtonPulseSequencer {
         return commands
     }
 
-    mutating func releaseTimerFired(for button: GameButton, now: UInt64) -> [ButtonPulseCommand] {
+    mutating func releaseTimerFired(for button: Input, now: UInt64) -> [InputPulseCommand<Input>] {
         guard pendingReleaseButtons.remove(button) != nil else { return [] }
         return finishRelease(button)
     }
 
-    mutating func pressTimerFired(for button: GameButton, now: UInt64) -> [ButtonPulseCommand] {
+    mutating func pressTimerFired(for button: Input, now: UInt64) -> [InputPulseCommand<Input>] {
         guard pendingPressButtons.remove(button) != nil else { return [] }
         let pressIdentifier = pendingPressPhysicalIdentifiers.removeValue(forKey: button)
         let hasAnonymousPhysicalHold = pendingAnonymousPressPhysicalHoldButtons.remove(button) != nil
@@ -181,11 +183,11 @@ struct ButtonPulseSequencer {
         queuedPresses.removeAll()
     }
 
-    func isPressed(_ button: GameButton) -> Bool {
+    func isPressed(_ button: Input) -> Bool {
         pressedButtons.contains(button)
     }
 
-    func hasPhysicalPress(_ button: GameButton) -> Bool {
+    func hasPhysicalPress(_ button: Input) -> Bool {
         activeAnonymousPhysicalHoldButtons.contains(button)
             || activePhysicalPressIdentifiers[button]?.isEmpty == false
             || pendingAnonymousPressPhysicalHoldButtons.contains(button)
@@ -193,7 +195,7 @@ struct ButtonPulseSequencer {
             || queuedPresses[button]?.contains(where: \.isPhysicallyHeld) == true
     }
 
-    func hasPhysicalPress(_ button: GameButton, pressIdentifier: UInt64?) -> Bool {
+    func hasPhysicalPress(_ button: Input, pressIdentifier: UInt64?) -> Bool {
         guard let pressIdentifier else {
             return hasPhysicalPress(button)
         }
@@ -206,10 +208,10 @@ struct ButtonPulseSequencer {
     }
 
     private mutating func releaseButton(
-        _ button: GameButton,
+        _ button: Input,
         respectingMinimumDuration: Bool,
         now: UInt64
-    ) -> [ButtonPulseCommand] {
+    ) -> [InputPulseCommand<Input>] {
         guard pressedButtons.contains(button) else { return [] }
         guard !respectingMinimumDuration || !pendingReleaseButtons.contains(button) else { return [] }
 
@@ -226,11 +228,11 @@ struct ButtonPulseSequencer {
     }
 
     private mutating func startPress(
-        _ button: GameButton,
+        _ button: Input,
         pressIdentifier: UInt64?,
         isPhysicallyHeld: Bool,
         now: UInt64
-    ) -> [ButtonPulseCommand] {
+    ) -> [InputPulseCommand<Input>] {
         pressStartUptime[button] = now
         pressedButtons.insert(button)
         if isPhysicallyHeld {
@@ -239,7 +241,7 @@ struct ButtonPulseSequencer {
         return [.send(button, .down)]
     }
 
-    private mutating func finishRelease(_ button: GameButton) -> [ButtonPulseCommand] {
+    private mutating func finishRelease(_ button: Input) -> [InputPulseCommand<Input>] {
         guard pressedButtons.contains(button) else { return [] }
 
         let shouldResumeInterruptedHold = queuedPresses[button]?.isEmpty == false
@@ -261,12 +263,12 @@ struct ButtonPulseSequencer {
             )
         }
 
-        var commands: [ButtonPulseCommand] = [.send(button, .up)]
+        var commands: [InputPulseCommand<Input>] = [.send(button, .up)]
         commands += scheduleQueuedPressIfNeeded(for: button)
         return commands
     }
 
-    private mutating func scheduleQueuedPressIfNeeded(for button: GameButton) -> [ButtonPulseCommand] {
+    private mutating func scheduleQueuedPressIfNeeded(for button: Input) -> [InputPulseCommand<Input>] {
         guard !pendingPressButtons.contains(button) else { return [] }
 
         var nextQueuedPress: QueuedPress?
@@ -297,7 +299,7 @@ struct ButtonPulseSequencer {
     }
 
     private mutating func enqueuePress(
-        _ button: GameButton,
+        _ button: Input,
         pressIdentifier: UInt64?,
         isPhysicallyHeld: Bool,
         emitsWhenReleased: Bool = true
@@ -311,7 +313,7 @@ struct ButtonPulseSequencer {
         )
     }
 
-    private mutating func dequeuePress(for button: GameButton) -> QueuedPress? {
+    private mutating func dequeuePress(for button: Input) -> QueuedPress? {
         guard var queue = queuedPresses[button], !queue.isEmpty else { return nil }
         let press = queue.removeFirst()
         queuedPresses[button] = queue.isEmpty ? nil : queue
@@ -319,7 +321,7 @@ struct ButtonPulseSequencer {
     }
 
     private mutating func releasePhysicalHold(
-        for button: GameButton,
+        for button: Input,
         pressIdentifier: UInt64?
     ) -> PhysicalHoldRelease {
         if let pressIdentifier {
@@ -352,7 +354,7 @@ struct ButtonPulseSequencer {
 
     @discardableResult
     private mutating func releaseQueuedPhysicalHold(
-        for button: GameButton,
+        for button: Input,
         matching predicate: (QueuedPress) -> Bool
     ) -> PhysicalHoldRelease {
         guard var queue = queuedPresses[button],
@@ -371,7 +373,7 @@ struct ButtonPulseSequencer {
     }
 
     private mutating func markActivePhysicalHold(
-        for button: GameButton,
+        for button: Input,
         pressIdentifier: UInt64?
     ) {
         guard let pressIdentifier else {
@@ -385,7 +387,7 @@ struct ButtonPulseSequencer {
 
     @discardableResult
     private mutating func removeActivePhysicalHold(
-        for button: GameButton,
+        for button: Input,
         pressIdentifier: UInt64
     ) -> Bool {
         guard var identifiers = activePhysicalPressIdentifiers[button],
@@ -398,8 +400,10 @@ struct ButtonPulseSequencer {
         return true
     }
 
-    private mutating func clearActivePhysicalHold(for button: GameButton) {
+    private mutating func clearActivePhysicalHold(for button: Input) {
         activePhysicalPressIdentifiers[button] = nil
         activeAnonymousPhysicalHoldButtons.remove(button)
     }
 }
+
+typealias ButtonPulseSequencer = InputPulseSequencer<GameButton>

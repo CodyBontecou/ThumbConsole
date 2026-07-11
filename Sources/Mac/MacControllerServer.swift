@@ -121,11 +121,14 @@ final class MacControllerServer: ObservableObject {
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let runtimeStatusPublishIntervalNanoseconds: UInt64 = 250_000_000
     private static let buttonReorderDelayNanoseconds: UInt64 = 4_000_000
+    private static let maximumPendingButtonMessages = 512
     // The iPhone re-sends every active touch on each heartbeat (500 ms). If a
     // button-up packet is lost, heartbeats continue but that button stops being
     // refreshed. Expire that stale hold after one missed refresh plus jitter,
     // instead of letting a direction feel stuck until the full heartbeat timeout.
-    private static let physicalHoldRefreshTimeoutNanoseconds: UInt64 = 850_000_000
+    // Allow for iOS timer coalescing without false-releasing long gameplay
+    // holds. Late identified ups are recovered separately.
+    private static let physicalHoldRefreshTimeoutNanoseconds: UInt64 = 1_750_000_000
     private let serverID: String
     private let bonjourServiceName: String
     private var trustedClients: [String: TrustedClient]
@@ -142,15 +145,29 @@ final class MacControllerServer: ObservableObject {
     private var activePairingCode: String
     private var realtimeToken: String?
     private var backgroundActivity: NSObjectProtocol?
-    private var heartbeatTimer: Timer?
+    private var heartbeatTimer: DispatchSourceTimer?
     private var heartbeatTimedOut = false
+    private var heartbeatTimedOutOnNetworkQueue = false
+    private var lastClientActivityUptime: UInt64?
+    private var lastPingUptime: UInt64 = 0
     private var inputPressedButtons: Set<GameButton> = []
     private var inputPressedElementInputs: Set<KeypadElementInputID> = []
     private var profileKeyBindings: [UUID: [GameButton: MacKeyBinding]] = [:]
     private var profileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]] = [:]
-    private var realtimeKeyBindings: [GameButton: MacKeyBinding]
-    private var realtimeOutputBindings: [GameButton: MacControlOutputBinding]
-    private var realtimeGamepadCustomization: GamepadCustomization
+    private var realtimeKeyBindings: [GameButton: MacKeyBinding] {
+        didSet { rebuildResolvedElementInputCacheOnNetworkQueue() }
+    }
+    private var realtimeOutputBindings: [GameButton: MacControlOutputBinding] {
+        didSet { rebuildResolvedElementInputCacheOnNetworkQueue() }
+    }
+    private var realtimeGamepadCustomization: GamepadCustomization {
+        didSet { rebuildResolvedElementInputCacheOnNetworkQueue() }
+    }
+    private struct ResolvedElementInput {
+        var label: String
+        var output: MacControlOutputBinding?
+    }
+    private var resolvedElementInputs: [KeypadElementInputID: ResolvedElementInput] = [:]
     private var realtimeGamepadProfiles: [GamepadConfigurationProfile]
     private var realtimeActiveGamepadProfileID: UUID
     private var realtimeDefaultGamepadProfileID: UUID
@@ -163,6 +180,7 @@ final class MacControllerServer: ObservableObject {
     private var lastInputDebugPublishUptime: UInt64 = 0
     private var lastClientActivityPublishUptime: UInt64 = 0
     private var lastAccessibilityRefresh = Date.distantPast
+    private var lastAccessibilityRefreshRequestUptime: UInt64 = 0
     private var activeBindings: [GameButton: MacKeyBinding] = [:]
     private var activeOutputBindings: [GameButton: MacControlOutputBinding] = [:]
     private var activeElementOutputBindings: [KeypadElementInputID: MacControlOutputBinding] = [:]
@@ -178,6 +196,8 @@ final class MacControllerServer: ObservableObject {
     private struct PointerButtonEventFingerprint: Hashable {
         let button: ControllerPointerButton
         let state: ButtonPressState
+        let generation: UInt64?
+        let sequence: UInt64?
         let timestamp: Int64
     }
     private struct PendingButtonMessage {
@@ -188,6 +208,23 @@ final class MacControllerServer: ObservableObject {
         let source: String
     }
 
+    private struct InputTimingKey: Hashable {
+        let source: String
+        let type: ControllerMessageType
+        let generation: UInt64?
+        let sequence: UInt64?
+        let timestamp: Int64
+    }
+
+    private struct ReceivedInputTiming {
+        let receivedAtUptime: UInt64
+        let decodedAtUptime: UInt64
+        var processingStartedAtUptime: UInt64?
+    }
+
+    private var receivedInputTimings: [InputTimingKey: ReceivedInputTiming] = [:]
+    private var recentInputPipelineSamplesMS: [Double] = []
+
     private struct TrustedClient: Codable {
         var token: String
         var clientName: String
@@ -195,6 +232,18 @@ final class MacControllerServer: ObservableObject {
         var lastSeenAt: Int64
     }
 
+    private var buttonPulseSequencer = ButtonPulseSequencer(
+        minimumTapDurationNanoseconds: ButtonPulseSequencer.actionGameMinimumTapDurationNanoseconds,
+        minimumInterTapGapNanoseconds: ButtonPulseSequencer.actionGameMinimumInterTapGapNanoseconds
+    )
+    private var elementPulseSequencer = InputPulseSequencer<KeypadElementInputID>(
+        minimumTapDurationNanoseconds: ButtonPulseSequencer.actionGameMinimumTapDurationNanoseconds,
+        minimumInterTapGapNanoseconds: ButtonPulseSequencer.actionGameMinimumInterTapGapNanoseconds
+    )
+    private var buttonPulseReleaseWorkItems: [GameButton: DispatchWorkItem] = [:]
+    private var buttonPulsePressWorkItems: [GameButton: DispatchWorkItem] = [:]
+    private var elementPulseReleaseWorkItems: [KeypadElementInputID: DispatchWorkItem] = [:]
+    private var elementPulsePressWorkItems: [KeypadElementInputID: DispatchWorkItem] = [:]
     private var activePressIdentifiersByButton: [GameButton: Set<UInt64>] = [:]
     private var activePressLastSeenByButton: [GameButton: [UInt64: UInt64]] = [:]
     private var anonymousPressCountsByButton: [GameButton: Int] = [:]
@@ -203,6 +252,10 @@ final class MacControllerServer: ObservableObject {
     private var activePressLastSeenByElementInput: [KeypadElementInputID: [UInt64: UInt64]] = [:]
     private var anonymousPressCountsByElementInput: [KeypadElementInputID: Int] = [:]
     private var anonymousPressLastSeenByElementInput: [KeypadElementInputID: UInt64] = [:]
+    private var activeInputGeneration: UInt64?
+    private var releasedInputGeneration: UInt64?
+    private var retiredInputGenerations: Set<UInt64> = []
+    private var staleInputGenerationDropCount = 0
     private var buttonSequenceTracker = ButtonSequenceTracker()
     private var pendingButtonMessagesBySequence: [UInt64: PendingButtonMessage] = [:]
     private var buttonReorderFlushWorkItem: DispatchWorkItem?
@@ -283,6 +336,7 @@ final class MacControllerServer: ObservableObject {
         saveOutputBindings()
         saveProfileOutputBindings()
         networkQueue.setSpecific(key: networkQueueKey, value: true)
+        rebuildResolvedElementInputCacheOnNetworkQueue()
         refreshAccessibilityStatus()
         localURLs = Self.localIPv4Addresses().map { "ws://\($0):\(port)" }
         cliCommandObserver = DistributedNotificationCenter.default().addObserver(
@@ -411,7 +465,7 @@ final class MacControllerServer: ObservableObject {
         connection?.cancel()
         listener?.cancel()
         stopBonjourService()
-        heartbeatTimer?.invalidate()
+        heartbeatTimer?.cancel()
         heartbeatTimer = nil
         endBackgroundActivity()
         connection = nil
@@ -511,7 +565,7 @@ final class MacControllerServer: ObservableObject {
             openAccessibilitySettings()
 
         case .releaseAll:
-            releaseAll(reason: payload.reason?.nilIfEmpty ?? "CLI release all")
+            releaseAllAndNotifyClient(reason: payload.reason?.nilIfEmpty ?? "CLI release all")
 
         case .testDown:
             guard let button = payload.button else {
@@ -1282,13 +1336,138 @@ final class MacControllerServer: ObservableObject {
     }
 
     func releaseAll(reason: String = "Release all") {
+        releaseAllAndNotifyClient(reason: reason)
+    }
+
+    private func releaseAllAndNotifyClient(reason: String) {
         syncOnNetworkQueue {
+            guard let currentGeneration = activeInputGeneration,
+                  let pairedConnection
+            else {
+                releaseAllOnNetworkQueue(reason: reason)
+                return
+            }
+
+            let nextGeneration = currentGeneration == UInt64.max ? 1 : currentGeneration + 1
+            retiredInputGenerations.insert(currentGeneration)
+            activeInputGeneration = nextGeneration
+            releasedInputGeneration = nextGeneration
             releaseAllOnNetworkQueue(reason: reason)
+            send(
+                .init(
+                    type: .releaseAll,
+                    timestamp: 0,
+                    inputProtocolVersion: ControllerWireCodec.currentInputProtocolVersion,
+                    inputGeneration: nextGeneration
+                ),
+                on: pairedConnection
+            )
         }
+    }
+
+    private enum InputGenerationAcceptance: Equatable {
+        case legacy
+        case initial
+        case current
+        case transitioned
+        case rejected
+    }
+
+    private func acceptInputGenerationOnNetworkQueue(
+        for message: ControllerMessage,
+        source: String
+    ) -> InputGenerationAcceptance {
+        guard let generation = message.inputGeneration else {
+            if activeInputGeneration != nil {
+                noteRejectedInputGenerationOnNetworkQueue(message, source: source, detail: "missing_generation")
+                return .rejected
+            }
+            return .legacy
+        }
+
+        guard message.inputProtocolVersion == ControllerWireCodec.currentInputProtocolVersion else {
+            noteRejectedInputGenerationOnNetworkQueue(message, source: source, detail: "unsupported_protocol")
+            return .rejected
+        }
+
+        guard let activeInputGeneration else {
+            self.activeInputGeneration = generation
+            retiredInputGenerations.remove(generation)
+            buttonSequenceTracker.reset()
+            resetPendingButtonMessagesOnNetworkQueue()
+            return .initial
+        }
+
+        if generation == activeInputGeneration {
+            return .current
+        }
+        if retiredInputGenerations.contains(generation) {
+            noteRejectedInputGenerationOnNetworkQueue(message, source: source, detail: "retired_generation")
+            return .rejected
+        }
+        let expectedGeneration = activeInputGeneration == UInt64.max ? 1 : activeInputGeneration + 1
+        guard generation == expectedGeneration else {
+            noteRejectedInputGenerationOnNetworkQueue(message, source: source, detail: "unexpected_generation")
+            return .rejected
+        }
+
+        retiredInputGenerations.insert(activeInputGeneration)
+        if retiredInputGenerations.count > 64, let oldest = retiredInputGenerations.first {
+            retiredInputGenerations.remove(oldest)
+        }
+        self.activeInputGeneration = generation
+        releasedInputGeneration = generation
+        releaseAllOnNetworkQueue(reason: "Input generation changed")
+        buttonSequenceTracker.reset()
+        return .transitioned
+    }
+
+    private func handleRemoteReleaseAllOnNetworkQueue(
+        _ message: ControllerMessage,
+        source: String
+    ) {
+        let acceptance = acceptInputGenerationOnNetworkQueue(for: message, source: source)
+        switch acceptance {
+        case .rejected:
+            return
+        case .transitioned:
+            return
+        case .initial, .current:
+            guard releasedInputGeneration != message.inputGeneration else { return }
+            releasedInputGeneration = message.inputGeneration
+            releaseAllOnNetworkQueue(reason: "release_all from \(source)")
+        case .legacy:
+            releaseAllOnNetworkQueue(reason: "release_all from \(source) (legacy)")
+        }
+    }
+
+    private func noteRejectedInputGenerationOnNetworkQueue(
+        _ message: ControllerMessage,
+        source: String,
+        detail: String
+    ) {
+        if staleInputGenerationDropCount < Int.max {
+            staleInputGenerationDropCount += 1
+        }
+        finishInputTimingOnNetworkQueue(
+            for: message,
+            source: source,
+            rejectionDetail: detail,
+            recordSample: false
+        )
+        appendCaptureEvent(PocketPadCaptureEvent(
+            kind: "rejected_input_generation",
+            source: source,
+            messageType: message.type,
+            inputSequence: ControllerWireCodec.inputSequenceNumber(from: message) ?? message.analogSequence,
+            detail: "\(detail); generation=\(message.inputGeneration.map(String.init) ?? "nil")"
+        ))
+        logDebug("rejected_input_generation source=\(source) type=\(message.type.rawValue) detail=\(detail)")
     }
 
     private func releaseAllOnNetworkQueue(reason: String) {
         resetPendingButtonMessagesOnNetworkQueue()
+        resetInputPulseSequencersOnNetworkQueue()
         resetPhysicalInputTrackingOnNetworkQueue()
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
         lastAnalogSequenceNumberByKey.removeAll()
@@ -1335,6 +1514,15 @@ final class MacControllerServer: ObservableObject {
         pairedConnection = nil
         pendingPairingConnection = newConnection
         realtimeToken = nil
+        lastClientActivityUptime = nil
+        heartbeatTimedOutOnNetworkQueue = false
+        lastPingUptime = 0
+        activeInputGeneration = nil
+        releasedInputGeneration = nil
+        retiredInputGenerations.removeAll()
+        staleInputGenerationDropCount = 0
+        receivedInputTimings.removeAll(keepingCapacity: true)
+        recentInputPipelineSamplesMS.removeAll(keepingCapacity: true)
         resetButtonSequenceDiagnosticsOnNetworkQueue()
         resetPhysicalInputTrackingOnNetworkQueue()
 
@@ -1495,10 +1683,17 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func handleReceivedDatagramDataOnNetworkQueue(_ data: Data, from connection: NWConnection) {
+        let receivedAtUptime = DispatchTime.now().uptimeNanoseconds
         guard let message = try? ControllerWireCodec.decode(data, using: decoder) else {
             logInputEvent("invalid_datagram_message bytes=\(data.count)")
             return
         }
+        recordInputTimingOnNetworkQueue(
+            for: message,
+            source: "iPhone UDP",
+            receivedAtUptime: receivedAtUptime,
+            decodedAtUptime: DispatchTime.now().uptimeNanoseconds
+        )
 
         if message.type == .hello {
             authenticateDatagramConnectionOnNetworkQueue(connection, message: message)
@@ -1516,24 +1711,26 @@ final class MacControllerServer: ObservableObject {
 
         switch message.type {
         case .button:
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone UDP") != .rejected else { return }
             handleButtonMessageOnNetworkQueue(message, source: "iPhone UDP")
 
         case .elementInput:
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone UDP") != .rejected else { return }
             handleElementInputMessageOnNetworkQueue(message, source: "iPhone UDP")
 
         case .pointer:
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone UDP") != .rejected else { return }
             handlePointerMessageOnNetworkQueue(message, source: "iPhone UDP")
 
         case .gamepadAnalog:
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone UDP") != .rejected else { return }
             handleGamepadAnalogMessageOnNetworkQueue(message, source: "iPhone UDP")
 
         case .releaseAll:
-            releaseAllOnNetworkQueue(reason: "release_all from iPhone UDP")
+            handleRemoteReleaseAllOnNetworkQueue(message, source: "iPhone UDP")
 
         case .heartbeat:
-            if let latency = oneWayLatencyMilliseconds(from: message.timestamp) {
-                publishEstimatedLatency(latency, from: pairedConnection)
-            }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone UDP") != .rejected else { return }
 
         default:
             break
@@ -1576,8 +1773,15 @@ final class MacControllerServer: ObservableObject {
 
     private func handleReceivedDataOnNetworkQueue(_ data: Data, from connection: NWConnection) {
         guard realtimeConnection === connection else { return }
+        let receivedAtUptime = DispatchTime.now().uptimeNanoseconds
         do {
             let message = try ControllerWireCodec.decode(data, using: decoder)
+            recordInputTimingOnNetworkQueue(
+                for: message,
+                source: "iPhone",
+                receivedAtUptime: receivedAtUptime,
+                decodedAtUptime: DispatchTime.now().uptimeNanoseconds
+            )
             handleMessageOnNetworkQueue(message, from: connection)
         } catch {
             publishControllerDebug(event: "Invalid keypad message: \(error.localizedDescription)", immediately: true)
@@ -1632,6 +1836,7 @@ final class MacControllerServer: ObservableObject {
                 logDebug("ignored_unpaired_message type=button")
                 return
             }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
             handleButtonMessageOnNetworkQueue(message, source: "iPhone")
 
         case .elementInput:
@@ -1639,6 +1844,7 @@ final class MacControllerServer: ObservableObject {
                 logDebug("ignored_unpaired_message type=element_input")
                 return
             }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
             handleElementInputMessageOnNetworkQueue(message, source: "iPhone")
 
         case .pointer:
@@ -1646,6 +1852,7 @@ final class MacControllerServer: ObservableObject {
                 logDebug("ignored_unpaired_message type=pointer")
                 return
             }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
             handlePointerMessageOnNetworkQueue(message, source: "iPhone")
 
         case .gamepadAnalog:
@@ -1653,17 +1860,16 @@ final class MacControllerServer: ObservableObject {
                 logDebug("ignored_unpaired_message type=gamepad_analog")
                 return
             }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
             handleGamepadAnalogMessageOnNetworkQueue(message, source: "iPhone")
 
         case .releaseAll:
             guard isPairedConnection else { return }
-            releaseAllOnNetworkQueue(reason: "release_all from iPhone")
+            handleRemoteReleaseAllOnNetworkQueue(message, source: "iPhone")
 
         case .heartbeat:
             guard isPairedConnection else { return }
-            if let latency = oneWayLatencyMilliseconds(from: message.timestamp) {
-                publishEstimatedLatency(latency, from: connection)
-            }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
 
         case .ping:
             guard isPairedConnection else { return }
@@ -1780,6 +1986,9 @@ final class MacControllerServer: ObservableObject {
         pendingPairingConnection = nil
         pairedConnection = connection
         realtimeToken = newRealtimeToken
+        lastClientActivityUptime = DispatchTime.now().uptimeNanoseconds
+        heartbeatTimedOutOnNetworkQueue = false
+        lastPingUptime = 0
         let clientGamepadCustomization = gamepadCustomizationForClient(realtimeGamepadCustomization)
         let clientGamepadProfiles = gamepadProfilesForClient(realtimeGamepadProfiles)
 
@@ -1793,7 +2002,8 @@ final class MacControllerServer: ObservableObject {
                 gamepadCustomization: clientGamepadCustomization,
                 gamepadProfiles: clientGamepadProfiles,
                 gamepadProfileID: realtimeActiveGamepadProfileID,
-                defaultGamepadProfileID: realtimeDefaultGamepadProfileID
+                defaultGamepadProfileID: realtimeDefaultGamepadProfileID,
+                inputProtocolVersion: ControllerWireCodec.currentInputProtocolVersion
             ),
             on: connection
         )
@@ -1922,6 +2132,16 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func handlePointerMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
+        markInputProcessingStartedOnNetworkQueue(for: message, source: source)
+        var didApplyInput = false
+        defer {
+            finishInputTimingOnNetworkQueue(
+                for: message,
+                source: source,
+                rejectionDetail: didApplyInput ? nil : "ignored_or_duplicate",
+                recordSample: didApplyInput
+            )
+        }
         guard let event = message.pointerEvent else {
             publishControllerDebug(event: "Ignored malformed pointer event", immediately: true)
             return
@@ -1932,6 +2152,7 @@ final class MacControllerServer: ObservableObject {
             let deltaX = message.deltaX ?? 0
             let deltaY = message.deltaY ?? 0
             pointerInjector.moveBy(deltaX: deltaX, deltaY: deltaY)
+            didApplyInput = true
             appendCaptureEvent(PocketPadCaptureEvent(
                 kind: "pointer",
                 source: source,
@@ -1950,6 +2171,7 @@ final class MacControllerServer: ObservableObject {
             let deltaX = message.deltaX ?? 0
             let deltaY = message.deltaY ?? 0
             pointerInjector.scrollBy(deltaX: deltaX, deltaY: deltaY)
+            didApplyInput = true
             appendCaptureEvent(PocketPadCaptureEvent(
                 kind: "pointer",
                 source: source,
@@ -1975,6 +2197,8 @@ final class MacControllerServer: ObservableObject {
             let fingerprint = PointerButtonEventFingerprint(
                 button: pointerButton,
                 state: state,
+                generation: message.inputGeneration,
+                sequence: message.inputSequence,
                 timestamp: message.timestamp
             )
             guard !isDuplicatePointerButtonEvent(fingerprint) else { return }
@@ -1989,6 +2213,7 @@ final class MacControllerServer: ObservableObject {
                 rememberPointerButtonEvent(fingerprint)
                 pointerInjector.setButton(pointerButton, pressed: false)
             }
+            didApplyInput = true
             appendCaptureEvent(PocketPadCaptureEvent(
                 kind: "pointer",
                 source: source,
@@ -2023,6 +2248,16 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func handleGamepadAnalogMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
+        markInputProcessingStartedOnNetworkQueue(for: message, source: source)
+        var didApplyInput = false
+        defer {
+            finishInputTimingOnNetworkQueue(
+                for: message,
+                source: source,
+                rejectionDetail: didApplyInput ? nil : "ignored_or_duplicate",
+                recordSample: didApplyInput
+            )
+        }
         guard realtimeOutputMode != .keyboard else {
             logInputEvent("gamepad_analog_ignored source=\(source) mode=keyboard")
             return
@@ -2040,6 +2275,7 @@ final class MacControllerServer: ObservableObject {
                 activeAnalogStickLastSeenByStick[stick] = DispatchTime.now().uptimeNanoseconds
             }
             virtualGamepadInjector.setStick(stick, x: x, y: y)
+            didApplyInput = true
             appendCaptureEvent(PocketPadCaptureEvent(
                 kind: "gamepad_analog",
                 source: source,
@@ -2068,6 +2304,7 @@ final class MacControllerServer: ObservableObject {
                 activeAnalogTriggerLastSeenByTrigger[trigger] = DispatchTime.now().uptimeNanoseconds
             }
             virtualGamepadInjector.setTrigger(trigger, value: value)
+            didApplyInput = true
             appendCaptureEvent(PocketPadCaptureEvent(
                 kind: "gamepad_analog",
                 source: source,
@@ -2133,11 +2370,42 @@ final class MacControllerServer: ObservableObject {
         state: ButtonPressState,
         source: String
     ) {
+        markInputProcessingStartedOnNetworkQueue(for: message, source: source)
         let inspection = buttonSequenceTracker.inspect(message)
+        var didApplyInput = false
+        defer {
+            let rejectionDetail = inspection.isOutOfOrderOrReset
+                ? "stale_sequence"
+                : (didApplyInput ? nil : "ignored_or_duplicate")
+            finishInputTimingOnNetworkQueue(
+                for: message,
+                source: source,
+                rejectionDetail: rejectionDetail,
+                recordSample: didApplyInput && !inspection.isOutOfOrderOrReset
+            )
+        }
+        let pressIdentifier = ControllerWireCodec.inputPressIdentifier(from: message)
         if inspection.isOutOfOrderOrReset,
            let expectedSequence = inspection.expectedSequence,
            let receivedSequence = inspection.receivedSequence
         {
+            // A delayed reliable up is still safe when it names the exact
+            // physical press that remains active. Recover it without allowing
+            // any stale down to reassert input from the past.
+            if state == .up,
+               pressIdentifier != nil,
+               hasIdentifiedElementPressOnNetworkQueue(input, pressIdentifier: pressIdentifier)
+            {
+                didApplyInput = handleElementInputOnNetworkQueue(
+                    input,
+                    state: .up,
+                    source: "\(source) late release recovery",
+                    pressIdentifier: pressIdentifier,
+                    messageTimestamp: captureLatencyTimestamp(for: message)
+                )
+                logInputEvent("element_input_late_release_recovered expected=\(expectedSequence) received=\(receivedSequence) input=\(input.storageKey)")
+                return
+            }
             logInputEvent("element_input_sequence_stale expected=\(expectedSequence) received=\(receivedSequence) input=\(input.storageKey) state=\(state.rawValue)")
             return
         }
@@ -2145,19 +2413,28 @@ final class MacControllerServer: ObservableObject {
            let expectedSequence = inspection.expectedSequence,
            let receivedSequence = inspection.receivedSequence
         {
+            publishElementSequenceGap(
+                expectedSequence: expectedSequence,
+                receivedSequence: receivedSequence,
+                missedFrameCount: inspection.missedFrameCount,
+                totalMissedInputFrames: inspection.totalMissedFrameCount,
+                input: input,
+                state: state
+            )
             logDebug("element_input_sequence_gap expected=\(expectedSequence) received=\(receivedSequence) missed=\(inspection.missedFrameCount) input=\(input.storageKey) state=\(state.rawValue)")
         }
 
-        handleElementInputOnNetworkQueue(
+        didApplyInput = handleElementInputOnNetworkQueue(
             input,
             state: state,
             source: source,
             sequenceInspection: inspection,
-            pressIdentifier: ControllerWireCodec.inputPressIdentifier(from: message),
+            pressIdentifier: pressIdentifier,
             messageTimestamp: captureLatencyTimestamp(for: message)
         )
     }
 
+    @discardableResult
     private func handleElementInputOnNetworkQueue(
         _ input: KeypadElementInputID,
         state: ButtonPressState,
@@ -2165,9 +2442,9 @@ final class MacControllerServer: ObservableObject {
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64?,
         messageTimestamp: Int64? = nil
-    ) {
+    ) -> Bool {
         if sequenceInspection.isOutOfOrderOrReset, sequenceInspection.hasSequence {
-            return
+            return false
         }
 
         switch state {
@@ -2180,35 +2457,63 @@ final class MacControllerServer: ObservableObject {
                 {
                     refreshElementPressSeenOnNetworkQueue(input, pressIdentifier: pressIdentifier)
                     logDebug("element_input_refresh_after_gap input=\(input.storageKey) pressIdentifier=\(pressIdentifier.map(String.init) ?? "nil")")
-                    return
+                    return false
                 }
 
                 logDebug("recovered_element_input_edge reason=missing_release_before_down input=\(input.storageKey) state=\(state.rawValue)")
                 resetElementHoldsOnNetworkQueue(for: input, keeping: pressIdentifier)
-                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_release_before_down")
-                handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_release_before_down")
-                return
+                let commands = elementPulseSequencer.recoverMissingReleaseBeforePress(
+                    input,
+                    pressIdentifier: nil,
+                    now: DispatchTime.now().uptimeNanoseconds
+                )
+                executeElementPulseCommandsOnNetworkQueue(
+                    commands,
+                    source: source,
+                    sequenceInspection: sequenceInspection,
+                    pressIdentifier: pressIdentifier,
+                    messageTimestamp: messageTimestamp,
+                    detail: "missing_release_before_down"
+                )
+                return true
             }
 
-            if recordElementPressBeganOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
-                handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+            guard recordElementPressBeganOnNetworkQueue(input, pressIdentifier: pressIdentifier) else {
+                // recordElementPressBegan refreshes the liveness deadline for a
+                // heartbeat duplicate before reporting that no edge was applied.
+                return false
             }
+            handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+            return true
 
         case .up:
             switch recordElementPressEndedOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
             case .shouldReleaseKey:
                 handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+                return true
 
             case .stillHeld:
-                break
+                return true
 
             case .orphan:
                 if sequenceInspection.missedFrameBeforeButton,
                    !hasElementPressOnNetworkQueue(input)
                 {
                     logDebug("recovered_element_input_edge reason=missing_down_before_up input=\(input.storageKey) state=\(state.rawValue)")
-                    handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_down_before_up")
-                    handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_down_before_up")
+                    let commands = elementPulseSequencer.recoverMissingPressBeforeRelease(
+                        input,
+                        pressIdentifier: nil,
+                        now: DispatchTime.now().uptimeNanoseconds
+                    )
+                    executeElementPulseCommandsOnNetworkQueue(
+                        commands,
+                        source: source,
+                        sequenceInspection: sequenceInspection,
+                        pressIdentifier: pressIdentifier,
+                        messageTimestamp: messageTimestamp,
+                        detail: "missing_down_before_up"
+                    )
+                    return true
                 } else {
                     appendCaptureEvent(PocketPadCaptureEvent(
                         kind: "ignored_element_input_edge",
@@ -2230,12 +2535,42 @@ final class MacControllerServer: ObservableObject {
                         detail: "orphan_up"
                     ))
                     logDebug("ignored_element_input_edge reason=orphan_up input=\(input.storageKey) state=\(state.rawValue)")
+                    return false
                 }
             }
         }
     }
 
     private func handleElementInputEdgeOnNetworkQueue(
+        _ input: KeypadElementInputID,
+        state: ButtonPressState,
+        source: String,
+        sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
+        pressIdentifier: UInt64? = nil,
+        messageTimestamp: Int64? = nil,
+        detail: String? = nil
+    ) {
+        // Physical touch ownership is already reference-counted before this
+        // output pulse stage. Keep the pulse sequencer identifier-agnostic so a
+        // final up from a different overlapping touch (or stale recovery) can
+        // always release the synthesized hold.
+        let commands = elementPulseSequencer.setButton(
+            input,
+            pressed: state == .down,
+            pressIdentifier: nil,
+            now: DispatchTime.now().uptimeNanoseconds
+        )
+        executeElementPulseCommandsOnNetworkQueue(
+            commands,
+            source: source,
+            sequenceInspection: sequenceInspection,
+            pressIdentifier: pressIdentifier,
+            messageTimestamp: messageTimestamp,
+            detail: detail
+        )
+    }
+
+    private func applyElementOutputEdgeOnNetworkQueue(
         _ input: KeypadElementInputID,
         state: ButtonPressState,
         source: String,
@@ -2290,13 +2625,104 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func elementOutputBindingOnNetworkQueue(for input: KeypadElementInputID) -> MacControlOutputBinding? {
-        guard let element = realtimeGamepadCustomization.element(for: input.elementID) else { return nil }
-        if let directOutput = element.outputBinding(for: input.part) {
-            return MacControlOutputBinding(shared: directOutput)
+    private func executeElementPulseCommandsOnNetworkQueue(
+        _ commands: [InputPulseCommand<KeypadElementInputID>],
+        source: String,
+        sequenceInspection: ButtonSequenceInspection,
+        pressIdentifier: UInt64?,
+        messageTimestamp: Int64?,
+        detail: String?
+    ) {
+        for command in commands {
+            switch command {
+            case .send(let input, let state):
+                applyElementOutputEdgeOnNetworkQueue(
+                    input,
+                    state: state,
+                    source: source,
+                    sequenceInspection: sequenceInspection,
+                    pressIdentifier: pressIdentifier,
+                    messageTimestamp: messageTimestamp,
+                    detail: detail
+                )
+
+            case .scheduleRelease(let input, let delayNanoseconds):
+                elementPulseReleaseWorkItems[input]?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.elementPulseReleaseWorkItems[input] = nil
+                    let next = self.elementPulseSequencer.releaseTimerFired(
+                        for: input,
+                        now: DispatchTime.now().uptimeNanoseconds
+                    )
+                    self.executeElementPulseCommandsOnNetworkQueue(
+                        next,
+                        source: source,
+                        sequenceInspection: sequenceInspection,
+                        pressIdentifier: pressIdentifier,
+                        messageTimestamp: messageTimestamp,
+                        detail: detail
+                    )
+                }
+                elementPulseReleaseWorkItems[input] = workItem
+                networkQueue.asyncAfter(
+                    deadline: .now() + .nanoseconds(Int(delayNanoseconds)),
+                    execute: workItem
+                )
+
+            case .schedulePress(let input, let delayNanoseconds):
+                elementPulsePressWorkItems[input]?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.elementPulsePressWorkItems[input] = nil
+                    let next = self.elementPulseSequencer.pressTimerFired(
+                        for: input,
+                        now: DispatchTime.now().uptimeNanoseconds
+                    )
+                    self.executeElementPulseCommandsOnNetworkQueue(
+                        next,
+                        source: source,
+                        sequenceInspection: sequenceInspection,
+                        pressIdentifier: pressIdentifier,
+                        messageTimestamp: messageTimestamp,
+                        detail: detail
+                    )
+                }
+                elementPulsePressWorkItems[input] = workItem
+                networkQueue.asyncAfter(
+                    deadline: .now() + .nanoseconds(Int(delayNanoseconds)),
+                    execute: workItem
+                )
+            }
         }
-        guard let legacyButton = Self.legacyButton(for: input.part, element: element) else { return nil }
-        return realtimeOutputBindings[legacyButton] ?? realtimeKeyBindings[legacyButton].map { MacControlOutputBinding.keyboard($0) }
+    }
+
+    private func rebuildResolvedElementInputCacheOnNetworkQueue() {
+        var resolved: [KeypadElementInputID: ResolvedElementInput] = [:]
+        resolved.reserveCapacity(realtimeGamepadCustomization.elements.count * KeypadElementInputPart.allCases.count)
+
+        for element in realtimeGamepadCustomization.elements {
+            for part in KeypadElementInputPart.allCases {
+                let input = KeypadElementInputID(elementID: element.id, part: part)
+                let output: MacControlOutputBinding?
+                if let directOutput = element.outputBinding(for: part) {
+                    output = MacControlOutputBinding(shared: directOutput)
+                } else if let legacyButton = Self.legacyButton(for: part, element: element) {
+                    output = realtimeOutputBindings[legacyButton]
+                        ?? realtimeKeyBindings[legacyButton].map { MacControlOutputBinding.keyboard($0) }
+                } else {
+                    output = nil
+                }
+                let label = part == .primary ? element.label : "\(element.label) \(part.displayName)"
+                resolved[input] = ResolvedElementInput(label: label, output: output)
+            }
+        }
+
+        resolvedElementInputs = resolved
+    }
+
+    private func elementOutputBindingOnNetworkQueue(for input: KeypadElementInputID) -> MacControlOutputBinding? {
+        resolvedElementInputs[input]?.output
     }
 
     private static func legacyButton(for part: KeypadElementInputPart, element: KeypadElement) -> GameButton? {
@@ -2315,8 +2741,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func elementDebugLabelOnNetworkQueue(for input: KeypadElementInputID) -> String {
-        guard let element = realtimeGamepadCustomization.element(for: input.elementID) else { return input.storageKey }
-        return input.part == .primary ? element.label : "\(element.label) \(input.part.displayName)"
+        resolvedElementInputs[input]?.label ?? input.storageKey
     }
 
     private func recordElementPressBeganOnNetworkQueue(
@@ -2444,13 +2869,42 @@ final class MacControllerServer: ObservableObject {
         state: ButtonPressState,
         source: String
     ) {
+        markInputProcessingStartedOnNetworkQueue(for: message, source: source)
         let sequenceInspection = inspectButtonSequence(message, button: button, state: state)
-        handleRealtimeInputOnNetworkQueue(
+        var didApplyInput = false
+        defer {
+            let rejectionDetail = sequenceInspection.isOutOfOrderOrReset
+                ? "stale_sequence"
+                : (didApplyInput ? nil : "ignored_or_duplicate")
+            finishInputTimingOnNetworkQueue(
+                for: message,
+                source: source,
+                rejectionDetail: rejectionDetail,
+                recordSample: didApplyInput && !sequenceInspection.isOutOfOrderOrReset
+            )
+        }
+        let pressIdentifier = ControllerWireCodec.buttonPressIdentifier(from: message)
+        if sequenceInspection.isOutOfOrderOrReset,
+           state == .up,
+           pressIdentifier != nil,
+           hasIdentifiedPhysicalPressOnNetworkQueue(button, pressIdentifier: pressIdentifier)
+        {
+            didApplyInput = handleRealtimeInputOnNetworkQueue(
+                button,
+                state: .up,
+                source: "\(source) late release recovery",
+                pressIdentifier: pressIdentifier,
+                messageTimestamp: captureLatencyTimestamp(for: message)
+            )
+            logInputEvent("button_late_release_recovered button=\(button.rawValue) sequence=\(sequenceInspection.receivedSequence.map(String.init) ?? "nil")")
+            return
+        }
+        didApplyInput = handleRealtimeInputOnNetworkQueue(
             button,
             state: state,
             source: source,
             sequenceInspection: sequenceInspection,
-            pressIdentifier: ControllerWireCodec.buttonPressIdentifier(from: message),
+            pressIdentifier: pressIdentifier,
             messageTimestamp: captureLatencyTimestamp(for: message)
         )
     }
@@ -2470,7 +2924,16 @@ final class MacControllerServer: ObservableObject {
         source: String,
         sequenceNumber: UInt64
     ) {
-        if pendingButtonMessagesBySequence[sequenceNumber] == nil {
+        if let pending = pendingButtonMessagesBySequence[sequenceNumber] {
+            if pending.source != source {
+                finishInputTimingOnNetworkQueue(
+                    for: message,
+                    source: source,
+                    rejectionDetail: "duplicate_buffered_mirror",
+                    recordSample: false
+                )
+            }
+        } else {
             pendingButtonMessagesBySequence[sequenceNumber] = PendingButtonMessage(
                 message: message,
                 button: button,
@@ -2479,7 +2942,11 @@ final class MacControllerServer: ObservableObject {
                 source: source
             )
         }
-        scheduleButtonReorderFlushIfNeeded()
+        if pendingButtonMessagesBySequence.count >= Self.maximumPendingButtonMessages {
+            flushPendingButtonMessagesImmediatelyOnNetworkQueue()
+        } else {
+            scheduleButtonReorderFlushIfNeeded()
+        }
     }
 
     private func bufferElementInputMessage(
@@ -2489,7 +2956,16 @@ final class MacControllerServer: ObservableObject {
         source: String,
         sequenceNumber: UInt64
     ) {
-        if pendingButtonMessagesBySequence[sequenceNumber] == nil {
+        if let pending = pendingButtonMessagesBySequence[sequenceNumber] {
+            if pending.source != source {
+                finishInputTimingOnNetworkQueue(
+                    for: message,
+                    source: source,
+                    rejectionDetail: "duplicate_buffered_mirror",
+                    recordSample: false
+                )
+            }
+        } else {
             pendingButtonMessagesBySequence[sequenceNumber] = PendingButtonMessage(
                 message: message,
                 button: nil,
@@ -2498,7 +2974,11 @@ final class MacControllerServer: ObservableObject {
                 source: source
             )
         }
-        scheduleButtonReorderFlushIfNeeded()
+        if pendingButtonMessagesBySequence.count >= Self.maximumPendingButtonMessages {
+            flushPendingButtonMessagesImmediatelyOnNetworkQueue()
+        } else {
+            scheduleButtonReorderFlushIfNeeded()
+        }
     }
 
     private func scheduleButtonReorderFlushIfNeeded() {
@@ -2519,10 +2999,14 @@ final class MacControllerServer: ObservableObject {
     private func flushPendingButtonMessagesOnNetworkQueue(generation: Int) {
         guard generation == buttonReorderFlushGeneration else { return }
         buttonReorderFlushWorkItem = nil
-        drainPendingButtonMessagesOnNetworkQueue(flushOldestGap: true)
-        if !pendingButtonMessagesBySequence.isEmpty {
-            scheduleButtonReorderFlushIfNeeded()
-        }
+        drainPendingButtonMessagesOnNetworkQueue(flushAllGaps: true)
+    }
+
+    private func flushPendingButtonMessagesImmediatelyOnNetworkQueue() {
+        buttonReorderFlushGeneration += 1
+        buttonReorderFlushWorkItem?.cancel()
+        buttonReorderFlushWorkItem = nil
+        drainPendingButtonMessagesOnNetworkQueue(flushAllGaps: true)
     }
 
     private func processPendingButtonMessageOnNetworkQueue(_ pending: PendingButtonMessage) {
@@ -2543,9 +3027,7 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func drainPendingButtonMessagesOnNetworkQueue(flushOldestGap: Bool = false) {
-        var didFlushGap = false
-
+    private func drainPendingButtonMessagesOnNetworkQueue(flushAllGaps: Bool = false) {
         while true {
             if let expectedSequence = buttonSequenceTracker.nextExpectedSequenceNumber,
                let pending = pendingButtonMessagesBySequence.removeValue(forKey: expectedSequence)
@@ -2554,14 +3036,13 @@ final class MacControllerServer: ObservableObject {
                 continue
             }
 
-            guard flushOldestGap, !didFlushGap,
+            guard flushAllGaps,
                   let nextSequence = pendingButtonMessagesBySequence.keys.min(),
                   let pending = pendingButtonMessagesBySequence.removeValue(forKey: nextSequence)
             else {
                 return
             }
 
-            didFlushGap = true
             processPendingButtonMessageOnNetworkQueue(pending)
         }
     }
@@ -2589,6 +3070,7 @@ final class MacControllerServer: ObservableObject {
         case orphan
     }
 
+    @discardableResult
     private func handleRealtimeInputOnNetworkQueue(
         _ button: GameButton,
         state: ButtonPressState,
@@ -2596,9 +3078,9 @@ final class MacControllerServer: ObservableObject {
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64? = nil,
         messageTimestamp: Int64? = nil
-    ) {
+    ) -> Bool {
         if sequenceInspection.isOutOfOrderOrReset, sequenceInspection.hasSequence {
-            return
+            return false
         }
 
         switch state {
@@ -2611,43 +3093,102 @@ final class MacControllerServer: ObservableObject {
                 {
                     refreshPhysicalPressSeenOnNetworkQueue(button, pressIdentifier: pressIdentifier)
                     noteDuplicateButtonRefresh(button: button, pressIdentifier: pressIdentifier)
-                    return
+                    return false
                 }
 
                 noteRecoveredButtonEdge(button: button, state: state, reason: "missing_release_before_down")
                 resetPhysicalHoldsOnNetworkQueue(for: button, keeping: pressIdentifier)
-                handleButtonOnNetworkQueue(button, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_release_before_down")
-                handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_release_before_down")
-                return
+                let commands = buttonPulseSequencer.recoverMissingReleaseBeforePress(
+                    button,
+                    pressIdentifier: nil,
+                    now: DispatchTime.now().uptimeNanoseconds
+                )
+                executeButtonPulseCommandsOnNetworkQueue(
+                    commands,
+                    source: source,
+                    sequenceInspection: sequenceInspection,
+                    pressIdentifier: pressIdentifier,
+                    messageTimestamp: messageTimestamp,
+                    detail: "missing_release_before_down"
+                )
+                return true
             }
 
-            if recordPhysicalPressBeganOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
-                handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+            guard recordPhysicalPressBeganOnNetworkQueue(button, pressIdentifier: pressIdentifier) else {
+                // The recorder refreshes heartbeat liveness even though this is
+                // not a new output edge or a latency sample.
+                noteDuplicateButtonRefresh(button: button, pressIdentifier: pressIdentifier)
+                return false
             }
+            handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+            return true
 
         case .up:
             switch recordPhysicalPressEndedOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
             case .shouldReleaseKey:
                 handleButtonOnNetworkQueue(button, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+                return true
 
             case .stillHeld:
-                break
+                return true
 
             case .orphan:
                 if sequenceInspection.missedFrameBeforeButton,
                    !hasPhysicalPressOnNetworkQueue(button)
                 {
                     noteRecoveredButtonEdge(button: button, state: state, reason: "missing_down_before_up")
-                    handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_down_before_up")
-                    handleButtonOnNetworkQueue(button, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, detail: "missing_down_before_up")
+                    let commands = buttonPulseSequencer.recoverMissingPressBeforeRelease(
+                        button,
+                        pressIdentifier: nil,
+                        now: DispatchTime.now().uptimeNanoseconds
+                    )
+                    executeButtonPulseCommandsOnNetworkQueue(
+                        commands,
+                        source: source,
+                        sequenceInspection: sequenceInspection,
+                        pressIdentifier: pressIdentifier,
+                        messageTimestamp: messageTimestamp,
+                        detail: "missing_down_before_up"
+                    )
+                    return true
                 } else {
                     noteIgnoredButtonEdge(button: button, state: state, reason: "orphan_up")
+                    return false
                 }
             }
         }
     }
 
     private func handleButtonOnNetworkQueue(
+        _ button: GameButton,
+        state: ButtonPressState,
+        source: String,
+        sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
+        pressIdentifier: UInt64? = nil,
+        messageTimestamp: Int64? = nil,
+        detail: String? = nil
+    ) {
+        // Physical touch ownership is already reference-counted before this
+        // output pulse stage. Keep the pulse sequencer identifier-agnostic so a
+        // final up from a different overlapping touch (or stale recovery) can
+        // always release the synthesized hold.
+        let commands = buttonPulseSequencer.setButton(
+            button,
+            pressed: state == .down,
+            pressIdentifier: nil,
+            now: DispatchTime.now().uptimeNanoseconds
+        )
+        executeButtonPulseCommandsOnNetworkQueue(
+            commands,
+            source: source,
+            sequenceInspection: sequenceInspection,
+            pressIdentifier: pressIdentifier,
+            messageTimestamp: messageTimestamp,
+            detail: detail
+        )
+    }
+
+    private func applyButtonOutputEdgeOnNetworkQueue(
         _ button: GameButton,
         state: ButtonPressState,
         source: String,
@@ -2711,11 +3252,96 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
+    private func executeButtonPulseCommandsOnNetworkQueue(
+        _ commands: [ButtonPulseCommand],
+        source: String,
+        sequenceInspection: ButtonSequenceInspection,
+        pressIdentifier: UInt64?,
+        messageTimestamp: Int64?,
+        detail: String?
+    ) {
+        for command in commands {
+            switch command {
+            case .send(let button, let state):
+                applyButtonOutputEdgeOnNetworkQueue(
+                    button,
+                    state: state,
+                    source: source,
+                    sequenceInspection: sequenceInspection,
+                    pressIdentifier: pressIdentifier,
+                    messageTimestamp: messageTimestamp,
+                    detail: detail
+                )
+
+            case .scheduleRelease(let button, let delayNanoseconds):
+                buttonPulseReleaseWorkItems[button]?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.buttonPulseReleaseWorkItems[button] = nil
+                    let next = self.buttonPulseSequencer.releaseTimerFired(
+                        for: button,
+                        now: DispatchTime.now().uptimeNanoseconds
+                    )
+                    self.executeButtonPulseCommandsOnNetworkQueue(
+                        next,
+                        source: source,
+                        sequenceInspection: sequenceInspection,
+                        pressIdentifier: pressIdentifier,
+                        messageTimestamp: messageTimestamp,
+                        detail: detail
+                    )
+                }
+                buttonPulseReleaseWorkItems[button] = workItem
+                networkQueue.asyncAfter(
+                    deadline: .now() + .nanoseconds(Int(delayNanoseconds)),
+                    execute: workItem
+                )
+
+            case .schedulePress(let button, let delayNanoseconds):
+                buttonPulsePressWorkItems[button]?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.buttonPulsePressWorkItems[button] = nil
+                    let next = self.buttonPulseSequencer.pressTimerFired(
+                        for: button,
+                        now: DispatchTime.now().uptimeNanoseconds
+                    )
+                    self.executeButtonPulseCommandsOnNetworkQueue(
+                        next,
+                        source: source,
+                        sequenceInspection: sequenceInspection,
+                        pressIdentifier: pressIdentifier,
+                        messageTimestamp: messageTimestamp,
+                        detail: detail
+                    )
+                }
+                buttonPulsePressWorkItems[button] = workItem
+                networkQueue.asyncAfter(
+                    deadline: .now() + .nanoseconds(Int(delayNanoseconds)),
+                    execute: workItem
+                )
+            }
+        }
+    }
+
     private func resetButtonSequenceDiagnosticsOnNetworkQueue() {
         resetPendingButtonMessagesOnNetworkQueue()
         buttonSequenceTracker.reset()
         ignoredButtonEdgeCount = 0
         recoveredButtonEdgeCount = 0
+    }
+
+    private func resetInputPulseSequencersOnNetworkQueue() {
+        buttonPulseReleaseWorkItems.values.forEach { $0.cancel() }
+        buttonPulsePressWorkItems.values.forEach { $0.cancel() }
+        elementPulseReleaseWorkItems.values.forEach { $0.cancel() }
+        elementPulsePressWorkItems.values.forEach { $0.cancel() }
+        buttonPulseReleaseWorkItems.removeAll()
+        buttonPulsePressWorkItems.removeAll()
+        elementPulseReleaseWorkItems.removeAll()
+        elementPulsePressWorkItems.removeAll()
+        buttonPulseSequencer.reset()
+        elementPulseSequencer.reset()
     }
 
     private func resetPhysicalInputTrackingOnNetworkQueue() {
@@ -3371,17 +3997,19 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func startHeartbeatTimer() {
-        heartbeatTimer?.invalidate()
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.checkHeartbeatTimeout()
-            self.checkStalePhysicalHoldTimeouts()
-            if Date().timeIntervalSince(self.lastAccessibilityRefresh) > 2 {
-                self.refreshAccessibilityStatus()
+        syncOnNetworkQueue {
+            heartbeatTimer?.cancel()
+            let timer = DispatchSource.makeTimerSource(queue: networkQueue)
+            timer.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250), leeway: .milliseconds(20))
+            timer.setEventHandler { [weak self] in
+                self?.checkHeartbeatTimeoutOnNetworkQueue()
+                self?.expireStalePhysicalHoldsOnNetworkQueue()
+                self?.sendLatencyPingIfDueOnNetworkQueue()
+                self?.refreshAccessibilityIfDueOnNetworkQueue()
             }
+            heartbeatTimer = timer
+            timer.resume()
         }
-        heartbeatTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func beginBackgroundActivity() {
@@ -3398,19 +4026,48 @@ final class MacControllerServer: ObservableObject {
         self.backgroundActivity = nil
     }
 
-    private func checkHeartbeatTimeout() {
-        guard isClientConnected, let lastHeartbeat else { return }
-        if Date().timeIntervalSince(lastHeartbeat) > 1.5, !heartbeatTimedOut {
-            heartbeatTimedOut = true
-            releaseAll(reason: "Heartbeat timeout - released all keys")
-            statusText = "Waiting for iPhone heartbeat"
-            logDebug("heartbeat_timeout released_keys connection_kept")
+    private func checkHeartbeatTimeoutOnNetworkQueue() {
+        guard pairedConnection != nil,
+              let lastClientActivityUptime,
+              !heartbeatTimedOutOnNetworkQueue
+        else { return }
+
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now >= lastClientActivityUptime,
+              now - lastClientActivityUptime > 1_500_000_000
+        else { return }
+
+        heartbeatTimedOutOnNetworkQueue = true
+        releaseAllOnNetworkQueue(reason: "Heartbeat timeout - released all keys")
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.heartbeatTimedOut = true
+            self.statusText = "Waiting for iPhone heartbeat"
         }
+        logDebug("heartbeat_timeout released_keys connection_kept")
     }
 
-    private func checkStalePhysicalHoldTimeouts() {
-        asyncOnNetworkQueue { [weak self] in
-            self?.expireStalePhysicalHoldsOnNetworkQueue()
+    private func sendLatencyPingIfDueOnNetworkQueue() {
+        guard let pairedConnection else { return }
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now >= lastPingUptime,
+              now - lastPingUptime >= 1_000_000_000
+        else { return }
+        lastPingUptime = now
+        send(
+            .init(type: .ping, timestamp: Int64(now / 1_000_000)),
+            on: pairedConnection
+        )
+    }
+
+    private func refreshAccessibilityIfDueOnNetworkQueue() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now >= lastAccessibilityRefreshRequestUptime,
+              now - lastAccessibilityRefreshRequestUptime >= 2_000_000_000
+        else { return }
+        lastAccessibilityRefreshRequestUptime = now
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshAccessibilityStatus()
         }
     }
 
@@ -3424,7 +4081,11 @@ final class MacControllerServer: ObservableObject {
 
     private func publishClientActivity(from activityConnection: NWConnection, force: Bool = false) {
         let now = DispatchTime.now().uptimeNanoseconds
-        guard force || now - lastClientActivityPublishUptime >= Self.clientActivityPublishIntervalNanoseconds else { return }
+        lastClientActivityUptime = now
+        let didResume = heartbeatTimedOutOnNetworkQueue
+        heartbeatTimedOutOnNetworkQueue = false
+
+        guard force || didResume || now - lastClientActivityPublishUptime >= Self.clientActivityPublishIntervalNanoseconds else { return }
         lastClientActivityPublishUptime = now
         let activityDate = Date()
 
@@ -3501,6 +4162,21 @@ final class MacControllerServer: ObservableObject {
 
         DispatchQueue.main.async { [weak self] in
             self?.missedButtonFrames = totalMissedButtonFrames
+            self?.publishControllerDebugOnMain(event: event, immediately: true)
+        }
+    }
+
+    private func publishElementSequenceGap(
+        expectedSequence: UInt64,
+        receivedSequence: UInt64,
+        missedFrameCount: UInt64,
+        totalMissedInputFrames: Int,
+        input: KeypadElementInputID,
+        state: ButtonPressState
+    ) {
+        let event = "Missing \(missedFrameCount) input frame(s); expected #\(expectedSequence), got #\(receivedSequence) before \(input.storageKey) \(state.rawValue)"
+        DispatchQueue.main.async { [weak self] in
+            self?.missedButtonFrames = totalMissedInputFrames
             self?.publishControllerDebugOnMain(event: event, immediately: true)
         }
     }
@@ -3677,8 +4353,37 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
+    private struct InputDiagnosticsSnapshot {
+        var p50MS: Double?
+        var p95MS: Double?
+        var p99MS: Double?
+        var protocolVersion: Int
+        var generation: UInt64?
+        var staleGenerationDrops: Int
+    }
+
+    private func inputDiagnosticsSnapshot() -> InputDiagnosticsSnapshot {
+        syncOnNetworkQueue {
+            let sorted = recentInputPipelineSamplesMS.sorted()
+            func percentile(_ fraction: Double) -> Double? {
+                guard !sorted.isEmpty else { return nil }
+                let index = min(Int((Double(sorted.count - 1) * fraction).rounded(.up)), sorted.count - 1)
+                return sorted[index]
+            }
+            return InputDiagnosticsSnapshot(
+                p50MS: percentile(0.50),
+                p95MS: percentile(0.95),
+                p99MS: percentile(0.99),
+                protocolVersion: activeInputGeneration == nil ? 1 : ControllerWireCodec.currentInputProtocolVersion,
+                generation: activeInputGeneration,
+                staleGenerationDrops: staleInputGenerationDropCount
+            )
+        }
+    }
+
     private func runtimeStatusSnapshot() -> PocketPadMacRuntimeStatus {
         let virtualGamepadStatus = virtualGamepadInjector.status()
+        let inputDiagnostics = inputDiagnosticsSnapshot()
         return PocketPadMacRuntimeStatus(
             updatedAt: Date.currentMilliseconds,
             statusText: statusText,
@@ -3696,6 +4401,13 @@ final class MacControllerServer: ObservableObject {
             lastHeartbeatMilliseconds: lastHeartbeat.map { Int64($0.timeIntervalSince1970 * 1000) },
             lastReceivedEvent: lastReceivedEvent,
             estimatedLatencyMS: estimatedLatencyMS,
+            roundTripLatencyMS: estimatedLatencyMS,
+            inputPipelineP50MS: inputDiagnostics.p50MS,
+            inputPipelineP95MS: inputDiagnostics.p95MS,
+            inputPipelineP99MS: inputDiagnostics.p99MS,
+            inputProtocolVersion: inputDiagnostics.protocolVersion,
+            activeInputGeneration: inputDiagnostics.generation,
+            staleInputGenerationDrops: inputDiagnostics.staleGenerationDrops,
             pressedButtons: GameButton.allCases.filter { pressedButtons.contains($0) },
             missedButtonFrames: missedButtonFrames,
             ignoredButtonEdges: ignoredButtonEdges,
@@ -3732,6 +4444,104 @@ final class MacControllerServer: ObservableObject {
         } else {
             networkQueue.async(execute: work)
         }
+    }
+
+    private func inputTimingKey(for message: ControllerMessage, source: String) -> InputTimingKey? {
+        let sequence: UInt64?
+        switch message.type {
+        case .button, .elementInput:
+            sequence = ControllerWireCodec.inputSequenceNumber(from: message)
+        case .gamepadAnalog:
+            sequence = message.analogSequence
+        case .pointer:
+            sequence = message.inputSequence
+        default:
+            return nil
+        }
+        return InputTimingKey(
+            source: source,
+            type: message.type,
+            generation: message.inputGeneration,
+            sequence: sequence,
+            timestamp: message.timestamp
+        )
+    }
+
+    private func recordInputTimingOnNetworkQueue(
+        for message: ControllerMessage,
+        source: String,
+        receivedAtUptime: UInt64,
+        decodedAtUptime: UInt64
+    ) {
+        guard let key = inputTimingKey(for: message, source: source),
+              receivedInputTimings[key] == nil
+        else { return }
+        if receivedInputTimings.count >= 1_024 {
+            receivedInputTimings.removeAll(keepingCapacity: true)
+        }
+        receivedInputTimings[key] = ReceivedInputTiming(
+            receivedAtUptime: receivedAtUptime,
+            decodedAtUptime: decodedAtUptime,
+            processingStartedAtUptime: nil
+        )
+    }
+
+    private func markInputProcessingStartedOnNetworkQueue(
+        for message: ControllerMessage,
+        source: String
+    ) {
+        guard let key = inputTimingKey(for: message, source: source),
+              var timing = receivedInputTimings[key],
+              timing.processingStartedAtUptime == nil
+        else { return }
+        timing.processingStartedAtUptime = DispatchTime.now().uptimeNanoseconds
+        receivedInputTimings[key] = timing
+    }
+
+    private func finishInputTimingOnNetworkQueue(
+        for message: ControllerMessage,
+        source: String,
+        rejectionDetail: String? = nil,
+        recordSample: Bool = true
+    ) {
+        guard let key = inputTimingKey(for: message, source: source),
+              let timing = receivedInputTimings.removeValue(forKey: key)
+        else { return }
+
+        let completedAt = DispatchTime.now().uptimeNanoseconds
+        let decodeNanoseconds = timing.decodedAtUptime >= timing.receivedAtUptime
+            ? timing.decodedAtUptime - timing.receivedAtUptime
+            : 0
+        let pipelineNanoseconds = completedAt >= timing.receivedAtUptime
+            ? completedAt - timing.receivedAtUptime
+            : 0
+        let processingStartedAt = timing.processingStartedAtUptime ?? timing.decodedAtUptime
+        let reorderNanoseconds = processingStartedAt >= timing.decodedAtUptime
+            ? processingStartedAt - timing.decodedAtUptime
+            : 0
+        let decodeMS = Double(decodeNanoseconds) / 1_000_000
+        let pipelineMS = Double(pipelineNanoseconds) / 1_000_000
+        let reorderMS = Double(reorderNanoseconds) / 1_000_000
+
+        if recordSample {
+            recentInputPipelineSamplesMS.append(pipelineMS)
+            if recentInputPipelineSamplesMS.count > 512 {
+                recentInputPipelineSamplesMS.removeFirst(recentInputPipelineSamplesMS.count - 512)
+            }
+        }
+
+        appendCaptureEvent(PocketPadCaptureEvent(
+            schemaVersion: 2,
+            kind: "input_pipeline",
+            source: source,
+            messageType: message.type,
+            inputGeneration: message.inputGeneration,
+            inputSequence: key.sequence,
+            decodeLatencyMS: decodeMS,
+            receiveToProcessedMS: pipelineMS,
+            reorderWaitMS: reorderMS,
+            detail: rejectionDetail
+        ))
     }
 
     private func capturePressedButtonsSnapshotOnNetworkQueue() -> [GameButton] {
@@ -3880,13 +4690,16 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func oneWayLatencyMilliseconds(from timestamp: Int64) -> Int? {
-        let delta = Date.currentMilliseconds - timestamp
-        guard delta >= 0, delta < 10_000 else { return nil }
-        return Int(delta)
+        // Device wall clocks are not synchronized. Keep the legacy field empty;
+        // same-clock receive/decode/reorder/processing timings are captured in
+        // `input_pipeline` events instead.
+        _ = timestamp
+        return nil
     }
 
     private func roundTripLatencyMilliseconds(from timestamp: Int64) -> Int? {
-        let delta = Date.currentMilliseconds - timestamp
+        let now = Int64(DispatchTime.now().uptimeNanoseconds / 1_000_000)
+        let delta = now - timestamp
         guard delta >= 0, delta < 10_000 else { return nil }
         return Int(delta)
     }

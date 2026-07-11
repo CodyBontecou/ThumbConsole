@@ -1696,7 +1696,7 @@ private struct MacInputDiagnosticsRows: View {
     var body: some View {
         VStack(spacing: 0) {
             DiagnosticRow(title: "Last Heartbeat", value: lastHeartbeatText)
-            DiagnosticRow(title: "Estimated Latency", value: activity.estimatedLatencyMS.map { "\($0) ms" } ?? "—")
+            DiagnosticRow(title: "Round-trip Latency", value: activity.estimatedLatencyMS.map { "\($0) ms" } ?? "—")
             DiagnosticRow(title: "Missing Input Frames", value: "\(activity.missedButtonFrames)")
             DiagnosticRow(title: "Ignored Input Edges", value: "\(activity.ignoredButtonEdges)")
             DiagnosticRow(title: "Recovered Input Edges", value: "\(activity.recoveredButtonEdges)")

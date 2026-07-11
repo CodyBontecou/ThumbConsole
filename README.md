@@ -127,7 +127,7 @@ pocketpad test tap jump
 pocketpad release-all
 ```
 
-`pocketpad latency simulate` is a headless replay harness for agent debugging. It runs Hollow-Knight-style bursts, same-button mash bursts, UDP recovery, or UDP recovery-burst cases through the compact button wire format and Mac sequence buffering model, then prints touch-to-injection latency and can write a per-edge JSON report. `pocketpad latency verify` runs every current-path pattern and exits nonzero if the configured max or p95 latency budget is exceeded.
+`pocketpad latency simulate` is a synthetic replay model for agent debugging, not an end-to-end device benchmark. It runs Hollow-Knight-style bursts, same-button mash bursts, and UDP recovery cases through the wire codec and sequence-buffer assumptions, then writes modeled per-edge timing. `pocketpad latency verify` validates those model assumptions. For production measurements, use `pocketpad monitor`: `input_pipeline` events report same-clock Mac decode, reorder wait, and receive-to-processed timing, while `pocketpad status` reports rolling p50/p95/p99 pipeline latency and round-trip latency.
 
 ## Virtual gamepad output
 

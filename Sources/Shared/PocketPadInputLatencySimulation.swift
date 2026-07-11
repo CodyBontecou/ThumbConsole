@@ -30,9 +30,9 @@ public enum PocketPadLatencySimulationMode: String, Codable, CaseIterable, Senda
     public var displayName: String {
         switch self {
         case .current:
-            "Current optimized path"
+            "Current modeled path"
         case .legacyMainActor:
-            "Legacy main-actor send model"
+            "Legacy main-actor model"
         }
     }
 }
@@ -524,10 +524,7 @@ private struct Simulation {
             case .flush(let at, let generation, _):
                 guard generation == flushGeneration else { continue }
                 flushGeneration += 1
-                drainPendingFrames(at: at, flushOldestGap: true)
-                if !pendingFrames.isEmpty {
-                    scheduleFlush(at: at, events: &events)
-                }
+                drainPendingFrames(at: at, flushAllGaps: true)
             }
         }
     }
@@ -586,9 +583,7 @@ private struct Simulation {
         return sequenceNumber > expectedSequence
     }
 
-    private mutating func drainPendingFrames(at now: UInt64, flushOldestGap: Bool = false) {
-        var didFlushGap = false
-
+    private mutating func drainPendingFrames(at now: UInt64, flushAllGaps: Bool = false) {
         while true {
             if let expectedSequence = sequenceTracker.nextExpectedSequenceNumber,
                let pendingFrame = pendingFrames.removeValue(forKey: expectedSequence),
@@ -607,7 +602,7 @@ private struct Simulation {
                 continue
             }
 
-            guard flushOldestGap, !didFlushGap,
+            guard flushAllGaps,
                   let nextSequence = pendingFrames.keys.min(),
                   let pendingFrame = pendingFrames.removeValue(forKey: nextSequence),
                   let message = try? ControllerWireCodec.decode(pendingFrame.data, using: JSONDecoder()),
@@ -617,7 +612,6 @@ private struct Simulation {
                 return
             }
 
-            didFlushGap = true
             process(
                 message,
                 sequenceNumber: nextSequence,
