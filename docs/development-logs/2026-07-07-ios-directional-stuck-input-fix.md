@@ -45,6 +45,8 @@ File: `Sources/Mac/MacControllerServer.swift`
 - Added stale analog stick/trigger tracking and neutral reset.
 - This gives a server-side fallback if an iOS release packet is still lost.
 
+Follow-up physical testing showed that iOS can coalesce heartbeat delivery beyond 850 ms during gameplay. The timeout is now 1.75 seconds, refreshes are scheduled every 250 ms, and late identified release frames can safely release their exact matching hold. See [Input Latency and Reliability Optimization](2026-07-10-input-latency-and-reliability-optimization.md).
+
 ### Simulation update
 
 File: `Sources/Shared/PocketPadInputLatencySimulation.swift`

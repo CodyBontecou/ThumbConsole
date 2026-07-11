@@ -129,6 +129,8 @@ pocketpad release-all
 
 `pocketpad latency simulate` is a synthetic replay model for agent debugging, not an end-to-end device benchmark. It runs Hollow-Knight-style bursts, same-button mash bursts, and UDP recovery cases through the wire codec and sequence-buffer assumptions, then writes modeled per-edge timing. `pocketpad latency verify` validates those model assumptions. For production measurements, use `pocketpad monitor`: `input_pipeline` events report same-clock Mac decode, reorder wait, and receive-to-processed timing, while `pocketpad status` reports rolling p50/p95/p99 pipeline latency and round-trip latency.
 
+See [Input Latency and Reliability Optimization](docs/development-logs/2026-07-10-input-latency-and-reliability-optimization.md) for the protocol, queueing, recovery, and physical-device test work behind these measurements.
+
 ## Virtual gamepad output
 
 PocketPad can map keypad controls to system-visible virtual gamepad buttons, analog sticks, and triggers while keeping keyboard and pointer output available. Each keypad setup has an output mode: `keyboard` keeps the virtual controller off, `controller` applies the default Xbox-style virtual controller map, and `custom` uses per-button mixed bindings. Configure the mode and mappings in the macOS Keypad editor or with the CLI:
@@ -194,15 +196,15 @@ Use **Default** for a single button or **Reset All** to restore the starter keyp
 ## Safety behavior
 
 - Only sends key events on state transitions.
-- Button frames use a compact 14-byte binary payload. After pairing, iOS sends those frames over authenticated UDP for lower latency and mirrors them over WebSocket so packet loss still recovers through the reliable path.
+- Protocol v2 button frames use a fixed 32-byte binary payload with an input generation, full sequence number, and physical press identifier; legacy 14-byte v1 frames remain decodable. After pairing, iOS sends input over authenticated UDP and mirrors it over WebSocket for packet-loss recovery.
 - iOS and macOS WebSocket connections set TCP `noDelay` to avoid Nagle delays on small input packets.
 - iOS uses a keypad-area UIKit touch router with stable expanded non-overlapping hit targets, hands moving touches between adjacent buttons and joysticks, sends every per-touch edge immediately before SwiftUI visual-state checks, stamps compact button frames with sequence diagnostics and per-press identifiers, supports optional per-control Core Haptics/impact feedback, and skips per-input send callbacks and live status publishes during use.
-- macOS handles received button events on a user-interactive realtime queue, accepts the first authenticated UDP stream for the paired iPhone, silently drops stale mirrored frames, recovers transport-proven missing-up and missing-down edges, and posts key events before UI/debug updates.
+- macOS handles received input on a user-interactive realtime queue, accepts the first authenticated UDP stream for the paired iPhone, drops stale mirrored frames, recovers transport-proven missing edges, and safely applies a late up only when its physical press identifier still matches the active hold.
 - macOS throttles input debug/status publishing so UI work does not compete with key injection.
 - During physical tap testing, the Mac debug panel shows missing transport frames, recovered duplicate-down edges, and ignored duplicate/orphan input edges separately.
-- iOS sends a heartbeat every 500 ms.
+- iOS schedules heartbeat and active-press refreshes every 250 ms on its network queue; the Mac validates each refreshed physical press independently.
 - Smart Connect stores a trusted reconnect token after successful pairing, advertises the Mac as `_pocketpad._tcp` on the local network with peer-to-peer discovery enabled, and avoids reusing stale six-digit pairing codes.
-- macOS releases all held keys after 1500 ms without heartbeat, but keeps the socket open so brief focus/app-launch stalls can recover.
+- macOS releases all held keys after 1500 ms without any client activity, keeps the socket open so brief stalls can recover, and expires an individually unrefreshed physical hold after 1750 ms.
 - macOS keeps a latency-critical activity while the helper is running to avoid App Nap when the target app is focused.
 - macOS releases all held keys on client disconnect, server stop, or manual Release All.
 - iOS sends best-effort `release_all` when disconnecting, becoming inactive, or backgrounding.
