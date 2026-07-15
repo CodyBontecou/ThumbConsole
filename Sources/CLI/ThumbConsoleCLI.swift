@@ -240,6 +240,8 @@ struct ThumbConsoleCLI {
             try output(arguments: rest)
         case "customization", "customize", "layout":
             try customization(arguments: rest)
+        case "orientation", "orientations":
+            try orientation(arguments: rest)
         case "device", "devices", "frame", "frames":
             try device(arguments: rest)
         case "element", "control", "controls":
@@ -1371,6 +1373,52 @@ struct ThumbConsoleCLI {
         }
     }
 
+    private static func orientation(arguments: [String]) throws {
+        guard let subcommand = arguments.first else { throw CLIError.message("Missing orientation subcommand") }
+        let rest = Array(arguments.dropFirst())
+        guard subcommand == "copy" || subcommand == "arrange" else {
+            throw CLIError.message("Unknown orientation subcommand: \(subcommand)")
+        }
+
+        let positional = positionals(in: rest)
+        let destinationText = optionValue("--to", in: rest)
+            ?? optionValue("--variant", in: rest)
+            ?? optionValue("--layout-variant", in: rest)
+            ?? (subcommand == "arrange" ? positional.first : positional.dropFirst().first)
+        guard let destinationText else {
+            let usage = subcommand == "arrange"
+                ? "thumbconsole orientation arrange <destination> [--from source] [--profile PROFILE]"
+                : "thumbconsole orientation copy <source> <destination> [--profile PROFILE]"
+            throw CLIError.message("Usage: \(usage)")
+        }
+        let destination = try parseProfileLayoutVariant(destinationText)
+        let sourceText = optionValue("--from", in: rest)
+            ?? (subcommand == "copy" ? positional.first : nil)
+        let source = try sourceText.map(parseProfileLayoutVariant)
+            ?? (destination == .portrait ? .landscape : .portrait)
+        guard source != destination else { throw CLIError.message("Source and destination orientation must be different") }
+
+        var store = loadStore()
+        let profileIndex = try resolveProfileIndex(optionValue("--profile", in: rest), in: store)
+        store.profiles[profileIndex].copyLayoutVariant(
+            from: source,
+            to: destination,
+            automaticallyArrange: !rest.contains("--no-arrange")
+        )
+        let profileName = store.profiles[profileIndex].name
+        try persistStore(store)
+        let action = rest.contains("--no-arrange") ? "Copied" : "Copied and arranged"
+        print("\(action) \(source.rawValue) as \(destination.rawValue) for \"\(profileName)\".")
+    }
+
+    private static func parseProfileLayoutVariant(_ value: String) throws -> GamepadProfileLayoutVariant {
+        switch normalizedLookup(value) {
+        case "landscape", "horizontal": return .landscape
+        case "portrait", "vertical": return .portrait
+        default: throw CLIError.message("Unknown layout orientation: \(value). Use portrait or landscape.")
+        }
+    }
+
     private static func validateLayout(arguments: [String]) throws {
         let store = loadStore()
         let profile = try resolveProfile(layoutProfileTarget(in: arguments), in: store)
@@ -1774,6 +1822,27 @@ struct ThumbConsoleCLI {
                 customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
             }
             print("Created group \"\(name)\".")
+        case "rename":
+            let positional = positionals(in: rest)
+            guard positional.count >= 2 else { throw CLIError.message("Usage: thumbconsole group rename <group-name-or-id> <new name>") }
+            let target = positional[0]
+            let newName = positional.dropFirst().joined(separator: " ")
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
+                let group = try resolveLayerGroup(target, in: customization)
+                _ = try customization.renameLayerGroup(id: group.id, to: newName)
+            }
+            print("Renamed group \"\(target)\" to \"\(newName)\".")
+        case "duplicate", "copy":
+            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole group duplicate <group-name-or-id> [--name NAME] [--offset 0.025]") }
+            let requestedName = optionValue("--name", in: rest)
+            let offset = try parseDuplicateOffset(rest)
+            var duplicatedGroup: GamepadLayerGroup?
+            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
+                let group = try resolveLayerGroup(target, in: customization)
+                let canvasSize = try parseLayoutCanvasSize(rest, fallback: customization.deviceCanvas.editorDeviceFrame.screenRect.size)
+                duplicatedGroup = try customization.duplicateLayerGroup(id: group.id, name: requestedName, normalizedOffset: offset, canvasSize: canvasSize).group
+            }
+            print("Duplicated group \"\(target)\" as \"\(duplicatedGroup?.name ?? requestedName ?? "Copy")\".")
         case "ungroup", "delete", "rm":
             guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole group ungroup <group-name-or-id>") }
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
@@ -2502,8 +2571,14 @@ struct ThumbConsoleCLI {
             }
         case "add":
             try addElement(arguments: rest)
+        case "duplicate", "copy":
+            try duplicateElements(arguments: rest)
         case "set":
             try setElement(arguments: rest)
+        case "align":
+            try alignElements(arguments: rest)
+        case "distribute":
+            try distributeElements(arguments: rest)
         case "nudge", "move":
             try nudgeElement(arguments: rest)
         case "delete", "rm":
@@ -2513,6 +2588,87 @@ struct ThumbConsoleCLI {
         default:
             throw CLIError.message("Unknown element subcommand: \(subcommand)")
         }
+    }
+
+    private static func duplicateElements(arguments: [String]) throws {
+        let targetTexts = positionals(in: arguments)
+        guard !targetTexts.isEmpty else {
+            throw CLIError.message("Usage: thumbconsole element duplicate <element> [element...] [--offset 0.025]")
+        }
+        let offset = try parseDuplicateOffset(arguments)
+        var result: GamepadElementDuplicationResult?
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
+            let identities = try targetTexts.map { identity(for: try resolveElementTarget($0, in: customization)) }
+            let canvasSize = try parseLayoutCanvasSize(arguments, fallback: customization.deviceCanvas.editorDeviceFrame.screenRect.size)
+            result = try customization.duplicateControls(identities, normalizedOffset: offset, canvasSize: canvasSize)
+        }
+        let ids = result?.duplicatedIdentities.map(\.id).joined(separator: ", ") ?? ""
+        print("Duplicated \(targetTexts.count) element\(targetTexts.count == 1 ? "" : "s"): \(ids)")
+    }
+
+    private static func alignElements(arguments: [String]) throws {
+        let positional = positionals(in: arguments)
+        guard positional.count >= 3 else {
+            throw CLIError.message("Usage: thumbconsole element align <left|horizontal-centers|right|top|vertical-centers|bottom> <element> <element>...")
+        }
+        let alignment = try parseControlAlignment(positional[0])
+        let targetTexts = Array(positional.dropFirst())
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
+            let identities = try Set(targetTexts.map { identity(for: try resolveElementTarget($0, in: customization)) })
+            let canvasSize = try parseLayoutCanvasSize(arguments, fallback: customization.deviceCanvas.editorDeviceFrame.screenRect.size)
+            _ = try customization.alignControls(identities, alignment: alignment, in: canvasSize)
+        }
+        print("Aligned \(targetTexts.count) elements by \(alignment.rawValue).")
+    }
+
+    private static func distributeElements(arguments: [String]) throws {
+        let positional = positionals(in: arguments)
+        guard positional.count >= 4 else {
+            throw CLIError.message("Usage: thumbconsole element distribute <horizontal-centers|vertical-centers|horizontal-spacing|vertical-spacing> <element> <element> <element>...")
+        }
+        let distribution = try parseControlDistribution(positional[0])
+        let targetTexts = Array(positional.dropFirst())
+        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
+            let identities = try Set(targetTexts.map { identity(for: try resolveElementTarget($0, in: customization)) })
+            let canvasSize = try parseLayoutCanvasSize(arguments, fallback: customization.deviceCanvas.editorDeviceFrame.screenRect.size)
+            _ = try customization.distributeControls(identities, distribution: distribution, in: canvasSize)
+        }
+        print("Distributed \(targetTexts.count) elements by \(distribution.rawValue).")
+    }
+
+    private static func parseControlAlignment(_ value: String) throws -> GamepadControlAlignment {
+        switch normalizedLookup(value) {
+        case "left", "leftedges": return .leftEdges
+        case "horizontalcenter", "horizontalcenters", "hcenter", "centerx": return .horizontalCenters
+        case "right", "rightedges": return .rightEdges
+        case "top", "topedges": return .topEdges
+        case "verticalcenter", "verticalcenters", "vcenter", "centery": return .verticalCenters
+        case "bottom", "bottomedges": return .bottomEdges
+        default: throw CLIError.message("Unknown alignment: \(value)")
+        }
+    }
+
+    private static func parseControlDistribution(_ value: String) throws -> GamepadControlDistribution {
+        switch normalizedLookup(value) {
+        case "horizontalcenter", "horizontalcenters", "hcenters": return .horizontalCenters
+        case "verticalcenter", "verticalcenters", "vcenters": return .verticalCenters
+        case "horizontalspacing", "hspacing", "horizontalgaps": return .horizontalSpacing
+        case "verticalspacing", "vspacing", "verticalgaps": return .verticalSpacing
+        default: throw CLIError.message("Unknown distribution: \(value)")
+        }
+    }
+
+    private static func parseDuplicateOffset(_ arguments: [String]) throws -> CGSize {
+        let shared = try optionValue("--offset", in: arguments).map(parseNormalizedOffset)
+        let x = try optionValue("--offset-x", in: arguments).map(parseNormalizedOffset) ?? shared ?? 0.025
+        let y = try optionValue("--offset-y", in: arguments).map(parseNormalizedOffset) ?? shared ?? 0.025
+        return CGSize(width: x, height: y)
+    }
+
+    private static func parseNormalizedOffset(_ value: String) throws -> CGFloat {
+        guard let parsed = Double(value), parsed.isFinite else { throw CLIError.message("Invalid normalized offset: \(value)") }
+        guard abs(parsed) <= 1 else { throw CLIError.message("Normalized offset must be between -1 and 1") }
+        return CGFloat(parsed)
     }
 
     private static func addElement(arguments: [String]) throws {
@@ -4675,6 +4831,20 @@ struct ThumbConsoleCLI {
 
     private static func resolveElementTarget(_ text: String, in customization: GamepadCustomization) throws -> ElementTarget {
         let normalized = normalizedLookup(text)
+        if let stableIdentity = GamepadControlIdentity(stableID: text) {
+            switch stableIdentity {
+            case .builtin(let button) where GameButton.builtInControls.contains(button):
+                return .builtin(button)
+            case .custom(let id) where customization.customButtons.contains(where: { $0.id == id }):
+                return .custom(id)
+            case .system(let control):
+                return .system(control)
+            case .controlBarItem:
+                throw CLIError.message("Control bar items are managed with `thumbconsole control-bar item`")
+            default:
+                break
+            }
+        }
         if normalized == "controlbar" || normalized == "topbar" || normalized == "iosbar" || normalized == "controlbarhotspot" || normalized == "topbaractivation" {
             return .system(.topBarActivation)
         }
@@ -4822,7 +4992,7 @@ struct ThumbConsoleCLI {
             "--highlight", "--highlight-color", "--highlight-radius", "--highlight-x", "--highlight-y", "--highlight-opacity",
             "--bevel", "--bevel-highlight", "--bevel-shadow", "--bevel-width", "--pressed-fill", "--pressed-color", "--press-scale", "--scale-on-press",
             "--material", "--material-preset", "--shadow-layers", "--shadows",
-            "--to", "--before", "--after", "--role", "--items", "--controls"
+            "--to", "--before", "--after", "--role", "--items", "--controls", "--offset", "--offset-x", "--offset-y"
         ]
         for argument in arguments {
             if skipNext {
@@ -5021,6 +5191,8 @@ struct ThumbConsoleCLI {
           thumbconsole customization set --device iphone-17-pro --orientation landscape
           thumbconsole customization set --variant portrait --device iphone-17-pro --orientation portrait
           thumbconsole customization export -o customization.json [--variant portrait|landscape]
+          thumbconsole orientation copy landscape portrait [--profile PROFILE] [--no-arrange]
+          thumbconsole orientation arrange portrait [--from landscape] [--profile PROFILE]
           thumbconsole layout validate [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--json|--strict]
           thumbconsole layout preview [PROFILE|--profile PROFILE] -o preview.png [--variant portrait|landscape] [--canvas iphone-17-pro-landscape]
           thumbconsole device list
@@ -5049,6 +5221,9 @@ struct ThumbConsoleCLI {
           thumbconsole element set jump --text-color '#7C61A8' --inner-shadow '#B8B2C2' --inner-shadow-radius 5 --highlight '#FFFFFF' --highlight-opacity 45% --highlight-x -4 --highlight-y -4 --bevel-width 1.5
           thumbconsole element set jump --material soft-white --shadow-layers '#FFFFFF,14,-7,-7,96%;#9B91AA,20,8,9,24%'
           thumbconsole element set control-bar --x 0.2 --y 0.08 --width 1.4 --height 1.1
+          thumbconsole element duplicate builtin.jump [--offset 0.025] [--profile PROFILE] [--variant portrait]
+          thumbconsole element align top jump attack dash
+          thumbconsole element distribute horizontal-spacing jump attack dash focus
           thumbconsole element nudge jump right --step 10 --canvas iphone-17-pro-landscape
           thumbconsole style create SoftWhite --material soft-white --fill '#F8F6F7' --text-color '#7C61A8'
           thumbconsole style create Soul --fill '#F8FAFC' --stroke '#38BDF8' --pressed-fill '#0EA5E9' --icon sf:sparkles
@@ -5059,6 +5234,8 @@ struct ThumbConsoleCLI {
           thumbconsole layer front focus
           thumbconsole group create Actions jump attack dash focus
           thumbconsole group list --tree
+          thumbconsole group rename Actions "Face Buttons" [--profile PROFILE] [--variant landscape]
+          thumbconsole group duplicate Actions --name "Actions Copy" --offset 0.025
           thumbconsole group nudge Actions right --step 10 --canvas iphone-17-pro-landscape
           thumbconsole group front Actions
           thumbconsole asset import ./icon.png --role icon --name SoulOrb
