@@ -3,6 +3,7 @@ import CoreGraphics
 import CoreImage.CIFilterBuiltins
 import AppKit
 import UniformTypeIdentifiers
+import Combine
 
 struct MacContentView: View {
     @EnvironmentObject private var server: MacControllerServer
@@ -1127,68 +1128,97 @@ struct MacContentView: View {
 
 
     private var gamepadEditorPage: some View {
-        GamepadCustomizationEditor(
-            customization: Binding(
-                get: { server.gamepadCustomization },
-                set: { server.setGamepadCustomization($0) }
-            ),
-            initialProfiles: server.gamepadProfiles,
-            initialSelectedProfileID: server.activeGamepadProfileID,
-            initialDefaultProfileID: server.defaultGamepadProfileID,
-            onReset: { server.resetGamepadCustomization() },
-            onProfilesChanged: { profiles, activeProfileID, defaultProfileID in
-                server.setGamepadProfileState(
-                    profiles: profiles,
-                    activeProfileID: activeProfileID,
-                    defaultProfileID: defaultProfileID
-                )
-            },
-            onExportProfiles: { profiles, activeProfileID, defaultProfileID, exportingProfileID in
-                prepareKeypadExport(
-                    profiles: profiles,
-                    activeProfileID: activeProfileID,
-                    defaultProfileID: defaultProfileID,
-                    exportingProfileID: exportingProfileID
-                )
-            },
-            onImportProfiles: { data, sourceName, appendAsCopies in
-                let summary = try server.importKeypadConfiguration(
-                    data: data,
-                    sourceName: sourceName,
-                    mode: appendAsCopies ? .appendAsCopies : .replaceMatching
-                )
-                return summary.message
-            },
-            onRegisterProfileUndoSnapshot: { actionName in
-                registerMacGamepadUndoSnapshot(
-                    server.editorUndoSnapshot(),
-                    undoManager: undoManager,
-                    undoTarget: gamepadEditorUndoTarget,
-                    server: server,
-                    actionName: actionName
-                )
-            },
-            onLaunchProfileTarget: { profileID in
-                server.launchAttachedApplication(for: profileID, source: "mac")
-            },
-            defaultLabelProvider: { button in
-                server.recordedShortcutLabel(for: button)
-            },
-            profileOutputModeContent: {
-                AnyView(
-                    MacGamepadOutputModeInspector()
-                        .environmentObject(server)
-                )
-            },
-            selectedElementOutputContent: { input in
-                AnyView(
-                    MacKeypadElementOutputInspector(input: input)
-                        .environmentObject(server)
-                )
-            },
-            connectedDeviceInfo: server.clientDeviceInfo
-        )
+        MacGamepadEditorLiveInputReader(activity: server.liveActivity) { pressedElementInputs in
+            GamepadCustomizationEditor(
+                customization: Binding(
+                    get: { server.gamepadCustomization },
+                    set: { server.setGamepadCustomization($0) }
+                ),
+                initialProfiles: server.gamepadProfiles,
+                initialSelectedProfileID: server.activeGamepadProfileID,
+                initialDefaultProfileID: server.defaultGamepadProfileID,
+                onReset: { server.resetGamepadCustomization() },
+                onProfilesChanged: { profiles, activeProfileID, defaultProfileID in
+                    server.setGamepadProfileState(
+                        profiles: profiles,
+                        activeProfileID: activeProfileID,
+                        defaultProfileID: defaultProfileID
+                    )
+                },
+                onExportProfiles: { profiles, activeProfileID, defaultProfileID, exportingProfileID in
+                    prepareKeypadExport(
+                        profiles: profiles,
+                        activeProfileID: activeProfileID,
+                        defaultProfileID: defaultProfileID,
+                        exportingProfileID: exportingProfileID
+                    )
+                },
+                onImportProfiles: { data, sourceName, appendAsCopies in
+                    let summary = try server.importKeypadConfiguration(
+                        data: data,
+                        sourceName: sourceName,
+                        mode: appendAsCopies ? .appendAsCopies : .replaceMatching
+                    )
+                    return summary.message
+                },
+                onRegisterProfileUndoSnapshot: { actionName in
+                    registerMacGamepadUndoSnapshot(
+                        server.editorUndoSnapshot(),
+                        undoManager: undoManager,
+                        undoTarget: gamepadEditorUndoTarget,
+                        server: server,
+                        actionName: actionName
+                    )
+                },
+                onLaunchProfileTarget: { profileID in
+                    server.launchAttachedApplication(for: profileID, source: "mac")
+                },
+                defaultLabelProvider: { button in
+                    server.recordedShortcutLabel(for: button)
+                },
+                profileOutputModeContent: {
+                    AnyView(
+                        MacGamepadOutputModeInspector()
+                            .environmentObject(server)
+                    )
+                },
+                selectedElementOutputContent: { input in
+                    AnyView(
+                        MacKeypadElementOutputInspector(input: input)
+                            .environmentObject(server)
+                    )
+                },
+                connectedDeviceInfo: server.clientDeviceInfo,
+                externallyPressedElementInputs: pressedElementInputs,
+                editorDeliveryStatusText: editorDeliveryStatusText,
+                onTestElementInputChanged: { input, isPressed in
+                    if isPressed {
+                        server.sendTestDown(input)
+                    } else {
+                        server.sendTestUp(input)
+                    }
+                },
+                onTestElementInputTap: { input, holdMilliseconds in
+                    server.sendTestTap(input, holdMilliseconds: holdMilliseconds)
+                }
+            )
+        }
         .geistScreenBackground()
+    }
+
+    private var editorDeliveryStatusText: String {
+        switch server.editorDeliveryState {
+        case .localSave:
+            "Saved locally"
+        case .sending:
+            "Saved locally · Sending…"
+        case .sent:
+            "Saved locally · Sent to iPhone"
+        case .offline:
+            "Saved locally · iPhone offline"
+        case .failure:
+            "Saved locally · Send failed"
+        }
     }
 
     private func prepareKeypadExport(
@@ -2960,6 +2990,38 @@ private struct MacLocalInputTestConsole: View {
         }
         locallyHeldButtons.removeAll()
         server.releaseAll(reason: "Local input test release all")
+    }
+}
+
+private final class MacGamepadEditorLiveInputModel: ObservableObject {
+    @Published private(set) var pressedElementInputs: Set<KeypadElementInputID>
+    private var cancellable: AnyCancellable?
+
+    init(activity: MacControllerLiveActivity) {
+        pressedElementInputs = activity.pressedElementInputs
+        cancellable = activity.$pressedElementInputs
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] inputs in
+                self?.pressedElementInputs = inputs
+            }
+    }
+}
+
+private struct MacGamepadEditorLiveInputReader<Content: View>: View {
+    @StateObject private var model: MacGamepadEditorLiveInputModel
+    let content: (Set<KeypadElementInputID>) -> Content
+
+    init(
+        activity: MacControllerLiveActivity,
+        @ViewBuilder content: @escaping (Set<KeypadElementInputID>) -> Content
+    ) {
+        _model = StateObject(wrappedValue: MacGamepadEditorLiveInputModel(activity: activity))
+        self.content = content
+    }
+
+    var body: some View {
+        content(model.pressedElementInputs)
     }
 }
 

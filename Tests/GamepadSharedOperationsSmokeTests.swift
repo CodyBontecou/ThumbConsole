@@ -123,6 +123,29 @@ final class GamepadSharedOperationsSmokeTests: XCTestCase {
         XCTAssertEqual(profile.launchTarget?.bundleIdentifier, "com.example.game")
     }
 
+    func testOrientationCopyIgnoresMissingSourceVariant() {
+        var landscape = GamepadCustomization.blankCanvas
+        landscape.deviceCanvas = GamepadDeviceCanvas(frameID: "iphone-17-pro-landscape")
+        var profile = GamepadConfigurationProfile(name: "Landscape Only", customization: landscape)
+        let original = profile
+
+        profile.copyLayoutVariant(from: .portrait, to: .landscape)
+
+        XCTAssertEqual(profile, original)
+        XCTAssertNil(profile.portraitCustomization)
+    }
+
+    func testSetCustomizationCorrectsVariantFrameOrientation() {
+        var profile = GamepadConfigurationProfile(name: "Variants", customization: .blankCanvas)
+        var landscapeFramedCustomization = GamepadCustomization.blankCanvas
+        landscapeFramedCustomization.deviceCanvas = GamepadDeviceCanvas(frameID: "iphone-17-pro-landscape")
+
+        profile.setCustomization(landscapeFramedCustomization, for: .portrait)
+
+        XCTAssertEqual(profile.portraitCustomization?.deviceCanvas.editorDeviceFrame.orientation, .portrait)
+        XCTAssertEqual(profile.portraitCustomization?.deviceCanvas.editorDeviceFrame.spec.id, "iphone-17-pro")
+    }
+
     func testSharedAlignAndDistributeOperationsUseExplicitModes() throws {
         let ids = (1...3).map { index in
             UUID(uuidString: String(format: "00000000-0000-0000-0000-%012X", 0xC000 + index))!

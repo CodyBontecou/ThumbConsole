@@ -295,6 +295,17 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(legacy.reason, "Legacy test")
     }
 
+    func testElementInputStorageKeyRejectsUnknownExplicitPart() throws {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-00000000E2E3")!
+        XCTAssertEqual(KeypadElementInputID(storageKey: id.uuidString), KeypadElementInputID(elementID: id))
+        XCTAssertEqual(
+            KeypadElementInputID(storageKey: "\(id.uuidString)#joystick_right"),
+            KeypadElementInputID(elementID: id, part: .joystickRight)
+        )
+        XCTAssertNil(KeypadElementInputID(storageKey: "\(id.uuidString)#joystik_right"))
+        XCTAssertNil(KeypadElementInputID(storageKey: "\(id.uuidString)#"))
+    }
+
     func testRuntimeStatusElementAndEditorDeliveryFieldsRoundTripBackwardCompatibly() throws {
         let profileID = UUID(uuidString: "00000000-0000-0000-0000-00000000A222")!
         let input = KeypadElementInputID(

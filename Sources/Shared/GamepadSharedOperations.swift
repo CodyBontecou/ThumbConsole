@@ -402,6 +402,9 @@ public extension GamepadConfigurationProfile {
     ) {
         let sourceOrientation = sourceVariant.editorOrientation
         let destinationOrientation = destinationVariant.editorOrientation
+        let sourceExists = hasCustomizationVariant(for: sourceOrientation)
+            || customization.deviceCanvas.editorDeviceFrame.orientation == sourceOrientation
+        guard sourceExists else { return }
         let source = customization(for: sourceOrientation)
         var destination = source
 

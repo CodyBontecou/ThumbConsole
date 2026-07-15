@@ -200,6 +200,9 @@ final class MacControllerServer: ObservableObject {
     // Allow for iOS timer coalescing without false-releasing long gameplay
     // holds. Late identified ups are recovered separately.
     private static let physicalHoldRefreshTimeoutNanoseconds: UInt64 = 1_750_000_000
+    // Editor holds do not receive iPhone heartbeats, but still need a safety release
+    // if a CLI process exits or a pointer-up is lost.
+    private static let localTestHoldTimeoutNanoseconds: UInt64 = 30_000_000_000
     private let serverID: String
     private let bonjourServiceName: String
     private var trustedClients: [String: TrustedClient]
@@ -370,6 +373,8 @@ final class MacControllerServer: ObservableObject {
     private var activePressLastSeenByElementInput: [KeypadElementInputID: [UInt64: UInt64]] = [:]
     private var anonymousPressCountsByElementInput: [KeypadElementInputID: Int] = [:]
     private var anonymousPressLastSeenByElementInput: [KeypadElementInputID: UInt64] = [:]
+    private var localTestPressIdentifiersByElementInput: [KeypadElementInputID: Set<UInt64>] = [:]
+    private var nextLocalTestPressIdentifier: UInt64 = 0xFFFF_FFFE_0000_0000
     private var activeInputGeneration: UInt64?
     private var releasedInputGeneration: UInt64?
     private var retiredInputGenerations: Set<UInt64> = []
@@ -1681,23 +1686,16 @@ final class MacControllerServer: ObservableObject {
 
     func sendTestDown(_ input: KeypadElementInputID) {
         asyncOnNetworkQueue { [weak self] in
-            _ = self?.handleElementInputOnNetworkQueue(
-                input,
-                state: .down,
-                source: "Local editor test",
-                pressIdentifier: nil
-            )
+            _ = self?.beginLocalTestPressOnNetworkQueue(input)
         }
     }
 
     func sendTestUp(_ input: KeypadElementInputID) {
         asyncOnNetworkQueue { [weak self] in
-            _ = self?.handleElementInputOnNetworkQueue(
-                input,
-                state: .up,
-                source: "Local editor test",
-                pressIdentifier: nil
-            )
+            guard let self,
+                  let identifier = self.localTestPressIdentifiersByElementInput[input]?.first
+            else { return }
+            self.endLocalTestPressOnNetworkQueue(input, identifier: identifier)
         }
     }
 
@@ -1705,21 +1703,41 @@ final class MacControllerServer: ObservableObject {
         let boundedHoldMilliseconds = min(max(holdMilliseconds, 0), 5_000)
         asyncOnNetworkQueue { [weak self] in
             guard let self else { return }
-            _ = self.handleElementInputOnNetworkQueue(
-                input,
-                state: .down,
-                source: "Local editor test",
-                pressIdentifier: nil
-            )
+            let identifier = self.beginLocalTestPressOnNetworkQueue(input)
             self.networkQueue.asyncAfter(deadline: .now() + .milliseconds(boundedHoldMilliseconds)) { [weak self] in
-                _ = self?.handleElementInputOnNetworkQueue(
-                    input,
-                    state: .up,
-                    source: "Local editor test",
-                    pressIdentifier: nil
-                )
+                self?.endLocalTestPressOnNetworkQueue(input, identifier: identifier)
             }
         }
+    }
+
+    @discardableResult
+    private func beginLocalTestPressOnNetworkQueue(_ input: KeypadElementInputID) -> UInt64 {
+        nextLocalTestPressIdentifier = nextLocalTestPressIdentifier == UInt64.max
+            ? 0xFFFF_FFFE_0000_0000
+            : nextLocalTestPressIdentifier + 1
+        let identifier = nextLocalTestPressIdentifier
+        localTestPressIdentifiersByElementInput[input, default: []].insert(identifier)
+        _ = handleElementInputOnNetworkQueue(
+            input,
+            state: .down,
+            source: "Local editor test",
+            pressIdentifier: identifier
+        )
+        return identifier
+    }
+
+    private func endLocalTestPressOnNetworkQueue(_ input: KeypadElementInputID, identifier: UInt64) {
+        guard localTestPressIdentifiersByElementInput[input]?.contains(identifier) == true else { return }
+        localTestPressIdentifiersByElementInput[input]?.remove(identifier)
+        if localTestPressIdentifiersByElementInput[input]?.isEmpty == true {
+            localTestPressIdentifiersByElementInput[input] = nil
+        }
+        _ = handleElementInputOnNetworkQueue(
+            input,
+            state: .up,
+            source: "Local editor test",
+            pressIdentifier: identifier
+        )
     }
 
     func releaseAll(reason: String = "Release all") {
@@ -2411,8 +2429,9 @@ final class MacControllerServer: ObservableObject {
                 inputProtocolVersion: ControllerWireCodec.currentInputProtocolVersion
             ),
             on: connection
-        ) { [weak self] error in
-            self?.markEditorHandshakeDelivery(error: error)
+        ) { [weak self, weak connection] error in
+            guard let connection else { return }
+            self?.markEditorHandshakeDelivery(error: error, connection: connection)
         }
         publishHello(incomingClientName, clientDeviceInfo: clientDeviceInfo, from: connection)
 
@@ -3888,6 +3907,7 @@ final class MacControllerServer: ObservableObject {
         activePressLastSeenByElementInput.removeAll()
         anonymousPressCountsByElementInput.removeAll()
         anonymousPressLastSeenByElementInput.removeAll()
+        localTestPressIdentifiersByElementInput.removeAll()
     }
 
     private func recordPhysicalPressBeganOnNetworkQueue(
@@ -4077,9 +4097,13 @@ final class MacControllerServer: ObservableObject {
             if var identifiers = activePressIdentifiersByElementInput[input],
                let lastSeenByIdentifier = activePressLastSeenByElementInput[input]
             {
+                let localTestIdentifiers = localTestPressIdentifiersByElementInput[input] ?? []
                 let expiredIdentifiers = identifiers.filter { identifier in
                     guard let lastSeen = lastSeenByIdentifier[identifier], now >= lastSeen else { return false }
-                    return now - lastSeen > Self.physicalHoldRefreshTimeoutNanoseconds
+                    let timeout = localTestIdentifiers.contains(identifier)
+                        ? Self.localTestHoldTimeoutNanoseconds
+                        : Self.physicalHoldRefreshTimeoutNanoseconds
+                    return now - lastSeen > timeout
                 }
 
                 if !expiredIdentifiers.isEmpty {
@@ -4088,6 +4112,10 @@ final class MacControllerServer: ObservableObject {
                     for identifier in expiredIdentifiers {
                         identifiers.remove(identifier)
                         nextLastSeenByIdentifier[identifier] = nil
+                        localTestPressIdentifiersByElementInput[input]?.remove(identifier)
+                    }
+                    if localTestPressIdentifiersByElementInput[input]?.isEmpty == true {
+                        localTestPressIdentifiersByElementInput[input] = nil
                     }
 
                     activePressIdentifiersByElementInput[input] = identifiers.isEmpty ? nil : identifiers
@@ -4348,9 +4376,11 @@ final class MacControllerServer: ObservableObject {
         editorDeliveryUpdatedAt = Date.currentMilliseconds
     }
 
-    private func markEditorHandshakeDelivery(error: Error?) {
-        DispatchQueue.main.async { [weak self] in
+    private func markEditorHandshakeDelivery(error: Error?, connection: NWConnection) {
+        DispatchQueue.main.async { [weak self, weak connection] in
             guard let self,
+                  let connection,
+                  self.connection === connection,
                   self.editorDeliveryState != .localSave,
                   self.editorDeliveryState != .sending
             else { return }

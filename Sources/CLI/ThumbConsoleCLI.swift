@@ -1400,6 +1400,12 @@ struct ThumbConsoleCLI {
 
         var store = loadStore()
         let profileIndex = try resolveProfileIndex(optionValue("--profile", in: rest), in: store)
+        let sourceOrientation = source == .landscape ? GamepadEditorDeviceOrientation.landscape : .portrait
+        let sourceExists = store.profiles[profileIndex].hasCustomizationVariant(for: sourceOrientation)
+            || store.profiles[profileIndex].customization.deviceCanvas.editorDeviceFrame.orientation == sourceOrientation
+        guard sourceExists else {
+            throw CLIError.message("The source \(source.rawValue) layout does not exist for \"\(store.profiles[profileIndex].name)\".")
+        }
         store.profiles[profileIndex].copyLayoutVariant(
             from: source,
             to: destination,
@@ -3474,7 +3480,7 @@ struct ThumbConsoleCLI {
             } else {
                 let button = try parseButton(firstPositional(in: rest) ?? "jump")
                 postRuntimeCommand(.testDown, button: button)
-                Thread.sleep(forTimeInterval: Double(max(0, holdMS)) / 1000.0)
+                Thread.sleep(forTimeInterval: Double(min(max(holdMS, 0), 5_000)) / 1000.0)
                 postRuntimeCommand(.testUp, button: button)
                 print("Tapped \(button.displayName).")
             }

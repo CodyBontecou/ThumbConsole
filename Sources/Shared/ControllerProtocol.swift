@@ -107,7 +107,8 @@ public struct KeypadElementInputID: Codable, Hashable, Identifiable, Sendable {
         else { return nil }
         elementID = id
         if pieces.count > 1 {
-            part = KeypadElementInputPart(rawValue: String(pieces[1])) ?? .primary
+            guard let parsedPart = KeypadElementInputPart(rawValue: String(pieces[1])) else { return nil }
+            part = parsedPart
         } else {
             part = .primary
         }
