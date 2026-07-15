@@ -35,7 +35,7 @@ function isSafeReleaseKey(key) {
 }
 
 function filenameFromKey(key) {
-  return key.split("/").pop() || "PocketPadMac.zip";
+  return key.split("/").pop() || "ThumbConsoleMac.zip";
 }
 
 async function latestKey(env) {
@@ -66,7 +66,7 @@ export async function onRequest(context) {
   }
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return jsonResponse(request, { ok: false, message: "Use GET to download PocketPad Mac." }, 405);
+    return jsonResponse(request, { ok: false, message: "Use GET to download ThumbConsole Mac." }, 405);
   }
 
   if (!env.RELEASES) {

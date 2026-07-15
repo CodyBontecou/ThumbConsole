@@ -160,20 +160,7 @@ private extension GamepadLayoutQualityReport {
         }
 
         if validatesFreeformLayout {
-            issues.append(contentsOf: overlapIssues(
-                controls: interactiveRequestedControls,
-                phase: "requested",
-                codePrefix: "requested-overlap"
-            ))
-            issues.append(contentsOf: overlapIssues(
-                controls: interactiveResolvedControls,
-                phase: "resolved",
-                codePrefix: "resolved-overlap"
-            ).map { issue in
-                var copy = issue
-                copy.severity = .error
-                return copy
-            })
+            issues.append(contentsOf: overlapIssues(controls: interactiveResolvedControls))
             issues.append(contentsOf: displacementIssues(interactiveSummaries, canvasSize: canvasSize))
             issues.append(contentsOf: sizeIssues(interactiveSummaries, canvasSize: canvasSize))
             issues.append(contentsOf: edgeIssues(interactiveSummaries, canvasSize: canvasSize))
@@ -202,11 +189,7 @@ private extension GamepadLayoutQualityReport {
         )
     }
 
-    static func overlapIssues(
-        controls: [GamepadResolvedControl],
-        phase: String,
-        codePrefix: String
-    ) -> [GamepadLayoutIssue] {
+    static func overlapIssues(controls: [GamepadResolvedControl]) -> [GamepadLayoutIssue] {
         var issues: [GamepadLayoutIssue] = []
         for leftIndex in controls.indices {
             for rightIndex in controls.indices where rightIndex > leftIndex {
@@ -218,13 +201,12 @@ private extension GamepadLayoutQualityReport {
                 let ratio = (intersection.width * intersection.height) / minArea
                 guard ratio > 0.015 else { continue }
 
-                let severity: GamepadLayoutIssueSeverity = ratio >= 0.08 ? .error : .warning
                 let percent = Int((ratio * 100).rounded())
                 issues.append(
                     GamepadLayoutIssue(
-                        severity: severity,
-                        code: codePrefix,
-                        message: "\(phase.capitalized) frames for \(left.label) and \(right.label) overlap by about \(percent)% of the smaller control.",
+                        severity: .warning,
+                        code: "control-overlap",
+                        message: "\(left.label) and \(right.label) overlap by about \(percent)% of the smaller control.",
                         controls: [left.id.id, right.id.id],
                         metric: Double(ratio)
                     )

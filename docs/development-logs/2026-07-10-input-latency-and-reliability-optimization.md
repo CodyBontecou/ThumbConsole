@@ -4,7 +4,7 @@ Date: 2026-07-10
 
 ## Why we did this
 
-PocketPad already felt responsive in light use, but Hollow Knight exposed the weak spots. Rapid direction changes, overlapping touches, short taps, and Wi-Fi loss put much more pressure on the input path than clicking through the UI.
+ThumbConsole already felt responsive in light use, but Hollow Knight exposed the weak spots. Rapid direction changes, overlapping touches, short taps, and Wi-Fi loss put much more pressure on the input path than clicking through the UI.
 
 The goal was not to shave time off a synthetic benchmark. It was to make the full iPhone-to-Mac path predictable under real gameplay:
 
@@ -38,7 +38,7 @@ Early measurements used `Date.currentMilliseconds` on both devices. That cannot 
 - reorder wait;
 - receive-to-processed time.
 
-A Mac-originated ping/pong supplies round-trip latency. `pocketpad status --json` reports rolling p50/p95/p99 values, and `pocketpad monitor --jsonl` records every accepted or rejected input decision.
+A Mac-originated ping/pong supplies round-trip latency. `thumbconsole status --json` reports rolling p50/p95/p99 values, and `thumbconsole monitor --jsonl` records every accepted or rejected input decision.
 
 ## What changed
 
@@ -95,9 +95,9 @@ The reliable mirror can still arrive later. At that point normal stale frames ar
 Some games do not observe a down/up pair that completes inside one input poll. Buttons and element inputs now share `InputPulseSequencer<Input>`:
 
 - minimum visible hold: 22 ms;
-- minimum gap between repeated taps: 18 ms.
+- minimum gap between repeated action, primary, and digital-trigger taps: 18 ms.
 
-The down edge remains immediate. Only an early up is deferred. Physical touch ownership stays reference-counted before the pulse stage, so overlapping touches cannot release each other.
+The first down edge remains immediate. An early up is deferred, and a same-input action retap inside the output gap waits only for the remaining time. Legacy directional buttons and joystick directions bypass the inter-tap delay so movement changes stay immediate. Physical touch ownership stays reference-counted before the pulse stage, so overlapping touches cannot release each other.
 
 ### 7. Trailing analog delivery
 
@@ -156,13 +156,13 @@ Temporary captures are not committed to the repository.
 Build and run the current Mac and iOS apps, pair the phone, then clear and stream the capture:
 
 ```bash
-pocketpad monitor --clear --jsonl --duration 600 > /tmp/pocketpad-gameplay.jsonl
+thumbconsole monitor --clear --jsonl --duration 600 > /tmp/pocketpad-gameplay.jsonl
 ```
 
 After the gameplay run:
 
 ```bash
-pocketpad status --json
+thumbconsole status --json
 ```
 
 Useful checks:
@@ -186,20 +186,20 @@ A healthy run should end with empty `pressedButtons`, `pressedElementInputs`, an
 
 ```bash
 xcodebuild test \
-  -project PocketPad.xcodeproj \
-  -scheme PocketPadCLI \
+  -project ThumbConsole.xcodeproj \
+  -scheme ThumbConsoleCLI \
   -destination 'platform=macOS' \
   CODE_SIGNING_ALLOWED=NO
 
 xcodebuild build \
-  -project PocketPad.xcodeproj \
-  -scheme PocketPadMac \
+  -project ThumbConsole.xcodeproj \
+  -scheme ThumbConsoleMac \
   -destination 'platform=macOS' \
   CODE_SIGNING_ALLOWED=NO
 
 xcodebuild build \
-  -project PocketPad.xcodeproj \
-  -scheme PocketPadiOS \
+  -project ThumbConsole.xcodeproj \
+  -scheme ThumbConsoleiOS \
   -destination 'generic/platform=iOS Simulator' \
   CODE_SIGNING_ALLOWED=NO
 
@@ -212,11 +212,11 @@ The final validation had 43 passing CLI tests. Debug and release builds succeede
 
 - `Sources/Shared/ControllerProtocol.swift`
 - `Sources/Shared/ButtonPulseSequencer.swift`
-- `Sources/Shared/PocketPadInputLatencySimulation.swift`
+- `Sources/Shared/ThumbConsoleInputLatencySimulation.swift`
 - `Sources/iOS/ControllerClient.swift`
 - `Sources/Mac/MacControllerServer.swift`
 - `Sources/Mac/MacContentView.swift`
-- `Sources/CLI/PocketPadCLI.swift`
+- `Sources/CLI/ThumbConsoleCLI.swift`
 - `Tests/ButtonPulseSequencerSmokeTests.swift`
 - `Tests/InputLatencySimulationSmokeTests.swift`
 

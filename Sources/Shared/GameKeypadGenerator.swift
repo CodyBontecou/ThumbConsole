@@ -1159,7 +1159,7 @@ private enum HollowKnightTemplate {
             requestedGameName: requestedGameName,
             resolvedGameName: "Hollow Knight",
             controls: controls,
-            source: "Built-in Hollow Knight default keyboard template with PocketPad's Cavern Glow showcase theme",
+            source: "Built-in Hollow Knight default keyboard template with ThumbConsole's Cavern Glow showcase theme",
             confidence: .high,
             notes: [
                 "Uses Hollow Knight's default keyboard bindings: Arrow keys for movement, Z jump, X attack, C dash, A focus/cast.",

@@ -23,7 +23,7 @@
   <key>NSHumanReadableCopyright</key>
   <string></string>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>PocketPad hosts a local keypad server so your iPhone can connect over your local network or nearby peer-to-peer.</string>
+  <string>ThumbConsole hosts a local keypad server so your iPhone can connect over your local network or nearby peer-to-peer.</string>
   <key>NSBonjourServices</key>
   <array>
     <string>_pocketpad._tcp</string>

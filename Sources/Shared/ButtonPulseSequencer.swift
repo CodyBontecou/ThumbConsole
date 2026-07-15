@@ -29,9 +29,11 @@ struct InputPulseSequencer<Input: Hashable> {
 
     let minimumTapDurationNanoseconds: UInt64
     let minimumInterTapGapNanoseconds: UInt64
+    private let shouldEnforceMinimumInterTapGap: (Input) -> Bool
 
     private var pressedButtons: Set<Input> = []
     private var pressStartUptime: [Input: UInt64] = [:]
+    private var lastReleaseUptime: [Input: UInt64] = [:]
     private var activePhysicalPressIdentifiers: [Input: Set<UInt64>] = [:]
     private var activeAnonymousPhysicalHoldButtons: Set<Input> = []
     private var pendingReleaseButtons: Set<Input> = []
@@ -43,10 +45,12 @@ struct InputPulseSequencer<Input: Hashable> {
 
     init(
         minimumTapDurationNanoseconds: UInt64,
-        minimumInterTapGapNanoseconds: UInt64
+        minimumInterTapGapNanoseconds: UInt64,
+        shouldEnforceMinimumInterTapGap: @escaping (Input) -> Bool = { _ in true }
     ) {
         self.minimumTapDurationNanoseconds = minimumTapDurationNanoseconds
         self.minimumInterTapGapNanoseconds = minimumInterTapGapNanoseconds
+        self.shouldEnforceMinimumInterTapGap = shouldEnforceMinimumInterTapGap
     }
 
     mutating func setButton(
@@ -143,7 +147,7 @@ struct InputPulseSequencer<Input: Hashable> {
 
     mutating func releaseTimerFired(for button: Input, now: UInt64) -> [InputPulseCommand<Input>] {
         guard pendingReleaseButtons.remove(button) != nil else { return [] }
-        return finishRelease(button)
+        return finishRelease(button, now: now)
     }
 
     mutating func pressTimerFired(for button: Input, now: UInt64) -> [InputPulseCommand<Input>] {
@@ -155,13 +159,14 @@ struct InputPulseSequencer<Input: Hashable> {
         guard !pressedButtons.contains(button) else { return [] }
 
         if !hasPhysicalHold, !emitsWhenReleased {
-            return scheduleQueuedPressIfNeeded(for: button)
+            return scheduleQueuedPressIfNeeded(for: button, now: now)
         }
 
         var commands = startPress(
             button,
             pressIdentifier: pressIdentifier,
             isPhysicallyHeld: hasPhysicalHold,
+            emitsWhenReleased: emitsWhenReleased,
             now: now
         )
         if !hasPhysicalHold {
@@ -170,9 +175,14 @@ struct InputPulseSequencer<Input: Hashable> {
         return commands
     }
 
+    mutating func recordOutputReleaseCompleted(for button: Input, now: UInt64) {
+        lastReleaseUptime[button] = max(lastReleaseUptime[button] ?? now, now)
+    }
+
     mutating func reset() {
         pressedButtons.removeAll()
         pressStartUptime.removeAll()
+        lastReleaseUptime.removeAll()
         activePhysicalPressIdentifiers.removeAll()
         activeAnonymousPhysicalHoldButtons.removeAll()
         pendingReleaseButtons.removeAll()
@@ -185,6 +195,10 @@ struct InputPulseSequencer<Input: Hashable> {
 
     func isPressed(_ button: Input) -> Bool {
         pressedButtons.contains(button)
+    }
+
+    func hasPendingOutput(for button: Input) -> Bool {
+        pendingReleaseButtons.contains(button) || pendingPressButtons.contains(button)
     }
 
     func hasPhysicalPress(_ button: Input) -> Bool {
@@ -224,15 +238,26 @@ struct InputPulseSequencer<Input: Hashable> {
             return [.scheduleRelease(button, delayNanoseconds: remaining)]
         }
 
-        return finishRelease(button)
+        return finishRelease(button, now: now)
     }
 
     private mutating func startPress(
         _ button: Input,
         pressIdentifier: UInt64?,
         isPhysicallyHeld: Bool,
+        emitsWhenReleased: Bool = true,
         now: UInt64
     ) -> [InputPulseCommand<Input>] {
+        if let delayNanoseconds = remainingInterTapDelay(for: button, now: now) {
+            setPendingPress(
+                button,
+                pressIdentifier: pressIdentifier,
+                isPhysicallyHeld: isPhysicallyHeld,
+                emitsWhenReleased: emitsWhenReleased
+            )
+            return [.schedulePress(button, delayNanoseconds: delayNanoseconds)]
+        }
+
         pressStartUptime[button] = now
         pressedButtons.insert(button)
         if isPhysicallyHeld {
@@ -241,7 +266,7 @@ struct InputPulseSequencer<Input: Hashable> {
         return [.send(button, .down)]
     }
 
-    private mutating func finishRelease(_ button: Input) -> [InputPulseCommand<Input>] {
+    private mutating func finishRelease(_ button: Input, now: UInt64) -> [InputPulseCommand<Input>] {
         guard pressedButtons.contains(button) else { return [] }
 
         let shouldResumeInterruptedHold = queuedPresses[button]?.isEmpty == false
@@ -252,6 +277,7 @@ struct InputPulseSequencer<Input: Hashable> {
         pendingReleaseButtons.remove(button)
         pressStartUptime[button] = nil
         pressedButtons.remove(button)
+        lastReleaseUptime[button] = max(lastReleaseUptime[button] ?? now, now)
         clearActivePhysicalHold(for: button)
 
         for pressIdentifier in interruptedPhysicalPressIdentifiers {
@@ -264,11 +290,14 @@ struct InputPulseSequencer<Input: Hashable> {
         }
 
         var commands: [InputPulseCommand<Input>] = [.send(button, .up)]
-        commands += scheduleQueuedPressIfNeeded(for: button)
+        commands += scheduleQueuedPressIfNeeded(for: button, now: now)
         return commands
     }
 
-    private mutating func scheduleQueuedPressIfNeeded(for button: Input) -> [InputPulseCommand<Input>] {
+    private mutating func scheduleQueuedPressIfNeeded(
+        for button: Input,
+        now: UInt64
+    ) -> [InputPulseCommand<Input>] {
         guard !pendingPressButtons.contains(button) else { return [] }
 
         var nextQueuedPress: QueuedPress?
@@ -281,10 +310,51 @@ struct InputPulseSequencer<Input: Hashable> {
 
         guard let queuedPress = nextQueuedPress else { return [] }
 
+        let delayNanoseconds = remainingInterTapDelay(for: button, now: now) ?? 0
+        guard delayNanoseconds > 0 else {
+            var commands = startPress(
+                button,
+                pressIdentifier: queuedPress.pressIdentifier,
+                isPhysicallyHeld: queuedPress.isPhysicallyHeld,
+                emitsWhenReleased: queuedPress.emitsWhenReleased,
+                now: now
+            )
+            if !queuedPress.isPhysicallyHeld {
+                commands += releaseButton(button, respectingMinimumDuration: true, now: now)
+            }
+            return commands
+        }
+
+        setPendingPress(
+            button,
+            pressIdentifier: queuedPress.pressIdentifier,
+            isPhysicallyHeld: queuedPress.isPhysicallyHeld,
+            emitsWhenReleased: queuedPress.emitsWhenReleased
+        )
+        return [.schedulePress(button, delayNanoseconds: delayNanoseconds)]
+    }
+
+    private func remainingInterTapDelay(for button: Input, now: UInt64) -> UInt64? {
+        guard minimumInterTapGapNanoseconds > 0,
+              shouldEnforceMinimumInterTapGap(button),
+              let releasedAt = lastReleaseUptime[button]
+        else { return nil }
+
+        let elapsed = now >= releasedAt ? now - releasedAt : 0
+        guard elapsed < minimumInterTapGapNanoseconds else { return nil }
+        return minimumInterTapGapNanoseconds - elapsed
+    }
+
+    private mutating func setPendingPress(
+        _ button: Input,
+        pressIdentifier: UInt64?,
+        isPhysicallyHeld: Bool,
+        emitsWhenReleased: Bool
+    ) {
         pendingPressButtons.insert(button)
-        pendingPressEmitsWhenReleased[button] = queuedPress.emitsWhenReleased
-        if queuedPress.isPhysicallyHeld {
-            if let pressIdentifier = queuedPress.pressIdentifier {
+        pendingPressEmitsWhenReleased[button] = emitsWhenReleased
+        if isPhysicallyHeld {
+            if let pressIdentifier {
                 pendingPressPhysicalIdentifiers[button] = pressIdentifier
                 pendingAnonymousPressPhysicalHoldButtons.remove(button)
             } else {
@@ -295,7 +365,6 @@ struct InputPulseSequencer<Input: Hashable> {
             pendingPressPhysicalIdentifiers[button] = nil
             pendingAnonymousPressPhysicalHoldButtons.remove(button)
         }
-        return [.schedulePress(button, delayNanoseconds: minimumInterTapGapNanoseconds)]
     }
 
     private mutating func enqueuePress(

@@ -21,13 +21,13 @@
   <key>LSRequiresIPhoneOS</key>
   <true/>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>PocketPad connects to your Mac helper over your local network or nearby peer-to-peer.</string>
+  <string>ThumbConsole connects to your Mac helper over your local network or nearby peer-to-peer.</string>
   <key>NSBonjourServices</key>
   <array>
     <string>_pocketpad._tcp</string>
   </array>
   <key>NSCameraUsageDescription</key>
-  <string>PocketPad uses the camera to scan the Mac helper QR code.</string>
+  <string>ThumbConsole uses the camera to scan the Mac helper QR code.</string>
   <key>UIApplicationSupportsIndirectInputEvents</key>
   <true/>
   <key>UILaunchScreen</key>

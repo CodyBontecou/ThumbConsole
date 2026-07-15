@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Archive PocketPadiOS, export an IPA, upload it to App Store Connect, and optionally distribute to TestFlight.
+Archive ThumbConsole for iOS, export an IPA, upload it to App Store Connect, and optionally distribute to TestFlight.
 
 Usage:
   scripts/release/ios-testflight.sh [options]
@@ -20,15 +20,16 @@ Options:
   --notify                     Notify TestFlight testers after distribution.
   --upload-only                Upload and wait for processing, but do not distribute to groups.
   --skip-upload                Build/export the IPA locally, but do not contact App Store Connect.
-  --skip-xcodegen              Do not regenerate PocketPad.xcodeproj from project.yml.
+  --skip-xcodegen              Do not regenerate ThumbConsole.xcodeproj from project.yml.
   -h, --help                   Show this help.
 
 Environment defaults:
-  ASC_APP_ID or POCKETPAD_IOS_ASC_APP_ID
-  POCKETPAD_TESTFLIGHT_GROUP
-  POCKETPAD_IOS_VERSION
-  POCKETPAD_IOS_BUILD_NUMBER
-  POCKETPAD_USES_NON_EXEMPT_ENCRYPTION=false
+  ASC_APP_ID or THUMBCONSOLE_IOS_ASC_APP_ID
+  THUMBCONSOLE_TESTFLIGHT_GROUP
+  THUMBCONSOLE_IOS_VERSION
+  THUMBCONSOLE_IOS_BUILD_NUMBER
+  THUMBCONSOLE_USES_NON_EXEMPT_ENCRYPTION=false
+  Legacy POCKETPAD_* names remain supported.
 USAGE
 }
 
@@ -44,13 +45,13 @@ log() {
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-APP_ID="${POCKETPAD_IOS_ASC_APP_ID:-${ASC_APP_ID:-}}"
-GROUP="${POCKETPAD_TESTFLIGHT_GROUP:-}"
-VERSION="${POCKETPAD_IOS_VERSION:-}"
-BUILD_NUMBER="${POCKETPAD_IOS_BUILD_NUMBER:-${POCKETPAD_BUILD_NUMBER:-}}"
-TEST_NOTES="${POCKETPAD_TESTFLIGHT_NOTES:-}"
+APP_ID="${THUMBCONSOLE_IOS_ASC_APP_ID:-${POCKETPAD_IOS_ASC_APP_ID:-${ASC_APP_ID:-}}}"
+GROUP="${THUMBCONSOLE_TESTFLIGHT_GROUP:-${POCKETPAD_TESTFLIGHT_GROUP:-}}"
+VERSION="${THUMBCONSOLE_IOS_VERSION:-${POCKETPAD_IOS_VERSION:-}}"
+BUILD_NUMBER="${THUMBCONSOLE_IOS_BUILD_NUMBER:-${THUMBCONSOLE_BUILD_NUMBER:-${POCKETPAD_IOS_BUILD_NUMBER:-${POCKETPAD_BUILD_NUMBER:-}}}}"
+TEST_NOTES="${THUMBCONSOLE_TESTFLIGHT_NOTES:-${POCKETPAD_TESTFLIGHT_NOTES:-}}"
 NOTES_FILE=""
-USES_NON_EXEMPT_ENCRYPTION="${POCKETPAD_USES_NON_EXEMPT_ENCRYPTION:-false}"
+USES_NON_EXEMPT_ENCRYPTION="${THUMBCONSOLE_USES_NON_EXEMPT_ENCRYPTION:-${POCKETPAD_USES_NON_EXEMPT_ENCRYPTION:-false}}"
 NOTIFY=0
 UPLOAD_ONLY=0
 SKIP_UPLOAD=0
@@ -87,12 +88,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-PROJECT="${POCKETPAD_XCODE_PROJECT:-PocketPad.xcodeproj}"
-SCHEME="${POCKETPAD_IOS_SCHEME:-PocketPadiOS}"
+PROJECT="${THUMBCONSOLE_XCODE_PROJECT:-${POCKETPAD_XCODE_PROJECT:-ThumbConsole.xcodeproj}}"
+SCHEME="${THUMBCONSOLE_IOS_SCHEME:-${POCKETPAD_IOS_SCHEME:-ThumbConsoleiOS}}"
 CONFIGURATION="${CONFIGURATION:-Release}"
-TEAM_ID="${POCKETPAD_DEVELOPMENT_TEAM:-67KC823C9A}"
-EXPORT_OPTIONS="${POCKETPAD_IOS_EXPORT_OPTIONS:-Config/ExportOptions/iOS-TestFlight.plist}"
-ARTIFACT_ROOT="${POCKETPAD_RELEASE_DIR:-.release}"
+TEAM_ID="${THUMBCONSOLE_DEVELOPMENT_TEAM:-${POCKETPAD_DEVELOPMENT_TEAM:-67KC823C9A}}"
+EXPORT_OPTIONS="${THUMBCONSOLE_IOS_EXPORT_OPTIONS:-${POCKETPAD_IOS_EXPORT_OPTIONS:-Config/ExportOptions/iOS-TestFlight.plist}}"
+ARTIFACT_ROOT="${THUMBCONSOLE_RELEASE_DIR:-${POCKETPAD_RELEASE_DIR:-.release}}"
 
 [[ -d "$PROJECT" ]] || die "missing Xcode project: $PROJECT"
 [[ -f "$EXPORT_OPTIONS" ]] || die "missing export options plist: $EXPORT_OPTIONS"
@@ -250,8 +251,8 @@ print(re.sub(r'[^A-Za-z0-9._-]+', '-', sys.argv[1]).strip('-'))
 PY
 )"
 release_dir="$ARTIFACT_ROOT/ios/$safe_version"
-archive_path="$release_dir/PocketPadiOS.xcarchive"
-ipa_path="$release_dir/PocketPadiOS-$safe_version.ipa"
+archive_path="$release_dir/ThumbConsoleiOS.xcarchive"
+ipa_path="$release_dir/ThumbConsoleiOS-$safe_version.ipa"
 
 rm -rf "$release_dir"
 mkdir -p "$release_dir"
@@ -285,7 +286,7 @@ uploaded_build_id=""
 if [[ $SKIP_UPLOAD -eq 1 ]]; then
   echo "warning: skipping App Store Connect upload" >&2
 elif [[ -z "$APP_ID" ]]; then
-  echo "warning: no ASC app configured; set ASC_APP_ID/POCKETPAD_IOS_ASC_APP_ID or pass --app to upload" >&2
+  echo "warning: no ASC app configured; set ASC_APP_ID/THUMBCONSOLE_IOS_ASC_APP_ID or pass --app to upload" >&2
 else
   log "Uploading IPA to App Store Connect"
   upload_output="$({ asc builds upload \

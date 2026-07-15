@@ -1,11 +1,11 @@
 ---
-name: pocketpad-keypad-generator
-description: Generate, install, edit, export/import, and runtime-control PocketPad keypad profiles using the `pocketpad` CLI. Use whenever a user asks for a PocketPad keypad, iPhone controller layout, game profile, keyboard-to-touch controls, shortcut pad setup, profile/template management, key binding changes, joystick/custom button layout changes, or Mac helper runtime actions such as status, pairing code/payload, accessibility, test tap, server restart, or release-all. For unknown games, research or infer controls, write an agent-provided JSON spec, dry-run it, and install it without asking the user unless they explicitly want custom controls.
+name: thumbconsole-keypad-generator
+description: Generate, install, edit, export/import, and runtime-control ThumbConsole keypad profiles using the `thumbconsole` CLI. Use whenever a user asks for a ThumbConsole keypad, iPhone controller layout, game profile, keyboard-to-touch controls, shortcut pad setup, profile/template management, key binding changes, joystick/custom button layout changes, or Mac helper runtime actions such as status, pairing code/payload, accessibility, test tap, server restart, or release-all. For unknown games, research or infer controls, write an agent-provided JSON spec, dry-run it, and install it without asking the user unless they explicitly want custom controls.
 ---
 
-# PocketPad CLI / Keypad Generator
+# ThumbConsole CLI / Keypad Generator
 
-Use this skill to configure PocketPad from the command line. PocketPad turns an iPhone into a programmable keypad/controller for a Mac. The CLI can now do both agent-friendly game profile generation and most saved-configuration/runtime actions exposed by the macOS app.
+Use this skill to configure ThumbConsole from the command line. ThumbConsole turns an iPhone into a programmable keypad/controller for a Mac. The CLI can now do both agent-friendly game profile generation and most saved-configuration/runtime actions exposed by the macOS app.
 
 ## Decision tree
 
@@ -19,27 +19,27 @@ Use this skill to configure PocketPad from the command line. PocketPad turns an 
 
 ## Build or locate the CLI
 
-From the PocketPad repo root:
+From the ThumbConsole repo root:
 
 ```bash
-xcodebuild -project PocketPad.xcodeproj \
-  -scheme PocketPadCLI \
+xcodebuild -project ThumbConsole.xcodeproj \
+  -scheme ThumbConsoleCLI \
   -destination 'platform=macOS' \
   -derivedDataPath build/DerivedData \
   build
 
-POCKETPAD_CLI="$PWD/build/DerivedData/Build/Products/Debug/pocketpad"
+THUMBCONSOLE_CLI="$PWD/build/DerivedData/Build/Products/Debug/thumbconsole"
 ```
 
-If `build/DerivedData/Build/Products/Debug/pocketpad` already exists and is recent enough, reuse it.
+If `build/DerivedData/Build/Products/Debug/thumbconsole` already exists and is recent enough, reuse it.
 
 ## Generate a game profile
 
 Try built-in game generation first:
 
 ```bash
-"$POCKETPAD_CLI" generate "Hollow Knight" --dry-run
-"$POCKETPAD_CLI" generate "Hollow Knight"
+"$THUMBCONSOLE_CLI" generate "Hollow Knight" --dry-run
+"$THUMBCONSOLE_CLI" generate "Hollow Knight"
 ```
 
 If there is no built-in game template, the agent is the fallback: research or infer controls, write a JSON spec, dry-run, then install.
@@ -61,7 +61,7 @@ If uncertain, still create a playable spec, set `confidence` to `low`, and menti
   "source": "Agent best guess from common/default keyboard controls",
   "confidence": "low",
   "notes": [
-    "Generated from the agent's best guess. Adjust in PocketPad Mac if your in-game bindings differ."
+    "Generated from the agent's best guess. Adjust in ThumbConsole Mac if your in-game bindings differ."
   ],
   "controls": [
     { "label": "Left", "key": "LeftArrow", "role": "movement" },
@@ -79,21 +79,21 @@ If uncertain, still create a playable spec, set `confidence` to `low`, and menti
 Run:
 
 ```bash
-"$POCKETPAD_CLI" generate --spec /tmp/game-keypad.json --dry-run
-"$POCKETPAD_CLI" generate --spec /tmp/game-keypad.json
+"$THUMBCONSOLE_CLI" generate --spec /tmp/game-keypad.json --dry-run
+"$THUMBCONSOLE_CLI" generate --spec /tmp/game-keypad.json
 # or stdin
-"$POCKETPAD_CLI" generate --stdin < /tmp/game-keypad.json
+"$THUMBCONSOLE_CLI" generate --stdin < /tmp/game-keypad.json
 ```
 
-By default, `generate` installs, selects, and marks the profile as default. If PocketPad Mac is running, it reloads and pushes the selected keypad to the paired iPhone.
+By default, `generate` installs, selects, and marks the profile as default. If ThumbConsole Mac is running, it reloads and pushes the selected keypad to the paired iPhone.
 
 Useful variants:
 
 ```bash
-"$POCKETPAD_CLI" generate --spec /tmp/game-keypad.json --no-default
-"$POCKETPAD_CLI" generate --spec /tmp/game-keypad.json --no-select
-"$POCKETPAD_CLI" install-spec /tmp/game-keypad.json
-"$POCKETPAD_CLI" generate --spec /tmp/game-keypad.json --json --dry-run
+"$THUMBCONSOLE_CLI" generate --spec /tmp/game-keypad.json --no-default
+"$THUMBCONSOLE_CLI" generate --spec /tmp/game-keypad.json --no-select
+"$THUMBCONSOLE_CLI" install-spec /tmp/game-keypad.json
+"$THUMBCONSOLE_CLI" generate --spec /tmp/game-keypad.json --json --dry-run
 ```
 
 ## Agent spec fields
@@ -102,7 +102,7 @@ Top-level fields:
 
 | Field | Required | Purpose |
 |---|---:|---|
-| `gameName` | yes | Profile name shown in PocketPad. Aliases: `name`, `game`. |
+| `gameName` | yes | Profile name shown in ThumbConsole. Aliases: `name`, `game`. |
 | `source` | recommended | Where controls came from, or why this is a best guess. |
 | `confidence` | recommended | `high`, `medium`, or `low`. |
 | `notes` | optional | Caveats or context. |
@@ -116,7 +116,7 @@ Control fields:
 | `key` | yes | Mac key to inject. Still required for joystick specs. |
 | `modifiers` | optional | Array of `command`, `shift`, `option`, `control`. |
 | `role` | recommended | `movement`, `primary`, `secondary`, `utility`, `system`; helps placement/style. |
-| `button` | optional | Explicit PocketPad slot. Usually omit and let the CLI infer. |
+| `button` | optional | Explicit ThumbConsole slot. Usually omit and let the CLI infer. |
 | `centerX`, `centerY` | optional | Normalized position `0.0`–`1.0`. Aliases: `x`, `y`. |
 | `widthScale`, `heightScale` | optional | Button size multipliers. Aliases: `width`, `height`. |
 | `shape` | optional | `rounded_rectangle`, `rectangle`, `capsule`, `circle`, `ellipse`, `polygon`, `star`. |
@@ -134,8 +134,8 @@ Control fields:
 | `sensitivity`, `cursorSensitivity`, `pointerSensitivity` | optional | Trackpad cursor sensitivity multiplier (`0.2`–`4.0` after normalization). Implies `kind: "trackpad"` if no kind is set. |
 | `scrollSensitivity` | optional | Trackpad scroll sensitivity multiplier (`0.1`–`4.0` after normalization). |
 | `tapToClick`, `twoFingerScroll`, `naturalScrolling` / `naturalScroll` | optional | Trackpad gesture toggles. |
-| `joystickMapping` | optional | Object mapping joystick directions to PocketPad button slots. |
-| `up`, `down`, `left`, `right` | optional | Direction aliases for joystick mappings; values are PocketPad slots, not keyboard keys. |
+| `joystickMapping` | optional | Object mapping joystick directions to ThumbConsole button slots. |
+| `up`, `down`, `left`, `right` | optional | Direction aliases for joystick mappings; values are ThumbConsole slots, not keyboard keys. |
 
 Valid `button` slots:
 
@@ -185,18 +185,18 @@ F1-F17, Home, End, Page Up, Page Down
 ## Profile management
 
 ```bash
-"$POCKETPAD_CLI" profile list --ids
-"$POCKETPAD_CLI" profile show active --json
-"$POCKETPAD_CLI" profile create "My Setup" --blank
-"$POCKETPAD_CLI" profile create "SNES Setup" --template snes
-"$POCKETPAD_CLI" profile select "My Setup"
-"$POCKETPAD_CLI" profile default "My Setup"
-"$POCKETPAD_CLI" profile rename "My Setup" "Browser Shortcuts"
-"$POCKETPAD_CLI" profile duplicate "Browser Shortcuts" "Browser Copy"
-"$POCKETPAD_CLI" profile delete "Browser Copy"
-"$POCKETPAD_CLI" profile reset active
-"$POCKETPAD_CLI" profile export --all -o pocketpad-profiles.json
-"$POCKETPAD_CLI" profile import pocketpad-profiles.json
+"$THUMBCONSOLE_CLI" profile list --ids
+"$THUMBCONSOLE_CLI" profile show active --json
+"$THUMBCONSOLE_CLI" profile create "My Setup" --blank
+"$THUMBCONSOLE_CLI" profile create "SNES Setup" --template snes
+"$THUMBCONSOLE_CLI" profile select "My Setup"
+"$THUMBCONSOLE_CLI" profile default "My Setup"
+"$THUMBCONSOLE_CLI" profile rename "My Setup" "Browser Shortcuts"
+"$THUMBCONSOLE_CLI" profile duplicate "Browser Shortcuts" "Browser Copy"
+"$THUMBCONSOLE_CLI" profile delete "Browser Copy"
+"$THUMBCONSOLE_CLI" profile reset active
+"$THUMBCONSOLE_CLI" profile export --all -o thumbconsole-profiles.json
+"$THUMBCONSOLE_CLI" profile import thumbconsole-profiles.json
 ```
 
 ## Controller templates
@@ -204,9 +204,9 @@ F1-F17, Home, End, Page Up, Page Down
 Use these for emulator/controller-style layouts rather than game-specific key generation:
 
 ```bash
-"$POCKETPAD_CLI" template list
-"$POCKETPAD_CLI" template show snes
-"$POCKETPAD_CLI" template install snes --name "SNES" --default
+"$THUMBCONSOLE_CLI" template list
+"$THUMBCONSOLE_CLI" template show snes
+"$THUMBCONSOLE_CLI" template install snes --name "SNES" --default
 ```
 
 Templates include NES, Super Nintendo, Nintendo 64, GameCube, Game Boy, Game Boy Advance, Genesis 6-Button, Sega Saturn, Dreamcast, Arcade Stick, PSP, PlayStation, and Xbox.
@@ -214,13 +214,13 @@ Templates include NES, Super Nintendo, Nintendo 64, GameCube, Game Boy, Game Boy
 ## Shortcut bindings
 
 ```bash
-"$POCKETPAD_CLI" binding list
-"$POCKETPAD_CLI" binding set jump Return
-"$POCKETPAD_CLI" binding set dash --key K --modifiers command
-"$POCKETPAD_CLI" binding set focus --sequence 'Control+B,H'
-"$POCKETPAD_CLI" binding reset jump
-"$POCKETPAD_CLI" binding clear custom1
-"$POCKETPAD_CLI" binding reset-all
+"$THUMBCONSOLE_CLI" binding list
+"$THUMBCONSOLE_CLI" binding set jump Return
+"$THUMBCONSOLE_CLI" binding set dash --key K --modifiers command
+"$THUMBCONSOLE_CLI" binding set focus --sequence 'Control+B,H'
+"$THUMBCONSOLE_CLI" binding reset jump
+"$THUMBCONSOLE_CLI" binding clear custom1
+"$THUMBCONSOLE_CLI" binding reset-all
 ```
 
 Use `--profile PROFILE` on binding commands to target a non-active profile.
@@ -230,28 +230,28 @@ Use `--profile PROFILE` on binding commands to target a non-active profile.
 Setup-level customization:
 
 ```bash
-"$POCKETPAD_CLI" customization show --profile active
-"$POCKETPAD_CLI" customization set --appearance dark --device iphone-17-pro --background '#101014'
-"$POCKETPAD_CLI" customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
-"$POCKETPAD_CLI" customization export -o customization.json
-"$POCKETPAD_CLI" customization import customization.json
-"$POCKETPAD_CLI" customization reset
+"$THUMBCONSOLE_CLI" customization show --profile active
+"$THUMBCONSOLE_CLI" customization set --appearance dark --device iphone-17-pro --background '#101014'
+"$THUMBCONSOLE_CLI" customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
+"$THUMBCONSOLE_CLI" customization export -o customization.json
+"$THUMBCONSOLE_CLI" customization import customization.json
+"$THUMBCONSOLE_CLI" customization reset
 ```
 
 Element-level controls:
 
 ```bash
-"$POCKETPAD_CLI" element list
-"$POCKETPAD_CLI" element add button --label Fire --maps-to custom1 --x 0.50 --y 0.80 --light-fill '#F59E0B' --dark-fill '#78350F'
-"$POCKETPAD_CLI" element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
-"$POCKETPAD_CLI" element add trackpad --label Trackpad --x 0.50 --y 0.58 --width 1.25 --sensitivity 1.2 --scroll-sensitivity 0.85 --tap-to-click true
-"$POCKETPAD_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
-"$POCKETPAD_CLI" element set "Right Stick" --thumb-fill '#22C55E'
-"$POCKETPAD_CLI" element set focus --icon sf:sparkles --haptic medium --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9' --glow-radius 12
-"$POCKETPAD_CLI" element set jump --lock
-"$POCKETPAD_CLI" element set pause --hide
-"$POCKETPAD_CLI" element reset jump
-"$POCKETPAD_CLI" element delete custom1
+"$THUMBCONSOLE_CLI" element list
+"$THUMBCONSOLE_CLI" element add button --label Fire --maps-to custom1 --x 0.50 --y 0.80 --light-fill '#F59E0B' --dark-fill '#78350F'
+"$THUMBCONSOLE_CLI" element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
+"$THUMBCONSOLE_CLI" element add trackpad --label Trackpad --x 0.50 --y 0.58 --width 1.25 --sensitivity 1.2 --scroll-sensitivity 0.85 --tap-to-click true
+"$THUMBCONSOLE_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
+"$THUMBCONSOLE_CLI" element set "Right Stick" --thumb-fill '#22C55E'
+"$THUMBCONSOLE_CLI" element set focus --icon sf:sparkles --haptic medium --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9' --glow-radius 12
+"$THUMBCONSOLE_CLI" element set jump --lock
+"$THUMBCONSOLE_CLI" element set pause --hide
+"$THUMBCONSOLE_CLI" element reset jump
+"$THUMBCONSOLE_CLI" element delete custom1
 ```
 
 Appearance/design flags:
@@ -269,41 +269,41 @@ Appearance/design flags:
 Control-bar items keep their built-in actions, but their order, visibility, icon, size, fill, shape, corners, effects, and haptics can be customized per portrait/landscape variant:
 
 ```bash
-"$POCKETPAD_CLI" control-bar list --json
-"$POCKETPAD_CLI" control-bar set status,profiles,launch,spacer,edit,settings,home,connection
-"$POCKETPAD_CLI" control-bar move settings earlier
-"$POCKETPAD_CLI" control-bar item show settings --json
-"$POCKETPAD_CLI" control-bar item set settings --icon sf:slider.horizontal.3 --fill '#111827' --corner 12
-"$POCKETPAD_CLI" control-bar item set connection --width 1.25 --height 1.1 --haptic medium
-"$POCKETPAD_CLI" control-bar item reset settings
-"$POCKETPAD_CLI" control-bar reset
+"$THUMBCONSOLE_CLI" control-bar list --json
+"$THUMBCONSOLE_CLI" control-bar set status,profiles,launch,spacer,edit,settings,home,connection
+"$THUMBCONSOLE_CLI" control-bar move settings earlier
+"$THUMBCONSOLE_CLI" control-bar item show settings --json
+"$THUMBCONSOLE_CLI" control-bar item set settings --icon sf:slider.horizontal.3 --fill '#111827' --corner 12
+"$THUMBCONSOLE_CLI" control-bar item set connection --width 1.25 --height 1.1 --haptic medium
+"$THUMBCONSOLE_CLI" control-bar item reset settings
+"$THUMBCONSOLE_CLI" control-bar reset
 ```
 
 Use `--variant portrait|landscape` and `--profile PROFILE` as needed. A control-bar item's semantic action is fixed: styling `home`, for example, cannot turn it into a keyboard shortcut.
 
 ## Runtime Mac helper commands
 
-PocketPad Mac must be running for most runtime commands. `app open` launches it first.
+ThumbConsole Mac must be running for most runtime commands. `app open` launches it first.
 
 ```bash
-"$POCKETPAD_CLI" app open
-"$POCKETPAD_CLI" status --json
-"$POCKETPAD_CLI" server start
-"$POCKETPAD_CLI" server stop
-"$POCKETPAD_CLI" server restart
-"$POCKETPAD_CLI" server addresses
-"$POCKETPAD_CLI" pairing code
-"$POCKETPAD_CLI" pairing payload
-"$POCKETPAD_CLI" pairing cancel
-"$POCKETPAD_CLI" accessibility status
-"$POCKETPAD_CLI" accessibility prompt
-"$POCKETPAD_CLI" accessibility open
-"$POCKETPAD_CLI" latency simulate --pattern hollow-knight --mode compare --log /tmp/pocketpad-latency.json
-"$POCKETPAD_CLI" latency verify --max-ms 4 --p95-ms 4 --log /tmp/pocketpad-latency-verify.json
-"$POCKETPAD_CLI" test tap jump
-"$POCKETPAD_CLI" test down left
-"$POCKETPAD_CLI" test up left
-"$POCKETPAD_CLI" release-all
+"$THUMBCONSOLE_CLI" app open
+"$THUMBCONSOLE_CLI" status --json
+"$THUMBCONSOLE_CLI" server start
+"$THUMBCONSOLE_CLI" server stop
+"$THUMBCONSOLE_CLI" server restart
+"$THUMBCONSOLE_CLI" server addresses
+"$THUMBCONSOLE_CLI" pairing code
+"$THUMBCONSOLE_CLI" pairing payload
+"$THUMBCONSOLE_CLI" pairing cancel
+"$THUMBCONSOLE_CLI" accessibility status
+"$THUMBCONSOLE_CLI" accessibility prompt
+"$THUMBCONSOLE_CLI" accessibility open
+"$THUMBCONSOLE_CLI" latency simulate --pattern hollow-knight --mode compare --log /tmp/thumbconsole-latency.json
+"$THUMBCONSOLE_CLI" latency verify --max-ms 4 --p95-ms 4 --log /tmp/thumbconsole-latency-verify.json
+"$THUMBCONSOLE_CLI" test tap jump
+"$THUMBCONSOLE_CLI" test down left
+"$THUMBCONSOLE_CLI" test up left
+"$THUMBCONSOLE_CLI" release-all
 ```
 
 Use `latency simulate` before UI automation when investigating controller lag. It is headless and emits per-edge touch-to-injection timings; supported patterns are `hollow-knight`, `same-button-burst`, `udp-recovery`, and `udp-recovery-burst`, with modes `current`, `legacy-main-actor`, or `compare`. Use `latency verify` as the pass/fail gate for whether the current input path is below the configured lag budget.
@@ -313,7 +313,7 @@ Use `latency simulate` before UI automation when investigating controller lag. I
 - Movement keys are present unless the game does not use movement.
 - At least one primary action exists for action games.
 - Pause/menu is mapped when the game has one.
-- Joystick direction aliases map to PocketPad slots, not keyboard keys.
+- Joystick direction aliases map to ThumbConsole slots, not keyboard keys.
 - `confidence` honestly reflects certainty.
 - `source` explains where the mapping came from.
 - `--dry-run` lists the expected bindings and does not fail.
@@ -323,7 +323,7 @@ Use `latency simulate` before UI automation when investigating controller lag. I
 After installing, respond with a short summary:
 
 ```txt
-Created and selected a PocketPad profile for Celeste.
+Created and selected a ThumbConsole profile for Celeste.
 Confidence: low — this is an agent best guess from common/default controls.
 
 Bindings:
@@ -333,7 +333,7 @@ Bindings:
 - Climb: Z
 - Pause: Esc
 
-If your in-game bindings differ, I can update the profile from the CLI or you can edit it in PocketPad Mac's Keypad editor.
+If your in-game bindings differ, I can update the profile from the CLI or you can edit it in ThumbConsole Mac's Keypad editor.
 ```
 
 ## Troubleshooting
@@ -342,6 +342,6 @@ If your in-game bindings differ, I can update the profile from the CLI or you ca
 - **Need a controller layout, not a game profile**: use `template install`.
 - **Unsupported key**: change `key` to a supported key name, then rerun `--dry-run`.
 - **Malformed JSON**: validate the file or rewrite it with strict JSON syntax.
-- **Profile does not appear on iPhone**: make sure PocketPad Mac is running and the iPhone is paired; rerun the install command or restart PocketPad Mac.
-- **Runtime status missing**: run `pocketpad app open`, then `pocketpad status` again.
+- **Profile does not appear on iPhone**: make sure ThumbConsole Mac is running and the iPhone is paired; rerun the install command or restart ThumbConsole Mac.
+- **Runtime status missing**: run `thumbconsole app open`, then `thumbconsole status` again.
 - **Controls feel wrong in-game**: update the JSON/spec or use `binding set` / `element set` rather than asking the user to hand-edit everything.

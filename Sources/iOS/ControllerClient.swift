@@ -47,7 +47,7 @@ private final class ControllerInputTransport {
     private var pendingAnalogPayloads: [String: AnalogPayload] = [:]
     private var pendingAnalogWorkItems: [String: DispatchWorkItem] = [:]
     private let binaryMessageContext = NWConnection.ContentContext(
-        identifier: "PocketPadInputMessage",
+        identifier: "ThumbConsoleInputMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
     )
     private let encoder = JSONEncoder()
@@ -870,7 +870,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var hasSavedKeypadSnapshot = false
     @Published private(set) var smartConnectStatus: String?
 
-    private let networkQueue = DispatchQueue(label: "PocketPad.iOS.Network", qos: .userInteractive)
+    private let networkQueue = DispatchQueue(label: "ThumbConsole.iOS.Network", qos: .userInteractive)
     private let inputTransport: ControllerInputTransport
     private var connection: NWConnection?
     private var controlURL: URL?
@@ -888,7 +888,7 @@ final class ControllerClient: ObservableObject {
     private var lastSentEventUpdateTask: Task<Void, Never>?
     private var pendingLastSentEvent = "None"
     private let binaryMessageContext = NWConnection.ContentContext(
-        identifier: "PocketPadMessage",
+        identifier: "ThumbConsoleMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
     )
     private let encoder = JSONEncoder()
@@ -1708,7 +1708,7 @@ final class ControllerClient: ObservableObject {
         let macName = currentServiceResolution?.displayName
             ?? trustedMacCredential?.macName
             ?? controlURL?.host
-            ?? "PocketPad Mac"
+            ?? "ThumbConsole Mac"
         let credential = TrustedMacCredential(
             serverID: serverIDToStore,
             authToken: tokenToStore,

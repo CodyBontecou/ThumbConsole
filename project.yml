@@ -1,4 +1,4 @@
-name: PocketPad
+name: ThumbConsole
 options:
   minimumXcodeGenVersion: 2.42.0
   deploymentTarget:
@@ -8,11 +8,11 @@ settings:
   base:
     SWIFT_VERSION: 5.9
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 1
+    CURRENT_PROJECT_VERSION: 2
     VERSIONING_SYSTEM: apple-generic
     ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
 targets:
-  PocketPadMac:
+  ThumbConsoleMac:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
@@ -23,14 +23,31 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadMac
-        PRODUCT_NAME: PocketPad Mac
+        PRODUCT_NAME: ThumbConsole Mac
         INFOPLIST_FILE: Resources/Mac/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 67KC823C9A
         ENABLE_HARDENED_RUNTIME: YES
         MACOSX_DEPLOYMENT_TARGET: "14.0"
-  PocketPadCLI:
+  ThumbConsoleCLI:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/Shared
+      - path: Sources/Mac/KeyMap.swift
+      - path: Sources/Mac/MacControlOutputBinding.swift
+      - path: Sources/CLI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPad
+        PRODUCT_NAME: thumbconsole
+        "CODE_SIGN_IDENTITY[sdk=macosx*]": Apple Development
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 67KC823C9A
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+  ThumbConsoleLegacyCLI:
     type: tool
     platform: macOS
     deploymentTarget: "14.0"
@@ -43,10 +60,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadCLI
         PRODUCT_NAME: pocketpad
+        "CODE_SIGN_IDENTITY[sdk=macosx*]": Apple Development
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 67KC823C9A
         MACOSX_DEPLOYMENT_TARGET: "14.0"
-  PocketPadCLITests:
+  ThumbConsoleCLITests:
     type: bundle.unit-test
     platform: macOS
     deploymentTarget: "14.0"
@@ -56,13 +74,13 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadCLITests
-        PRODUCT_NAME: PocketPadCLITests
+        PRODUCT_NAME: ThumbConsoleCLITests
         GENERATE_INFOPLIST_FILE: YES
         OTHER_SWIFT_FLAGS: "$(inherited) -D XCODEBUILD_TEST"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 67KC823C9A
         MACOSX_DEPLOYMENT_TARGET: "14.0"
-  PocketPadiOS:
+  ThumbConsoleiOS:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
@@ -73,7 +91,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPad.iOS
-        PRODUCT_NAME: PocketPad
+        PRODUCT_NAME: ThumbConsole
         INFOPLIST_FILE: Resources/iOS/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
@@ -89,27 +107,28 @@ targets:
               --object-root "${OBJECT_FILE_DIR_normal:-$OBJECT_FILE_DIR}"
           fi
 schemes:
-  PocketPadMac:
+  ThumbConsoleMac:
     build:
       targets:
-        PocketPadMac: all
+        ThumbConsoleMac: all
     run:
       config: Debug
     archive:
       config: Release
-  PocketPadiOS:
+  ThumbConsoleiOS:
     build:
       targets:
-        PocketPadiOS: all
+        ThumbConsoleiOS: all
     run:
       config: Debug
     archive:
       config: Release
-  PocketPadCLI:
+  ThumbConsoleCLI:
     build:
       targets:
-        PocketPadCLI: all
-        PocketPadCLITests: [test]
+        ThumbConsoleCLI: all
+        ThumbConsoleLegacyCLI: all
+        ThumbConsoleCLITests: [test]
     test:
       targets:
-        - PocketPadCLITests
+        - ThumbConsoleCLITests

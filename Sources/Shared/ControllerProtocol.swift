@@ -114,7 +114,8 @@ public struct KeypadElementInputID: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-public enum PocketPadMacIPC {
+public enum ThumbConsoleMacIPC {
+    // These identifiers remain stable so existing installs, pairings, and CLI/app IPC survive the rename.
     public static let appDefaultsDomain = "com.codybontecou.PocketPadMac"
     public static let commandNotificationName = "com.codybontecou.PocketPadMac.cliCommand"
     public static let commandDataKey = "commandData"
@@ -122,10 +123,11 @@ public enum PocketPadMacIPC {
     public static let onboardingCompletedDefaultsKey = "PocketPadMac.onboarding.completed.v1"
     public static let editorFirstKeypadOnboardingCompletedDefaultsKey = "PocketPad.GamepadEditor.firstKeypadOnboardingCompleted.v1"
     public static let editorFirstKeypadOnboardingReplayRequestedDefaultsKey = "PocketPad.GamepadEditor.firstKeypadOnboardingReplayRequested.v1"
-    public static let captureLogPath = "/tmp/pocketpad-capture.jsonl"
+    public static let captureLogPath = "/tmp/thumbconsole-capture.jsonl"
+    public static let legacyCaptureLogPath = "/tmp/pocketpad-capture.jsonl"
 }
 
-public enum PocketPadMacCLICommand: String, Codable, Sendable {
+public enum ThumbConsoleMacCLICommand: String, Codable, Sendable {
     case publishStatus
     case start
     case stop
@@ -139,7 +141,7 @@ public enum PocketPadMacCLICommand: String, Codable, Sendable {
     case testUp
 }
 
-public struct PocketPadCaptureEvent: Codable, Sendable {
+public struct ThumbConsoleCaptureEvent: Codable, Sendable {
     public var schemaVersion: Int
     public var sequence: UInt64?
     public var recordedAt: Int64
@@ -172,6 +174,11 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
     public var decodeLatencyMS: Double?
     public var receiveToProcessedMS: Double?
     public var reorderWaitMS: Double?
+    public var processingToCompletionMS: Double?
+    public var bindingLookupMS: Double?
+    public var outputInjectionMS: Double?
+    public var postInjectionMS: Double?
+    public var outputDeferred: Bool?
     public var pressedButtons: [GameButton]?
     public var pressedElementInputs: [String]?
     public var activePointerButtons: [ControllerPointerButton]?
@@ -213,6 +220,11 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
         decodeLatencyMS: Double? = nil,
         receiveToProcessedMS: Double? = nil,
         reorderWaitMS: Double? = nil,
+        processingToCompletionMS: Double? = nil,
+        bindingLookupMS: Double? = nil,
+        outputInjectionMS: Double? = nil,
+        postInjectionMS: Double? = nil,
+        outputDeferred: Bool? = nil,
         pressedButtons: [GameButton]? = nil,
         pressedElementInputs: [String]? = nil,
         activePointerButtons: [ControllerPointerButton]? = nil,
@@ -253,6 +265,11 @@ public struct PocketPadCaptureEvent: Codable, Sendable {
         self.decodeLatencyMS = decodeLatencyMS
         self.receiveToProcessedMS = receiveToProcessedMS
         self.reorderWaitMS = reorderWaitMS
+        self.processingToCompletionMS = processingToCompletionMS
+        self.bindingLookupMS = bindingLookupMS
+        self.outputInjectionMS = outputInjectionMS
+        self.postInjectionMS = postInjectionMS
+        self.outputDeferred = outputDeferred
         self.pressedButtons = pressedButtons
         self.pressedElementInputs = pressedElementInputs
         self.activePointerButtons = activePointerButtons
@@ -323,13 +340,13 @@ public struct ControllerClientDeviceInfo: Codable, Equatable, Sendable {
     }
 }
 
-public struct PocketPadMacCLICommandPayload: Codable, Sendable {
-    public var command: PocketPadMacCLICommand
+public struct ThumbConsoleMacCLICommandPayload: Codable, Sendable {
+    public var command: ThumbConsoleMacCLICommand
     public var button: GameButton?
     public var reason: String?
 
     public init(
-        command: PocketPadMacCLICommand,
+        command: ThumbConsoleMacCLICommand,
         button: GameButton? = nil,
         reason: String? = nil
     ) {
@@ -339,7 +356,7 @@ public struct PocketPadMacCLICommandPayload: Codable, Sendable {
     }
 }
 
-public struct PocketPadMacRuntimeStatus: Codable, Sendable {
+public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
     public var updatedAt: Int64
     public var statusText: String
     public var isRunning: Bool
@@ -360,6 +377,12 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
     public var inputPipelineP50MS: Double?
     public var inputPipelineP95MS: Double?
     public var inputPipelineP99MS: Double?
+    public var inputProcessingP95MS: Double?
+    public var bindingLookupP95MS: Double?
+    public var outputInjectionP50MS: Double?
+    public var outputInjectionP95MS: Double?
+    public var outputInjectionP99MS: Double?
+    public var postInjectionP95MS: Double?
     public var inputProtocolVersion: Int?
     public var activeInputGeneration: UInt64?
     public var staleInputGenerationDrops: Int?
@@ -405,6 +428,12 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         inputPipelineP50MS: Double? = nil,
         inputPipelineP95MS: Double? = nil,
         inputPipelineP99MS: Double? = nil,
+        inputProcessingP95MS: Double? = nil,
+        bindingLookupP95MS: Double? = nil,
+        outputInjectionP50MS: Double? = nil,
+        outputInjectionP95MS: Double? = nil,
+        outputInjectionP99MS: Double? = nil,
+        postInjectionP95MS: Double? = nil,
         inputProtocolVersion: Int? = nil,
         activeInputGeneration: UInt64? = nil,
         staleInputGenerationDrops: Int? = nil,
@@ -449,6 +478,12 @@ public struct PocketPadMacRuntimeStatus: Codable, Sendable {
         self.inputPipelineP50MS = inputPipelineP50MS
         self.inputPipelineP95MS = inputPipelineP95MS
         self.inputPipelineP99MS = inputPipelineP99MS
+        self.inputProcessingP95MS = inputProcessingP95MS
+        self.bindingLookupP95MS = bindingLookupP95MS
+        self.outputInjectionP50MS = outputInjectionP50MS
+        self.outputInjectionP95MS = outputInjectionP95MS
+        self.outputInjectionP99MS = outputInjectionP99MS
+        self.postInjectionP95MS = postInjectionP95MS
         self.inputProtocolVersion = inputProtocolVersion
         self.activeInputGeneration = activeInputGeneration
         self.staleInputGenerationDrops = staleInputGenerationDrops

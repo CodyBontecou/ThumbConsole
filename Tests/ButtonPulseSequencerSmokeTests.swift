@@ -10,6 +10,11 @@ struct ButtonPulseSequencerSmokeTests {
     static func main() {
         testSingleFastTap()
         testGenericElementFastTap()
+        testDirectActionRetapWaitsForRemainingGap()
+        testDirectActionRetapReleasedBeforeScheduledPressStillEmits()
+        testDirectionalRetapBypassesInterTapGap()
+        testQueuedDirectionalRetapRemainsImmediateAndComplete()
+        testElementInterTapPolicyOnlyDelaysActions()
         testRepeatedFastTapsProduceTwoPulses()
         testRawIOSFastTapEdgesRemainDistinctAtMac()
         testSecondFastTapCanBecomeHeldPress()
@@ -84,6 +89,142 @@ struct ButtonPulseSequencerSmokeTests {
             sequencer.releaseTimerFired(for: .jump, now: minTap),
             [.send(.jump, .up)],
             "single fast tap releases after minimum hold"
+        )
+    }
+
+    private static func testDirectActionRetapWaitsForRemainingGap() {
+        var sequencer = makeSequencer()
+
+        expect(
+            sequencer.setButton(.attack, pressed: true, now: 0),
+            [.send(.attack, .down)],
+            "direct action retap starts first press"
+        )
+        expect(
+            sequencer.setButton(.attack, pressed: false, now: 40_000_000),
+            [.send(.attack, .up)],
+            "direct action retap releases first press"
+        )
+        sequencer.recordOutputReleaseCompleted(for: .attack, now: 42_000_000)
+        expect(
+            sequencer.setButton(.attack, pressed: true, now: 45_000_000),
+            [.schedulePress(.attack, delayNanoseconds: 17_000_000)],
+            "direct action retap waits from actual output release completion"
+        )
+        expect(
+            sequencer.pressTimerFired(for: .attack, now: 62_000_000),
+            [.send(.attack, .down)],
+            "direct action retap starts when the full output gap has elapsed"
+        )
+    }
+
+    private static func testDirectActionRetapReleasedBeforeScheduledPressStillEmits() {
+        var sequencer = makeSequencer()
+
+        _ = sequencer.setButton(.jump, pressed: true, pressIdentifier: 101, now: 0)
+        _ = sequencer.setButton(.jump, pressed: false, pressIdentifier: 101, now: 40_000_000)
+        expect(
+            sequencer.setButton(.jump, pressed: true, pressIdentifier: 202, now: 45_000_000),
+            [.schedulePress(.jump, delayNanoseconds: 15_000_000)],
+            "released direct retap schedules its down after the action gap"
+        )
+        expect(
+            sequencer.setButton(.jump, pressed: false, pressIdentifier: 202, now: 50_000_000),
+            [],
+            "released direct retap remains pending"
+        )
+        expect(
+            sequencer.pressTimerFired(for: .jump, now: 60_000_000),
+            [
+                .send(.jump, .down),
+                .scheduleRelease(.jump, delayNanoseconds: minTap)
+            ],
+            "released direct retap still emits a complete synthetic pulse"
+        )
+    }
+
+    private static func testDirectionalRetapBypassesInterTapGap() {
+        var sequencer = ButtonPulseSequencer(
+            minimumTapDurationNanoseconds: minTap,
+            minimumInterTapGapNanoseconds: minGap,
+            shouldEnforceMinimumInterTapGap: { button in
+                button != .left && button != .right && button != .up && button != .down
+            }
+        )
+
+        _ = sequencer.setButton(.left, pressed: true, now: 0)
+        expect(
+            sequencer.setButton(.left, pressed: false, now: 40_000_000),
+            [.send(.left, .up)],
+            "directional retap releases immediately"
+        )
+        expect(
+            sequencer.setButton(.left, pressed: true, now: 41_000_000),
+            [.send(.left, .down)],
+            "directional retap does not wait for an action inter-tap gap"
+        )
+    }
+
+    private static func testQueuedDirectionalRetapRemainsImmediateAndComplete() {
+        var sequencer = ButtonPulseSequencer(
+            minimumTapDurationNanoseconds: minTap,
+            minimumInterTapGapNanoseconds: minGap,
+            shouldEnforceMinimumInterTapGap: { button in
+                button != .left && button != .right && button != .up && button != .down
+            }
+        )
+
+        _ = sequencer.setButton(.right, pressed: true, now: 0)
+        _ = sequencer.setButton(.right, pressed: false, now: 5_000_000)
+        _ = sequencer.setButton(.right, pressed: true, now: 10_000_000)
+        _ = sequencer.setButton(.right, pressed: false, now: 15_000_000)
+        expect(
+            sequencer.releaseTimerFired(for: .right, now: minTap),
+            [
+                .send(.right, .up),
+                .send(.right, .down),
+                .scheduleRelease(.right, delayNanoseconds: minTap)
+            ],
+            "queued directional retap skips the action gap but preserves its release"
+        )
+        expect(
+            sequencer.releaseTimerFired(for: .right, now: minTap * 2),
+            [.send(.right, .up)],
+            "queued directional retap completes its synthetic pulse"
+        )
+    }
+
+    private static func testElementInterTapPolicyOnlyDelaysActions() {
+        let action = KeypadElementInputID(
+            elementID: UUID(uuidString: "5BC456B6-ED54-4FC0-BEC7-AD234EBAF025")!,
+            part: .primary
+        )
+        let direction = KeypadElementInputID(
+            elementID: UUID(uuidString: "E21DF3B4-6846-4764-9020-F44E8E394179")!,
+            part: .joystickRight
+        )
+        var sequencer = InputPulseSequencer<KeypadElementInputID>(
+            minimumTapDurationNanoseconds: minTap,
+            minimumInterTapGapNanoseconds: minGap,
+            shouldEnforceMinimumInterTapGap: { input in
+                input.part == .primary || input.part == .triggerDigital
+            }
+        )
+
+        _ = sequencer.setButton(action, pressed: true, now: 0)
+        _ = sequencer.setButton(action, pressed: false, now: 40_000_000)
+        expectEqual(
+            sequencer.setButton(action, pressed: true, now: 45_000_000),
+            [.schedulePress(action, delayNanoseconds: 15_000_000)],
+            "primary element retap enforces action gap"
+        )
+
+        _ = sequencer.setButton(direction, pressed: true, now: 0)
+        _ = sequencer.setButton(direction, pressed: false, now: 40_000_000)
+        expectEqual(
+            sequencer.setButton(direction, pressed: true, now: 41_000_000),
+            [.send(direction, .down)],
+            "joystick element retap remains immediate"
         )
     }
 

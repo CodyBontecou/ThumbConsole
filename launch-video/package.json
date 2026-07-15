@@ -1,0 +1,24 @@
+{
+  "name": "thumbconsole-launch-video",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "preview": "remotion render src/index.ts ThumbConsoleLaunch renders/thumbconsole-launch-preview.mp4 --codec h264 --crf 20 --pixel-format yuv420p --scale 0.25",
+    "render": "remotion render src/index.ts ThumbConsoleLaunch renders/thumbconsole-launch-4k.mp4 --codec h264 --crf 16 --pixel-format yuv420p",
+    "still": "remotion still src/index.ts ThumbConsoleLaunch renders/thumbconsole-launch-poster.png --frame 90",
+    "still:customize": "remotion still src/index.ts ThumbConsoleLaunch renders/thumbconsole-launch-customize-poster.png --frame 930"
+  },
+  "dependencies": {
+    "@fontsource/geist-mono": "5.2.8",
+    "@fontsource/geist-sans": "5.2.5",
+    "@remotion/cli": "4.0.488",
+    "@remotion/media-utils": "4.0.488",
+    "remotion": "4.0.488"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}

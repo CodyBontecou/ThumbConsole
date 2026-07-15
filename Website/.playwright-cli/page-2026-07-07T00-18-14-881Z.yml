@@ -1,9 +1,9 @@
 - generic [active] [ref=e1]:
   - banner [ref=e2]:
-    - link "PocketPad home" [ref=e3] [cursor=pointer]:
+    - link "ThumbConsole home" [ref=e3] [cursor=pointer]:
       - /url: /
       - generic [ref=e4]: PP
-      - generic [ref=e5]: PocketPad
+      - generic [ref=e5]: ThumbConsole
     - navigation "Primary navigation" [ref=e6]:
       - link "Home" [ref=e7] [cursor=pointer]:
         - /url: /
@@ -17,19 +17,19 @@
     - generic [ref=e12]:
       - generic [ref=e13]:
         - paragraph [ref=e14]: documentation
-        - heading "PocketPad app guide." [level=1] [ref=e15]
-        - paragraph [ref=e16]: Everything needed to set up PocketPad, connect your iPhone to your Mac, customize keypad layouts, bind shortcuts, and use the CLI.
+        - heading "ThumbConsole app guide." [level=1] [ref=e15]
+        - paragraph [ref=e16]: Everything needed to set up ThumbConsole, connect your iPhone to your Mac, customize keypad layouts, bind shortcuts, and use the CLI.
         - generic [ref=e17]:
           - link "start setup" [ref=e18] [cursor=pointer]:
             - /url: "#getting-started"
           - link "learn editor" [ref=e19] [cursor=pointer]:
             - /url: "#keypad-editor"
-      - generic "PocketPad screenshots" [ref=e20]:
+      - generic "ThumbConsole screenshots" [ref=e20]:
         - figure [ref=e21]:
-          - img "PocketPad Mac keypad editor showing a layout canvas and inspectors" [ref=e22]
+          - img "ThumbConsole Mac keypad editor showing a layout canvas and inspectors" [ref=e22]
         - figure [ref=e23]:
           - generic [ref=e24]:
-            - img "PocketPad iPhone landscape keypad" [ref=e25]
+            - img "ThumbConsole iPhone landscape keypad" [ref=e25]
             - img
     - generic [ref=e26]:
       - complementary "Documentation sections" [ref=e27]:
@@ -59,8 +59,8 @@
       - article [ref=e40]:
         - generic [ref=e41]:
           - paragraph [ref=e42]: overview
-          - heading "What PocketPad does" [level=2] [ref=e43]
-          - paragraph [ref=e44]: PocketPad turns an iPhone into a programmable control surface for a Mac. The macOS helper hosts a local pairing server, stores keypad profiles, and sends keyboard, pointer, or virtual gamepad output to the focused app. The iOS app displays the synced keypad and sends low-latency button, joystick, trigger, and trackpad input over your local network.
+          - heading "What ThumbConsole does" [level=2] [ref=e43]
+          - paragraph [ref=e44]: ThumbConsole turns an iPhone into a programmable control surface for a Mac. The macOS helper hosts a local pairing server, stores keypad profiles, and sends keyboard, pointer, or virtual gamepad output to the focused app. The iOS app displays the synced keypad and sends low-latency button, joystick, trigger, and trackpad input over your local network.
           - generic [ref=e45]:
             - generic [ref=e46]:
               - generic [ref=e47]: macOS
@@ -80,16 +80,16 @@
           - list [ref=e61]:
             - listitem [ref=e62]:
               - strong [ref=e63]: macOS 14 or newer
-              - text: running PocketPad Mac.
+              - text: running ThumbConsole Mac.
             - listitem [ref=e64]:
               - strong [ref=e65]: iOS 17 or newer
-              - text: running PocketPad on iPhone.
+              - text: running ThumbConsole on iPhone.
             - listitem [ref=e66]:
               - strong [ref=e67]: Same local network
               - text: for Smart Connect, QR pairing, and realtime input.
             - listitem [ref=e68]:
               - strong [ref=e69]: Accessibility permission on Mac
-              - text: so PocketPad can inject keyboard and pointer events.
+              - text: so ThumbConsole can inject keyboard and pointer events.
             - listitem [ref=e70]:
               - strong [ref=e71]: Local Network permission
               - text: if iOS or macOS prompts for it.
@@ -101,7 +101,7 @@
           - heading "First-run setup" [level=2] [ref=e76]
           - list [ref=e77]:
             - listitem [ref=e78]:
-              - strong [ref=e79]: Open PocketPad Mac.
+              - strong [ref=e79]: Open ThumbConsole Mac.
               - paragraph [ref=e80]: The Home screen shows readiness for Accessibility, the helper server, and iPhone pairing. A first-run setup guide walks through the same steps.
             - listitem [ref=e81]:
               - strong [ref=e82]: Enable Accessibility.
@@ -110,19 +110,19 @@
                 - emphasis [ref=e84]: Request Accessibility Permission
                 - text: or
                 - emphasis [ref=e85]: Open Accessibility Settings
-                - text: ", then enable PocketPad Mac in System Settings → Privacy & Security → Accessibility."
+                - text: ", then enable ThumbConsole Mac in System Settings → Privacy & Security → Accessibility."
             - listitem [ref=e86]:
-              - strong [ref=e87]: Open PocketPad on iPhone.
+              - strong [ref=e87]: Open ThumbConsole on iPhone.
               - paragraph [ref=e88]: The iOS onboarding explains Local Network and Camera prompts. Tap Smart Connect, or use Scan Mac QR Code if this is the first pairing.
             - listitem [ref=e89]:
               - strong [ref=e90]: Pair securely.
               - paragraph [ref=e91]:
                 - text: Scan the QR code on the Mac, or manually enter a displayed
                 - code [ref=e92]: ws://<mac-ip>:<port>
-                - text: address. If prompted, type the six-digit code shown on PocketPad Mac.
+                - text: address. If prompted, type the six-digit code shown on ThumbConsole Mac.
             - listitem [ref=e93]:
               - strong [ref=e94]: Focus the target Mac app.
-              - paragraph [ref=e95]: After pairing, PocketPad controls whichever Mac app is currently focused. Use Release All if a key ever feels stuck.
+              - paragraph [ref=e95]: After pairing, ThumbConsole controls whichever Mac app is currently focused. Use Release All if a key ever feels stuck.
         - generic [ref=e96]:
           - generic [ref=e97]:
             - paragraph [ref=e98]: mac app
@@ -135,7 +135,7 @@
             - heading "Settings" [level=3] [ref=e105]
             - paragraph [ref=e106]: Use Settings for appearance defaults, input diagnostics, local addresses, server restart/stop, and advanced connection troubleshooting.
           - figure "Mac Keypad editor with setup list, canvas, and inspector." [ref=e107]:
-            - img "PocketPad Mac Keypad editor" [ref=e108]
+            - img "ThumbConsole Mac Keypad editor" [ref=e108]
             - generic [ref=e109]: Mac Keypad editor with setup list, canvas, and inspector.
         - generic [ref=e110]:
           - generic [ref=e111]:
@@ -147,9 +147,9 @@
             - heading "Controller screen" [level=3] [ref=e117]
             - paragraph [ref=e118]: The top bar shows connection status, the active keypad setup, edit lock, haptics and appearance settings, export actions, and Disconnect. Swipe down from the top edge if the bar is hidden.
             - heading "Offline saved keypad" [level=3] [ref=e119]
-            - paragraph [ref=e120]: After a successful sync, iPhone can display saved profiles even when PocketPad Mac is closed. Input only controls the Mac while connected.
+            - paragraph [ref=e120]: After a successful sync, iPhone can display saved profiles even when ThumbConsole Mac is closed. Input only controls the Mac while connected.
           - figure "Portrait keypad with synced controls and top bar actions." [ref=e121]:
-            - img "PocketPad iPhone portrait keypad" [ref=e122]
+            - img "ThumbConsole iPhone portrait keypad" [ref=e122]
             - generic [ref=e123]: Portrait keypad with synced controls and top bar actions.
         - generic [ref=e124]:
           - paragraph [ref=e125]: editor
@@ -192,8 +192,8 @@
         - generic [ref=e162]:
           - paragraph [ref=e163]: outputs
           - heading "Keyboard, pointer, and controller output" [level=2] [ref=e164]
-          - paragraph [ref=e165]: PocketPad can send multiple kinds of output depending on the selected profile and binding.
-          - table "PocketPad output modes" [ref=e166]:
+          - paragraph [ref=e165]: ThumbConsole can send multiple kinds of output depending on the selected profile and binding.
+          - table "ThumbConsole output modes" [ref=e166]:
             - row "Mode Use it for Notes" [ref=e167]:
               - columnheader "Mode" [ref=e168]
               - columnheader "Use it for" [ref=e169]
@@ -232,20 +232,20 @@
             - listitem [ref=e196]: Use Default for one control or Reset All to restore starter bindings.
         - generic [ref=e197]:
           - paragraph [ref=e198]: cli
-          - heading "Script PocketPad with pocketpad" [level=2] [ref=e199]:
-            - text: Script PocketPad with
-            - code [ref=e200]: pocketpad
+          - heading "Script ThumbConsole with thumbconsole" [level=2] [ref=e199]:
+            - text: Script ThumbConsole with
+            - code [ref=e200]: thumbconsole
           - paragraph [ref=e201]: The CLI mirrors the saved-configuration features in the Mac Keypad editor and adds runtime helper commands for automation and debugging.
-          - code [ref=e203]: pocketpad profile list --ids pocketpad template list pocketpad template install snes --name "SNES Browser Controls" --default pocketpad profile export --all -o pocketpad-profiles.json pocketpad profile import pocketpad-profiles.json pocketpad binding set focus --sequence 'Control+B,H' pocketpad output mode keyboard pocketpad element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4 pocketpad element set jump --label A --shape circle --width 1.2 --height 1.2
+          - code [ref=e203]: thumbconsole profile list --ids thumbconsole template list thumbconsole template install snes --name "SNES Browser Controls" --default thumbconsole profile export --all -o thumbconsole-profiles.json thumbconsole profile import thumbconsole-profiles.json thumbconsole binding set focus --sequence 'Control+B,H' thumbconsole output mode keyboard thumbconsole element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4 thumbconsole element set jump --label A --shape circle --width 1.2 --height 1.2
           - heading "Runtime helper commands" [level=3] [ref=e204]
-          - code [ref=e206]: pocketpad app open pocketpad status --json pocketpad server restart pocketpad pairing payload pocketpad accessibility status pocketpad test tap jump pocketpad release-all
-          - paragraph [ref=e207]: When PocketPad Mac is running, CLI profile, customization, and binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone.
+          - code [ref=e206]: thumbconsole app open thumbconsole status --json thumbconsole server restart thumbconsole pairing payload thumbconsole accessibility status thumbconsole test tap jump thumbconsole release-all
+          - paragraph [ref=e207]: When ThumbConsole Mac is running, CLI profile, customization, and binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone.
         - generic [ref=e208]:
           - paragraph [ref=e209]: troubleshooting
           - heading "Fix common setup issues" [level=2] [ref=e210]
           - group [ref=e211]:
             - generic "Smart Connect does not find my Mac" [ref=e212] [cursor=pointer]
-            - paragraph [ref=e213]: Make sure both devices are on the same Wi‑Fi network, PocketPad Mac is running, Local Network permission is allowed, and the Mac helper shows a local address. Use QR pairing as a fallback.
+            - paragraph [ref=e213]: Make sure both devices are on the same Wi‑Fi network, ThumbConsole Mac is running, Local Network permission is allowed, and the Mac helper shows a local address. Use QR pairing as a fallback.
           - group [ref=e214]:
             - generic "QR pairing fails" [ref=e215] [cursor=pointer]
           - group [ref=e216]:
@@ -270,7 +270,7 @@
           - paragraph [ref=e233]: faq
           - heading "Frequently asked questions" [level=2] [ref=e234]
           - group [ref=e235]:
-            - generic "Is PocketPad only for games?" [ref=e236] [cursor=pointer]
+            - generic "Is ThumbConsole only for games?" [ref=e236] [cursor=pointer]
             - paragraph [ref=e237]: No. It works well for games, but it is also useful for terminal shortcuts, tmux prefixes, Cursor commands, window management, browser actions, and any Mac app that accepts keyboard or pointer input.
           - group [ref=e238]:
             - generic "Can I use it without the Mac app open?" [ref=e239] [cursor=pointer]
@@ -279,7 +279,7 @@
           - group [ref=e242]:
             - generic "Can I make game-specific profiles?" [ref=e243] [cursor=pointer]
   - contentinfo [ref=e244]:
-    - generic [ref=e245]: © 2026 PocketPad
+    - generic [ref=e245]: © 2026 ThumbConsole
     - generic [ref=e246]:
       - link "home" [ref=e247] [cursor=pointer]:
         - /url: /

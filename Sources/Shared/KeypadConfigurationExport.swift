@@ -2,13 +2,13 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// PocketPad's versioned JSON format for saving and sharing keypad setup layouts.
+/// ThumbConsole's versioned JSON format for saving and sharing keypad setup layouts.
 ///
-/// There is not a broadly adopted interchange format for PocketPad-style multitouch
+/// There is not a broadly adopted interchange format for ThumbConsole-style multitouch
 /// keypad layouts, so exports use this app-owned schema identifier and version.
 /// The macOS CLI may add Mac-only shortcut binding data next to these fields, while
 /// iOS exports include the layout/profile state that the phone can actually use.
-public struct PocketPadKeypadConfigurationExport: Codable, Equatable, Sendable {
+public struct ThumbConsoleKeypadConfigurationExport: Codable, Equatable, Sendable {
     public static let schemaIdentifier = "com.codybontecou.pocketpad.keypad-configuration"
     public static let currentVersion = 3
 
@@ -49,14 +49,14 @@ public struct PocketPadKeypadConfigurationExport: Codable, Equatable, Sendable {
             throw DecodingError.dataCorruptedError(
                 forKey: .schema,
                 in: container,
-                debugDescription: "Unsupported PocketPad keypad configuration schema: \(schema)"
+                debugDescription: "Unsupported ThumbConsole keypad configuration schema: \(schema)"
             )
         }
         guard version >= 1 && version <= Self.currentVersion else {
             throw DecodingError.dataCorruptedError(
                 forKey: .version,
                 in: container,
-                debugDescription: "Unsupported PocketPad keypad configuration version: \(version)"
+                debugDescription: "Unsupported ThumbConsole keypad configuration version: \(version)"
             )
         }
 
@@ -66,7 +66,7 @@ public struct PocketPadKeypadConfigurationExport: Codable, Equatable, Sendable {
             throw DecodingError.dataCorruptedError(
                 forKey: .profiles,
                 in: container,
-                debugDescription: "PocketPad keypad configuration export must contain at least one profile."
+                debugDescription: "ThumbConsole keypad configuration export must contain at least one profile."
             )
         }
         let decodedActiveID = try container.decodeIfPresent(UUID.self, forKey: .activeProfileID)
@@ -96,7 +96,7 @@ public struct PocketPadKeypadConfigurationExport: Codable, Equatable, Sendable {
         let name = activeProfileName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseName = name?.isEmpty == false ? name! : "keypads"
         let safeName = sanitizedFilenameComponent(baseName)
-        return "PocketPad-\(safeName).json"
+        return "ThumbConsole-\(safeName).json"
     }
 
     private static func sanitizedFilenameComponent(_ value: String) -> String {
@@ -127,13 +127,13 @@ public struct PocketPadKeypadConfigurationExport: Codable, Equatable, Sendable {
     }
 }
 
-public struct PocketPadKeypadConfigurationJSONDocument: FileDocument {
+public struct ThumbConsoleKeypadConfigurationJSONDocument: FileDocument {
     public static var readableContentTypes: [UTType] { [.json] }
     public static var writableContentTypes: [UTType] { [.json] }
 
-    public var export: PocketPadKeypadConfigurationExport
+    public var export: ThumbConsoleKeypadConfigurationExport
 
-    public init(export: PocketPadKeypadConfigurationExport) {
+    public init(export: ThumbConsoleKeypadConfigurationExport) {
         self.export = export
     }
 
@@ -141,7 +141,7 @@ public struct PocketPadKeypadConfigurationJSONDocument: FileDocument {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        export = try JSONDecoder().decode(PocketPadKeypadConfigurationExport.self, from: data)
+        export = try JSONDecoder().decode(ThumbConsoleKeypadConfigurationExport.self, from: data)
     }
 
     public func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {

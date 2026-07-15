@@ -47,7 +47,7 @@ async function hydrateMacRelease() {
 
 hydrateMacRelease();
 
-const TURNSTILE_SITE_KEY = window.POCKETPAD_TURNSTILE_SITE_KEY || "";
+const TURNSTILE_SITE_KEY = window.THUMBCONSOLE_TURNSTILE_SITE_KEY || window.POCKETPAD_TURNSTILE_SITE_KEY || "";
 let turnstileReady = Promise.resolve(null);
 
 if (TURNSTILE_SITE_KEY) {

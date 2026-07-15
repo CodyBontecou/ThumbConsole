@@ -1,11 +1,11 @@
-# PocketPad launch site
+# ThumbConsole launch site
 
-Pixel-art landing page for PocketPad with a Cloudflare Pages Function that saves launch-list emails into Cloudflare D1.
+Pixel-art landing page for ThumbConsole with a Cloudflare Pages Function that saves launch-list emails into Cloudflare D1.
 
 ## Files
 
 - `index.html` / `styles.css` / `script.js` — static landing page, screenshot gallery, and launch-list form.
-- `docs.html` — comprehensive PocketPad documentation for setup, pairing, editor workflows, outputs, CLI, troubleshooting, and safety behavior.
+- `docs.html` — comprehensive ThumbConsole documentation for setup, pairing, editor workflows, outputs, CLI, troubleshooting, and safety behavior.
 - `functions/api/subscribe.js` — Cloudflare Pages Function for `POST /api/subscribe`.
 - `functions/api/releases/latest-mac.js` — serves the current macOS release manifest from R2.
 - `functions/api/download-mac.js` — streams the latest/versioned macOS release zip from R2.

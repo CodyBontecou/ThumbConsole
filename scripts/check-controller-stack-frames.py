@@ -165,7 +165,7 @@ def discover_objects(explicit_objects: list[Path], roots: list[Path]) -> list[Pa
 
 def run_self_test() -> None:
     fixture = """
-_$s9PocketPad17ControllerPadViewV4bodyQrvp:
+_$s12ThumbConsole17ControllerPadViewV4bodyQrvp:
        0: stp x28, x27, [sp, #-0x30]!
        4: stp x29, x30, [sp, #0x20]
        8: sub sp, sp, #0x14, lsl #12
@@ -177,7 +177,7 @@ _direct:
 """
     frames = parse_disassembly(fixture)
     assert frames == [
-        FunctionFrame("_$s9PocketPad17ControllerPadViewV4bodyQrvp", 0x14650),
+        FunctionFrame("_$s12ThumbConsole17ControllerPadViewV4bodyQrvp", 0x14650),
         FunctionFrame("_direct", 0x70),
     ], frames
     print("controller stack-frame parser self-test passed")

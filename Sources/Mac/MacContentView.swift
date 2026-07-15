@@ -2,16 +2,21 @@ import SwiftUI
 import CoreGraphics
 import CoreImage.CIFilterBuiltins
 import AppKit
+import UniformTypeIdentifiers
 
 struct MacContentView: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
-    @AppStorage(PocketPadMacIPC.onboardingCompletedDefaultsKey) private var hasCompletedOnboarding = false
+    @AppStorage(ThumbConsoleMacIPC.onboardingCompletedDefaultsKey) private var hasCompletedOnboarding = false
     @State private var selectedSection: MacSidebarSection? = .home
     @State private var advancedConfigExpanded = false
     @State private var isShowingOnboarding = false
     @State private var gamepadEditorUndoTarget = MacGamepadEditorUndoTarget()
+    @State private var isExportingKeypadConfiguration = false
+    @State private var keypadExportDocument = MacKeypadConfigurationJSONDocument()
+    @State private var keypadExportFilename = ThumbConsoleKeypadConfigurationExport.suggestedFilename()
+    @State private var keypadExportError: String?
 
     var body: some View {
         NavigationSplitView {
@@ -21,7 +26,7 @@ struct MacContentView: View {
                         .tag(section)
                 }
             }
-            .navigationTitle("PocketPad")
+            .navigationTitle("ThumbConsole")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
             selectedContent
@@ -51,6 +56,30 @@ struct MacContentView: View {
             )
             .environmentObject(server)
             .frame(minWidth: 740, idealWidth: 860, minHeight: 560, idealHeight: 640)
+        }
+        .fileExporter(
+            isPresented: $isExportingKeypadConfiguration,
+            document: keypadExportDocument,
+            contentType: .json,
+            defaultFilename: keypadExportFilename
+        ) { result in
+            if case .failure(let error) = result,
+               (error as? CocoaError)?.code != .userCancelled {
+                keypadExportError = error.localizedDescription
+            }
+        }
+        .alert(
+            "Couldn’t Export Keypad",
+            isPresented: Binding(
+                get: { keypadExportError != nil },
+                set: { isPresented in
+                    if !isPresented { keypadExportError = nil }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) { keypadExportError = nil }
+        } message: {
+            Text(keypadExportError ?? "The keypad could not be exported.")
         }
         .onAppear {
             guard !hasCompletedOnboarding else { return }
@@ -170,7 +199,7 @@ struct MacContentView: View {
     private var homeHeroHeader: some View {
         HStack(alignment: .top, spacing: Geist.Spacing.s4) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                Text("PocketPad")
+                Text("ThumbConsole")
                     .geistTypography(.heading24)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
 
@@ -442,7 +471,7 @@ struct MacContentView: View {
                     .textSelection(.enabled)
             }
 
-            Text("Scan from PocketPad on iPhone or enter the code manually.")
+            Text("Scan from ThumbConsole on iPhone or enter the code manually.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
@@ -724,14 +753,9 @@ struct MacContentView: View {
         )
     }
 
-    @ViewBuilder
     private var homeTestButtons: some View {
-        TestKeyButton(button: .left)
-        TestKeyButton(button: .jump)
-        TestKeyButton(button: .attack)
-        Button("Release All Keys") { server.releaseAll(reason: "Home quick test release all") }
-            .geistButtonStyle(.error)
-            .keyboardShortcut(.escape, modifiers: [.command])
+        MacLocalInputTestConsole(compact: true)
+            .environmentObject(server)
     }
 
     private var homePairingPanel: some View {
@@ -739,8 +763,8 @@ struct MacContentView: View {
             SectionHeader(
                 title: server.isClientConnected ? "Pair Another iPhone" : "Pair Your iPhone",
                 subtitle: server.isClientConnected
-                    ? "Need a different phone? Scan this code from PocketPad on iPhone."
-                    : "Open PocketPad on your iPhone and scan this QR code to connect."
+                    ? "Need a different phone? Scan this code from ThumbConsole on iPhone."
+                    : "Open ThumbConsole on your iPhone and scan this QR code to connect."
             )
 
             if server.isRunning {
@@ -748,7 +772,7 @@ struct MacContentView: View {
                     QRCodeView(text: server.pairingPayload)
                         .frame(width: server.isClientConnected ? 132 : 168, height: server.isClientConnected ? 132 : 168)
 
-                    Text("Tap Scan Mac QR Code in PocketPad on iPhone.")
+                    Text("Tap Scan Mac QR Code in ThumbConsole on iPhone.")
                         .geistTypography(.copy13)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                         .multilineTextAlignment(.center)
@@ -1023,7 +1047,7 @@ struct MacContentView: View {
 
     private var homeCompactConnectionSubtitle: String {
         if !server.accessibilityTrusted {
-            return "Allow PocketPad to send shortcuts from your phone."
+            return "Allow ThumbConsole to send shortcuts from your phone."
         }
         if !server.isRunning {
             return "Start the helper before pairing an iPhone."
@@ -1079,8 +1103,8 @@ struct MacContentView: View {
 #if DEBUG
     private func replayOnboardingFromDebugSettings() {
         hasCompletedOnboarding = false
-        UserDefaults.standard.set(false, forKey: PocketPadMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey)
-        UserDefaults.standard.set(true, forKey: PocketPadMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey)
+        UserDefaults.standard.set(false, forKey: ThumbConsoleMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey)
+        UserDefaults.standard.set(true, forKey: ThumbConsoleMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey)
         UserDefaults.standard.synchronize()
         isShowingOnboarding = false
         DispatchQueue.main.async {
@@ -1119,6 +1143,22 @@ struct MacContentView: View {
                     defaultProfileID: defaultProfileID
                 )
             },
+            onExportProfiles: { profiles, activeProfileID, defaultProfileID, exportingProfileID in
+                prepareKeypadExport(
+                    profiles: profiles,
+                    activeProfileID: activeProfileID,
+                    defaultProfileID: defaultProfileID,
+                    exportingProfileID: exportingProfileID
+                )
+            },
+            onImportProfiles: { data, sourceName, appendAsCopies in
+                let summary = try server.importKeypadConfiguration(
+                    data: data,
+                    sourceName: sourceName,
+                    mode: appendAsCopies ? .appendAsCopies : .replaceMatching
+                )
+                return summary.message
+            },
             onRegisterProfileUndoSnapshot: { actionName in
                 registerMacGamepadUndoSnapshot(
                     server.editorUndoSnapshot(),
@@ -1151,10 +1191,36 @@ struct MacContentView: View {
         .geistScreenBackground()
     }
 
+    private func prepareKeypadExport(
+        profiles: [GamepadConfigurationProfile],
+        activeProfileID: UUID,
+        defaultProfileID: UUID,
+        exportingProfileID: UUID?
+    ) {
+        do {
+            let data = try server.keypadConfigurationExportData(
+                profiles: profiles,
+                activeProfileID: activeProfileID,
+                defaultProfileID: defaultProfileID,
+                exportingProfileID: exportingProfileID
+            )
+            keypadExportDocument = MacKeypadConfigurationJSONDocument(data: data)
+            let exportedProfileName = exportingProfileID.flatMap { profileID in
+                profiles.first(where: { $0.id == profileID })?.name
+            }
+            keypadExportFilename = ThumbConsoleKeypadConfigurationExport.suggestedFilename(
+                activeProfileName: exportedProfileName
+            )
+            isExportingKeypadConfiguration = true
+        } catch {
+            keypadExportError = error.localizedDescription
+        }
+    }
+
     private var header: some View {
         HStack(alignment: .top, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("PocketPad Mac Helper")
+                Text("ThumbConsole Mac Helper")
                     .geistTypography(.heading40)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 Text("iPhone keypad → WebSocket → keyboard shortcuts or virtual controller")
@@ -1205,7 +1271,7 @@ struct MacContentView: View {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                     Text("Accessibility Permission")
                         .geistTypography(.heading20)
-                    Text("macOS requires Accessibility access before PocketPad can inject keyboard events.")
+                    Text("macOS requires Accessibility access before ThumbConsole can inject keyboard events.")
                         .geistTypography(.copy14)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 }
@@ -1220,7 +1286,7 @@ struct MacContentView: View {
             }
 
             if !server.accessibilityTrusted {
-                Text("Keyboard injection is blocked. Open System Settings → Privacy & Security → Accessibility and enable PocketPad Mac.")
+                Text("Keyboard injection is blocked. Open System Settings → Privacy & Security → Accessibility and enable ThumbConsole Mac.")
                     .geistTypography(.copy14)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1277,7 +1343,7 @@ struct MacContentView: View {
                     Text("Secure Pairing Request")
                         .geistTypography(.heading20)
                         .foregroundStyle(Color.white)
-                    Text("\(server.pendingPairingClientName ?? "An iPhone") wants to pair with PocketPad Mac.")
+                    Text("\(server.pendingPairingClientName ?? "An iPhone") wants to pair with ThumbConsole Mac.")
                         .geistTypography(.copy14)
                         .foregroundStyle(Color.white.opacity(0.68))
                 }
@@ -1298,7 +1364,7 @@ struct MacContentView: View {
             }
 
             VStack(spacing: Geist.Spacing.s3) {
-                Text("Enter this code on PocketPad iPhone:")
+                Text("Enter this code on ThumbConsole iPhone:")
                     .geistTypography(.label13)
                     .foregroundStyle(Color.white.opacity(0.72))
 
@@ -1372,7 +1438,7 @@ struct MacContentView: View {
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
             QRCodeView(text: server.pairingPayload)
                 .frame(width: 152, height: 152)
-            Text("Tap Scan Mac QR Code in PocketPad on iPhone.")
+            Text("Tap Scan Mac QR Code in ThumbConsole on iPhone.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .multilineTextAlignment(.center)
@@ -1602,14 +1668,8 @@ struct MacContentView: View {
                 subtitle: "Hold a test control to emit keyDown; release it to emit keyUp. Use Release All Keys if anything sticks."
             )
 
-            HStack(spacing: Geist.Spacing.s3) {
-                TestKeyButton(button: .left)
-                TestKeyButton(button: .jump)
-                TestKeyButton(button: .attack)
-                Button("Release All Keys") { server.releaseAll(reason: "Manual release all") }
-                    .geistButtonStyle(.error)
-                    .keyboardShortcut(.escape, modifiers: [.command])
-            }
+            MacLocalInputTestConsole(compact: false)
+                .environmentObject(server)
         }
         .geistPanel()
     }
@@ -1743,7 +1803,7 @@ private enum MacOnboardingStep: String, CaseIterable, Identifiable, Hashable {
 
     var subtitle: String {
         switch self {
-        case .welcome: "What PocketPad does"
+        case .welcome: "What ThumbConsole does"
         case .permissions: "Allow shortcuts and local discovery"
         case .connect: "Pair over local or nearby network"
         case .editor: "Build and sync your controls"
@@ -1815,7 +1875,7 @@ private struct MacOnboardingView: View {
                 )
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                Text("Set up PocketPad")
+                Text("Set up ThumbConsole")
                     .geistTypography(.heading24)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 Text("Enable the Mac helper, pair your iPhone, then customize the keypad that syncs to the phone.")
@@ -1924,7 +1984,7 @@ private struct MacOnboardingView: View {
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
-                Text("PocketPad Mac receives button presses from the iPhone and turns them into keyboard shortcuts, pointer gestures, or virtual controller output for the focused Mac app.")
+                Text("ThumbConsole Mac receives button presses from the iPhone and turns them into keyboard shortcuts, pointer gestures, or virtual controller output for the focused Mac app.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1946,7 +2006,7 @@ private struct MacOnboardingView: View {
 
             MacOnboardingCallout(
                 title: "Before you start",
-                text: "Keep this Mac and your iPhone on the same Wi‑Fi network, or leave Wi‑Fi/Bluetooth enabled for nearby peer-to-peer. Open PocketPad on both devices and leave the Mac helper running while you use the keypad.",
+                text: "Keep this Mac and your iPhone on the same Wi‑Fi network, or leave Wi‑Fi/Bluetooth enabled for nearby peer-to-peer. Open ThumbConsole on both devices and leave the Mac helper running while you use the keypad.",
                 systemImage: "wifi"
             )
         }
@@ -1955,7 +2015,7 @@ private struct MacOnboardingView: View {
     private var permissionsStep: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Grant the permissions PocketPad needs.")
+                Text("Grant the permissions ThumbConsole needs.")
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 Text("macOS controls both keyboard injection and local-network discovery. The Mac helper can run before permissions are complete, but shortcuts will not fire until Accessibility is allowed.")
@@ -1967,14 +2027,14 @@ private struct MacOnboardingView: View {
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
                 MacOnboardingPermissionCard(
                     title: "Accessibility",
-                    subtitle: server.accessibilityTrusted ? "PocketPad can send keyboard and pointer events." : "Open System Settings → Privacy & Security → Accessibility, then enable PocketPad Mac.",
+                    subtitle: server.accessibilityTrusted ? "ThumbConsole can send keyboard and pointer events." : "Open System Settings → Privacy & Security → Accessibility, then enable ThumbConsole Mac.",
                     systemImage: "checkmark.shield.fill",
                     isComplete: server.accessibilityTrusted
                 )
 
                 MacOnboardingPermissionCard(
                     title: "Local Network",
-                    subtitle: "If macOS asks, allow PocketPad to find and advertise devices on your local network. This enables Smart Connect and QR pairing.",
+                    subtitle: "If macOS asks, allow ThumbConsole to find and advertise devices on your local network. This enables Smart Connect and QR pairing.",
                     systemImage: "network",
                     isComplete: server.isRunning
                 )
@@ -2048,7 +2108,7 @@ private struct MacOnboardingView: View {
                 .frame(width: 188, height: 188)
                 .opacity(server.isRunning ? 1 : 0.42)
 
-            Text(server.isRunning ? "Open PocketPad on iPhone → Scan Mac QR Code." : "Start the helper before scanning.")
+            Text(server.isRunning ? "Open ThumbConsole on iPhone → Scan Mac QR Code." : "Start the helper before scanning.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .multilineTextAlignment(.center)
@@ -2763,48 +2823,143 @@ private struct DiagnosticRow: View {
     }
 }
 
-private struct TestKeyButton: View {
+private struct MacLocalInputTestConsole: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
-    let button: GameButton
-    @State private var isPressed = false
+    let compact: Bool
+
+    @State private var selectedButton: GameButton = .jump
+    @State private var holdMilliseconds: Double = 120
+    @State private var locallyHeldButtons: Set<GameButton> = []
+    @State private var pendingTapButton: GameButton?
+    @State private var pendingTapTask: Task<Void, Never>?
 
     var body: some View {
-        Text("\(server.keyLabel(for: button))  \(button.displayName)")
-            .geistTypography(.button14)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .frame(width: 124, height: 52)
-            .background(buttonFill, in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                    .stroke(isPressed ? Geist.color(.grayAlpha600, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: isPressed ? 2 : 1)
-            )
-            .foregroundStyle(isPressed ? Geist.color(.background100, scheme: colorScheme) : Geist.color(.gray1000, scheme: colorScheme))
-            .contentShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        guard !isPressed else { return }
-                        isPressed = true
-                        server.sendTestDown(button)
+        Group {
+            if compact {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Geist.Spacing.s2) {
+                        buttonPicker
+                            .frame(minWidth: 150)
+                        actionButtons
+                        releaseButton
                     }
-                    .onEnded { _ in
-                        guard isPressed else { return }
-                        isPressed = false
-                        server.sendTestUp(button)
+                    VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                        buttonPicker
+                        actionButtons
+                        holdDurationControl
+                        releaseButton
                     }
-            )
-            .onDisappear {
-                if isPressed {
-                    isPressed = false
-                    server.sendTestUp(button)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+                    HStack(spacing: Geist.Spacing.s3) {
+                        buttonPicker
+                            .frame(minWidth: 220, maxWidth: 320)
+                        actionButtons
+                        releaseButton
+                    }
+                    holdDurationControl
                 }
             }
+        }
+        .disabled(!server.accessibilityTrusted || !server.isRunning)
+        .opacity((server.accessibilityTrusted && server.isRunning) ? 1 : 0.52)
+        .onDisappear(perform: releaseLocallyHeldInputs)
+        .onChange(of: selectedButton) { oldButton, _ in
+            release(oldButton)
+        }
     }
 
-    private var buttonFill: Color {
-        isPressed ? Geist.color(.gray1000, scheme: colorScheme) : Geist.color(.gray100, scheme: colorScheme)
+    private var buttonPicker: some View {
+        Picker("Test input", selection: $selectedButton) {
+            ForEach(GameButton.allCases) { button in
+                Text("\(button.displayName) · \(server.keyLabel(for: button))")
+                    .tag(button)
+            }
+        }
+        .pickerStyle(.menu)
+        .accessibilityLabel("Input to test")
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Button("Down") { press(selectedButton) }
+                .geistButtonStyle(.secondary, size: .small)
+                .disabled(locallyHeldButtons.contains(selectedButton))
+            Button("Up") { release(selectedButton) }
+                .geistButtonStyle(.secondary, size: .small)
+                .disabled(!locallyHeldButtons.contains(selectedButton))
+            Button("Tap") { tap(selectedButton) }
+                .geistButtonStyle(.primary, size: .small)
+        }
+    }
+
+    private var holdDurationControl: some View {
+        HStack(spacing: Geist.Spacing.s3) {
+            Text("Tap hold")
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            Slider(value: $holdMilliseconds, in: 20...2_000, step: 10)
+                .frame(maxWidth: 280)
+            Text("\(Int(holdMilliseconds)) ms")
+                .geistTypography(.label13Mono)
+                .frame(width: 64, alignment: .trailing)
+        }
+    }
+
+    private var releaseButton: some View {
+        Button("Release All") { releaseLocallyHeldInputs() }
+            .geistButtonStyle(.error, size: .small)
+            .keyboardShortcut(.escape, modifiers: [.command])
+    }
+
+    private func press(_ button: GameButton) {
+        guard !locallyHeldButtons.contains(button) else { return }
+        locallyHeldButtons.insert(button)
+        server.sendTestDown(button)
+    }
+
+    private func release(_ button: GameButton, cancelsPendingTap: Bool = true) {
+        if cancelsPendingTap, pendingTapButton == button {
+            pendingTapTask?.cancel()
+            pendingTapTask = nil
+            pendingTapButton = nil
+        }
+        guard locallyHeldButtons.remove(button) != nil else { return }
+        server.sendTestUp(button)
+    }
+
+    private func tap(_ button: GameButton) {
+        pendingTapTask?.cancel()
+        pendingTapTask = nil
+        pendingTapButton = nil
+        release(button)
+        press(button)
+        pendingTapButton = button
+        let delay = UInt64(max(0, holdMilliseconds) * 1_000_000)
+        pendingTapTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: delay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            release(button, cancelsPendingTap: false)
+            pendingTapTask = nil
+            pendingTapButton = nil
+        }
+    }
+
+    private func releaseLocallyHeldInputs() {
+        pendingTapTask?.cancel()
+        pendingTapTask = nil
+        pendingTapButton = nil
+        for button in locallyHeldButtons {
+            server.sendTestUp(button)
+        }
+        locallyHeldButtons.removeAll()
+        server.releaseAll(reason: "Local input test release all")
     }
 }
 
@@ -3483,6 +3638,28 @@ private struct QRCodeView: View {
             RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
+    }
+}
+
+private struct MacKeypadConfigurationJSONDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+    static var writableContentTypes: [UTType] { [.json] }
+
+    var data: Data
+
+    init(data: Data = Data("{}".utf8)) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.data = data
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }
 

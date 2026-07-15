@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Build, notarize, package, and upload PocketPad Mac for direct web distribution.
+Build, notarize, package, and upload ThumbConsole Mac for direct web distribution.
 
 Usage:
   scripts/release/macos-cloudflare.sh [options]
@@ -15,11 +15,11 @@ Options:
   --release-notes-file <path> Read release notes from a file.
   --skip-notarize             Package without submitting to Apple notarization.
   --skip-upload               Build local artifacts but do not upload to Cloudflare R2.
-  --skip-xcodegen             Do not regenerate PocketPad.xcodeproj from project.yml.
+  --skip-xcodegen             Do not regenerate ThumbConsole.xcodeproj from project.yml.
   -h, --help                  Show this help.
 
 Required for upload:
-  CF_RELEASES_BUCKET or POCKETPAD_RELEASES_BUCKET (default: pocketpad-releases)
+  CF_RELEASES_BUCKET or THUMBCONSOLE_RELEASES_BUCKET (legacy POCKETPAD_RELEASES_BUCKET also works)
   Wrangler authenticated with Cloudflare.
 
 Required for notarization unless --skip-notarize:
@@ -39,9 +39,9 @@ log() {
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-VERSION="${POCKETPAD_MAC_VERSION:-}"
-BUILD_NUMBER="${POCKETPAD_MAC_BUILD_NUMBER:-${POCKETPAD_BUILD_NUMBER:-}}"
-RELEASE_NOTES="${POCKETPAD_RELEASE_NOTES:-}"
+VERSION="${THUMBCONSOLE_MAC_VERSION:-${POCKETPAD_MAC_VERSION:-}}"
+BUILD_NUMBER="${THUMBCONSOLE_MAC_BUILD_NUMBER:-${THUMBCONSOLE_BUILD_NUMBER:-${POCKETPAD_MAC_BUILD_NUMBER:-${POCKETPAD_BUILD_NUMBER:-}}}}"
+RELEASE_NOTES="${THUMBCONSOLE_RELEASE_NOTES:-${POCKETPAD_RELEASE_NOTES:-}}"
 RELEASE_NOTES_FILE=""
 SKIP_NOTARIZE=0
 SKIP_UPLOAD=0
@@ -70,14 +70,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-PROJECT="${POCKETPAD_XCODE_PROJECT:-PocketPad.xcodeproj}"
-SCHEME="${POCKETPAD_MAC_SCHEME:-PocketPadMac}"
+PROJECT="${THUMBCONSOLE_XCODE_PROJECT:-${POCKETPAD_XCODE_PROJECT:-ThumbConsole.xcodeproj}}"
+SCHEME="${THUMBCONSOLE_MAC_SCHEME:-${POCKETPAD_MAC_SCHEME:-ThumbConsoleMac}}"
 CONFIGURATION="${CONFIGURATION:-Release}"
-TEAM_ID="${POCKETPAD_DEVELOPMENT_TEAM:-67KC823C9A}"
-EXPORT_OPTIONS="${POCKETPAD_MAC_EXPORT_OPTIONS:-Config/ExportOptions/Mac-DeveloperID.plist}"
-ARTIFACT_ROOT="${POCKETPAD_RELEASE_DIR:-.release}"
-BUCKET="${CF_RELEASES_BUCKET:-${POCKETPAD_RELEASES_BUCKET:-pocketpad-releases}}"
-WEBSITE_ORIGIN="${POCKETPAD_WEBSITE_ORIGIN:-}"
+TEAM_ID="${THUMBCONSOLE_DEVELOPMENT_TEAM:-${POCKETPAD_DEVELOPMENT_TEAM:-67KC823C9A}}"
+EXPORT_OPTIONS="${THUMBCONSOLE_MAC_EXPORT_OPTIONS:-${POCKETPAD_MAC_EXPORT_OPTIONS:-Config/ExportOptions/Mac-DeveloperID.plist}}"
+ARTIFACT_ROOT="${THUMBCONSOLE_RELEASE_DIR:-${POCKETPAD_RELEASE_DIR:-.release}}"
+BUCKET="${CF_RELEASES_BUCKET:-${THUMBCONSOLE_RELEASES_BUCKET:-${POCKETPAD_RELEASES_BUCKET:-pocketpad-releases}}}"
+WEBSITE_ORIGIN="${THUMBCONSOLE_WEBSITE_ORIGIN:-${POCKETPAD_WEBSITE_ORIGIN:-}}"
 
 [[ -d "$PROJECT" ]] || die "missing Xcode project: $PROJECT"
 [[ -f "$EXPORT_OPTIONS" ]] || die "missing export options plist: $EXPORT_OPTIONS"
@@ -134,10 +134,10 @@ print(re.sub(r'[^A-Za-z0-9._-]+', '-', sys.argv[1]).strip('-'))
 PY
 )"
 release_dir="$ARTIFACT_ROOT/macos/$safe_version"
-archive_path="$release_dir/PocketPadMac.xcarchive"
+archive_path="$release_dir/ThumbConsoleMac.xcarchive"
 export_dir="$release_dir/export"
-notary_zip="$release_dir/PocketPadMac-notary.zip"
-final_zip="$release_dir/PocketPadMac-$safe_version.zip"
+notary_zip="$release_dir/ThumbConsoleMac-notary.zip"
+final_zip="$release_dir/ThumbConsoleMac-$safe_version.zip"
 manifest_path="$release_dir/latest.json"
 object_key="macos/$(basename "$final_zip")"
 manifest_key="macos/latest.json"
@@ -220,34 +220,34 @@ else
   download_url="$download_path"
 fi
 
-export POCKETPAD_MANIFEST_VERSION="$VERSION"
-export POCKETPAD_MANIFEST_BUILD="$BUILD_NUMBER"
-export POCKETPAD_MANIFEST_OBJECT_KEY="$object_key"
-export POCKETPAD_MANIFEST_DOWNLOAD_PATH="$download_path"
-export POCKETPAD_MANIFEST_DOWNLOAD_URL="$download_url"
-export POCKETPAD_MANIFEST_SHA256="$checksum"
-export POCKETPAD_MANIFEST_SIZE="$size_bytes"
-export POCKETPAD_MANIFEST_PUBLISHED_AT="$published_at"
-export POCKETPAD_MANIFEST_NOTARIZED="$([[ $SKIP_NOTARIZE -eq 0 ]] && echo true || echo false)"
-export POCKETPAD_MANIFEST_RELEASE_NOTES="$RELEASE_NOTES"
+export THUMBCONSOLE_MANIFEST_VERSION="$VERSION"
+export THUMBCONSOLE_MANIFEST_BUILD="$BUILD_NUMBER"
+export THUMBCONSOLE_MANIFEST_OBJECT_KEY="$object_key"
+export THUMBCONSOLE_MANIFEST_DOWNLOAD_PATH="$download_path"
+export THUMBCONSOLE_MANIFEST_DOWNLOAD_URL="$download_url"
+export THUMBCONSOLE_MANIFEST_SHA256="$checksum"
+export THUMBCONSOLE_MANIFEST_SIZE="$size_bytes"
+export THUMBCONSOLE_MANIFEST_PUBLISHED_AT="$published_at"
+export THUMBCONSOLE_MANIFEST_NOTARIZED="$([[ $SKIP_NOTARIZE -eq 0 ]] && echo true || echo false)"
+export THUMBCONSOLE_MANIFEST_RELEASE_NOTES="$RELEASE_NOTES"
 
 python3 - <<'PY' > "$manifest_path"
 import json
 import os
 manifest = {
     "platform": "macOS",
-    "name": "PocketPad Mac",
-    "version": os.environ["POCKETPAD_MANIFEST_VERSION"],
-    "buildNumber": os.environ["POCKETPAD_MANIFEST_BUILD"],
+    "name": "ThumbConsole Mac",
+    "version": os.environ["THUMBCONSOLE_MANIFEST_VERSION"],
+    "buildNumber": os.environ["THUMBCONSOLE_MANIFEST_BUILD"],
     "minimumOS": "14.0",
-    "objectKey": os.environ["POCKETPAD_MANIFEST_OBJECT_KEY"],
-    "downloadPath": os.environ["POCKETPAD_MANIFEST_DOWNLOAD_PATH"],
-    "downloadURL": os.environ["POCKETPAD_MANIFEST_DOWNLOAD_URL"],
-    "sha256": os.environ["POCKETPAD_MANIFEST_SHA256"],
-    "sizeBytes": int(os.environ["POCKETPAD_MANIFEST_SIZE"]),
-    "notarized": os.environ["POCKETPAD_MANIFEST_NOTARIZED"] == "true",
-    "publishedAt": os.environ["POCKETPAD_MANIFEST_PUBLISHED_AT"],
-    "releaseNotes": os.environ.get("POCKETPAD_MANIFEST_RELEASE_NOTES", ""),
+    "objectKey": os.environ["THUMBCONSOLE_MANIFEST_OBJECT_KEY"],
+    "downloadPath": os.environ["THUMBCONSOLE_MANIFEST_DOWNLOAD_PATH"],
+    "downloadURL": os.environ["THUMBCONSOLE_MANIFEST_DOWNLOAD_URL"],
+    "sha256": os.environ["THUMBCONSOLE_MANIFEST_SHA256"],
+    "sizeBytes": int(os.environ["THUMBCONSOLE_MANIFEST_SIZE"]),
+    "notarized": os.environ["THUMBCONSOLE_MANIFEST_NOTARIZED"] == "true",
+    "publishedAt": os.environ["THUMBCONSOLE_MANIFEST_PUBLISHED_AT"],
+    "releaseNotes": os.environ.get("THUMBCONSOLE_MANIFEST_RELEASE_NOTES", ""),
 }
 print(json.dumps(manifest, indent=2, sort_keys=True))
 PY

@@ -193,7 +193,7 @@ private struct ConnectionView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
-            Text("PocketPad")
+            Text("ThumbConsole")
                 .geistTypography(.heading40)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 .minimumScaleFactor(0.75)
@@ -310,7 +310,7 @@ private struct ConnectionView: View {
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .multilineTextAlignment(.center)
 
-                Text("Enter the code shown on PocketPad Mac.")
+                Text("Enter the code shown on ThumbConsole Mac.")
                     .geistTypography(.copy14)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .multilineTextAlignment(.center)
@@ -342,7 +342,7 @@ private struct ConnectionView: View {
 
     private func handleScannedPairingCode(_ text: String) {
         guard let payload = PairingPayload.decode(from: text) else {
-            qrScanError = "QR code not recognized. Scan the PocketPad code shown on your Mac."
+            qrScanError = "QR code not recognized. Scan the ThumbConsole code shown on your Mac."
             isShowingScanner = false
             return
         }
@@ -457,10 +457,10 @@ private struct IOSOnboardingView: View {
                     )
 
                 VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                    Text("Set up PocketPad")
+                    Text("Set up ThumbConsole")
                         .geistTypography(.heading24)
                         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    Text("Pair this iPhone with PocketPad Mac and learn where keypad editing lives.")
+                    Text("Pair this iPhone with ThumbConsole Mac and learn where keypad editing lives.")
                         .geistTypography(.copy14)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                         .fixedSize(horizontal: false, vertical: true)
@@ -528,7 +528,7 @@ private struct IOSOnboardingView: View {
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("PocketPad sends presses from this screen to PocketPad Mac, where they become keyboard shortcuts, pointer actions, or gamepad output for the app you are using.")
+                Text("ThumbConsole sends presses from this screen to ThumbConsole Mac, where they become keyboard shortcuts, pointer actions, or gamepad output for the app you are using.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -536,12 +536,12 @@ private struct IOSOnboardingView: View {
 
             IOSOnboardingCallout(
                 title: "You will need the Mac app too",
-                text: "Open PocketPad Mac on the same Wi‑Fi network, or keep Wi‑Fi/Bluetooth enabled nearby for offline peer-to-peer. The Mac app grants permissions, shows the QR code, and hosts the keypad editor.",
+                text: "Open ThumbConsole Mac on the same Wi‑Fi network, or keep Wi‑Fi/Bluetooth enabled nearby for offline peer-to-peer. The Mac app grants permissions, shows the QR code, and hosts the keypad editor.",
                 systemImage: "macbook"
             )
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                IOSOnboardingInstructionCard(step: "1", title: "Open PocketPad Mac", text: "Leave the helper running while you use the phone keypad.")
+                IOSOnboardingInstructionCard(step: "1", title: "Open ThumbConsole Mac", text: "Leave the helper running while you use the phone keypad.")
                 IOSOnboardingInstructionCard(step: "2", title: "Pair securely", text: "Use Smart Connect, scan the QR code, or type the local address and pairing code.")
                 IOSOnboardingInstructionCard(step: "3", title: "Control the focused Mac app", text: "After pairing, focus Terminal, Cursor, a browser, or a game and press controls on this iPhone.")
             }
@@ -555,7 +555,7 @@ private struct IOSOnboardingView: View {
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
-                Text("PocketPad only needs local device discovery and QR scanning. Keyboard permissions are granted on the Mac, not on the iPhone.")
+                Text("ThumbConsole only needs local device discovery and QR scanning. Keyboard permissions are granted on the Mac, not on the iPhone.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -564,12 +564,12 @@ private struct IOSOnboardingView: View {
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
                 IOSOnboardingPermissionCard(
                     title: "Local Network",
-                    text: "Allow this so Smart Connect can discover PocketPad Mac over Wi‑Fi or nearby peer-to-peer, and so manual WebSocket pairing works on your network.",
+                    text: "Allow this so Smart Connect can discover ThumbConsole Mac over Wi‑Fi or nearby peer-to-peer, and so manual WebSocket pairing works on your network.",
                     systemImage: "wifi"
                 )
                 IOSOnboardingPermissionCard(
                     title: "Camera",
-                    text: "Allow camera access when you tap Scan Mac QR Code. PocketPad only uses the camera to read the pairing QR code.",
+                    text: "Allow camera access when you tap Scan Mac QR Code. ThumbConsole only uses the camera to read the pairing QR code.",
                     systemImage: "camera.viewfinder"
                 )
             }
@@ -584,7 +584,7 @@ private struct IOSOnboardingView: View {
 
             IOSOnboardingCallout(
                 title: "Mac permissions happen on the Mac",
-                text: "If shortcuts do not fire, open PocketPad Mac and enable Accessibility in System Settings → Privacy & Security → Accessibility.",
+                text: "If shortcuts do not fire, open ThumbConsole Mac and enable Accessibility in System Settings → Privacy & Security → Accessibility.",
                 systemImage: "checkmark.shield.fill"
             )
         }
@@ -593,7 +593,7 @@ private struct IOSOnboardingView: View {
     private var connectStep: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Pair with PocketPad Mac.")
+                Text("Pair with ThumbConsole Mac.")
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 Text("Smart Connect is fastest after the first pair. QR and manual pairing are available any time from the connection screen.")
@@ -603,9 +603,9 @@ private struct IOSOnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                IOSOnboardingInstructionCard(step: "1", title: "Tap Smart Connect", text: "PocketPad looks for the Mac helper advertised on your local or nearby peer-to-peer network.")
+                IOSOnboardingInstructionCard(step: "1", title: "Tap Smart Connect", text: "ThumbConsole looks for the Mac helper advertised on your local or nearby peer-to-peer network.")
                 IOSOnboardingInstructionCard(step: "2", title: "If needed, scan the QR", text: "On the Mac Home screen, scan the QR card shown under Connect From iPhone.")
-                IOSOnboardingInstructionCard(step: "3", title: "Enter the six-digit code", text: "Manual pairing asks you to type the code shown on PocketPad Mac. Smart Connect will remember this Mac after pairing.")
+                IOSOnboardingInstructionCard(step: "3", title: "Enter the six-digit code", text: "Manual pairing asks you to type the code shown on ThumbConsole Mac. Smart Connect will remember this Mac after pairing.")
             }
 
             Button {
@@ -632,7 +632,7 @@ private struct IOSOnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                IOSOnboardingInstructionCard(step: "1", title: "Edit on Mac", text: "Open the Keypad section on PocketPad Mac to add controls, style them, and record shortcuts.")
+                IOSOnboardingInstructionCard(step: "1", title: "Edit on Mac", text: "Open the Keypad section on ThumbConsole Mac to add controls, style them, and record shortcuts.")
                 IOSOnboardingInstructionCard(step: "2", title: "Open the top bar", text: "Swipe down from the top edge if the keypad controls are hidden.")
                 IOSOnboardingInstructionCard(step: "3", title: "Switch setups", text: "Use the Keypad setup menu to choose another synced setup, mark it as default, or export keypads as JSON.")
                 IOSOnboardingInstructionCard(step: "4", title: "Adjust a freeform layout", text: "Tap the lock icon to unlock controls, then move, resize, rotate, or delete elements before locking again.")
@@ -1122,9 +1122,9 @@ private struct ControllerPadView: View {
         }
     }
 
-    private var keypadExportDocument: PocketPadKeypadConfigurationJSONDocument {
-        PocketPadKeypadConfigurationJSONDocument(
-            export: PocketPadKeypadConfigurationExport(
+    private var keypadExportDocument: ThumbConsoleKeypadConfigurationJSONDocument {
+        ThumbConsoleKeypadConfigurationJSONDocument(
+            export: ThumbConsoleKeypadConfigurationExport(
                 profiles: client.gamepadProfiles,
                 activeProfileID: client.selectedGamepadProfileID,
                 defaultProfileID: client.defaultGamepadProfileID
@@ -1133,7 +1133,7 @@ private struct ControllerPadView: View {
     }
 
     private var keypadExportFilename: String {
-        PocketPadKeypadConfigurationExport.suggestedFilename(activeProfileName: client.selectedGamepadProfileName)
+        ThumbConsoleKeypadConfigurationExport.suggestedFilename(activeProfileName: client.selectedGamepadProfileName)
     }
 
 }
@@ -2867,7 +2867,7 @@ private struct GamepadFreeformControllerCanvas: View {
         .position(control.center)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(control.isLocationLocked ? "\(control.label) locked" : "Edit \(control.label)")
-        .accessibilityHint(control.isLocationLocked ? "This control is locked in the Mac keypad editor. Use the trash button to delete it." : "Drag to move. Use the corner handles to resize, the rotate handle above it to rotate, or the trash button to delete.")
+        .accessibilityHint(control.isLocationLocked ? "This control is locked in the Mac keypad editor. Use the trash button to delete it." : "Drag to move. Use the corner handles to resize, the rotate handle at the top-right to rotate, or the trash button to delete.")
     }
 
     private func selectedEditHandles(for control: GamepadResolvedControl, overlaySize: CGSize, handleOutset: CGFloat, canvasSize: CGSize) -> some View {
@@ -2875,17 +2875,31 @@ private struct GamepadFreeformControllerCanvas: View {
             width: overlaySize.width + handleOutset * 2,
             height: overlaySize.height + handleOutset * 2
         )
+        let topTrailingHandlePosition = handlePosition(for: .topTrailing, in: overlaySize)
+        let topTrailingPosition = CGPoint(
+            x: handleOutset + topTrailingHandlePosition.x,
+            y: handleOutset + topTrailingHandlePosition.y
+        )
+        let rotationHandleOffset: CGFloat = 16
+        let rotationHandlePosition = CGPoint(
+            x: handleOutset + overlaySize.width + rotationHandleOffset,
+            y: handleOutset - rotationHandleOffset
+        )
 
         return ZStack {
             if !control.isLocationLocked {
-                Capsule()
-                    .fill(Geist.color(.blue700, scheme: colorScheme).opacity(0.45))
-                    .frame(width: 1.5, height: 10)
-                    .position(x: handleOutset + overlaySize.width / 2, y: handleOutset + 2)
-                    .zIndex(1)
+                Path { path in
+                    path.move(to: topTrailingPosition)
+                    path.addLine(to: rotationHandlePosition)
+                }
+                .stroke(
+                    Geist.color(.blue700, scheme: colorScheme).opacity(0.45),
+                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                )
+                .zIndex(1)
 
                 rotationHandle(for: control)
-                    .position(x: handleOutset + overlaySize.width / 2, y: handleOutset - 8)
+                    .position(rotationHandlePosition)
                     .zIndex(4)
 
                 ForEach(IOSKeypadResizeHandleCorner.allCases) { corner in
@@ -3147,18 +3161,13 @@ private struct GamepadFreeformControllerCanvas: View {
             width: resizeState.startSize.width,
             height: resizeState.startSize.height
         )
-        let existingFrames = resizeState.startCustomization.iosExistingControlFrames(
-            excluding: resizeState.identity,
-            canvasSize: canvasSize
-        )
-        let resizedRect = Self.resizedFrameAvoidingOverlaps(
+        let resizedRect = Self.resizedFrame(
             from: startRect,
             corner: resizeState.corner,
             translation: translation,
             minSize: minSize,
             maxSize: maxSize,
-            canvasSize: canvasSize,
-            avoiding: existingFrames
+            canvasSize: canvasSize
         )
         guard Self.rectDidChange(from: startRect, to: resizedRect) else { return nil }
 
@@ -3226,56 +3235,6 @@ private struct GamepadFreeformControllerCanvas: View {
         }
     }
 
-    private static func resizedFrameAvoidingOverlaps(
-        from rect: CGRect,
-        corner: IOSKeypadResizeHandleCorner,
-        translation: CGSize,
-        minSize: CGSize,
-        maxSize: CGSize,
-        canvasSize: CGSize,
-        avoiding existingFrames: [CGRect]
-    ) -> CGRect {
-        let desiredFrame = resizedFrame(
-            from: rect,
-            corner: corner,
-            translation: translation,
-            minSize: minSize,
-            maxSize: maxSize,
-            canvasSize: canvasSize
-        )
-        guard GamepadLayoutResolver.frameOverlapsAny(desiredFrame, avoiding: existingFrames) else {
-            return desiredFrame
-        }
-
-        var lowerBound: CGFloat = 0
-        var upperBound: CGFloat = 1
-        var bestFrame = rect
-
-        for _ in 0..<12 {
-            let fraction = (lowerBound + upperBound) / 2
-            let candidateTranslation = CGSize(
-                width: translation.width * fraction,
-                height: translation.height * fraction
-            )
-            let candidateFrame = resizedFrame(
-                from: rect,
-                corner: corner,
-                translation: candidateTranslation,
-                minSize: minSize,
-                maxSize: maxSize,
-                canvasSize: canvasSize
-            )
-
-            if GamepadLayoutResolver.frameOverlapsAny(candidateFrame, avoiding: existingFrames) {
-                upperBound = fraction
-            } else {
-                bestFrame = candidateFrame
-                lowerBound = fraction
-            }
-        }
-
-        return bestFrame
-    }
 
     private static func resizedFrame(
         from rect: CGRect,
@@ -3437,12 +3396,6 @@ private enum IOSKeypadResizeHandleCorner: CaseIterable, Identifiable {
 }
 
 private extension GamepadCustomization {
-    func iosExistingControlFrames(excluding identity: GamepadControlIdentity, canvasSize: CGSize) -> [CGRect] {
-        resolvedControls(in: canvasSize).compactMap { control in
-            (control.id == identity || control.id == .system(.topBarActivation)) ? nil : control.frame
-        }
-    }
-
     func iosUpdatingControlLayout(
         for identity: GamepadControlIdentity,
         _ mutate: (inout GamepadButtonCustomization) -> Void

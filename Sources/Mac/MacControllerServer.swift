@@ -87,17 +87,80 @@ final class MacControllerServer: ObservableObject {
         var profileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]]
     }
 
-    private let networkQueue = DispatchQueue(label: "PocketPad.NetworkServer", qos: .userInteractive)
+    enum KeypadConfigurationImportMode {
+        case replaceMatching
+        case appendAsCopies
+    }
+
+    struct KeypadConfigurationImportSummary {
+        var importedCount: Int
+        var selectedProfileName: String
+        var replacedCount: Int
+
+        var message: String {
+            let noun = importedCount == 1 ? "setup" : "setups"
+            let replacement = replacedCount > 0 ? " Replaced \(replacedCount) matching \(replacedCount == 1 ? "setup" : "setups")." : ""
+            return "Imported \(importedCount) \(noun) and selected \(selectedProfileName).\(replacement)"
+        }
+    }
+
+    private struct KeypadConfigurationExportEnvelope: Codable {
+        var schema = ThumbConsoleKeypadConfigurationExport.schemaIdentifier
+        var version = ThumbConsoleKeypadConfigurationExport.currentVersion
+        var exportedAt = Date.currentMilliseconds
+        var profiles: [GamepadConfigurationProfile]
+        var activeProfileID: UUID?
+        var defaultProfileID: UUID?
+        var profileKeyBindings: [String: [String: MacKeyBinding]]
+        var profileOutputBindings: [String: [String: MacControlOutputBinding]]
+
+        init(
+            profiles: [GamepadConfigurationProfile],
+            activeProfileID: UUID?,
+            defaultProfileID: UUID?,
+            profileKeyBindings: [String: [String: MacKeyBinding]],
+            profileOutputBindings: [String: [String: MacControlOutputBinding]]
+        ) {
+            self.profiles = profiles
+            self.activeProfileID = activeProfileID
+            self.defaultProfileID = defaultProfileID
+            self.profileKeyBindings = profileKeyBindings
+            self.profileOutputBindings = profileOutputBindings
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            schema = try container.decodeIfPresent(String.self, forKey: .schema) ?? ThumbConsoleKeypadConfigurationExport.schemaIdentifier
+            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? ThumbConsoleKeypadConfigurationExport.currentVersion
+            guard schema == ThumbConsoleKeypadConfigurationExport.schemaIdentifier else {
+                throw DecodingError.dataCorruptedError(forKey: .schema, in: container, debugDescription: "Unsupported ThumbConsole keypad configuration schema: \(schema)")
+            }
+            guard version >= 1 && version <= ThumbConsoleKeypadConfigurationExport.currentVersion else {
+                throw DecodingError.dataCorruptedError(forKey: .version, in: container, debugDescription: "Unsupported ThumbConsole keypad configuration version: \(version)")
+            }
+            exportedAt = try container.decodeIfPresent(Int64.self, forKey: .exportedAt) ?? Date.currentMilliseconds
+            profiles = try container.decode([GamepadConfigurationProfile].self, forKey: .profiles)
+            guard !profiles.isEmpty else {
+                throw DecodingError.dataCorruptedError(forKey: .profiles, in: container, debugDescription: "A keypad configuration must contain at least one setup.")
+            }
+            activeProfileID = try container.decodeIfPresent(UUID.self, forKey: .activeProfileID)
+            defaultProfileID = try container.decodeIfPresent(UUID.self, forKey: .defaultProfileID)
+            profileKeyBindings = try container.decodeIfPresent([String: [String: MacKeyBinding]].self, forKey: .profileKeyBindings) ?? [:]
+            profileOutputBindings = try container.decodeIfPresent([String: [String: MacControlOutputBinding]].self, forKey: .profileOutputBindings) ?? [:]
+        }
+    }
+
+    private let networkQueue = DispatchQueue(label: "ThumbConsole.NetworkServer", qos: .userInteractive)
     private let networkQueueKey = DispatchSpecificKey<Bool>()
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     private let injector = KeyboardInjector()
     private let pointerInjector = PointerInjector()
     private let virtualGamepadInjector = VirtualGamepadInjector()
-    private let debugLogURL = URL(fileURLWithPath: "/tmp/pocketpad-mac-events.log")
-    private let captureLogURL = URL(fileURLWithPath: PocketPadMacIPC.captureLogPath)
-    private let logQueue = DispatchQueue(label: "PocketPad.DebugLog", qos: .utility)
-    private let captureLogQueue = DispatchQueue(label: "PocketPad.CaptureLog", qos: .utility)
+    private let debugLogURL = URL(fileURLWithPath: "/tmp/thumbconsole-mac-events.log")
+    private let captureLogURL = URL(fileURLWithPath: ThumbConsoleMacIPC.captureLogPath)
+    private let logQueue = DispatchQueue(label: "ThumbConsole.DebugLog", qos: .utility)
+    private let captureLogQueue = DispatchQueue(label: "ThumbConsole.CaptureLog", qos: .utility)
     private static let preferredPort: UInt16 = 8765
     private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
     private static let legacyKeyBindingsDefaultsKey = "PocketPadMac.keyBindings.v1"
@@ -220,10 +283,38 @@ final class MacControllerServer: ObservableObject {
         let receivedAtUptime: UInt64
         let decodedAtUptime: UInt64
         var processingStartedAtUptime: UInt64?
+        var bindingLookupNanoseconds: UInt64 = 0
+        var outputInjectionNanoseconds: UInt64 = 0
+        var lastInjectionCompletedAtUptime: UInt64?
+        var hasOutputStage = false
+        var outputDeferred = false
+    }
+
+    private struct RollingInputSamples {
+        private(set) var values: [Double] = []
+        private var replacementIndex = 0
+
+        mutating func append(_ value: Double) {
+            if values.count < 512 {
+                values.append(value)
+                return
+            }
+            values[replacementIndex] = value
+            replacementIndex = (replacementIndex + 1) % values.count
+        }
+
+        mutating func reset() {
+            values.removeAll(keepingCapacity: true)
+            replacementIndex = 0
+        }
     }
 
     private var receivedInputTimings: [InputTimingKey: ReceivedInputTiming] = [:]
-    private var recentInputPipelineSamplesMS: [Double] = []
+    private var recentInputPipelineSamplesMS = RollingInputSamples()
+    private var recentInputProcessingSamplesMS = RollingInputSamples()
+    private var recentBindingLookupSamplesMS = RollingInputSamples()
+    private var recentOutputInjectionSamplesMS = RollingInputSamples()
+    private var recentPostInjectionSamplesMS = RollingInputSamples()
 
     private struct TrustedClient: Codable {
         var token: String
@@ -234,11 +325,27 @@ final class MacControllerServer: ObservableObject {
 
     private var buttonPulseSequencer = ButtonPulseSequencer(
         minimumTapDurationNanoseconds: ButtonPulseSequencer.actionGameMinimumTapDurationNanoseconds,
-        minimumInterTapGapNanoseconds: ButtonPulseSequencer.actionGameMinimumInterTapGapNanoseconds
+        minimumInterTapGapNanoseconds: ButtonPulseSequencer.actionGameMinimumInterTapGapNanoseconds,
+        shouldEnforceMinimumInterTapGap: { button in
+            switch button {
+            case .up, .down, .left, .right:
+                false
+            default:
+                true
+            }
+        }
     )
     private var elementPulseSequencer = InputPulseSequencer<KeypadElementInputID>(
         minimumTapDurationNanoseconds: ButtonPulseSequencer.actionGameMinimumTapDurationNanoseconds,
-        minimumInterTapGapNanoseconds: ButtonPulseSequencer.actionGameMinimumInterTapGapNanoseconds
+        minimumInterTapGapNanoseconds: ButtonPulseSequencer.actionGameMinimumInterTapGapNanoseconds,
+        shouldEnforceMinimumInterTapGap: { input in
+            switch input.part {
+            case .primary, .triggerDigital:
+                true
+            case .joystickUp, .joystickDown, .joystickLeft, .joystickRight:
+                false
+            }
+        }
     )
     private var buttonPulseReleaseWorkItems: [GameButton: DispatchWorkItem] = [:]
     private var buttonPulsePressWorkItems: [GameButton: DispatchWorkItem] = [:]
@@ -340,7 +447,7 @@ final class MacControllerServer: ObservableObject {
         refreshAccessibilityStatus()
         localURLs = Self.localIPv4Addresses().map { "ws://\($0):\(port)" }
         cliCommandObserver = DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name(PocketPadMacIPC.commandNotificationName),
+            forName: Notification.Name(ThumbConsoleMacIPC.commandNotificationName),
             object: nil,
             queue: .main
         ) { [weak self] notification in
@@ -518,7 +625,7 @@ final class MacControllerServer: ObservableObject {
     private func handleCLICommandNotification(_ notification: Notification) {
         guard let commandData = Self.notificationData(
             from: notification.userInfo,
-            key: PocketPadMacIPC.commandDataKey
+            key: ThumbConsoleMacIPC.commandDataKey
         ) else {
             lastReceivedEvent = "Ignored CLI command: missing payload"
             publishRuntimeStatus(synchronize: true)
@@ -527,7 +634,7 @@ final class MacControllerServer: ObservableObject {
         }
 
         do {
-            let payload = try JSONDecoder().decode(PocketPadMacCLICommandPayload.self, from: commandData)
+            let payload = try JSONDecoder().decode(ThumbConsoleMacCLICommandPayload.self, from: commandData)
             handleCLICommand(payload)
         } catch {
             lastReceivedEvent = "Ignored CLI command: invalid payload"
@@ -536,7 +643,7 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func handleCLICommand(_ payload: PocketPadMacCLICommandPayload) {
+    private func handleCLICommand(_ payload: ThumbConsoleMacCLICommandPayload) {
         defer { publishRuntimeStatus(synchronize: true) }
 
         switch payload.command {
@@ -600,6 +707,220 @@ final class MacControllerServer: ObservableObject {
             profileKeyBindings: profileKeyBindings,
             profileOutputBindings: profileOutputBindings
         )
+    }
+
+    func keypadConfigurationExportData(
+        profiles sourceProfiles: [GamepadConfigurationProfile],
+        activeProfileID: UUID,
+        defaultProfileID: UUID,
+        exportingProfileID: UUID?
+    ) throws -> Data {
+        let sourceState = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: sourceProfiles,
+            activeProfileID: activeProfileID,
+            defaultProfileID: defaultProfileID,
+            fallbackCustomization: gamepadCustomization
+        )
+
+        let exportedProfiles: [GamepadConfigurationProfile]
+        let exportedActiveProfileID: UUID?
+        let exportedDefaultProfileID: UUID?
+        if let exportingProfileID {
+            guard let profile = sourceState.profiles.first(where: { $0.id == exportingProfileID }) else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            exportedProfiles = [profile]
+            exportedActiveProfileID = profile.id
+            exportedDefaultProfileID = sourceState.defaultProfileID == profile.id ? profile.id : nil
+        } else {
+            exportedProfiles = sourceState.profiles
+            exportedActiveProfileID = sourceState.activeProfileID
+            exportedDefaultProfileID = sourceState.defaultProfileID
+        }
+
+        let exportedProfileIDs = Set(exportedProfiles.map(\.id))
+        var currentProfileKeyBindings = profileKeyBindings
+        var currentProfileOutputBindings = profileOutputBindings
+        currentProfileKeyBindings[self.activeGamepadProfileID] = keyBindings
+        currentProfileOutputBindings[self.activeGamepadProfileID] = outputBindings
+
+        var rawKeyBindings: [String: [String: MacKeyBinding]] = [:]
+        for (profileID, bindings) in currentProfileKeyBindings where exportedProfileIDs.contains(profileID) {
+            rawKeyBindings[profileID.uuidString] = Dictionary(uniqueKeysWithValues: bindings.map { button, binding in
+                (button.rawValue, binding)
+            })
+        }
+
+        var rawOutputBindings: [String: [String: MacControlOutputBinding]] = [:]
+        for (profileID, bindings) in currentProfileOutputBindings where exportedProfileIDs.contains(profileID) {
+            rawOutputBindings[profileID.uuidString] = Self.rawOutputBindings(bindings)
+        }
+        let envelope = KeypadConfigurationExportEnvelope(
+            profiles: exportedProfiles,
+            activeProfileID: exportedActiveProfileID,
+            defaultProfileID: exportedDefaultProfileID,
+            profileKeyBindings: rawKeyBindings,
+            profileOutputBindings: rawOutputBindings
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(envelope)
+    }
+
+    @discardableResult
+    func importKeypadConfiguration(
+        data: Data,
+        sourceName: String,
+        mode: KeypadConfigurationImportMode
+    ) throws -> KeypadConfigurationImportSummary {
+        let decoder = JSONDecoder()
+        var importedProfiles: [GamepadConfigurationProfile]
+        var importedActiveProfileID: UUID?
+        var importedDefaultProfileID: UUID?
+        var importedKeyBindings: [String: [String: MacKeyBinding]] = [:]
+        var importedOutputBindings: [String: [String: MacControlOutputBinding]] = [:]
+
+        if let envelope = try? decoder.decode(KeypadConfigurationExportEnvelope.self, from: data) {
+            importedProfiles = envelope.profiles.map(\.normalized)
+            importedActiveProfileID = envelope.activeProfileID
+            importedDefaultProfileID = envelope.defaultProfileID
+            importedKeyBindings = envelope.profileKeyBindings
+            importedOutputBindings = envelope.profileOutputBindings
+        } else if let generated = try? decoder.decode(GeneratedGameKeypadProfile.self, from: data) {
+            importedProfiles = [generated.profile.normalized]
+            importedActiveProfileID = generated.profile.id
+            importedDefaultProfileID = nil
+            var generatedBindings = DefaultKeypadKeyMap.defaultBindings
+            for (button, spec) in generated.keyBindings {
+                guard let binding = MacKeyBinding(generatedSpec: spec) else {
+                    let rawBinding = (spec.modifiers + [spec.key]).joined(separator: "+")
+                    throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "Unsupported generated binding for \(button.displayName): \(rawBinding)"])
+                }
+                generatedBindings[button] = binding
+            }
+            importedKeyBindings[generated.profile.id.uuidString] = Dictionary(uniqueKeysWithValues: generatedBindings.map { ($0.key.rawValue, $0.value) })
+            importedOutputBindings[generated.profile.id.uuidString] = Self.rawOutputBindings(Self.outputBindings(from: generatedBindings))
+        } else if let profile = try? decoder.decode(GamepadConfigurationProfile.self, from: data) {
+            importedProfiles = [profile.normalized]
+            importedActiveProfileID = profile.id
+            importedDefaultProfileID = nil
+        } else if let profiles = try? decoder.decode([GamepadConfigurationProfile].self, from: data), !profiles.isEmpty {
+            importedProfiles = profiles.map(\.normalized)
+            importedActiveProfileID = profiles.first?.id
+            importedDefaultProfileID = nil
+        } else if let customization = try? decoder.decode(GamepadCustomization.self, from: data) {
+            let trimmedName = sourceName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let profile = GamepadConfigurationProfile(
+                name: trimmedName.isEmpty ? "Imported Setup" : trimmedName,
+                customization: customization.normalized
+            )
+            importedProfiles = [profile]
+            importedActiveProfileID = profile.id
+            importedDefaultProfileID = nil
+        } else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "This file is not a supported ThumbConsole setup, configuration, or customization JSON file."])
+        }
+
+        guard !importedProfiles.isEmpty else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "The imported file did not contain any keypad setups."])
+        }
+
+        profileKeyBindings[activeGamepadProfileID] = keyBindings
+        profileOutputBindings[activeGamepadProfileID] = outputBindings
+        var mergedProfiles = gamepadProfiles
+        var mergedKeyBindings = profileKeyBindings
+        var mergedOutputBindings = profileOutputBindings
+        var importedIDMap: [UUID: UUID] = [:]
+        var destinationIDs: [UUID] = []
+        var claimedDestinationIDs = Set<UUID>()
+        var replacedCount = 0
+
+        func uniqueName(_ requestedName: String, excluding profileID: UUID? = nil) -> String {
+            let base = requestedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Imported Setup" : requestedName
+            let existingNames = Set(mergedProfiles.filter { $0.id != profileID }.map { $0.name.lowercased() })
+            guard existingNames.contains(base.lowercased()) else { return base }
+            var copyNumber = 2
+            while existingNames.contains("\(base) \(copyNumber)".lowercased()) { copyNumber += 1 }
+            return "\(base) \(copyNumber)"
+        }
+
+        for sourceProfile in importedProfiles {
+            var destinationProfile = sourceProfile.normalized
+            let sourceID = sourceProfile.id
+            let matchingIndex = mergedProfiles.firstIndex { candidate in
+                guard !claimedDestinationIDs.contains(candidate.id) else { return false }
+                if candidate.id == sourceID { return true }
+                return candidate.name.caseInsensitiveCompare(destinationProfile.name) == .orderedSame
+            }
+
+            switch mode {
+            case .replaceMatching:
+                if let matchingIndex {
+                    let retainedID = mergedProfiles[matchingIndex].id
+                    destinationProfile.id = retainedID
+                    destinationProfile.updatedAt = Date.currentMilliseconds
+                    mergedProfiles[matchingIndex] = destinationProfile
+                    claimedDestinationIDs.insert(retainedID)
+                    replacedCount += 1
+                } else {
+                    destinationProfile.name = uniqueName(destinationProfile.name)
+                    mergedProfiles.append(destinationProfile)
+                }
+            case .appendAsCopies:
+                destinationProfile.id = UUID()
+                destinationProfile.name = uniqueName(destinationProfile.name)
+                destinationProfile.updatedAt = Date.currentMilliseconds
+                mergedProfiles.append(destinationProfile)
+            }
+
+            claimedDestinationIDs.insert(destinationProfile.id)
+            importedIDMap[sourceID] = destinationProfile.id
+            destinationIDs.append(destinationProfile.id)
+
+            if let rawBindings = importedKeyBindings[sourceID.uuidString] {
+                mergedKeyBindings[destinationProfile.id] = Self.decodedKeyBindings(rawBindings)
+            } else if mergedKeyBindings[destinationProfile.id] == nil {
+                mergedKeyBindings[destinationProfile.id] = DefaultKeypadKeyMap.defaultBindings
+            }
+
+            if let rawOutputs = importedOutputBindings[sourceID.uuidString] {
+                mergedOutputBindings[destinationProfile.id] = Self.decodedOutputBindings(rawOutputs)
+            } else if mergedOutputBindings[destinationProfile.id] == nil {
+                let importedKeys = mergedKeyBindings[destinationProfile.id] ?? DefaultKeypadKeyMap.defaultBindings
+                mergedOutputBindings[destinationProfile.id] = Self.outputBindings(from: importedKeys)
+            }
+        }
+
+        guard let firstDestinationID = destinationIDs.first else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "The imported file did not contain a usable keypad setup."])
+        }
+        let selectedID = importedActiveProfileID.flatMap { importedIDMap[$0] } ?? firstDestinationID
+        let nextDefaultID: UUID
+        switch mode {
+        case .replaceMatching:
+            nextDefaultID = importedDefaultProfileID.flatMap { importedIDMap[$0] } ?? defaultGamepadProfileID
+        case .appendAsCopies:
+            nextDefaultID = defaultGamepadProfileID
+        }
+
+        releaseAll(reason: "Import keypad configuration")
+        profileKeyBindings = mergedKeyBindings
+        profileOutputBindings = mergedOutputBindings
+        setGamepadProfileState(
+            profiles: mergedProfiles,
+            activeProfileID: selectedID,
+            defaultProfileID: nextDefaultID
+        )
+
+        let selectedName = gamepadProfiles.first(where: { $0.id == selectedID })?.name ?? "Imported Setup"
+        let summary = KeypadConfigurationImportSummary(
+            importedCount: importedProfiles.count,
+            selectedProfileName: selectedName,
+            replacedCount: replacedCount
+        )
+        lastReceivedEvent = summary.message
+        publishRuntimeStatus()
+        return summary
     }
 
     func restoreEditorUndoSnapshot(_ snapshot: EditorUndoSnapshot, reason: String) {
@@ -1455,7 +1776,7 @@ final class MacControllerServer: ObservableObject {
             rejectionDetail: detail,
             recordSample: false
         )
-        appendCaptureEvent(PocketPadCaptureEvent(
+        appendCaptureEvent(ThumbConsoleCaptureEvent(
             kind: "rejected_input_generation",
             source: source,
             messageType: message.type,
@@ -1522,7 +1843,11 @@ final class MacControllerServer: ObservableObject {
         retiredInputGenerations.removeAll()
         staleInputGenerationDropCount = 0
         receivedInputTimings.removeAll(keepingCapacity: true)
-        recentInputPipelineSamplesMS.removeAll(keepingCapacity: true)
+        recentInputPipelineSamplesMS.reset()
+        recentInputProcessingSamplesMS.reset()
+        recentBindingLookupSamplesMS.reset()
+        recentOutputInjectionSamplesMS.reset()
+        recentPostInjectionSamplesMS.reset()
         resetButtonSequenceDiagnosticsOnNetworkQueue()
         resetPhysicalInputTrackingOnNetworkQueue()
 
@@ -1688,12 +2013,7 @@ final class MacControllerServer: ObservableObject {
             logInputEvent("invalid_datagram_message bytes=\(data.count)")
             return
         }
-        recordInputTimingOnNetworkQueue(
-            for: message,
-            source: "iPhone UDP",
-            receivedAtUptime: receivedAtUptime,
-            decodedAtUptime: DispatchTime.now().uptimeNanoseconds
-        )
+        let decodedAtUptime = DispatchTime.now().uptimeNanoseconds
 
         if message.type == .hello {
             authenticateDatagramConnectionOnNetworkQueue(connection, message: message)
@@ -1707,6 +2027,12 @@ final class MacControllerServer: ObservableObject {
             return
         }
 
+        recordInputTimingOnNetworkQueue(
+            for: message,
+            source: "iPhone UDP",
+            receivedAtUptime: receivedAtUptime,
+            decodedAtUptime: decodedAtUptime
+        )
         publishClientActivity(from: pairedConnection, force: message.type != .button && message.type != .elementInput && message.type != .pointer)
 
         switch message.type {
@@ -1776,12 +2102,15 @@ final class MacControllerServer: ObservableObject {
         let receivedAtUptime = DispatchTime.now().uptimeNanoseconds
         do {
             let message = try ControllerWireCodec.decode(data, using: decoder)
-            recordInputTimingOnNetworkQueue(
-                for: message,
-                source: "iPhone",
-                receivedAtUptime: receivedAtUptime,
-                decodedAtUptime: DispatchTime.now().uptimeNanoseconds
-            )
+            let decodedAtUptime = DispatchTime.now().uptimeNanoseconds
+            if pairedConnection === connection {
+                recordInputTimingOnNetworkQueue(
+                    for: message,
+                    source: "iPhone",
+                    receivedAtUptime: receivedAtUptime,
+                    decodedAtUptime: decodedAtUptime
+                )
+            }
             handleMessageOnNetworkQueue(message, from: connection)
         } catch {
             publishControllerDebug(event: "Invalid keypad message: \(error.localizedDescription)", immediately: true)
@@ -1946,7 +2275,7 @@ final class MacControllerServer: ObservableObject {
         send(
             .init(
                 type: .pairingChallenge,
-                message: "Pairing request accepted. Enter the code shown on PocketPad Mac."
+                message: "Pairing request accepted. Enter the code shown on ThumbConsole Mac."
             ),
             on: connection
         )
@@ -2153,7 +2482,7 @@ final class MacControllerServer: ObservableObject {
             let deltaY = message.deltaY ?? 0
             pointerInjector.moveBy(deltaX: deltaX, deltaY: deltaY)
             didApplyInput = true
-            appendCaptureEvent(PocketPadCaptureEvent(
+            appendCaptureEvent(ThumbConsoleCaptureEvent(
                 kind: "pointer",
                 source: source,
                 messageType: .pointer,
@@ -2172,7 +2501,7 @@ final class MacControllerServer: ObservableObject {
             let deltaY = message.deltaY ?? 0
             pointerInjector.scrollBy(deltaX: deltaX, deltaY: deltaY)
             didApplyInput = true
-            appendCaptureEvent(PocketPadCaptureEvent(
+            appendCaptureEvent(ThumbConsoleCaptureEvent(
                 kind: "pointer",
                 source: source,
                 messageType: .pointer,
@@ -2214,7 +2543,7 @@ final class MacControllerServer: ObservableObject {
                 pointerInjector.setButton(pointerButton, pressed: false)
             }
             didApplyInput = true
-            appendCaptureEvent(PocketPadCaptureEvent(
+            appendCaptureEvent(ThumbConsoleCaptureEvent(
                 kind: "pointer",
                 source: source,
                 messageType: .pointer,
@@ -2276,7 +2605,7 @@ final class MacControllerServer: ObservableObject {
             }
             virtualGamepadInjector.setStick(stick, x: x, y: y)
             didApplyInput = true
-            appendCaptureEvent(PocketPadCaptureEvent(
+            appendCaptureEvent(ThumbConsoleCaptureEvent(
                 kind: "gamepad_analog",
                 source: source,
                 messageType: .gamepadAnalog,
@@ -2305,7 +2634,7 @@ final class MacControllerServer: ObservableObject {
             }
             virtualGamepadInjector.setTrigger(trigger, value: value)
             didApplyInput = true
-            appendCaptureEvent(PocketPadCaptureEvent(
+            appendCaptureEvent(ThumbConsoleCaptureEvent(
                 kind: "gamepad_analog",
                 source: source,
                 messageType: .gamepadAnalog,
@@ -2341,6 +2670,12 @@ final class MacControllerServer: ObservableObject {
         guard let elementID = message.elementID,
               let state = message.state
         else {
+            finishInputTimingOnNetworkQueue(
+                for: message,
+                source: source,
+                rejectionDetail: "malformed",
+                recordSample: false
+            )
             publishControllerDebug(event: "Ignored malformed element input", immediately: true)
             return
         }
@@ -2370,7 +2705,7 @@ final class MacControllerServer: ObservableObject {
         state: ButtonPressState,
         source: String
     ) {
-        markInputProcessingStartedOnNetworkQueue(for: message, source: source)
+        let inputTimingKey = markInputProcessingStartedOnNetworkQueue(for: message, source: source)
         let inspection = buttonSequenceTracker.inspect(message)
         var didApplyInput = false
         defer {
@@ -2401,7 +2736,8 @@ final class MacControllerServer: ObservableObject {
                     state: .up,
                     source: "\(source) late release recovery",
                     pressIdentifier: pressIdentifier,
-                    messageTimestamp: captureLatencyTimestamp(for: message)
+                    messageTimestamp: captureLatencyTimestamp(for: message),
+                    inputTimingKey: inputTimingKey
                 )
                 logInputEvent("element_input_late_release_recovered expected=\(expectedSequence) received=\(receivedSequence) input=\(input.storageKey)")
                 return
@@ -2430,7 +2766,8 @@ final class MacControllerServer: ObservableObject {
             source: source,
             sequenceInspection: inspection,
             pressIdentifier: pressIdentifier,
-            messageTimestamp: captureLatencyTimestamp(for: message)
+            messageTimestamp: captureLatencyTimestamp(for: message),
+            inputTimingKey: inputTimingKey
         )
     }
 
@@ -2441,7 +2778,8 @@ final class MacControllerServer: ObservableObject {
         source: String,
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64?,
-        messageTimestamp: Int64? = nil
+        messageTimestamp: Int64? = nil,
+        inputTimingKey: InputTimingKey? = nil
     ) -> Bool {
         if sequenceInspection.isOutOfOrderOrReset, sequenceInspection.hasSequence {
             return false
@@ -2473,7 +2811,8 @@ final class MacControllerServer: ObservableObject {
                     sequenceInspection: sequenceInspection,
                     pressIdentifier: pressIdentifier,
                     messageTimestamp: messageTimestamp,
-                    detail: "missing_release_before_down"
+                    detail: "missing_release_before_down",
+                    inputTimingKey: inputTimingKey
                 )
                 return true
             }
@@ -2483,13 +2822,13 @@ final class MacControllerServer: ObservableObject {
                 // heartbeat duplicate before reporting that no edge was applied.
                 return false
             }
-            handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+            handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, inputTimingKey: inputTimingKey)
             return true
 
         case .up:
             switch recordElementPressEndedOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
             case .shouldReleaseKey:
-                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+                handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, inputTimingKey: inputTimingKey)
                 return true
 
             case .stillHeld:
@@ -2511,11 +2850,12 @@ final class MacControllerServer: ObservableObject {
                         sequenceInspection: sequenceInspection,
                         pressIdentifier: pressIdentifier,
                         messageTimestamp: messageTimestamp,
-                        detail: "missing_down_before_up"
+                        detail: "missing_down_before_up",
+                        inputTimingKey: inputTimingKey
                     )
                     return true
                 } else {
-                    appendCaptureEvent(PocketPadCaptureEvent(
+                    appendCaptureEvent(ThumbConsoleCaptureEvent(
                         kind: "ignored_element_input_edge",
                         source: source,
                         messageType: .elementInput,
@@ -2548,7 +2888,8 @@ final class MacControllerServer: ObservableObject {
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64? = nil,
         messageTimestamp: Int64? = nil,
-        detail: String? = nil
+        detail: String? = nil,
+        inputTimingKey: InputTimingKey? = nil
     ) {
         // Physical touch ownership is already reference-counted before this
         // output pulse stage. Keep the pulse sequencer identifier-agnostic so a
@@ -2560,13 +2901,17 @@ final class MacControllerServer: ObservableObject {
             pressIdentifier: nil,
             now: DispatchTime.now().uptimeNanoseconds
         )
+        if commands.isEmpty, elementPulseSequencer.hasPendingOutput(for: input) {
+            markOutputDeferredOnNetworkQueue(for: inputTimingKey)
+        }
         executeElementPulseCommandsOnNetworkQueue(
             commands,
             source: source,
             sequenceInspection: sequenceInspection,
             pressIdentifier: pressIdentifier,
             messageTimestamp: messageTimestamp,
-            detail: detail
+            detail: detail,
+            inputTimingKey: inputTimingKey
         )
     }
 
@@ -2577,16 +2922,34 @@ final class MacControllerServer: ObservableObject {
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64? = nil,
         messageTimestamp: Int64? = nil,
-        detail: String? = nil
+        detail: String? = nil,
+        inputTimingKey: InputTimingKey? = nil
     ) {
-        guard let baseOutput = elementOutputBindingOnNetworkQueue(for: input), !baseOutput.isEmpty else { return }
+        let lookupStartedAt = DispatchTime.now().uptimeNanoseconds
+        guard let baseOutput = elementOutputBindingOnNetworkQueue(for: input), !baseOutput.isEmpty else {
+            let lookupCompletedAt = DispatchTime.now().uptimeNanoseconds
+            recordOutputStageTimingOnNetworkQueue(
+                for: inputTimingKey,
+                lookupNanoseconds: lookupCompletedAt - lookupStartedAt
+            )
+            return
+        }
 
         switch state {
         case .down:
             guard !inputPressedElementInputs.contains(input) else { return }
             let effectiveOutput = baseOutput.withAdditionalModifiers(activeModifierKeysOnNetworkQueue())
+            let lookupCompletedAt = DispatchTime.now().uptimeNanoseconds
             activeElementOutputBindings[input] = effectiveOutput
+            let injectionStartedAt = DispatchTime.now().uptimeNanoseconds
             activateOutput(effectiveOutput)
+            let injectionCompletedAt = DispatchTime.now().uptimeNanoseconds
+            recordOutputStageTimingOnNetworkQueue(
+                for: inputTimingKey,
+                lookupNanoseconds: lookupCompletedAt - lookupStartedAt,
+                injectionNanoseconds: injectionCompletedAt - injectionStartedAt,
+                injectionCompletedAtUptime: injectionCompletedAt
+            )
             inputPressedElementInputs.insert(input)
             let label = elementDebugLabelOnNetworkQueue(for: input)
             publishControllerDebug(event: "\(source): \(label) down (\(effectiveOutput.displayName))", pressedButtons: inputPressedButtons)
@@ -2606,7 +2969,20 @@ final class MacControllerServer: ObservableObject {
         case .up:
             guard inputPressedElementInputs.contains(input) else { return }
             let releasedOutput = activeElementOutputBindings.removeValue(forKey: input) ?? baseOutput
+            let lookupCompletedAt = DispatchTime.now().uptimeNanoseconds
+            let injectionStartedAt = DispatchTime.now().uptimeNanoseconds
             deactivateOutput(releasedOutput)
+            let injectionCompletedAt = DispatchTime.now().uptimeNanoseconds
+            elementPulseSequencer.recordOutputReleaseCompleted(
+                for: input,
+                now: injectionCompletedAt
+            )
+            recordOutputStageTimingOnNetworkQueue(
+                for: inputTimingKey,
+                lookupNanoseconds: lookupCompletedAt - lookupStartedAt,
+                injectionNanoseconds: injectionCompletedAt - injectionStartedAt,
+                injectionCompletedAtUptime: injectionCompletedAt
+            )
             inputPressedElementInputs.remove(input)
             let label = elementDebugLabelOnNetworkQueue(for: input)
             publishControllerDebug(event: "\(source): \(label) up (\(releasedOutput.displayName))", pressedButtons: inputPressedButtons)
@@ -2631,7 +3007,8 @@ final class MacControllerServer: ObservableObject {
         sequenceInspection: ButtonSequenceInspection,
         pressIdentifier: UInt64?,
         messageTimestamp: Int64?,
-        detail: String?
+        detail: String?,
+        inputTimingKey: InputTimingKey? = nil
     ) {
         for command in commands {
             switch command {
@@ -2643,10 +3020,12 @@ final class MacControllerServer: ObservableObject {
                     sequenceInspection: sequenceInspection,
                     pressIdentifier: pressIdentifier,
                     messageTimestamp: messageTimestamp,
-                    detail: detail
+                    detail: detail,
+                    inputTimingKey: inputTimingKey
                 )
 
             case .scheduleRelease(let input, let delayNanoseconds):
+                markOutputDeferredOnNetworkQueue(for: inputTimingKey)
                 elementPulseReleaseWorkItems[input]?.cancel()
                 let workItem = DispatchWorkItem { [weak self] in
                     guard let self else { return }
@@ -2661,7 +3040,11 @@ final class MacControllerServer: ObservableObject {
                         sequenceInspection: sequenceInspection,
                         pressIdentifier: pressIdentifier,
                         messageTimestamp: messageTimestamp,
-                        detail: detail
+                        detail: detail,
+                        // The originating input timing is finalized before this
+                        // delayed edge runs. Do not let a retained key attach the
+                        // deferred work to a later message.
+                        inputTimingKey: nil
                     )
                 }
                 elementPulseReleaseWorkItems[input] = workItem
@@ -2671,6 +3054,7 @@ final class MacControllerServer: ObservableObject {
                 )
 
             case .schedulePress(let input, let delayNanoseconds):
+                markOutputDeferredOnNetworkQueue(for: inputTimingKey)
                 elementPulsePressWorkItems[input]?.cancel()
                 let workItem = DispatchWorkItem { [weak self] in
                     guard let self else { return }
@@ -2685,7 +3069,8 @@ final class MacControllerServer: ObservableObject {
                         sequenceInspection: sequenceInspection,
                         pressIdentifier: pressIdentifier,
                         messageTimestamp: messageTimestamp,
-                        detail: detail
+                        detail: detail,
+                        inputTimingKey: nil
                     )
                 }
                 elementPulsePressWorkItems[input] = workItem
@@ -2841,6 +3226,12 @@ final class MacControllerServer: ObservableObject {
 
     private func handleButtonMessageOnNetworkQueue(_ message: ControllerMessage, source: String) {
         guard let button = message.button, let state = message.state else {
+            finishInputTimingOnNetworkQueue(
+                for: message,
+                source: source,
+                rejectionDetail: "malformed",
+                recordSample: false
+            )
             publishControllerDebug(event: "Ignored malformed button event", immediately: true)
             return
         }
@@ -2869,7 +3260,7 @@ final class MacControllerServer: ObservableObject {
         state: ButtonPressState,
         source: String
     ) {
-        markInputProcessingStartedOnNetworkQueue(for: message, source: source)
+        let inputTimingKey = markInputProcessingStartedOnNetworkQueue(for: message, source: source)
         let sequenceInspection = inspectButtonSequence(message, button: button, state: state)
         var didApplyInput = false
         defer {
@@ -2894,7 +3285,8 @@ final class MacControllerServer: ObservableObject {
                 state: .up,
                 source: "\(source) late release recovery",
                 pressIdentifier: pressIdentifier,
-                messageTimestamp: captureLatencyTimestamp(for: message)
+                messageTimestamp: captureLatencyTimestamp(for: message),
+                inputTimingKey: inputTimingKey
             )
             logInputEvent("button_late_release_recovered button=\(button.rawValue) sequence=\(sequenceInspection.receivedSequence.map(String.init) ?? "nil")")
             return
@@ -2905,7 +3297,8 @@ final class MacControllerServer: ObservableObject {
             source: source,
             sequenceInspection: sequenceInspection,
             pressIdentifier: pressIdentifier,
-            messageTimestamp: captureLatencyTimestamp(for: message)
+            messageTimestamp: captureLatencyTimestamp(for: message),
+            inputTimingKey: inputTimingKey
         )
     }
 
@@ -2933,6 +3326,8 @@ final class MacControllerServer: ObservableObject {
                     recordSample: false
                 )
             }
+            // Same-source duplicates share an InputTimingKey with the pending
+            // original, so leave its telemetry for the message that drains.
         } else {
             pendingButtonMessagesBySequence[sequenceNumber] = PendingButtonMessage(
                 message: message,
@@ -2965,6 +3360,8 @@ final class MacControllerServer: ObservableObject {
                     recordSample: false
                 )
             }
+            // Same-source duplicates did not register a second timing entry;
+            // finishing here would consume the pending original's telemetry.
         } else {
             pendingButtonMessagesBySequence[sequenceNumber] = PendingButtonMessage(
                 message: message,
@@ -3061,6 +3458,14 @@ final class MacControllerServer: ObservableObject {
         buttonReorderFlushGeneration += 1
         buttonReorderFlushWorkItem?.cancel()
         buttonReorderFlushWorkItem = nil
+        for pending in pendingButtonMessagesBySequence.values {
+            finishInputTimingOnNetworkQueue(
+                for: pending.message,
+                source: pending.source,
+                rejectionDetail: "reorder_cancelled",
+                recordSample: false
+            )
+        }
         pendingButtonMessagesBySequence.removeAll()
     }
 
@@ -3077,7 +3482,8 @@ final class MacControllerServer: ObservableObject {
         source: String,
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64? = nil,
-        messageTimestamp: Int64? = nil
+        messageTimestamp: Int64? = nil,
+        inputTimingKey: InputTimingKey? = nil
     ) -> Bool {
         if sequenceInspection.isOutOfOrderOrReset, sequenceInspection.hasSequence {
             return false
@@ -3109,7 +3515,8 @@ final class MacControllerServer: ObservableObject {
                     sequenceInspection: sequenceInspection,
                     pressIdentifier: pressIdentifier,
                     messageTimestamp: messageTimestamp,
-                    detail: "missing_release_before_down"
+                    detail: "missing_release_before_down",
+                    inputTimingKey: inputTimingKey
                 )
                 return true
             }
@@ -3120,13 +3527,13 @@ final class MacControllerServer: ObservableObject {
                 noteDuplicateButtonRefresh(button: button, pressIdentifier: pressIdentifier)
                 return false
             }
-            handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+            handleButtonOnNetworkQueue(button, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, inputTimingKey: inputTimingKey)
             return true
 
         case .up:
             switch recordPhysicalPressEndedOnNetworkQueue(button, pressIdentifier: pressIdentifier) {
             case .shouldReleaseKey:
-                handleButtonOnNetworkQueue(button, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp)
+                handleButtonOnNetworkQueue(button, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, inputTimingKey: inputTimingKey)
                 return true
 
             case .stillHeld:
@@ -3148,7 +3555,8 @@ final class MacControllerServer: ObservableObject {
                         sequenceInspection: sequenceInspection,
                         pressIdentifier: pressIdentifier,
                         messageTimestamp: messageTimestamp,
-                        detail: "missing_down_before_up"
+                        detail: "missing_down_before_up",
+                        inputTimingKey: inputTimingKey
                     )
                     return true
                 } else {
@@ -3166,7 +3574,8 @@ final class MacControllerServer: ObservableObject {
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64? = nil,
         messageTimestamp: Int64? = nil,
-        detail: String? = nil
+        detail: String? = nil,
+        inputTimingKey: InputTimingKey? = nil
     ) {
         // Physical touch ownership is already reference-counted before this
         // output pulse stage. Keep the pulse sequencer identifier-agnostic so a
@@ -3178,13 +3587,17 @@ final class MacControllerServer: ObservableObject {
             pressIdentifier: nil,
             now: DispatchTime.now().uptimeNanoseconds
         )
+        if commands.isEmpty, buttonPulseSequencer.hasPendingOutput(for: button) {
+            markOutputDeferredOnNetworkQueue(for: inputTimingKey)
+        }
         executeButtonPulseCommandsOnNetworkQueue(
             commands,
             source: source,
             sequenceInspection: sequenceInspection,
             pressIdentifier: pressIdentifier,
             messageTimestamp: messageTimestamp,
-            detail: detail
+            detail: detail,
+            inputTimingKey: inputTimingKey
         )
     }
 
@@ -3195,10 +3608,20 @@ final class MacControllerServer: ObservableObject {
         sequenceInspection: ButtonSequenceInspection = ButtonSequenceInspection(),
         pressIdentifier: UInt64? = nil,
         messageTimestamp: Int64? = nil,
-        detail: String? = nil
+        detail: String? = nil,
+        inputTimingKey: InputTimingKey? = nil
     ) {
-        let baseOutput = realtimeOutputBindings[button] ?? realtimeKeyBindings[button].map { MacControlOutputBinding.keyboard($0) }
-        guard let baseOutput, !baseOutput.isEmpty else { return }
+        let lookupStartedAt = DispatchTime.now().uptimeNanoseconds
+        guard let baseOutput = realtimeOutputBindings[button] ?? realtimeKeyBindings[button].map({ MacControlOutputBinding.keyboard($0) }),
+              !baseOutput.isEmpty
+        else {
+            let lookupCompletedAt = DispatchTime.now().uptimeNanoseconds
+            recordOutputStageTimingOnNetworkQueue(
+                for: inputTimingKey,
+                lookupNanoseconds: lookupCompletedAt - lookupStartedAt
+            )
+            return
+        }
 
         switch state {
         case .down:
@@ -3207,11 +3630,20 @@ final class MacControllerServer: ObservableObject {
                 return
             }
             let effectiveOutput = baseOutput.withAdditionalModifiers(activeModifierKeysOnNetworkQueue())
+            let lookupCompletedAt = DispatchTime.now().uptimeNanoseconds
             if let keyboard = effectiveOutput.keyboard {
                 activeBindings[button] = keyboard
             }
             activeOutputBindings[button] = effectiveOutput
+            let injectionStartedAt = DispatchTime.now().uptimeNanoseconds
             activateOutput(effectiveOutput)
+            let injectionCompletedAt = DispatchTime.now().uptimeNanoseconds
+            recordOutputStageTimingOnNetworkQueue(
+                for: inputTimingKey,
+                lookupNanoseconds: lookupCompletedAt - lookupStartedAt,
+                injectionNanoseconds: injectionCompletedAt - injectionStartedAt,
+                injectionCompletedAtUptime: injectionCompletedAt
+            )
             inputPressedButtons.insert(button)
             publishInputDebugIfDue(source: source, button: button, state: state, binding: effectiveOutput)
             captureButtonEventOnNetworkQueue(
@@ -3232,10 +3664,23 @@ final class MacControllerServer: ObservableObject {
                 return
             }
             let releasedOutput = activeOutputBindings.removeValue(forKey: button) ?? baseOutput
+            let lookupCompletedAt = DispatchTime.now().uptimeNanoseconds
             if releasedOutput.keyboard != nil {
                 activeBindings.removeValue(forKey: button)
             }
+            let injectionStartedAt = DispatchTime.now().uptimeNanoseconds
             deactivateOutput(releasedOutput)
+            let injectionCompletedAt = DispatchTime.now().uptimeNanoseconds
+            buttonPulseSequencer.recordOutputReleaseCompleted(
+                for: button,
+                now: injectionCompletedAt
+            )
+            recordOutputStageTimingOnNetworkQueue(
+                for: inputTimingKey,
+                lookupNanoseconds: lookupCompletedAt - lookupStartedAt,
+                injectionNanoseconds: injectionCompletedAt - injectionStartedAt,
+                injectionCompletedAtUptime: injectionCompletedAt
+            )
             inputPressedButtons.remove(button)
             publishInputDebugIfDue(source: source, button: button, state: state, binding: releasedOutput)
             captureButtonEventOnNetworkQueue(
@@ -3258,7 +3703,8 @@ final class MacControllerServer: ObservableObject {
         sequenceInspection: ButtonSequenceInspection,
         pressIdentifier: UInt64?,
         messageTimestamp: Int64?,
-        detail: String?
+        detail: String?,
+        inputTimingKey: InputTimingKey? = nil
     ) {
         for command in commands {
             switch command {
@@ -3270,10 +3716,12 @@ final class MacControllerServer: ObservableObject {
                     sequenceInspection: sequenceInspection,
                     pressIdentifier: pressIdentifier,
                     messageTimestamp: messageTimestamp,
-                    detail: detail
+                    detail: detail,
+                    inputTimingKey: inputTimingKey
                 )
 
             case .scheduleRelease(let button, let delayNanoseconds):
+                markOutputDeferredOnNetworkQueue(for: inputTimingKey)
                 buttonPulseReleaseWorkItems[button]?.cancel()
                 let workItem = DispatchWorkItem { [weak self] in
                     guard let self else { return }
@@ -3288,7 +3736,10 @@ final class MacControllerServer: ObservableObject {
                         sequenceInspection: sequenceInspection,
                         pressIdentifier: pressIdentifier,
                         messageTimestamp: messageTimestamp,
-                        detail: detail
+                        detail: detail,
+                        // The input_pipeline event records this as deferred; its
+                        // eventual output edge has no receive-pipeline lifetime.
+                        inputTimingKey: nil
                     )
                 }
                 buttonPulseReleaseWorkItems[button] = workItem
@@ -3298,6 +3749,7 @@ final class MacControllerServer: ObservableObject {
                 )
 
             case .schedulePress(let button, let delayNanoseconds):
+                markOutputDeferredOnNetworkQueue(for: inputTimingKey)
                 buttonPulsePressWorkItems[button]?.cancel()
                 let workItem = DispatchWorkItem { [weak self] in
                     guard let self else { return }
@@ -3312,7 +3764,8 @@ final class MacControllerServer: ObservableObject {
                         sequenceInspection: sequenceInspection,
                         pressIdentifier: pressIdentifier,
                         messageTimestamp: messageTimestamp,
-                        detail: detail
+                        detail: detail,
+                        inputTimingKey: nil
                     )
                 }
                 buttonPulsePressWorkItems[button] = workItem
@@ -3627,7 +4080,7 @@ final class MacControllerServer: ObservableObject {
         let totalIgnoredButtonEdges = ignoredButtonEdgeCount
         let event = "Ignored \(button.rawValue) \(state.rawValue) (\(reason)); total ignored \(totalIgnoredButtonEdges)"
         publishIgnoredButtonEdge(totalIgnoredButtonEdges: totalIgnoredButtonEdges, event: event)
-        appendCaptureEvent(PocketPadCaptureEvent(
+        appendCaptureEvent(ThumbConsoleCaptureEvent(
             kind: "ignored_button_edge",
             button: button,
             state: state,
@@ -3658,7 +4111,7 @@ final class MacControllerServer: ObservableObject {
         let totalRecoveredButtonEdges = recoveredButtonEdgeCount
         let event = "Recovered \(button.rawValue) \(state.rawValue) (\(reason)); total recovered \(totalRecoveredButtonEdges)"
         publishRecoveredButtonEdge(totalRecoveredButtonEdges: totalRecoveredButtonEdges, event: event)
-        appendCaptureEvent(PocketPadCaptureEvent(
+        appendCaptureEvent(ThumbConsoleCaptureEvent(
             kind: "recovered_button_edge",
             button: button,
             state: state,
@@ -3780,7 +4233,7 @@ final class MacControllerServer: ObservableObject {
     private func send(_ message: ControllerMessage, on connection: NWConnection) {
         guard let data = try? ControllerWireCodec.encode(message, using: encoder) else { return }
         let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
-        let context = NWConnection.ContentContext(identifier: "PocketPadMessage", metadata: [metadata])
+        let context = NWConnection.ContentContext(identifier: "ThumbConsoleMessage", metadata: [metadata])
         connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
     }
 
@@ -4016,7 +4469,7 @@ final class MacControllerServer: ObservableObject {
         guard backgroundActivity == nil else { return }
         backgroundActivity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
-            reason: "PocketPad is forwarding keypad input to the Mac"
+            reason: "ThumbConsole is forwarding keypad input to the Mac"
         )
     }
 
@@ -4346,7 +4799,7 @@ final class MacControllerServer: ObservableObject {
         runtimeStatusPublishTask = nil
         let snapshot = runtimeStatusSnapshot()
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        UserDefaults.standard.set(data, forKey: PocketPadMacIPC.runtimeStatusDefaultsKey)
+        UserDefaults.standard.set(data, forKey: ThumbConsoleMacIPC.runtimeStatusDefaultsKey)
         lastRuntimeStatusPublishUptime = DispatchTime.now().uptimeNanoseconds
         if synchronize {
             UserDefaults.standard.synchronize()
@@ -4357,6 +4810,12 @@ final class MacControllerServer: ObservableObject {
         var p50MS: Double?
         var p95MS: Double?
         var p99MS: Double?
+        var processingP95MS: Double?
+        var bindingLookupP95MS: Double?
+        var outputInjectionP50MS: Double?
+        var outputInjectionP95MS: Double?
+        var outputInjectionP99MS: Double?
+        var postInjectionP95MS: Double?
         var protocolVersion: Int
         var generation: UInt64?
         var staleGenerationDrops: Int
@@ -4364,16 +4823,22 @@ final class MacControllerServer: ObservableObject {
 
     private func inputDiagnosticsSnapshot() -> InputDiagnosticsSnapshot {
         syncOnNetworkQueue {
-            let sorted = recentInputPipelineSamplesMS.sorted()
-            func percentile(_ fraction: Double) -> Double? {
+            func percentile(_ samples: [Double], _ fraction: Double) -> Double? {
+                let sorted = samples.sorted()
                 guard !sorted.isEmpty else { return nil }
                 let index = min(Int((Double(sorted.count - 1) * fraction).rounded(.up)), sorted.count - 1)
                 return sorted[index]
             }
             return InputDiagnosticsSnapshot(
-                p50MS: percentile(0.50),
-                p95MS: percentile(0.95),
-                p99MS: percentile(0.99),
+                p50MS: percentile(recentInputPipelineSamplesMS.values, 0.50),
+                p95MS: percentile(recentInputPipelineSamplesMS.values, 0.95),
+                p99MS: percentile(recentInputPipelineSamplesMS.values, 0.99),
+                processingP95MS: percentile(recentInputProcessingSamplesMS.values, 0.95),
+                bindingLookupP95MS: percentile(recentBindingLookupSamplesMS.values, 0.95),
+                outputInjectionP50MS: percentile(recentOutputInjectionSamplesMS.values, 0.50),
+                outputInjectionP95MS: percentile(recentOutputInjectionSamplesMS.values, 0.95),
+                outputInjectionP99MS: percentile(recentOutputInjectionSamplesMS.values, 0.99),
+                postInjectionP95MS: percentile(recentPostInjectionSamplesMS.values, 0.95),
                 protocolVersion: activeInputGeneration == nil ? 1 : ControllerWireCodec.currentInputProtocolVersion,
                 generation: activeInputGeneration,
                 staleGenerationDrops: staleInputGenerationDropCount
@@ -4381,10 +4846,10 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func runtimeStatusSnapshot() -> PocketPadMacRuntimeStatus {
+    private func runtimeStatusSnapshot() -> ThumbConsoleMacRuntimeStatus {
         let virtualGamepadStatus = virtualGamepadInjector.status()
         let inputDiagnostics = inputDiagnosticsSnapshot()
-        return PocketPadMacRuntimeStatus(
+        return ThumbConsoleMacRuntimeStatus(
             updatedAt: Date.currentMilliseconds,
             statusText: statusText,
             isRunning: isRunning,
@@ -4405,6 +4870,12 @@ final class MacControllerServer: ObservableObject {
             inputPipelineP50MS: inputDiagnostics.p50MS,
             inputPipelineP95MS: inputDiagnostics.p95MS,
             inputPipelineP99MS: inputDiagnostics.p99MS,
+            inputProcessingP95MS: inputDiagnostics.processingP95MS,
+            bindingLookupP95MS: inputDiagnostics.bindingLookupP95MS,
+            outputInjectionP50MS: inputDiagnostics.outputInjectionP50MS,
+            outputInjectionP95MS: inputDiagnostics.outputInjectionP95MS,
+            outputInjectionP99MS: inputDiagnostics.outputInjectionP99MS,
+            postInjectionP95MS: inputDiagnostics.postInjectionP95MS,
             inputProtocolVersion: inputDiagnostics.protocolVersion,
             activeInputGeneration: inputDiagnostics.generation,
             staleInputGenerationDrops: inputDiagnostics.staleGenerationDrops,
@@ -4486,15 +4957,40 @@ final class MacControllerServer: ObservableObject {
         )
     }
 
+    @discardableResult
     private func markInputProcessingStartedOnNetworkQueue(
         for message: ControllerMessage,
         source: String
-    ) {
+    ) -> InputTimingKey? {
         guard let key = inputTimingKey(for: message, source: source),
-              var timing = receivedInputTimings[key],
-              timing.processingStartedAtUptime == nil
-        else { return }
-        timing.processingStartedAtUptime = DispatchTime.now().uptimeNanoseconds
+              var timing = receivedInputTimings[key]
+        else { return nil }
+        if timing.processingStartedAtUptime == nil {
+            timing.processingStartedAtUptime = DispatchTime.now().uptimeNanoseconds
+            receivedInputTimings[key] = timing
+        }
+        return key
+    }
+
+    private func recordOutputStageTimingOnNetworkQueue(
+        for key: InputTimingKey?,
+        lookupNanoseconds: UInt64,
+        injectionNanoseconds: UInt64? = nil,
+        injectionCompletedAtUptime: UInt64? = nil
+    ) {
+        guard let key, var timing = receivedInputTimings[key] else { return }
+        timing.hasOutputStage = true
+        timing.bindingLookupNanoseconds += lookupNanoseconds
+        if let injectionNanoseconds {
+            timing.outputInjectionNanoseconds += injectionNanoseconds
+            timing.lastInjectionCompletedAtUptime = injectionCompletedAtUptime
+        }
+        receivedInputTimings[key] = timing
+    }
+
+    private func markOutputDeferredOnNetworkQueue(for key: InputTimingKey?) {
+        guard let key, var timing = receivedInputTimings[key] else { return }
+        timing.outputDeferred = true
         receivedInputTimings[key] = timing
     }
 
@@ -4519,19 +5015,41 @@ final class MacControllerServer: ObservableObject {
         let reorderNanoseconds = processingStartedAt >= timing.decodedAtUptime
             ? processingStartedAt - timing.decodedAtUptime
             : 0
+        let processingNanoseconds = completedAt >= processingStartedAt
+            ? completedAt - processingStartedAt
+            : 0
+        let postInjectionNanoseconds = timing.lastInjectionCompletedAtUptime.flatMap { injectionCompletedAt in
+            completedAt >= injectionCompletedAt ? completedAt - injectionCompletedAt : nil
+        }
         let decodeMS = Double(decodeNanoseconds) / 1_000_000
         let pipelineMS = Double(pipelineNanoseconds) / 1_000_000
         let reorderMS = Double(reorderNanoseconds) / 1_000_000
+        let processingMS = Double(processingNanoseconds) / 1_000_000
+        let bindingLookupMS = timing.hasOutputStage
+            ? Double(timing.bindingLookupNanoseconds) / 1_000_000
+            : nil
+        let outputInjectionMS = timing.lastInjectionCompletedAtUptime != nil
+            ? Double(timing.outputInjectionNanoseconds) / 1_000_000
+            : nil
+        let postInjectionMS = postInjectionNanoseconds.map { Double($0) / 1_000_000 }
+        let outputDeferred = timing.outputDeferred ? true : (timing.hasOutputStage ? false : nil)
 
         if recordSample {
             recentInputPipelineSamplesMS.append(pipelineMS)
-            if recentInputPipelineSamplesMS.count > 512 {
-                recentInputPipelineSamplesMS.removeFirst(recentInputPipelineSamplesMS.count - 512)
+            recentInputProcessingSamplesMS.append(processingMS)
+            if let bindingLookupMS {
+                recentBindingLookupSamplesMS.append(bindingLookupMS)
+            }
+            if let outputInjectionMS {
+                recentOutputInjectionSamplesMS.append(outputInjectionMS)
+            }
+            if let postInjectionMS {
+                recentPostInjectionSamplesMS.append(postInjectionMS)
             }
         }
 
-        appendCaptureEvent(PocketPadCaptureEvent(
-            schemaVersion: 2,
+        appendCaptureEvent(ThumbConsoleCaptureEvent(
+            schemaVersion: 3,
             kind: "input_pipeline",
             source: source,
             messageType: message.type,
@@ -4540,6 +5058,11 @@ final class MacControllerServer: ObservableObject {
             decodeLatencyMS: decodeMS,
             receiveToProcessedMS: pipelineMS,
             reorderWaitMS: reorderMS,
+            processingToCompletionMS: processingMS,
+            bindingLookupMS: bindingLookupMS,
+            outputInjectionMS: outputInjectionMS,
+            postInjectionMS: postInjectionMS,
+            outputDeferred: outputDeferred,
             detail: rejectionDetail
         ))
     }
@@ -4556,7 +5079,7 @@ final class MacControllerServer: ObservableObject {
         activePointerButtons.sorted { $0.rawValue < $1.rawValue }
     }
 
-    private func appendCaptureEvent(_ event: PocketPadCaptureEvent) {
+    private func appendCaptureEvent(_ event: ThumbConsoleCaptureEvent) {
         var stampedEvent = event
         stampedEvent.recordedAt = Date.currentMilliseconds
         stampedEvent.uptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
@@ -4596,7 +5119,7 @@ final class MacControllerServer: ObservableObject {
         messageTimestamp: Int64? = nil,
         detail: String? = nil
     ) {
-        appendCaptureEvent(PocketPadCaptureEvent(
+        appendCaptureEvent(ThumbConsoleCaptureEvent(
             kind: "button",
             source: source,
             messageType: .button,
@@ -4628,7 +5151,7 @@ final class MacControllerServer: ObservableObject {
         messageTimestamp: Int64? = nil,
         detail: String? = nil
     ) {
-        appendCaptureEvent(PocketPadCaptureEvent(
+        appendCaptureEvent(ThumbConsoleCaptureEvent(
             kind: "element_input",
             source: source,
             messageType: .elementInput,
@@ -4651,7 +5174,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func captureSystemEventOnNetworkQueue(kind: String, source: String? = nil, detail: String? = nil) {
-        appendCaptureEvent(PocketPadCaptureEvent(
+        appendCaptureEvent(ThumbConsoleCaptureEvent(
             kind: kind,
             source: source,
             pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
@@ -4748,6 +5271,15 @@ final class MacControllerServer: ObservableObject {
         Dictionary(uniqueKeysWithValues: bindings.map { button, binding in
             (button.rawValue, binding)
         })
+    }
+
+    private static func decodedKeyBindings(_ raw: [String: MacKeyBinding]) -> [GameButton: MacKeyBinding] {
+        var bindings: [GameButton: MacKeyBinding] = [:]
+        for (rawButton, binding) in raw {
+            guard let button = GameButton(rawValue: rawButton) else { continue }
+            bindings[button] = binding
+        }
+        return bindings
     }
 
     private static func decodedOutputBindings(_ raw: [String: MacControlOutputBinding]?, fallback: [GameButton: MacControlOutputBinding] = [:]) -> [GameButton: MacControlOutputBinding] {
@@ -4988,7 +5520,7 @@ final class MacControllerServer: ObservableObject {
     private static func defaultBonjourServiceName() -> String {
         let hostName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
         let trimmedHostName = hostName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedHostName.isEmpty ? "PocketPad Mac" : "PocketPad on \(trimmedHostName)"
+        return trimmedHostName.isEmpty ? "ThumbConsole Mac" : "ThumbConsole on \(trimmedHostName)"
     }
 
     private static func generatePairingCode() -> String {

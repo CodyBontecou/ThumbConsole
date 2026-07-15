@@ -28,7 +28,7 @@ final class VirtualGamepadInjector {
     }
 
     private let lock = NSLock()
-    private let deviceQueue = DispatchQueue(label: "PocketPad.VirtualGamepadHID", qos: .userInteractive)
+    private let deviceQueue = DispatchQueue(label: "ThumbConsole.VirtualGamepadHID", qos: .userInteractive)
     private var virtualDevice: IOHIDUserDevice?
     private var state = State()
     private(set) var lastError: String?
@@ -143,8 +143,8 @@ final class VirtualGamepadInjector {
             kIOHIDProductIDKey as String: 0x5050,
             kIOHIDVersionNumberKey as String: 1,
             kIOHIDTransportKey as String: "Virtual",
-            kIOHIDManufacturerKey as String: "PocketPad",
-            kIOHIDProductKey as String: "PocketPad Virtual Gamepad",
+            kIOHIDManufacturerKey as String: "ThumbConsole",
+            kIOHIDProductKey as String: "ThumbConsole Virtual Gamepad",
             kIOHIDSerialNumberKey as String: "PocketPad-Gamepad-1",
             kIOHIDPrimaryUsagePageKey as String: 0x01,
             kIOHIDPrimaryUsageKey as String: 0x05

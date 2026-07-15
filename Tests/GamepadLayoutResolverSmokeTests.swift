@@ -6,14 +6,15 @@ import Foundation
 struct GamepadLayoutResolverSmokeTests {
     static func main() {
         testAdjacentControlsCanTouchWithoutBeingSeparated()
+        testOverlappingControlsResolveAtRequestedPositions()
         testNudgeMovesSingleControlByPixels()
         testNudgeMovesMultipleControlsTogether()
         testNudgeSkipsLockedControls()
-        testNudgePreventsOverlaps()
+        testNudgeAllowsOverlaps()
         testOnePixelInspectorSizedControlsResolveAtRequestedSize()
         testZIndexSortsResolvedControls()
         testLayoutQualityPassesDefaultController()
-        testLayoutQualityDetectsBadOverlaps()
+        testLayoutQualityWarnsAboutAllowedOverlaps()
         testLayoutQualityDetectsUnderusedBottomSpace()
         print("GamepadLayoutResolver smoke tests passed")
     }
@@ -64,6 +65,29 @@ struct GamepadLayoutResolverSmokeTests {
         )
     }
 
+    private static func testOverlappingControlsResolveAtRequestedPositions() {
+        let canvasSize = CGSize(width: 400, height: 200)
+        let backID = UUID(uuidString: "00000000-0000-0000-0000-000000000111")!
+        let frontID = UUID(uuidString: "00000000-0000-0000-0000-000000000112")!
+        let requestedCenter = CGPoint(x: 0.5, y: 0.5)
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = [
+            customButton(id: backID, center: requestedCenter),
+            customButton(id: frontID, center: requestedCenter)
+        ]
+
+        let controls = controlsByID(customization.resolvedControls(in: canvasSize))
+        guard let back = controls[.custom(backID)], let front = controls[.custom(frontID)] else {
+            fail("could not resolve overlapping controls")
+        }
+
+        expectAlmostEqual(back.center.x, canvasSize.width / 2, "back control should keep its requested x position")
+        expectAlmostEqual(back.center.y, canvasSize.height / 2, "back control should keep its requested y position")
+        expectAlmostEqual(front.center.x, back.center.x, "front control should share the requested x position")
+        expectAlmostEqual(front.center.y, back.center.y, "front control should share the requested y position")
+        expect(framesOverlap(back.frame, front.frame), "resolved controls should be allowed to overlap")
+    }
+
     private static func testNudgeMovesSingleControlByPixels() {
         let canvasSize = CGSize(width: 400, height: 200)
         let id = UUID(uuidString: "00000000-0000-0000-0000-000000000201")!
@@ -111,7 +135,7 @@ struct GamepadLayoutResolverSmokeTests {
         expect(!customization.nudgeControls([.custom(id)], by: CGSize(width: 10, height: 0), in: canvasSize), "locked nudge should not move")
     }
 
-    private static func testNudgePreventsOverlaps() {
+    private static func testNudgeAllowsOverlaps() {
         let canvasSize = CGSize(width: 400, height: 200)
         let leftID = UUID(uuidString: "00000000-0000-0000-0000-000000000501")!
         let rightID = UUID(uuidString: "00000000-0000-0000-0000-000000000502")!
@@ -131,9 +155,13 @@ struct GamepadLayoutResolverSmokeTests {
         customization.customButtons[1].layout.centerX = (joinX + buttonWidth / 2) / canvasSize.width
 
         let before = controlsByID(customization.resolvedControls(in: canvasSize))
-        expect(!customization.nudgeControls([.custom(leftID)], by: CGSize(width: 1, height: 0), in: canvasSize), "nudge should not move into an overlapping frame")
+        expect(customization.nudgeControls([.custom(leftID)], by: CGSize(width: 1, height: 0), in: canvasSize), "nudge should move into an overlapping frame")
         let after = controlsByID(customization.resolvedControls(in: canvasSize))
-        expectAlmostEqual(after[.custom(leftID)]?.center.x ?? -1, before[.custom(leftID)]?.center.x ?? 0, "blocked nudge should keep x position")
+        expectAlmostEqual(after[.custom(leftID)]?.center.x ?? -1, (before[.custom(leftID)]?.center.x ?? 0) + 1, "nudge should preserve the requested movement")
+        guard let left = after[.custom(leftID)], let right = after[.custom(rightID)] else {
+            fail("could not resolve controls after overlapping nudge")
+        }
+        expect(framesOverlap(left.frame, right.frame), "nudged controls should be allowed to overlap")
     }
 
     private static func testOnePixelInspectorSizedControlsResolveAtRequestedSize() {
@@ -188,15 +216,15 @@ struct GamepadLayoutResolverSmokeTests {
         expect(!report.hasErrors, "default controller layout should not have blocking layout errors")
     }
 
-    private static func testLayoutQualityDetectsBadOverlaps() {
+    private static func testLayoutQualityWarnsAboutAllowedOverlaps() {
         let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000601")!
         let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000602")!
         var customization = GamepadCustomization.blankCanvas
         let badLayout = GamepadButtonCustomization(
             centerX: 0.5,
             centerY: 0.5,
-            widthScale: 2.4,
-            heightScale: 2.4,
+            widthScale: 1.0,
+            heightScale: 1.0,
             shape: .circle
         )
         customization.customButtons = [
@@ -208,8 +236,9 @@ struct GamepadLayoutResolverSmokeTests {
             profileName: "Bad",
             canvasSize: CGSize(width: 874, height: 402)
         )
-        expect(report.hasErrors, "overlapping oversized controls should fail layout quality validation")
-        expect(report.issues.contains { $0.code == "requested-overlap" || $0.code == "resolved-overlap" }, "bad layout should report overlap issues")
+        expect(!report.hasErrors, "intentional control overlap should not fail layout quality validation")
+        expect(report.hasWarnings, "overlapping controls should still produce an advisory warning")
+        expect(report.issues.contains { $0.code == "control-overlap" }, "layout quality should report overlapping controls")
     }
 
     private static func testLayoutQualityDetectsUnderusedBottomSpace() {

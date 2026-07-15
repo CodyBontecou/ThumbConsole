@@ -10,7 +10,7 @@ struct InputLatencySimulationSmokeTests {
         testJSONInputFields()
         testPipelineCaptureFieldsRoundTrip()
 
-        let current = PocketPadInputLatencySimulator.run(
+        let current = ThumbConsoleInputLatencySimulator.run(
             pattern: .hollowKnight,
             mode: .current
         )
@@ -23,11 +23,11 @@ struct InputLatencySimulationSmokeTests {
             "current Hollow Knight path has no frame-budget misses"
         )
 
-        let legacyBurst = PocketPadInputLatencySimulator.run(
+        let legacyBurst = ThumbConsoleInputLatencySimulator.run(
             pattern: .sameButtonBurst,
             mode: .legacyMainActor
         )
-        let currentBurst = PocketPadInputLatencySimulator.run(
+        let currentBurst = ThumbConsoleInputLatencySimulator.run(
             pattern: .sameButtonBurst,
             mode: .current
         )
@@ -36,7 +36,7 @@ struct InputLatencySimulationSmokeTests {
             "legacy main-actor model exposes burst input lag"
         )
 
-        let recovery = PocketPadInputLatencySimulator.run(
+        let recovery = ThumbConsoleInputLatencySimulator.run(
             pattern: .udpRecovery,
             mode: .current
         )
@@ -53,7 +53,7 @@ struct InputLatencySimulationSmokeTests {
             "TCP mirror recovery stays below the strict action-game budget"
         )
 
-        let recoveryBurst = PocketPadInputLatencySimulator.run(
+        let recoveryBurst = ThumbConsoleInputLatencySimulator.run(
             pattern: .udpRecoveryBurst,
             mode: .current
         )
@@ -62,7 +62,7 @@ struct InputLatencySimulationSmokeTests {
             "UDP recovery burst stays below the strict action-game budget"
         )
 
-        let heldRecovery = PocketPadInputLatencySimulator.run(
+        let heldRecovery = ThumbConsoleInputLatencySimulator.run(
             pattern: .heldDirectionHeartbeatRecovery,
             mode: .current
         )
@@ -81,7 +81,7 @@ struct InputLatencySimulationSmokeTests {
             "held direction heartbeat recovery stays below the strict action-game budget"
         )
 
-        let verification = PocketPadInputLatencySimulator.verifyCurrentPath()
+        let verification = ThumbConsoleInputLatencySimulator.verifyCurrentPath()
         expect(
             verification.passed,
             "strict latency verification passes every current-path pattern"
@@ -182,8 +182,8 @@ struct InputLatencySimulationSmokeTests {
     }
 
     private static func testPipelineCaptureFieldsRoundTrip() {
-        let event = PocketPadCaptureEvent(
-            schemaVersion: 2,
+        let event = ThumbConsoleCaptureEvent(
+            schemaVersion: 3,
             kind: "input_pipeline",
             source: "iPhone UDP",
             messageType: .elementInput,
@@ -191,16 +191,31 @@ struct InputLatencySimulationSmokeTests {
             inputSequence: 88,
             decodeLatencyMS: 0.125,
             receiveToProcessedMS: 1.75,
-            reorderWaitMS: 0.5
+            reorderWaitMS: 0.5,
+            processingToCompletionMS: 1.125,
+            bindingLookupMS: 0.025,
+            outputInjectionMS: 0.75,
+            postInjectionMS: 0.2,
+            outputDeferred: false
         )
         do {
             let data = try JSONEncoder().encode(event)
-            let decoded = try JSONDecoder().decode(PocketPadCaptureEvent.self, from: data)
+            let decoded = try JSONDecoder().decode(ThumbConsoleCaptureEvent.self, from: data)
             expect(decoded.inputGeneration == 77, "pipeline capture preserves generation")
             expect(decoded.inputSequence == 88, "pipeline capture preserves input sequence")
             expect(decoded.decodeLatencyMS == 0.125, "pipeline capture preserves decode timing")
             expect(decoded.receiveToProcessedMS == 1.75, "pipeline capture preserves processing timing")
             expect(decoded.reorderWaitMS == 0.5, "pipeline capture preserves reorder timing")
+            expect(decoded.processingToCompletionMS == 1.125, "pipeline capture preserves input processing timing")
+            expect(decoded.bindingLookupMS == 0.025, "pipeline capture preserves binding lookup timing")
+            expect(decoded.outputInjectionMS == 0.75, "pipeline capture preserves output injection timing")
+            expect(decoded.postInjectionMS == 0.2, "pipeline capture preserves post-injection timing")
+            expect(decoded.outputDeferred == false, "pipeline capture preserves deferred-output state")
+
+            let legacyData = Data(#"{"schemaVersion":2,"recordedAt":1,"kind":"input_pipeline","decodeLatencyMS":0.1}"#.utf8)
+            let legacy = try JSONDecoder().decode(ThumbConsoleCaptureEvent.self, from: legacyData)
+            expect(legacy.outputInjectionMS == nil, "legacy pipeline capture remains decodable without output stages")
+            expect(legacy.outputDeferred == nil, "legacy pipeline capture has no deferred-output state")
         } catch {
             fputs("InputLatencySimulationSmokeTests failed: pipeline capture round trip: \(error)\n", stderr)
             exit(1)

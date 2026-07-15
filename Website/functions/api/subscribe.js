@@ -1,4 +1,4 @@
-const CONSENT_TEXT = "Send me PocketPad launch updates. No spam, unsubscribe anytime.";
+const CONSENT_TEXT = "Send me ThumbConsole launch updates. No spam, unsubscribe anytime.";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 
 const securityHeaders = {
@@ -34,7 +34,7 @@ function jsonResponse(request, body, status = 200) {
 }
 
 function htmlResponse(message, status = 200) {
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PocketPad waitlist</title><link rel="stylesheet" href="/styles.css"></head><body class="privacy-page"><main class="section-shell privacy-copy"><section class="pixel-panel"><p class="eyebrow">PocketPad waitlist</p><h1>${escapeHtml(message)}</h1><p><a class="pixel-button" href="/">Back to site</a></p></section></main></body></html>`, {
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ThumbConsole waitlist</title><link rel="stylesheet" href="/styles.css"></head><body class="privacy-page"><main class="section-shell privacy-copy"><section class="pixel-panel"><p class="eyebrow">ThumbConsole waitlist</p><h1>${escapeHtml(message)}</h1><p><a class="pixel-button" href="/">Back to site</a></p></section></main></body></html>`, {
     status,
     headers: {
       ...securityHeaders,
@@ -146,7 +146,7 @@ export async function onRequest(context) {
   }
 
   if (!consent) {
-    return fail(request, "Please confirm you want PocketPad launch updates.", 422);
+    return fail(request, "Please confirm you want ThumbConsole launch updates.", 422);
   }
 
   if (!env.DB) {

@@ -15,7 +15,7 @@ This can also show up as:
 
 ## Root Cause Pattern
 
-PocketPad depends on balanced touch down/up edges from the iOS capture views. If UIKit/SwiftUI misses or cancels a release path during view teardown, app backgrounding, layout/profile changes, or touch routing changes, the Mac can keep the last physical hold active.
+ThumbConsole depends on balanced touch down/up edges from the iOS capture views. If UIKit/SwiftUI misses or cancels a release path during view teardown, app backgrounding, layout/profile changes, or touch routing changes, the Mac can keep the last physical hold active.
 
 Before this fix, stale-hold recovery existed on the Mac side, but the timeout was long enough that a dropped release felt like an obvious stuck direction.
 
@@ -49,7 +49,7 @@ Follow-up physical testing showed that iOS can coalesce heartbeat delivery beyon
 
 ### Simulation update
 
-File: `Sources/Shared/PocketPadInputLatencySimulation.swift`
+File: `Sources/Shared/ThumbConsoleInputLatencySimulation.swift`
 
 - Updated held-direction heartbeat recovery simulation to the new `850ms` stale timeout.
 
@@ -58,9 +58,9 @@ File: `Sources/Shared/PocketPadInputLatencySimulation.swift`
 Commands used:
 
 ```bash
-xcodebuild -project PocketPad.xcodeproj -scheme PocketPadiOS -destination 'generic/platform=iOS Simulator' -derivedDataPath build/AgentDerivedData-direction-stuck build
-xcodebuild -project PocketPad.xcodeproj -scheme PocketPadMac -destination 'platform=macOS' -derivedDataPath build/AgentDerivedData-direction-stuck-mac build
-xcodebuild -project PocketPad.xcodeproj -scheme PocketPadCLI -destination 'platform=macOS' -derivedDataPath build/AgentDerivedData-direction-stuck-tests test
+xcodebuild -project ThumbConsole.xcodeproj -scheme ThumbConsoleiOS -destination 'generic/platform=iOS Simulator' -derivedDataPath build/AgentDerivedData-direction-stuck build
+xcodebuild -project ThumbConsole.xcodeproj -scheme ThumbConsoleMac -destination 'platform=macOS' -derivedDataPath build/AgentDerivedData-direction-stuck-mac build
+xcodebuild -project ThumbConsole.xcodeproj -scheme ThumbConsoleCLI -destination 'platform=macOS' -derivedDataPath build/AgentDerivedData-direction-stuck-tests test
 ```
 
 Results:
