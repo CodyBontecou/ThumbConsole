@@ -3288,22 +3288,40 @@ struct ThumbConsoleCLI {
     private static func test(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing test subcommand") }
         let rest = Array(arguments.dropFirst())
+        let elementInput = try optionValue("--element", in: rest).map(parseElementInput)
         switch subcommand {
         case "down":
-            let button = try parseButton(firstPositional(in: rest) ?? "jump")
-            postRuntimeCommand(.testDown, button: button)
-            print("Sent test down for \(button.displayName).")
+            if let elementInput {
+                postRuntimeCommand(.testDown, elementInput: elementInput)
+                print("Sent element test down for \(elementInput.storageKey).")
+            } else {
+                let button = try parseButton(firstPositional(in: rest) ?? "jump")
+                postRuntimeCommand(.testDown, button: button)
+                print("Sent test down for \(button.displayName).")
+            }
         case "up":
-            let button = try parseButton(firstPositional(in: rest) ?? "jump")
-            postRuntimeCommand(.testUp, button: button)
-            print("Sent test up for \(button.displayName).")
+            if let elementInput {
+                postRuntimeCommand(.testUp, elementInput: elementInput)
+                print("Sent element test up for \(elementInput.storageKey).")
+            } else {
+                let button = try parseButton(firstPositional(in: rest) ?? "jump")
+                postRuntimeCommand(.testUp, button: button)
+                print("Sent test up for \(button.displayName).")
+            }
         case "tap":
-            let button = try parseButton(firstPositional(in: rest) ?? "jump")
             let holdMS = Int(optionValue("--hold-ms", in: rest) ?? "120") ?? 120
-            postRuntimeCommand(.testDown, button: button)
-            Thread.sleep(forTimeInterval: Double(max(0, holdMS)) / 1000.0)
-            postRuntimeCommand(.testUp, button: button)
-            print("Tapped \(button.displayName).")
+            if let elementInput {
+                postRuntimeCommand(.testDown, elementInput: elementInput)
+                Thread.sleep(forTimeInterval: Double(min(max(holdMS, 0), 5_000)) / 1000.0)
+                postRuntimeCommand(.testUp, elementInput: elementInput)
+                print("Tapped element \(elementInput.storageKey).")
+            } else {
+                let button = try parseButton(firstPositional(in: rest) ?? "jump")
+                postRuntimeCommand(.testDown, button: button)
+                Thread.sleep(forTimeInterval: Double(max(0, holdMS)) / 1000.0)
+                postRuntimeCommand(.testUp, button: button)
+                print("Tapped \(button.displayName).")
+            }
         default:
             throw CLIError.message("Unknown test subcommand: \(subcommand)")
         }
@@ -3774,8 +3792,18 @@ struct ThumbConsoleCLI {
         String(format: "%.3f", value ?? 0)
     }
 
-    private static func postRuntimeCommand(_ command: ThumbConsoleMacCLICommand, button: GameButton? = nil, reason: String? = nil) {
-        let payload = ThumbConsoleMacCLICommandPayload(command: command, button: button, reason: reason)
+    private static func postRuntimeCommand(
+        _ command: ThumbConsoleMacCLICommand,
+        button: GameButton? = nil,
+        elementInput: KeypadElementInputID? = nil,
+        reason: String? = nil
+    ) {
+        let payload = ThumbConsoleMacCLICommandPayload(
+            command: command,
+            button: button,
+            elementInput: elementInput,
+            reason: reason
+        )
         guard let data = try? JSONEncoder().encode(payload) else { return }
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name(ThumbConsoleMacIPC.commandNotificationName),
@@ -3851,6 +3879,13 @@ struct ThumbConsoleCLI {
                 print("Input Protocol: v\(protocolVersion), generation \(generation), stale drops \(status.staleInputGenerationDrops ?? 0)")
             }
             print("Pressed: \(status.pressedButtons.map(\.rawValue).sorted().joined(separator: ", "))")
+            if let pressedElementInputs = status.pressedElementInputs {
+                print("Pressed Elements: \(pressedElementInputs.map(\.storageKey).sorted().joined(separator: ", "))")
+            }
+            if let deliveryState = status.editorDeliveryState {
+                let detail = status.editorDeliveryDetail.map { " — \($0)" } ?? ""
+                print("Editor Delivery: \(deliveryState.rawValue)\(detail)")
+            }
             if status.virtualGamepadActive != nil || status.virtualGamepadAvailable != nil || status.virtualGamepadLastError != nil {
                 let active = status.virtualGamepadActive == true ? "active" : "inactive"
                 let availability = status.virtualGamepadAvailable == false ? "unavailable" : "available"
@@ -4155,6 +4190,13 @@ struct ThumbConsoleCLI {
             return button
         }
         throw CLIError.message("Unknown button: \(text)")
+    }
+
+    private static func parseElementInput(_ text: String) throws -> KeypadElementInputID {
+        guard let input = KeypadElementInputID(storageKey: text) else {
+            throw CLIError.message("Invalid element input id: \(text). Use UUID or UUID#part.")
+        }
+        return input
     }
 
     private static func parseOutputMode(_ text: String) throws -> GamepadProfileOutputMode {
@@ -5033,6 +5075,7 @@ struct ThumbConsoleCLI {
           thumbconsole pairing code|payload|cancel
           thumbconsole accessibility status|prompt|open|refresh
           thumbconsole test tap jump
+          thumbconsole test tap --element UUID[#part] [--hold-ms 120]
           thumbconsole release-all
         """)
     }

@@ -9,6 +9,7 @@ final class MacControllerLiveActivity: ObservableObject {
     @Published var lastReceivedEvent: String = "None"
     @Published var estimatedLatencyMS: Int?
     @Published var pressedButtons: Set<GameButton> = []
+    @Published var pressedElementInputs: Set<KeypadElementInputID> = []
     @Published var missedButtonFrames = 0
     @Published var ignoredButtonEdges = 0
     @Published var recoveredButtonEdges = 0
@@ -26,6 +27,9 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var pendingPairingClientName: String?
     @Published private(set) var clientName: String = "No client"
     @Published private(set) var clientDeviceInfo: ControllerClientDeviceInfo?
+    @Published private(set) var editorDeliveryState: ThumbConsoleEditorDeliveryState = .offline
+    @Published private(set) var editorDeliveryDetail = "No iPhone connected"
+    @Published private(set) var editorDeliveryUpdatedAt = Date.currentMilliseconds
     private(set) var lastHeartbeat: Date? {
         get { liveActivity.lastHeartbeat }
         set { liveActivity.lastHeartbeat = newValue }
@@ -41,6 +45,10 @@ final class MacControllerServer: ObservableObject {
     private(set) var pressedButtons: Set<GameButton> {
         get { liveActivity.pressedButtons }
         set { liveActivity.pressedButtons = newValue }
+    }
+    private(set) var pressedElementInputs: Set<KeypadElementInputID> {
+        get { liveActivity.pressedElementInputs }
+        set { liveActivity.pressedElementInputs = newValue }
     }
     private(set) var missedButtonFrames: Int {
         get { liveActivity.missedButtonFrames }
@@ -215,6 +223,7 @@ final class MacControllerServer: ObservableObject {
     private var lastPingUptime: UInt64 = 0
     private var inputPressedButtons: Set<GameButton> = []
     private var inputPressedElementInputs: Set<KeypadElementInputID> = []
+    private var mirroredPressedElementInputs: Set<KeypadElementInputID> = []
     private var profileKeyBindings: [UUID: [GameButton: MacKeyBinding]] = [:]
     private var profileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]] = [:]
     private var realtimeKeyBindings: [GameButton: MacKeyBinding] {
@@ -237,7 +246,9 @@ final class MacControllerServer: ObservableObject {
     private var realtimeOutputMode: GamepadProfileOutputMode
     private var pendingLastReceivedEvent: String?
     private var pendingPressedButtons: Set<GameButton>?
+    private var pendingPressedElementInputs: Set<KeypadElementInputID>?
     private var controllerDebugUpdateTask: Task<Void, Never>?
+    private var editorDeliveryRevision: UInt64 = 0
     private var runtimeStatusPublishTask: Task<Void, Never>?
     private var lastRuntimeStatusPublishUptime: UInt64 = 0
     private var lastInputDebugPublishUptime: UInt64 = 0
@@ -584,6 +595,7 @@ final class MacControllerServer: ObservableObject {
         heartbeatTimedOut = false
         isRunning = false
         isClientConnected = false
+        markEditorDeliveryOffline(detail: "No iPhone connected")
         isPairingPending = false
         pendingPairingClientName = nil
         statusText = finalStatusText
@@ -675,20 +687,26 @@ final class MacControllerServer: ObservableObject {
             releaseAllAndNotifyClient(reason: payload.reason?.nilIfEmpty ?? "CLI release all")
 
         case .testDown:
-            guard let button = payload.button else {
-                lastReceivedEvent = "Ignored CLI test down: missing button"
-                break
+            if let input = payload.elementInput {
+                sendTestDown(input)
+                lastReceivedEvent = "CLI element test down: \(input.storageKey)"
+            } else if let button = payload.button {
+                sendTestDown(button)
+                lastReceivedEvent = "CLI test down: \(button.displayName)"
+            } else {
+                lastReceivedEvent = "Ignored CLI test down: missing button or element input"
             }
-            sendTestDown(button)
-            lastReceivedEvent = "CLI test down: \(button.displayName)"
 
         case .testUp:
-            guard let button = payload.button else {
-                lastReceivedEvent = "Ignored CLI test up: missing button"
-                break
+            if let input = payload.elementInput {
+                sendTestUp(input)
+                lastReceivedEvent = "CLI element test up: \(input.storageKey)"
+            } else if let button = payload.button {
+                sendTestUp(button)
+                lastReceivedEvent = "CLI test up: \(button.displayName)"
+            } else {
+                lastReceivedEvent = "Ignored CLI test up: missing button or element input"
             }
-            sendTestUp(button)
-            lastReceivedEvent = "CLI test up: \(button.displayName)"
         }
     }
 
@@ -1302,12 +1320,16 @@ final class MacControllerServer: ObservableObject {
         GamepadCustomizationPersistence.save(normalizedCustomization)
         let updatedProfiles = gamepadProfiles
         lastReceivedEvent = "Updated iPhone keypad layout"
+        let deliveryRevision = beginEditorDelivery(detail: "Keypad layout saved on this Mac")
 
         asyncOnNetworkQueue { [weak self] in
             guard let self else { return }
             self.realtimeGamepadCustomization = normalizedCustomization
             self.realtimeGamepadProfiles = updatedProfiles
-            self.sendGamepadCustomizationOnNetworkQueue(normalizedCustomization)
+            self.sendGamepadCustomizationOnNetworkQueue(
+                normalizedCustomization,
+                editorDeliveryRevision: deliveryRevision
+            )
         }
         logDebug("gamepad_customization_updated source=mac")
         refreshVirtualGamepadMaterialization(reason: "gamepad_customization", publish: false)
@@ -1366,6 +1388,7 @@ final class MacControllerServer: ObservableObject {
         saveProfileKeyBindings()
         saveOutputBindings()
         saveProfileOutputBindings()
+        let deliveryRevision = beginEditorDelivery(detail: "Keypad setup saved on this Mac")
 
         asyncOnNetworkQueue { [weak self] in
             guard let self else { return }
@@ -1376,7 +1399,7 @@ final class MacControllerServer: ObservableObject {
             self.realtimeActiveGamepadProfileID = state.activeProfileID
             self.realtimeDefaultGamepadProfileID = state.defaultProfileID
             self.realtimeOutputMode = state.activeProfile?.outputMode ?? .keyboard
-            self.sendGamepadProfileStateOnNetworkQueue()
+            self.sendGamepadProfileStateOnNetworkQueue(editorDeliveryRevision: deliveryRevision)
         }
         refreshVirtualGamepadMaterialization(reason: "gamepad_profile_state", publish: false)
         publishRuntimeStatus()
@@ -1656,6 +1679,49 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
+    func sendTestDown(_ input: KeypadElementInputID) {
+        asyncOnNetworkQueue { [weak self] in
+            _ = self?.handleElementInputOnNetworkQueue(
+                input,
+                state: .down,
+                source: "Local editor test",
+                pressIdentifier: nil
+            )
+        }
+    }
+
+    func sendTestUp(_ input: KeypadElementInputID) {
+        asyncOnNetworkQueue { [weak self] in
+            _ = self?.handleElementInputOnNetworkQueue(
+                input,
+                state: .up,
+                source: "Local editor test",
+                pressIdentifier: nil
+            )
+        }
+    }
+
+    func sendTestTap(_ input: KeypadElementInputID, holdMilliseconds: Int = 120) {
+        let boundedHoldMilliseconds = min(max(holdMilliseconds, 0), 5_000)
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            _ = self.handleElementInputOnNetworkQueue(
+                input,
+                state: .down,
+                source: "Local editor test",
+                pressIdentifier: nil
+            )
+            self.networkQueue.asyncAfter(deadline: .now() + .milliseconds(boundedHoldMilliseconds)) { [weak self] in
+                _ = self?.handleElementInputOnNetworkQueue(
+                    input,
+                    state: .up,
+                    source: "Local editor test",
+                    pressIdentifier: nil
+                )
+            }
+        }
+    }
+
     func releaseAll(reason: String = "Release all") {
         releaseAllAndNotifyClient(reason: reason)
     }
@@ -1791,6 +1857,8 @@ final class MacControllerServer: ObservableObject {
         resetInputPulseSequencersOnNetworkQueue()
         resetPhysicalInputTrackingOnNetworkQueue()
         buttonSequenceTracker.resetAcceptingNextSequenceAsBaseline()
+        let hadMirroredElementInputs = !mirroredPressedElementInputs.isEmpty
+        mirroredPressedElementInputs.removeAll()
         lastAnalogSequenceNumberByKey.removeAll()
         activeAnalogStickLastSeenByStick.removeAll()
         activeAnalogTriggerLastSeenByTrigger.removeAll()
@@ -1798,6 +1866,9 @@ final class MacControllerServer: ObservableObject {
 
         guard !inputPressedButtons.isEmpty || !inputPressedElementInputs.isEmpty || !heldBindingCounts.isEmpty || !heldGamepadButtonCounts.isEmpty || !activePointerButtons.isEmpty else {
             virtualGamepadInjector.reset()
+            if hadMirroredElementInputs {
+                publishControllerDebug(event: reason, pressedElementInputs: [], immediately: true)
+            }
             return
         }
         for binding in heldBindingCounts.keys {
@@ -1815,7 +1886,12 @@ final class MacControllerServer: ObservableObject {
         inputPressedButtons.removeAll()
         inputPressedElementInputs.removeAll()
         virtualGamepadInjector.reset()
-        publishControllerDebug(event: reason, pressedButtons: [], immediately: true)
+        publishControllerDebug(
+            event: reason,
+            pressedButtons: [],
+            pressedElementInputs: [],
+            immediately: true
+        )
         logDebug("release_all reason=\(reason) pressed=[]")
     }
 
@@ -2335,7 +2411,9 @@ final class MacControllerServer: ObservableObject {
                 inputProtocolVersion: ControllerWireCodec.currentInputProtocolVersion
             ),
             on: connection
-        )
+        ) { [weak self] error in
+            self?.markEditorHandshakeDelivery(error: error)
+        }
         publishHello(incomingClientName, clientDeviceInfo: clientDeviceInfo, from: connection)
 
         DispatchQueue.main.async { [weak self, weak connection] in
@@ -2822,12 +2900,16 @@ final class MacControllerServer: ObservableObject {
                 // heartbeat duplicate before reporting that no edge was applied.
                 return false
             }
+            mirroredPressedElementInputs.insert(input)
+            publishControllerDebug(pressedElementInputs: mirroredPressedElementInputs)
             handleElementInputEdgeOnNetworkQueue(input, state: .down, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, inputTimingKey: inputTimingKey)
             return true
 
         case .up:
             switch recordElementPressEndedOnNetworkQueue(input, pressIdentifier: pressIdentifier) {
             case .shouldReleaseKey:
+                mirroredPressedElementInputs.remove(input)
+                publishControllerDebug(pressedElementInputs: mirroredPressedElementInputs)
                 handleElementInputEdgeOnNetworkQueue(input, state: .up, source: source, sequenceInspection: sequenceInspection, pressIdentifier: pressIdentifier, messageTimestamp: messageTimestamp, inputTimingKey: inputTimingKey)
                 return true
 
@@ -4052,6 +4134,8 @@ final class MacControllerServer: ObservableObject {
 
         for input in elementInputsNeedingRelease {
             logDebug("recovered_element_input_edge reason=stale_hold_timeout input=\(input.storageKey) state=up")
+            mirroredPressedElementInputs.remove(input)
+            publishControllerDebug(pressedElementInputs: mirroredPressedElementInputs)
             handleElementInputEdgeOnNetworkQueue(input, state: .up, source: "Stale hold timeout")
         }
 
@@ -4137,6 +4221,9 @@ final class MacControllerServer: ObservableObject {
 
     private func releaseElementInputIfPressedOnNetworkQueue(_ input: KeypadElementInputID) {
         clearPhysicalHoldsOnNetworkQueue(for: input)
+        if mirroredPressedElementInputs.remove(input) != nil {
+            publishControllerDebug(pressedElementInputs: mirroredPressedElementInputs, immediately: true)
+        }
         guard inputPressedElementInputs.contains(input) else { return }
         inputPressedElementInputs.remove(input)
         if let activeOutput = activeElementOutputBindings.removeValue(forKey: input) {
@@ -4230,11 +4317,76 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func send(_ message: ControllerMessage, on connection: NWConnection) {
-        guard let data = try? ControllerWireCodec.encode(message, using: encoder) else { return }
+    @discardableResult
+    private func beginEditorDelivery(detail: String) -> UInt64 {
+        editorDeliveryRevision = editorDeliveryRevision == UInt64.max ? 1 : editorDeliveryRevision + 1
+        editorDeliveryState = .localSave
+        editorDeliveryDetail = detail
+        editorDeliveryUpdatedAt = Date.currentMilliseconds
+        publishRuntimeStatus()
+        return editorDeliveryRevision
+    }
+
+    private func updateEditorDelivery(
+        _ state: ThumbConsoleEditorDeliveryState,
+        revision: UInt64,
+        detail: String
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, revision == self.editorDeliveryRevision else { return }
+            self.editorDeliveryState = state
+            self.editorDeliveryDetail = detail
+            self.editorDeliveryUpdatedAt = Date.currentMilliseconds
+            self.publishRuntimeStatus()
+        }
+    }
+
+    private func markEditorDeliveryOffline(detail: String) {
+        editorDeliveryRevision = editorDeliveryRevision == UInt64.max ? 1 : editorDeliveryRevision + 1
+        editorDeliveryState = .offline
+        editorDeliveryDetail = detail
+        editorDeliveryUpdatedAt = Date.currentMilliseconds
+    }
+
+    private func markEditorHandshakeDelivery(error: Error?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.editorDeliveryState != .localSave,
+                  self.editorDeliveryState != .sending
+            else { return }
+            self.editorDeliveryRevision = self.editorDeliveryRevision == UInt64.max ? 1 : self.editorDeliveryRevision + 1
+            if let error {
+                self.editorDeliveryState = .failure
+                self.editorDeliveryDetail = "Could not send saved keypad during connection: \(error.localizedDescription)"
+            } else {
+                self.editorDeliveryState = .sent
+                self.editorDeliveryDetail = "Saved keypad sent during iPhone connection"
+            }
+            self.editorDeliveryUpdatedAt = Date.currentMilliseconds
+            self.publishRuntimeStatus()
+        }
+    }
+
+    private func send(
+        _ message: ControllerMessage,
+        on connection: NWConnection,
+        completion: ((Error?) -> Void)? = nil
+    ) {
+        let data: Data
+        do {
+            data = try ControllerWireCodec.encode(message, using: encoder)
+        } catch {
+            completion?(error)
+            return
+        }
         let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
         let context = NWConnection.ContentContext(identifier: "ThumbConsoleMessage", metadata: [metadata])
-        connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
+        connection.send(
+            content: data,
+            contentContext: context,
+            isComplete: true,
+            completion: .contentProcessed { error in completion?(error) }
+        )
     }
 
     private func gamepadCustomizationForClient(_ customization: GamepadCustomization) -> GamepadCustomization {
@@ -4264,8 +4416,27 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func sendGamepadCustomizationOnNetworkQueue(_ customization: GamepadCustomization) {
-        guard let pairedConnection else { return }
+    private func sendGamepadCustomizationOnNetworkQueue(
+        _ customization: GamepadCustomization,
+        editorDeliveryRevision: UInt64? = nil
+    ) {
+        guard let pairedConnection else {
+            if let editorDeliveryRevision {
+                updateEditorDelivery(
+                    .offline,
+                    revision: editorDeliveryRevision,
+                    detail: "Saved on this Mac; no iPhone is connected"
+                )
+            }
+            return
+        }
+        if let editorDeliveryRevision {
+            updateEditorDelivery(
+                .sending,
+                revision: editorDeliveryRevision,
+                detail: "Sending keypad layout to the connected iPhone"
+            )
+        }
         send(
             .init(
                 type: .gamepadCustomization,
@@ -4276,11 +4447,42 @@ final class MacControllerServer: ObservableObject {
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID
             ),
             on: pairedConnection
-        )
+        ) { [weak self] error in
+            guard let editorDeliveryRevision else { return }
+            if let error {
+                self?.updateEditorDelivery(
+                    .failure,
+                    revision: editorDeliveryRevision,
+                    detail: "Could not send keypad layout: \(error.localizedDescription)"
+                )
+            } else {
+                self?.updateEditorDelivery(
+                    .sent,
+                    revision: editorDeliveryRevision,
+                    detail: "Keypad layout sent to the connected iPhone"
+                )
+            }
+        }
     }
 
-    private func sendGamepadProfileStateOnNetworkQueue() {
-        guard let pairedConnection else { return }
+    private func sendGamepadProfileStateOnNetworkQueue(editorDeliveryRevision: UInt64? = nil) {
+        guard let pairedConnection else {
+            if let editorDeliveryRevision {
+                updateEditorDelivery(
+                    .offline,
+                    revision: editorDeliveryRevision,
+                    detail: "Saved on this Mac; no iPhone is connected"
+                )
+            }
+            return
+        }
+        if let editorDeliveryRevision {
+            updateEditorDelivery(
+                .sending,
+                revision: editorDeliveryRevision,
+                detail: "Sending keypad setup to the connected iPhone"
+            )
+        }
         send(
             .init(
                 type: .gamepadProfiles,
@@ -4291,7 +4493,22 @@ final class MacControllerServer: ObservableObject {
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID
             ),
             on: pairedConnection
-        )
+        ) { [weak self] error in
+            guard let editorDeliveryRevision else { return }
+            if let error {
+                self?.updateEditorDelivery(
+                    .failure,
+                    revision: editorDeliveryRevision,
+                    detail: "Could not send keypad setup: \(error.localizedDescription)"
+                )
+            } else {
+                self?.updateEditorDelivery(
+                    .sent,
+                    revision: editorDeliveryRevision,
+                    detail: "Keypad setup sent to the connected iPhone"
+                )
+            }
+        }
     }
 
     private func publishBonjourService(on port: UInt16) {
@@ -4438,6 +4655,7 @@ final class MacControllerServer: ObservableObject {
         connection = nil
         heartbeatTimedOut = false
         isClientConnected = false
+        markEditorDeliveryOffline(detail: reason)
         isPairingPending = false
         pendingPairingClientName = nil
         clientName = "No client"
@@ -4651,12 +4869,14 @@ final class MacControllerServer: ObservableObject {
     private func publishControllerDebug(
         event: String? = nil,
         pressedButtons: Set<GameButton>? = nil,
+        pressedElementInputs: Set<KeypadElementInputID>? = nil,
         immediately: Bool = false
     ) {
         DispatchQueue.main.async { [weak self] in
             self?.publishControllerDebugOnMain(
                 event: event,
                 pressedButtons: pressedButtons,
+                pressedElementInputs: pressedElementInputs,
                 immediately: immediately
             )
         }
@@ -4665,6 +4885,7 @@ final class MacControllerServer: ObservableObject {
     private func publishControllerDebugOnMain(
         event: String? = nil,
         pressedButtons: Set<GameButton>? = nil,
+        pressedElementInputs: Set<KeypadElementInputID>? = nil,
         immediately: Bool = false
     ) {
         if let event {
@@ -4672,6 +4893,9 @@ final class MacControllerServer: ObservableObject {
         }
         if let pressedButtons {
             pendingPressedButtons = pressedButtons
+        }
+        if let pressedElementInputs {
+            pendingPressedElementInputs = pressedElementInputs
         }
 
         if immediately {
@@ -4693,6 +4917,10 @@ final class MacControllerServer: ObservableObject {
         if let pendingPressedButtons {
             pressedButtons = pendingPressedButtons
             self.pendingPressedButtons = nil
+        }
+        if let pendingPressedElementInputs {
+            pressedElementInputs = pendingPressedElementInputs
+            self.pendingPressedElementInputs = nil
         }
         if let pendingLastReceivedEvent {
             lastReceivedEvent = pendingLastReceivedEvent
@@ -4849,6 +5077,9 @@ final class MacControllerServer: ObservableObject {
     private func runtimeStatusSnapshot() -> ThumbConsoleMacRuntimeStatus {
         let virtualGamepadStatus = virtualGamepadInjector.status()
         let inputDiagnostics = inputDiagnosticsSnapshot()
+        let pressedElementInputs = syncOnNetworkQueue {
+            mirroredPressedElementInputs.sorted { $0.storageKey < $1.storageKey }
+        }
         return ThumbConsoleMacRuntimeStatus(
             updatedAt: Date.currentMilliseconds,
             statusText: statusText,
@@ -4880,6 +5111,10 @@ final class MacControllerServer: ObservableObject {
             activeInputGeneration: inputDiagnostics.generation,
             staleInputGenerationDrops: inputDiagnostics.staleGenerationDrops,
             pressedButtons: GameButton.allCases.filter { pressedButtons.contains($0) },
+            pressedElementInputs: pressedElementInputs,
+            editorDeliveryState: editorDeliveryState,
+            editorDeliveryDetail: editorDeliveryDetail,
+            editorDeliveryUpdatedAt: editorDeliveryUpdatedAt,
             missedButtonFrames: missedButtonFrames,
             ignoredButtonEdges: ignoredButtonEdges,
             recoveredButtonEdges: recoveredButtonEdges,

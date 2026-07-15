@@ -269,6 +269,92 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(decoded.postInjectionP95MS, 0.2)
     }
 
+    func testElementRuntimeCommandPayloadRoundTripsAndLegacyPayloadStillDecodes() throws {
+        let input = KeypadElementInputID(
+            elementID: UUID(uuidString: "00000000-0000-0000-0000-00000000E2E2")!,
+            part: .joystickRight
+        )
+        let payload = ThumbConsoleMacCLICommandPayload(
+            command: .testDown,
+            elementInput: input,
+            reason: "Editor test"
+        )
+
+        let data = try JSONEncoder().encode(payload)
+        let decoded = try JSONDecoder().decode(ThumbConsoleMacCLICommandPayload.self, from: data)
+        XCTAssertEqual(decoded.command, .testDown)
+        XCTAssertEqual(decoded.elementInput, input)
+        XCTAssertNil(decoded.button)
+        XCTAssertEqual(decoded.reason, "Editor test")
+
+        let legacyData = Data(#"{"command":"testUp","button":"jump","reason":"Legacy test"}"#.utf8)
+        let legacy = try JSONDecoder().decode(ThumbConsoleMacCLICommandPayload.self, from: legacyData)
+        XCTAssertEqual(legacy.command, .testUp)
+        XCTAssertEqual(legacy.button, .jump)
+        XCTAssertNil(legacy.elementInput)
+        XCTAssertEqual(legacy.reason, "Legacy test")
+    }
+
+    func testRuntimeStatusElementAndEditorDeliveryFieldsRoundTripBackwardCompatibly() throws {
+        let profileID = UUID(uuidString: "00000000-0000-0000-0000-00000000A222")!
+        let input = KeypadElementInputID(
+            elementID: UUID(uuidString: "00000000-0000-0000-0000-00000000E3E3")!,
+            part: .triggerDigital
+        )
+        let status = ThumbConsoleMacRuntimeStatus(
+            updatedAt: 456,
+            statusText: "Connected",
+            isRunning: true,
+            isClientConnected: true,
+            localURLs: [],
+            pairingCode: "654321",
+            isPairingPending: false,
+            pendingPairingClientName: nil,
+            clientName: "iPhone",
+            lastHeartbeatMilliseconds: nil,
+            lastReceivedEvent: "element down",
+            estimatedLatencyMS: nil,
+            pressedButtons: [],
+            pressedElementInputs: [input],
+            editorDeliveryState: .sent,
+            editorDeliveryDetail: "Keypad layout sent to the connected iPhone",
+            editorDeliveryUpdatedAt: 455,
+            missedButtonFrames: 0,
+            ignoredButtonEdges: 0,
+            recoveredButtonEdges: 0,
+            accessibilityTrusted: true,
+            port: 8765,
+            activeGamepadProfileID: profileID,
+            defaultGamepadProfileID: profileID
+        )
+
+        let data = try JSONEncoder().encode(status)
+        let decoded = try JSONDecoder().decode(ThumbConsoleMacRuntimeStatus.self, from: data)
+        XCTAssertEqual(decoded.pressedElementInputs, [input])
+        XCTAssertEqual(decoded.editorDeliveryState, .sent)
+        XCTAssertEqual(decoded.editorDeliveryDetail, "Keypad layout sent to the connected iPhone")
+        XCTAssertEqual(decoded.editorDeliveryUpdatedAt, 455)
+
+        var legacyObject = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacyObject["pressedElementInputs"] = nil
+        legacyObject["editorDeliveryState"] = nil
+        legacyObject["editorDeliveryDetail"] = nil
+        legacyObject["editorDeliveryUpdatedAt"] = nil
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+        let legacyDecoded = try JSONDecoder().decode(ThumbConsoleMacRuntimeStatus.self, from: legacyData)
+        XCTAssertNil(legacyDecoded.pressedElementInputs)
+        XCTAssertNil(legacyDecoded.editorDeliveryState)
+        XCTAssertNil(legacyDecoded.editorDeliveryDetail)
+        XCTAssertNil(legacyDecoded.editorDeliveryUpdatedAt)
+    }
+
+    func testEditorDeliveryStatesRoundTrip() throws {
+        for state in [ThumbConsoleEditorDeliveryState.localSave, .sending, .sent, .offline, .failure] {
+            let data = try JSONEncoder().encode(state)
+            XCTAssertEqual(try JSONDecoder().decode(ThumbConsoleEditorDeliveryState.self, from: data), state)
+        }
+    }
+
     func testElementInputMessageRoundTrips() throws {
         let elementID = UUID(uuidString: "00000000-0000-0000-0000-00000000E1E1")!
         let message = ControllerMessage(

@@ -343,17 +343,28 @@ public struct ControllerClientDeviceInfo: Codable, Equatable, Sendable {
 public struct ThumbConsoleMacCLICommandPayload: Codable, Sendable {
     public var command: ThumbConsoleMacCLICommand
     public var button: GameButton?
+    public var elementInput: KeypadElementInputID?
     public var reason: String?
 
     public init(
         command: ThumbConsoleMacCLICommand,
         button: GameButton? = nil,
+        elementInput: KeypadElementInputID? = nil,
         reason: String? = nil
     ) {
         self.command = command
         self.button = button
+        self.elementInput = elementInput
         self.reason = reason
     }
+}
+
+public enum ThumbConsoleEditorDeliveryState: String, Codable, Equatable, Sendable {
+    case localSave = "local_save"
+    case sending
+    case sent
+    case offline
+    case failure
 }
 
 public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
@@ -387,6 +398,10 @@ public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
     public var activeInputGeneration: UInt64?
     public var staleInputGenerationDrops: Int?
     public var pressedButtons: [GameButton]
+    public var pressedElementInputs: [KeypadElementInputID]?
+    public var editorDeliveryState: ThumbConsoleEditorDeliveryState?
+    public var editorDeliveryDetail: String?
+    public var editorDeliveryUpdatedAt: Int64?
     public var missedButtonFrames: Int
     public var ignoredButtonEdges: Int
     public var recoveredButtonEdges: Int
@@ -438,6 +453,10 @@ public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
         activeInputGeneration: UInt64? = nil,
         staleInputGenerationDrops: Int? = nil,
         pressedButtons: [GameButton],
+        pressedElementInputs: [KeypadElementInputID]? = nil,
+        editorDeliveryState: ThumbConsoleEditorDeliveryState? = nil,
+        editorDeliveryDetail: String? = nil,
+        editorDeliveryUpdatedAt: Int64? = nil,
         missedButtonFrames: Int,
         ignoredButtonEdges: Int,
         recoveredButtonEdges: Int,
@@ -488,6 +507,10 @@ public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
         self.activeInputGeneration = activeInputGeneration
         self.staleInputGenerationDrops = staleInputGenerationDrops
         self.pressedButtons = pressedButtons
+        self.pressedElementInputs = pressedElementInputs
+        self.editorDeliveryState = editorDeliveryState
+        self.editorDeliveryDetail = editorDeliveryDetail
+        self.editorDeliveryUpdatedAt = editorDeliveryUpdatedAt
         self.missedButtonFrames = missedButtonFrames
         self.ignoredButtonEdges = ignoredButtonEdges
         self.recoveredButtonEdges = recoveredButtonEdges
