@@ -158,6 +158,12 @@ struct ThumbConsoleCLI {
         var description: String
     }
 
+    private struct OrientationPreferenceSummary: Codable {
+        var profileID: UUID
+        var profileName: String
+        var orientation: GamepadProfileOrientationPreference
+    }
+
     private struct ElementSummary: Codable {
         var id: String
         var kind: String
@@ -668,6 +674,9 @@ struct ThumbConsoleCLI {
         let baseCustomization: GamepadCustomization
         let baseOutputMode: GamepadProfileOutputMode
         let defaultName: String
+        var baseLandscapeCustomization: GamepadCustomization? = nil
+        var basePortraitCustomization: GamepadCustomization? = nil
+        var baseOrientationPreference: GamepadProfileOrientationPreference = .automatic
         var baseBindings = decodedBindings(store.profileKeyBindings[store.activeProfileID.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
         var baseOutputBindings: [String: MacControlOutputBinding]?
 
@@ -676,11 +685,17 @@ struct ThumbConsoleCLI {
             let profile = template.makeProfile()
             baseCustomization = profile.customization
             baseOutputMode = profile.outputMode
+            baseLandscapeCustomization = profile.landscapeCustomization
+            basePortraitCustomization = profile.portraitCustomization
+            baseOrientationPreference = profile.orientationPreference
             defaultName = profile.name
         } else if let fromProfile {
             let profile = try resolveProfile(fromProfile, in: store)
             baseCustomization = profile.customization
             baseOutputMode = profile.outputMode
+            baseLandscapeCustomization = profile.landscapeCustomization
+            basePortraitCustomization = profile.portraitCustomization
+            baseOrientationPreference = profile.orientationPreference
             defaultName = "\(profile.name) Copy"
             baseBindings = decodedBindings(store.profileKeyBindings[profile.id.uuidString]) ?? baseBindings
             baseOutputBindings = store.profileOutputBindings[profile.id.uuidString]
@@ -694,7 +709,14 @@ struct ThumbConsoleCLI {
             defaultName = "Setup \(store.profiles.count + 1)"
         }
 
-        let profile = GamepadConfigurationProfile(name: requestedName.isEmpty ? defaultName : requestedName, customization: baseCustomization, outputMode: baseOutputMode)
+        let profile = GamepadConfigurationProfile(
+            name: requestedName.isEmpty ? defaultName : requestedName,
+            customization: baseCustomization,
+            landscapeCustomization: baseLandscapeCustomization,
+            portraitCustomization: basePortraitCustomization,
+            orientationPreference: baseOrientationPreference,
+            outputMode: baseOutputMode
+        )
         store.profiles.append(profile)
         store.profileKeyBindings[profile.id.uuidString] = rawBindings(baseBindings)
         if let baseOutputBindings {
@@ -1377,6 +1399,33 @@ struct ThumbConsoleCLI {
 
     private static func orientation(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing orientation subcommand") }
+        if subcommand == "get" || subcommand == "show" || subcommand == "set" {
+            switch try GamepadProfileOrientationCLIParser.parse(arguments) {
+            case .get(let profileTarget, let json):
+                let store = loadStore()
+                let profile = try resolveProfile(profileTarget, in: store)
+                let summary = OrientationPreferenceSummary(
+                    profileID: profile.id,
+                    profileName: profile.name,
+                    orientation: profile.orientationPreference
+                )
+                if json {
+                    try printJSON(summary)
+                } else {
+                    print(profile.orientationPreference.rawValue)
+                }
+            case .set(let preference, let profileTarget):
+                var store = loadStore()
+                let profileIndex = try resolveProfileIndex(profileTarget, in: store)
+                store.profiles[profileIndex].orientationPreference = preference
+                store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
+                let profileName = store.profiles[profileIndex].name
+                try persistStore(store)
+                print("Set iPhone rotation for \"\(profileName)\" to \(preference.rawValue).")
+            }
+            return
+        }
+
         let rest = Array(arguments.dropFirst())
         guard subcommand == "copy" || subcommand == "arrange" else {
             throw CLIError.message("Unknown orientation subcommand: \(subcommand)")
@@ -4112,6 +4161,9 @@ struct ThumbConsoleCLI {
             print("Port: \(status.port)")
             print("Pairing Code: \(status.pairingCode)")
             print("Accessibility: \(status.accessibilityTrusted ? "granted" : "required")")
+            if let preference = status.activeGamepadProfileOrientationPreference {
+                print("iPhone Rotation: \(preference.rawValue)")
+            }
             if let serviceName = status.bonjourServiceName, !serviceName.isEmpty {
                 let serviceType = status.bonjourServiceType ?? PairingPayload.defaultServiceType
                 print("Nearby Service: \(serviceName) (\(serviceType))")
@@ -5130,6 +5182,7 @@ struct ThumbConsoleCLI {
         print("Active: \(profile.id == store.activeProfileID ? "yes" : "no")")
         print("Default: \(profile.id == store.defaultProfileID ? "yes" : "no")")
         print("Output: \(profile.outputMode.displayName)")
+        print("iPhone Rotation: \(profile.orientationPreference.rawValue)")
         if let launchTarget = profile.launchTarget {
             print("Attached Application: \(launchTarget.displayName) (\(launchTarget.detailText))")
         } else {
@@ -5304,6 +5357,8 @@ struct ThumbConsoleCLI {
           thumbconsole customization set --device iphone-17-pro --orientation landscape
           thumbconsole customization set --variant portrait --device iphone-17-pro --orientation portrait
           thumbconsole customization export -o customization.json [--variant portrait|landscape]
+          thumbconsole orientation get [--profile PROFILE] [--json]
+          thumbconsole orientation set automatic|portrait|landscape [--profile PROFILE]
           thumbconsole orientation copy landscape portrait [--profile PROFILE] [--no-arrange]
           thumbconsole orientation arrange portrait [--from landscape] [--profile PROFILE]
           thumbconsole layout validate [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--json|--strict]

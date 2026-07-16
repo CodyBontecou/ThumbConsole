@@ -187,6 +187,9 @@ final class MacControllerServer: ObservableObject {
     private static let notificationProfileKeyBindingsDataKey = "profileKeyBindingsData"
     private static let notificationOutputBindingsDataKey = "outputBindingsData"
     private static let notificationProfileOutputBindingsDataKey = "profileOutputBindingsData"
+    private static let advertisedCapabilities: Set<ControllerCapability> = [
+        .gamepadProfileOrientationPreferenceMutation
+    ]
     private static let inputEventLoggingEnabled = false
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
     private static let clientActivityPublishIntervalNanoseconds: UInt64 = 100_000_000
@@ -1473,6 +1476,35 @@ final class MacControllerServer: ObservableObject {
         publishRuntimeStatus()
     }
 
+    func setGamepadProfileOrientationPreference(
+        _ preference: GamepadProfileOrientationPreference,
+        profileID: UUID,
+        source: String = "mac"
+    ) {
+        guard let index = gamepadProfiles.firstIndex(where: { $0.id == profileID }) else {
+            asyncOnNetworkQueue { [weak self] in self?.sendGamepadProfileStateOnNetworkQueue() }
+            return
+        }
+        guard gamepadProfiles[index].orientationPreference != preference else {
+            asyncOnNetworkQueue { [weak self] in self?.sendGamepadProfileStateOnNetworkQueue() }
+            return
+        }
+
+        gamepadProfiles[index].orientationPreference = preference
+        gamepadProfiles[index].updatedAt = Date.currentMilliseconds
+        let updatedProfiles = gamepadProfiles
+        persistGamepadProfileState()
+        lastReceivedEvent = "Updated iPhone rotation for \(gamepadProfiles[index].name)"
+
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            self.realtimeGamepadProfiles = updatedProfiles
+            self.sendGamepadProfileStateOnNetworkQueue()
+        }
+        logDebug("profile_orientation_preference_updated source=\(source) profile=\(profileID.uuidString) preference=\(preference.rawValue)")
+        publishRuntimeStatus()
+    }
+
     func launchAttachedApplication(for profileID: UUID? = nil, source: String = "mac") {
         let targetProfileID = profileID ?? activeGamepadProfileID
         guard let profile = gamepadProfiles.first(where: { $0.id == targetProfileID }) else {
@@ -2336,6 +2368,22 @@ final class MacControllerServer: ObservableObject {
                 self?.setDefaultGamepadProfile(profileID, source: "iphone")
             }
 
+        case .gamepadProfileOrientationPreferenceMutation:
+            switch ControllerProfileOrientationMutationRouter.route(
+                message: message,
+                isAuthenticated: isPairedConnection,
+                advertisedCapabilities: Self.advertisedCapabilities
+            ) {
+            case .accept(let profileID, let preference):
+                DispatchQueue.main.async { [weak self] in
+                    self?.setGamepadProfileOrientationPreference(preference, profileID: profileID, source: "iphone")
+                }
+            case .rejectMalformed:
+                send(.init(type: .error, message: "Invalid profile orientation preference mutation"), on: connection)
+            case .rejectUnauthenticated, .rejectUnsupportedCapability:
+                logDebug("ignored_profile_orientation_mutation reason=unauthorized_or_unsupported")
+            }
+
         case .launchProfileTarget:
             guard isPairedConnection else { return }
             let profileID = message.gamepadProfileID
@@ -2426,6 +2474,7 @@ final class MacControllerServer: ObservableObject {
                 gamepadProfiles: clientGamepadProfiles,
                 gamepadProfileID: realtimeActiveGamepadProfileID,
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID,
+                capabilities: Array(Self.advertisedCapabilities).sorted { $0.rawValue < $1.rawValue },
                 inputProtocolVersion: ControllerWireCodec.currentInputProtocolVersion
             ),
             on: connection
@@ -4474,7 +4523,8 @@ final class MacControllerServer: ObservableObject {
                 gamepadCustomization: gamepadCustomizationForClient(customization),
                 gamepadProfiles: gamepadProfilesForClient(realtimeGamepadProfiles),
                 gamepadProfileID: realtimeActiveGamepadProfileID,
-                defaultGamepadProfileID: realtimeDefaultGamepadProfileID
+                defaultGamepadProfileID: realtimeDefaultGamepadProfileID,
+                capabilities: Array(Self.advertisedCapabilities).sorted { $0.rawValue < $1.rawValue }
             ),
             on: pairedConnection
         ) { [weak self] error in
@@ -4520,7 +4570,8 @@ final class MacControllerServer: ObservableObject {
                 gamepadCustomization: gamepadCustomizationForClient(realtimeGamepadCustomization),
                 gamepadProfiles: gamepadProfilesForClient(realtimeGamepadProfiles),
                 gamepadProfileID: realtimeActiveGamepadProfileID,
-                defaultGamepadProfileID: realtimeDefaultGamepadProfileID
+                defaultGamepadProfileID: realtimeDefaultGamepadProfileID,
+                capabilities: Array(Self.advertisedCapabilities).sorted { $0.rawValue < $1.rawValue }
             ),
             on: pairedConnection
         ) { [weak self] error in
@@ -5152,6 +5203,7 @@ final class MacControllerServer: ObservableObject {
             port: port,
             activeGamepadProfileID: activeGamepadProfileID,
             defaultGamepadProfileID: defaultGamepadProfileID,
+            activeGamepadProfileOrientationPreference: gamepadProfiles.first(where: { $0.id == activeGamepadProfileID })?.orientationPreference,
             clientDeviceInfo: clientDeviceInfo,
             virtualGamepadActive: virtualGamepadStatus.isActive,
             virtualGamepadAvailable: virtualGamepadStatus.isAvailable,

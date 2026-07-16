@@ -410,6 +410,7 @@ public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
     public var port: UInt16
     public var activeGamepadProfileID: UUID
     public var defaultGamepadProfileID: UUID
+    public var activeGamepadProfileOrientationPreference: GamepadProfileOrientationPreference?
     public var clientDeviceInfo: ControllerClientDeviceInfo?
     public var virtualGamepadActive: Bool?
     public var virtualGamepadAvailable: Bool?
@@ -465,6 +466,7 @@ public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
         port: UInt16,
         activeGamepadProfileID: UUID,
         defaultGamepadProfileID: UUID,
+        activeGamepadProfileOrientationPreference: GamepadProfileOrientationPreference? = nil,
         clientDeviceInfo: ControllerClientDeviceInfo? = nil,
         virtualGamepadActive: Bool? = nil,
         virtualGamepadAvailable: Bool? = nil,
@@ -519,6 +521,7 @@ public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
         self.port = port
         self.activeGamepadProfileID = activeGamepadProfileID
         self.defaultGamepadProfileID = defaultGamepadProfileID
+        self.activeGamepadProfileOrientationPreference = activeGamepadProfileOrientationPreference
         self.clientDeviceInfo = clientDeviceInfo
         self.virtualGamepadActive = virtualGamepadActive
         self.virtualGamepadAvailable = virtualGamepadAvailable
@@ -551,6 +554,12 @@ public enum ControllerPointerButton: String, Codable, Sendable {
     case middle
 }
 
+public enum ControllerCapability: String, Codable, CaseIterable, Sendable {
+    /// The Mac accepts authenticated, profile-scoped orientation preference mutations
+    /// and responds by broadcasting the complete authoritative profile state.
+    case gamepadProfileOrientationPreferenceMutation = "gamepad_profile_orientation_preference_mutation"
+}
+
 public enum ControllerMessageType: String, Codable, Sendable {
     case hello
     case pairingRequest = "pairing_request"
@@ -568,6 +577,9 @@ public enum ControllerMessageType: String, Codable, Sendable {
     case gamepadProfiles = "gamepad_profiles"
     case gamepadProfileSelection = "gamepad_profile_selection"
     case gamepadDefaultProfile = "gamepad_default_profile"
+    /// Sent only after the Mac advertises the matching capability. Older peers never
+    /// receive this message type and continue to treat orientation as automatic.
+    case gamepadProfileOrientationPreferenceMutation = "gamepad_profile_orientation_preference_mutation"
     case launchProfileTarget = "launch_profile_target"
     case error
 }
@@ -590,6 +602,10 @@ public struct ControllerMessage: Codable, Sendable {
     public var gamepadProfiles: [GamepadConfigurationProfile]?
     public var gamepadProfileID: UUID?
     public var defaultGamepadProfileID: UUID?
+    public var capabilities: [ControllerCapability]?
+    /// A profile-scoped mutation payload. It is valid only with
+    /// `gamepadProfileOrientationPreferenceMutation` and `gamepadProfileID`.
+    public var gamepadProfileOrientationPreferenceMutation: GamepadProfileOrientationPreference?
     public var clientDeviceInfo: ControllerClientDeviceInfo?
     public var pointerEvent: ControllerPointerEventKind?
     public var pointerButton: ControllerPointerButton?
@@ -624,6 +640,8 @@ public struct ControllerMessage: Codable, Sendable {
         gamepadProfiles: [GamepadConfigurationProfile]? = nil,
         gamepadProfileID: UUID? = nil,
         defaultGamepadProfileID: UUID? = nil,
+        capabilities: [ControllerCapability]? = nil,
+        gamepadProfileOrientationPreferenceMutation: GamepadProfileOrientationPreference? = nil,
         clientDeviceInfo: ControllerClientDeviceInfo? = nil,
         pointerEvent: ControllerPointerEventKind? = nil,
         pointerButton: ControllerPointerButton? = nil,
@@ -657,6 +675,8 @@ public struct ControllerMessage: Codable, Sendable {
         self.gamepadProfiles = gamepadProfiles
         self.gamepadProfileID = gamepadProfileID
         self.defaultGamepadProfileID = defaultGamepadProfileID
+        self.capabilities = capabilities
+        self.gamepadProfileOrientationPreferenceMutation = gamepadProfileOrientationPreferenceMutation
         self.clientDeviceInfo = clientDeviceInfo
         self.pointerEvent = pointerEvent
         self.pointerButton = pointerButton
@@ -900,6 +920,8 @@ public enum ControllerWireCodec {
               message.gamepadProfiles == nil,
               message.gamepadProfileID == nil,
               message.defaultGamepadProfileID == nil,
+              message.capabilities == nil,
+              message.gamepadProfileOrientationPreferenceMutation == nil,
               message.clientDeviceInfo == nil,
               message.pointerEvent == nil,
               message.pointerButton == nil,
@@ -1111,7 +1133,7 @@ private extension ControllerMessageType {
         case .heartbeat: 3
         case .ping: 4
         case .pong: 5
-        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .elementInput, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .launchProfileTarget, .error: nil
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .elementInput, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .gamepadProfileOrientationPreferenceMutation, .launchProfileTarget, .error: nil
         }
     }
 

@@ -867,6 +867,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
     @Published private(set) var selectedGamepadProfileID: UUID
     @Published private(set) var defaultGamepadProfileID: UUID
+    @Published private(set) var serverCapabilities: Set<ControllerCapability> = []
     @Published private(set) var hasSavedKeypadSnapshot = false
     @Published private(set) var smartConnectStatus: String?
 
@@ -924,6 +925,14 @@ final class ControllerClient: ObservableObject {
 
     var isSelectedGamepadProfileDefault: Bool {
         selectedGamepadProfileID == defaultGamepadProfileID
+    }
+
+    var selectedGamepadProfileOrientationPreference: GamepadProfileOrientationPreference {
+        selectedGamepadProfile?.orientationPreference ?? .automatic
+    }
+
+    var supportsGamepadProfileOrientationPreferenceMutation: Bool {
+        isConnected && serverCapabilities.contains(.gamepadProfileOrientationPreferenceMutation)
     }
 
     init() {
@@ -1133,6 +1142,7 @@ final class ControllerClient: ObservableObject {
         currentServiceResolution = nil
         currentAuthToken = nil
         currentExpectedServerID = nil
+        serverCapabilities = []
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
@@ -1266,6 +1276,32 @@ final class ControllerClient: ObservableObject {
         updateLastSentEvent("default keypad saved", immediately: true)
     }
 
+    @discardableResult
+    func setSelectedGamepadProfileOrientationPreference(
+        _ preference: GamepadProfileOrientationPreference
+    ) -> Bool {
+        guard supportsGamepadProfileOrientationPreferenceMutation,
+              let index = gamepadProfiles.firstIndex(where: { $0.id == selectedGamepadProfileID })
+        else { return false }
+        guard gamepadProfiles[index].orientationPreference != preference else { return true }
+
+        // Optimism is intentionally capability-gated. Old Macs never advertise the
+        // mutation capability, so their saved profile remains authoritative and unchanged.
+        gamepadProfiles[index].orientationPreference = preference
+        gamepadProfiles[index].updatedAt = Date.currentMilliseconds
+        persistGamepadProfiles()
+        send(
+            .init(
+                type: .gamepadProfileOrientationPreferenceMutation,
+                timestamp: 0,
+                gamepadProfileID: selectedGamepadProfileID,
+                gamepadProfileOrientationPreferenceMutation: preference
+            )
+        )
+        updateLastSentEvent("iPhone rotation: \(preference.displayName)", immediately: true)
+        return true
+    }
+
     func launchSelectedProfileTarget() {
         guard isConnected,
               let profile = selectedGamepadProfile,
@@ -1357,6 +1393,9 @@ final class ControllerClient: ObservableObject {
     }
 
     private func applyGamepadProfileStateFromMac(_ message: ControllerMessage) {
+        if let capabilities = message.capabilities {
+            serverCapabilities = Set(capabilities)
+        }
         guard let incomingProfiles = message.gamepadProfiles, !incomingProfiles.isEmpty else {
             if let customization = message.gamepadCustomization {
                 applyGamepadCustomizationFromMac(customization)
@@ -1445,6 +1484,7 @@ final class ControllerClient: ObservableObject {
             currentServiceResolution = nil
             currentAuthToken = nil
             currentExpectedServerID = nil
+            serverCapabilities = []
             UIApplication.shared.isIdleTimerDisabled = false
             if case .failed = state {
                 return
@@ -1661,7 +1701,7 @@ final class ControllerClient: ObservableObject {
             state = .failed(lastError ?? "Unknown error")
             closeConnection(sendReleaseAll: false)
 
-        case .gamepadProfileSelection, .gamepadDefaultProfile:
+        case .gamepadProfileSelection, .gamepadDefaultProfile, .gamepadProfileOrientationPreferenceMutation:
             break
 
         default:
@@ -1818,6 +1858,7 @@ final class ControllerClient: ObservableObject {
         currentServiceResolution = nil
         currentAuthToken = nil
         currentExpectedServerID = nil
+        serverCapabilities = []
         UIApplication.shared.isIdleTimerDisabled = false
         state = .failed(error.localizedDescription)
         scheduleSmartReconnectIfNeeded()

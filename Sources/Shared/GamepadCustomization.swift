@@ -4155,6 +4155,30 @@ extension GamepadProfileLaunchTarget {
 }
 #endif
 
+public enum GamepadProfileOrientationPreference: String, Codable, CaseIterable, Identifiable, Sendable {
+    case automatic
+    case portrait
+    case landscape
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .automatic: "Follow Device"
+        case .portrait: "Lock Portrait"
+        case .landscape: "Lock Landscape"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .automatic: "Allow the iPhone to follow its physical orientation."
+        case .portrait: "Keep the iPhone keypad in portrait orientation."
+        case .landscape: "Keep the iPhone keypad in landscape orientation."
+        }
+    }
+}
+
 public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
@@ -4163,6 +4187,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     public var customization: GamepadCustomization
     public var landscapeCustomization: GamepadCustomization?
     public var portraitCustomization: GamepadCustomization?
+    public var orientationPreference: GamepadProfileOrientationPreference
     public var outputMode: GamepadProfileOutputMode
     public var launchTarget: GamepadProfileLaunchTarget?
     public var updatedAt: Int64
@@ -4173,6 +4198,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         customization: GamepadCustomization,
         landscapeCustomization: GamepadCustomization? = nil,
         portraitCustomization: GamepadCustomization? = nil,
+        orientationPreference: GamepadProfileOrientationPreference = .automatic,
         outputMode: GamepadProfileOutputMode = .keyboard,
         launchTarget: GamepadProfileLaunchTarget? = nil,
         updatedAt: Int64 = Date.currentMilliseconds
@@ -4182,6 +4208,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         self.customization = customization.normalized
         self.landscapeCustomization = landscapeCustomization?.normalized
         self.portraitCustomization = portraitCustomization?.normalized
+        self.orientationPreference = orientationPreference
         self.outputMode = outputMode
         self.launchTarget = launchTarget?.normalized
         self.updatedAt = updatedAt
@@ -4194,6 +4221,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         customization = (try container.decodeIfPresent(GamepadCustomization.self, forKey: .customization) ?? .defaultValue).normalized
         landscapeCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .landscapeCustomization)?.normalized
         portraitCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .portraitCustomization)?.normalized
+        orientationPreference = try container.decodeIfPresent(GamepadProfileOrientationPreference.self, forKey: .orientationPreference) ?? .automatic
         // Profiles saved before output modes had their Mac output bindings stored next
         // to the profile, not inside it. Treat legacy profiles as custom so any
         // existing mixed keyboard/controller bindings keep working after migration.
@@ -4209,6 +4237,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         try container.encode(customization, forKey: .customization)
         try container.encodeIfPresent(landscapeCustomization, forKey: .landscapeCustomization)
         try container.encodeIfPresent(portraitCustomization, forKey: .portraitCustomization)
+        try container.encode(orientationPreference, forKey: .orientationPreference)
         try container.encode(outputMode, forKey: .outputMode)
         try container.encodeIfPresent(launchTarget?.normalized, forKey: .launchTarget)
         try container.encode(updatedAt, forKey: .updatedAt)
@@ -4279,6 +4308,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         case customization
         case landscapeCustomization
         case portraitCustomization
+        case orientationPreference
         case outputMode
         case launchTarget
         case updatedAt
@@ -7922,6 +7952,13 @@ struct GamepadCustomizationEditor: View {
         Binding(
             get: { editorColorScheme },
             set: { editingColorSchemeRawValue = $0.rawValue }
+        )
+    }
+
+    private var profileOrientationPreferenceBinding: Binding<GamepadProfileOrientationPreference> {
+        Binding(
+            get: { selectedProfile?.orientationPreference ?? .automatic },
+            set: { setSelectedProfileOrientationPreference($0) }
         )
     }
 
@@ -11933,6 +11970,27 @@ struct GamepadCustomizationEditor: View {
             .buttonStyle(.plain)
             .menuStyle(.button)
             .accessibilityLabel("Device preset")
+
+#if os(macOS)
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                Text("iPhone Rotation")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                GeistSegmentedPicker(
+                    title: "iPhone Rotation",
+                    options: GamepadProfileOrientationPreference.allCases,
+                    selection: profileOrientationPreferenceBinding
+                ) { preference in
+                    preference.displayName
+                }
+                Text((selectedProfile?.orientationPreference ?? .automatic).description)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("iPhone Rotation")
+#endif
 
             GeistSegmentedPicker(title: "Orientation", options: GamepadEditorDeviceOrientation.allCases, selection: deviceOrientationBinding) { orientation in
                 orientation.displayName
@@ -18180,6 +18238,17 @@ struct GamepadCustomizationEditor: View {
         } else {
             reconcileSelection(in: customization)
         }
+    }
+
+    private func setSelectedProfileOrientationPreference(_ preference: GamepadProfileOrientationPreference) {
+        guard let index = profiles.firstIndex(where: { $0.id == selectedProfileID }),
+              profiles[index].orientationPreference != preference
+        else { return }
+        registerProfileUndoSnapshot(actionName: "Change iPhone Rotation")
+        profiles[index].orientationPreference = preference
+        profiles[index].updatedAt = Date.currentMilliseconds
+        persistProfiles()
+        announceEditor("iPhone rotation set to \(preference.displayName).")
     }
 
     private func persistProfiles() {

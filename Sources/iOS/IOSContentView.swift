@@ -1027,6 +1027,8 @@ private struct KeypadSettingsMenu: View {
     @Binding var isHapticFeedbackEnabled: Bool
     @Binding var prefersImmersiveMode: Bool
     @Binding var colorSchemePreference: GamepadColorSchemePreference
+    @Binding var orientationPreference: GamepadProfileOrientationPreference
+    let supportsOrientationPreferenceMutation: Bool
     let customization: GamepadCustomization
     let onShowGuide: (() -> Void)?
     let onReleaseAllInputs: () -> Void
@@ -1039,6 +1041,19 @@ private struct KeypadSettingsMenu: View {
                 }
             } label: {
                 Label("Appearance", systemImage: "circle.lefthalf.filled")
+            }
+
+            if supportsOrientationPreferenceMutation {
+                Picker(selection: $orientationPreference) {
+                    ForEach(GamepadProfileOrientationPreference.allCases) { preference in
+                        Text(preference.displayName).tag(preference)
+                    }
+                } label: {
+                    Label("iPhone Rotation", systemImage: "iphone.gen3.radiowaves.left.and.right")
+                }
+            } else {
+                Label("iPhone Rotation requires a newer Mac app", systemImage: "exclamationmark.triangle")
+                    .disabled(true)
             }
 
             Toggle(isOn: $isHapticFeedbackEnabled) {
@@ -2217,6 +2232,8 @@ private struct ControllerPadSettingsItem: View {
             isHapticFeedbackEnabled: $isKeypadHapticsEnabled,
             prefersImmersiveMode: $prefersImmersiveKeypad,
             colorSchemePreference: colorSchemePreference,
+            orientationPreference: orientationPreference,
+            supportsOrientationPreferenceMutation: client.supportsGamepadProfileOrientationPreferenceMutation,
             customization: context.customization,
             onShowGuide: onShowOnboarding
         ) {
@@ -2229,6 +2246,13 @@ private struct ControllerPadSettingsItem: View {
         Binding(
             get: { client.gamepadCustomization.colorSchemePreference },
             set: { client.setKeypadColorSchemePreference($0) }
+        )
+    }
+
+    private var orientationPreference: Binding<GamepadProfileOrientationPreference> {
+        Binding(
+            get: { client.selectedGamepadProfileOrientationPreference },
+            set: { _ = client.setSelectedGamepadProfileOrientationPreference($0) }
         )
     }
 }
