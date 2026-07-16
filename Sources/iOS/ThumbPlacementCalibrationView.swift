@@ -283,6 +283,7 @@ struct ThumbPlacementCalibrationOverlay: View {
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @ObservedObject var runtime: ThumbPlacementCalibrationRuntime
     let canvasSize: CGSize
+    let safeAreaInsets: EdgeInsets
     let onAcceptSuggestion: (ThumbPlacementSuggestionKind) -> Void
 
     var body: some View {
@@ -361,9 +362,9 @@ struct ThumbPlacementCalibrationOverlay: View {
         .frame(maxWidth: 420)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Geist.Radius.md).stroke(Geist.color(.grayAlpha500, scheme: colorScheme)))
-        .padding(.horizontal, Geist.Spacing.s4)
+        .padding(.horizontal, max(Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s2))
         .frame(maxHeight: .infinity, alignment: .top)
-        .padding(.top, Geist.Spacing.s4)
+        .padding(.top, max(Geist.Spacing.s4, safeAreaInsets.top + Geist.Spacing.s2))
     }
 
     private var suggestionsPanel: some View {
@@ -416,9 +417,17 @@ struct ThumbPlacementCalibrationOverlay: View {
             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
             .padding(Geist.Spacing.s6)
         }
-        .frame(maxWidth: 520, maxHeight: min(560, canvasSize.height - 32))
+        .frame(
+            maxWidth: 520,
+            maxHeight: min(
+                560,
+                canvasSize.height - safeAreaInsets.top - safeAreaInsets.bottom - Geist.Spacing.s4 * 2
+            )
+        )
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Geist.Radius.md).stroke(Geist.color(.grayAlpha500, scheme: colorScheme)))
-        .padding(Geist.Spacing.s4)
+        .padding(.top, max(Geist.Spacing.s4, safeAreaInsets.top + Geist.Spacing.s2))
+        .padding(.bottom, max(Geist.Spacing.s4, safeAreaInsets.bottom + Geist.Spacing.s2))
+        .padding(.horizontal, max(Geist.Spacing.s4, safeAreaInsets.leading + Geist.Spacing.s2))
     }
 }
