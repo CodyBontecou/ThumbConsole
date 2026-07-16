@@ -4286,6 +4286,9 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 }
 
 enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
+    case productivityStarter
+    case productivityOneHandedLeft
+    case productivityOneHandedRight
     case nes
     case snes
     case nintendo64
@@ -4305,6 +4308,9 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .productivityStarter: "Productivity Starter"
+        case .productivityOneHandedLeft: "One-Handed Left"
+        case .productivityOneHandedRight: "One-Handed Right"
         case .nes: "NES"
         case .snes: "Super Nintendo"
         case .nintendo64: "Nintendo 64"
@@ -4324,6 +4330,9 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
 
     var description: String {
         switch self {
+        case .productivityStarter: "Everyday Mac navigation and shortcuts with tailored landscape and portrait layouts"
+        case .productivityOneHandedLeft: "Everyday Mac controls grouped in the lower-left thumb zone"
+        case .productivityOneHandedRight: "Everyday Mac controls grouped in the lower-right thumb zone"
         case .nes: "Classic console pad: D-pad, A/B, Select, Start"
         case .snes: "Super Nintendo pad: D-pad, ABXY, L/R shoulders, Select, Start"
         case .nintendo64: "Three-prong N64 layout with analog stick, Z trigger, and C-buttons"
@@ -4343,6 +4352,9 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .productivityStarter: "keyboard"
+        case .productivityOneHandedLeft: "hand.point.left.fill"
+        case .productivityOneHandedRight: "hand.point.right.fill"
         case .nes, .snes: "gamecontroller"
         case .nintendo64: "circle.grid.cross"
         case .gameCube: "gamecontroller.fill"
@@ -4357,11 +4369,39 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
     }
 
     func makeProfile() -> GamepadConfigurationProfile {
-        GamepadConfigurationProfile(name: displayName, customization: makeCustomization())
+        switch self {
+        case .productivityStarter:
+            let landscape = Self.productivityStarterCustomization(isPortrait: false)
+            let portrait = Self.productivityStarterCustomization(isPortrait: true)
+            return GamepadConfigurationProfile(
+                name: displayName,
+                customization: landscape,
+                landscapeCustomization: landscape,
+                portraitCustomization: portrait
+            )
+        case .productivityOneHandedLeft, .productivityOneHandedRight:
+            let usesLeftHand = self == .productivityOneHandedLeft
+            let portrait = Self.oneHandedProductivityCustomization(usesLeftHand: usesLeftHand, isPortrait: true)
+            let landscape = Self.oneHandedProductivityCustomization(usesLeftHand: usesLeftHand, isPortrait: false)
+            return GamepadConfigurationProfile(
+                name: displayName,
+                customization: portrait,
+                landscapeCustomization: landscape,
+                portraitCustomization: portrait
+            )
+        default:
+            return GamepadConfigurationProfile(name: displayName, customization: makeCustomization())
+        }
     }
 
     private func makeCustomization() -> GamepadCustomization {
         switch self {
+        case .productivityStarter:
+            Self.productivityStarterCustomization(isPortrait: false)
+        case .productivityOneHandedLeft:
+            Self.oneHandedProductivityCustomization(usesLeftHand: true, isPortrait: true)
+        case .productivityOneHandedRight:
+            Self.oneHandedProductivityCustomization(usesLeftHand: false, isPortrait: true)
         case .nes:
             Self.nesCustomization()
         case .snes:
@@ -4400,6 +4440,133 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         customization.accentStyle = accentStyle
         customization.showsButtonLabels = true
         return customization
+    }
+
+    private static func productivityStarterCustomization(isPortrait: Bool) -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .blue, controlScale: .standard)
+        customization.deviceCanvas = GamepadDeviceCanvas(
+            frameID: isPortrait ? "iphone-17-pro-portrait" : "iphone-17-pro-landscape"
+        )
+        customization.backgroundLightFillStyle = .solid(GamepadRGBAColor(hexString: "#F4F7FB") ?? .defaultValue)
+        customization.backgroundDarkFillStyle = .solid(GamepadRGBAColor(hexString: "#10141C") ?? .defaultValue)
+
+        if isPortrait {
+            setProductivityButton(.up, in: &customization, x: 0.23, y: 0.60, width: 0.70, height: 0.70)
+            setProductivityButton(.down, in: &customization, x: 0.23, y: 0.78, width: 0.70, height: 0.70)
+            setProductivityButton(.left, in: &customization, x: 0.09, y: 0.69, width: 0.70, height: 0.70)
+            setProductivityButton(.right, in: &customization, x: 0.37, y: 0.69, width: 0.70, height: 0.70)
+            setProductivityButton(.dash, in: &customization, x: 0.17, y: 0.42, width: 0.95, height: 0.70)
+            setProductivityButton(.focus, in: &customization, x: 0.50, y: 0.42, width: 0.95, height: 0.70)
+            setProductivityButton(.map, in: &customization, x: 0.83, y: 0.42, width: 0.62, height: 0.96)
+            setProductivityButton(.attack, in: &customization, x: 0.66, y: 0.64, width: 0.95, height: 0.72)
+            setProductivityButton(.jump, in: &customization, x: 0.72, y: 0.76, width: 1.15, height: 0.72)
+            setProductivityButton(.pause, in: &customization, x: 0.88, y: 0.87, width: 0.42, height: 0.96)
+        } else {
+            setProductivityButton(.up, in: &customization, x: 0.22, y: 0.45, width: 0.78, height: 0.78)
+            setProductivityButton(.down, in: &customization, x: 0.22, y: 0.79, width: 0.78, height: 0.78)
+            setProductivityButton(.left, in: &customization, x: 0.14, y: 0.62, width: 0.78, height: 0.78)
+            setProductivityButton(.right, in: &customization, x: 0.30, y: 0.62, width: 0.78, height: 0.78)
+            setProductivityButton(.dash, in: &customization, x: 0.53, y: 0.39, width: 1.15, height: 0.72)
+            setProductivityButton(.focus, in: &customization, x: 0.70, y: 0.39, width: 1.15, height: 0.72)
+            setProductivityButton(.map, in: &customization, x: 0.87, y: 0.39, width: 0.88, height: 1.0)
+            setProductivityButton(.attack, in: &customization, x: 0.56, y: 0.73, width: 1.15, height: 0.82)
+            setProductivityButton(.jump, in: &customization, x: 0.75, y: 0.73, width: 1.55, height: 0.82)
+            setProductivityButton(.pause, in: &customization, x: 0.92, y: 0.73, width: 0.46, height: 0.98)
+        }
+
+        var metadata = customization.designMetadata ?? .empty
+        metadata.tags = ["productivity", isPortrait ? "portrait" : "landscape", "mac-defaults", "accessible"]
+        metadata.notes = isPortrait
+            ? "Portrait-first productivity layout with shortcuts above two lower thumb clusters."
+            : "Two-thumb landscape productivity layout with navigation left and Mac actions right."
+        customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+        return customization.normalized
+    }
+
+    private static func oneHandedProductivityCustomization(usesLeftHand: Bool, isPortrait: Bool) -> GamepadCustomization {
+        var customization = baseCustomization(accentStyle: .blue, controlScale: .standard)
+        customization.deviceCanvas = GamepadDeviceCanvas(
+            frameID: isPortrait ? "iphone-17-pro-portrait" : "iphone-17-pro-landscape"
+        )
+        customization.backgroundLightFillStyle = .solid(GamepadRGBAColor(hexString: "#F4F7FB") ?? .defaultValue)
+        customization.backgroundDarkFillStyle = .solid(GamepadRGBAColor(hexString: "#10141C") ?? .defaultValue)
+
+        let outerX: CGFloat = usesLeftHand ? 0.10 : 0.90
+        let middleX: CGFloat = usesLeftHand ? 0.28 : 0.72
+        let innerX: CGFloat = usesLeftHand ? 0.46 : 0.54
+        let rows: [CGFloat] = isPortrait ? [0.56, 0.67, 0.78, 0.89] : [0.50, 0.64, 0.78, 0.92]
+        let standardScale: CGFloat = isPortrait ? 0.66 : 0.62
+        let mapWidth: CGFloat = isPortrait ? 0.45 : 0.42
+        let mapHeight: CGFloat = isPortrait ? 0.92 : 0.86
+        let escapeWidth: CGFloat = isPortrait ? 0.40 : 0.375
+        let escapeHeight: CGFloat = isPortrait ? 0.92 : 0.86
+
+        setProductivityButton(.up, in: &customization, x: middleX, y: rows[0], width: standardScale, height: standardScale)
+        setProductivityButton(.left, in: &customization, x: outerX, y: rows[1], width: standardScale, height: standardScale)
+        setProductivityButton(.down, in: &customization, x: middleX, y: rows[1], width: standardScale, height: standardScale)
+        setProductivityButton(.right, in: &customization, x: innerX, y: rows[1], width: standardScale, height: standardScale)
+        setProductivityButton(.jump, in: &customization, x: outerX, y: rows[2], width: standardScale, height: standardScale)
+        setProductivityButton(.attack, in: &customization, x: middleX, y: rows[2], width: standardScale, height: standardScale)
+        setProductivityButton(.pause, in: &customization, x: innerX, y: rows[2], width: escapeWidth, height: escapeHeight)
+        setProductivityButton(.dash, in: &customization, x: outerX, y: rows[3], width: standardScale, height: standardScale)
+        setProductivityButton(.focus, in: &customization, x: middleX, y: rows[3], width: standardScale, height: standardScale)
+        setProductivityButton(.map, in: &customization, x: innerX, y: rows[3], width: mapWidth, height: mapHeight)
+
+        var metadata = customization.designMetadata ?? .empty
+        metadata.tags = ["productivity", "one-handed", usesLeftHand ? "left-hand" : "right-hand", isPortrait ? "portrait" : "landscape", "accessible"]
+        metadata.notes = "All interactive targets stay in the lower \(usesLeftHand ? "left" : "right") thumb zone and render at least 44pt on the default canvas."
+        customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+        return customization.normalized
+    }
+
+    private static func setProductivityButton(
+        _ button: GameButton,
+        in customization: inout GamepadCustomization,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat
+    ) {
+        let specification = productivitySpecification(for: button)
+        var icon = GamepadControlIcon.sfSymbol(specification.icon, placement: .top)
+        icon.scale = 0.78
+        let layout = GamepadButtonCustomization(
+            centerX: x,
+            centerY: y,
+            widthScale: width,
+            heightScale: height,
+            shape: specification.shape,
+            fillColor: GamepadRGBAColor(hexString: specification.fill) ?? .defaultValue,
+            icon: icon,
+            hapticFeedback: specification.haptic,
+            cornerRadius: defaultCornerRadius(for: specification.shape),
+            shadowStrength: 0.85
+        )
+        customization.setButtonCustomization(layout, for: button)
+        customization.setLabel(specification.label, for: button)
+    }
+
+    private static func productivitySpecification(
+        for button: GameButton
+    ) -> (label: String, icon: String, shape: GamepadButtonShapeStyle, fill: String, haptic: GamepadHapticFeedback) {
+        let navigationHaptic = GamepadHapticFeedback(style: .rigid, pattern: .single, intensity: 0.58, sharpness: 0.90)
+        let textHaptic = GamepadHapticFeedback(style: .soft, pattern: .double, intensity: 0.46, sharpness: 0.28)
+        let shortcutHaptic = GamepadHapticFeedback(style: .medium, pattern: .pulse, intensity: 0.64, sharpness: 0.58)
+        let escapeHaptic = GamepadHapticFeedback(style: .heavy, pattern: .buzz, intensity: 0.82, sharpness: 0.72)
+
+        return switch button {
+        case .up: ("↑", "arrow.up", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
+        case .down: ("↓", "arrow.down", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
+        case .left: ("←", "arrow.left", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
+        case .right: ("→", "arrow.right", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
+        case .jump: ("Return", "return", GamepadButtonShapeStyle.capsule, "#2563EB", textHaptic)
+        case .attack: ("Tab", "arrow.right.to.line", GamepadButtonShapeStyle.capsule, "#2563EB", textHaptic)
+        case .dash: ("⌘K", "command", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
+        case .focus: ("⌃B", "terminal", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
+        case .map: ("⇧⌘P", "command.square", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
+        case .pause: ("Esc", "xmark.octagon.fill", GamepadButtonShapeStyle.circle, "#9F1239", escapeHaptic)
+        default: (button.displayName, "keyboard", GamepadButtonShapeStyle.roundedRectangle, "#475569", navigationHaptic)
+        }
     }
 
     private static func softWhiteCustomization() -> GamepadCustomization {
@@ -5487,14 +5654,13 @@ enum GamepadConfigurationProfilePersistence {
         let blankCustomization = GamepadCustomization.blankCanvas
         let hasLegacyCustomization = !normalizedActiveCustomization.hasSamePresentation(as: defaultCustomization)
             && !normalizedActiveCustomization.hasSamePresentation(as: blankCustomization)
-        let starterCustomization = hasLegacyCustomization
-            ? normalizedActiveCustomization
-            : GamepadCustomization.blankCanvas
-        let starterName = hasLegacyCustomization ? "Current Setup" : "My First Keypad"
+        if hasLegacyCustomization {
+            return [
+                GamepadConfigurationProfile(name: "Current Setup", customization: normalizedActiveCustomization)
+            ]
+        }
 
-        return [
-            GamepadConfigurationProfile(name: starterName, customization: starterCustomization)
-        ]
+        return [GamepadControllerTemplate.productivityStarter.makeProfile()]
     }
 }
 
@@ -7434,7 +7600,7 @@ private enum GamepadEditorFirstKeypadStep: Int, CaseIterable, Identifiable, Equa
     var message: String {
         switch self {
         case .setups:
-            "ThumbConsole no longer preloads every controller template. Your first setup starts empty so you can name it, duplicate it, or add templates only when you need them."
+            "ThumbConsole starts new users with a practical Mac keypad. You can rename it, duplicate it, start blank, or add gaming and one-handed templates whenever you need them."
         case .canvas:
             "This iPhone canvas is where your controls will live. Use the starter card to show default controls, add a joystick, or switch into draw mode for a custom button."
         case .toolbar:
@@ -8646,7 +8812,7 @@ struct GamepadCustomizationEditor: View {
         .menuStyle(.button)
         .geistButtonStyle(.secondary, size: .small)
         .accessibilityLabel("Keypad templates")
-        .help("Create a setup from an emulator controller template")
+        .help("Create a setup from a productivity or gaming keypad template")
     }
 
     @ViewBuilder
@@ -17362,7 +17528,7 @@ private struct GamepadEditorBlankSetupCard: View {
     }
 
     private var starterTemplates: [GamepadControllerTemplate] {
-        [.nes, .arcadeStick, .playStation, .xbox, .softWhite]
+        [.productivityStarter, .productivityOneHandedLeft, .productivityOneHandedRight, .nes, .xbox, .softWhite]
     }
 
     @ViewBuilder

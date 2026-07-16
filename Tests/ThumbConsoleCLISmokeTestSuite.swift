@@ -879,6 +879,152 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(layout.visualStyle?.pressed?.fillStyle?.representativeColor, GamepadRGBAColor(hexString: "#38BDF8")!.normalized)
     }
 
+    func testProductivityTemplatesAreFirstClassAndKeepGamingTemplatesAvailable() {
+        XCTAssertEqual(Array(GamepadControllerTemplate.allCases.prefix(3)), [
+            .productivityStarter,
+            .productivityOneHandedLeft,
+            .productivityOneHandedRight
+        ])
+        XCTAssertTrue(GamepadControllerTemplate.allCases.contains(.nes))
+        XCTAssertTrue(GamepadControllerTemplate.allCases.contains(.xbox))
+        XCTAssertTrue(GamepadControllerTemplate.allCases.contains(.softWhite))
+    }
+
+    func testProductivityStarterLabelsMatchDefaultMacBindings() {
+        let expectedLabels: [GameButton: String] = [
+            .left: "←",
+            .right: "→",
+            .up: "↑",
+            .down: "↓",
+            .jump: "Return",
+            .attack: "Tab",
+            .dash: "⌘K",
+            .focus: "⌃B",
+            .map: "⇧⌘P",
+            .pause: "Esc"
+        ]
+        let profile = GamepadControllerTemplate.productivityStarter.makeProfile()
+
+        for orientation in GamepadEditorDeviceOrientation.allCases {
+            let customization = profile.customization(for: orientation)
+            for (button, expectedLabel) in expectedLabels {
+                XCTAssertEqual(customization.visualLabel(for: button), expectedLabel, "\(orientation.displayName) \(button.rawValue)")
+            }
+        }
+    }
+
+    func testProductivityStarterHasSeparatelyDesignedOrientationVariants() throws {
+        let profile = GamepadControllerTemplate.productivityStarter.makeProfile()
+        let landscape = try XCTUnwrap(profile.landscapeCustomization)
+        let portrait = try XCTUnwrap(profile.portraitCustomization)
+
+        XCTAssertEqual(landscape.deviceCanvas.editorDeviceFrame.orientation, .landscape)
+        XCTAssertEqual(portrait.deviceCanvas.editorDeviceFrame.orientation, .portrait)
+        XCTAssertFalse(landscape.hasSamePresentation(as: portrait))
+        XCTAssertNotEqual(
+            landscape.buttonCustomization(for: .jump).centerX,
+            portrait.buttonCustomization(for: .jump).centerX
+        )
+
+        for customization in [landscape, portrait] {
+            let canvasSize = customization.deviceCanvas.editorDeviceFrame.screenRect.size
+            let controls = customization.resolvedControls(in: canvasSize).filter { !$0.isDecoration }
+            XCTAssertTrue(controls.allSatisfy { min($0.size.width, $0.size.height) >= 44 })
+            let report = customization.layoutQualityReport(profileName: "Productivity Starter", canvasSize: canvasSize)
+            XCTAssertFalse(report.hasErrors, "\(customization.deviceCanvas.frameID): \(report.issues)")
+            XCTAssertFalse(report.issues.contains { $0.code == "small-control" })
+            XCTAssertFalse(report.issues.contains { $0.code == "control-overlap" })
+        }
+    }
+
+    func testProductivityTemplatesUseDistinctNonColorActionCues() {
+        for template in [
+            GamepadControllerTemplate.productivityStarter,
+            .productivityOneHandedLeft,
+            .productivityOneHandedRight
+        ] {
+            let customization = template.makeProfile().customization(for: .portrait)
+            for button in GameButton.builtInControls {
+                XCTAssertNotNil(customization.buttonCustomization(for: button).icon, "\(template.displayName) \(button.rawValue) icon")
+            }
+
+            XCTAssertEqual(customization.buttonCustomization(for: .up).shape, .roundedRectangle)
+            XCTAssertEqual(customization.buttonCustomization(for: .jump).shape, .capsule)
+            XCTAssertEqual(customization.buttonCustomization(for: .dash).shape, .rectangle)
+            XCTAssertEqual(customization.buttonCustomization(for: .pause).shape, .circle)
+            XCTAssertEqual(customization.buttonCustomization(for: .up).resolvedHapticFeedback.pattern, .single)
+            XCTAssertEqual(customization.buttonCustomization(for: .jump).resolvedHapticFeedback.pattern, .double)
+            XCTAssertEqual(customization.buttonCustomization(for: .dash).resolvedHapticFeedback.pattern, .pulse)
+            XCTAssertEqual(customization.buttonCustomization(for: .pause).resolvedHapticFeedback.pattern, .buzz)
+        }
+    }
+
+    func testOneHandedProductivityLayoutsStayInReachAndMeetTouchTargetMinimums() {
+        let templates: [(GamepadControllerTemplate, ClosedRange<CGFloat>)] = [
+            (.productivityOneHandedLeft, 0...0.60),
+            (.productivityOneHandedRight, 0.40...1)
+        ]
+
+        for (template, horizontalZone) in templates {
+            let profile = template.makeProfile()
+            for orientation in GamepadEditorDeviceOrientation.allCases {
+                let customization = profile.customization(for: orientation)
+                let canvasSize = customization.deviceCanvas.editorDeviceFrame.screenRect.size
+                let controls = customization.resolvedControls(in: canvasSize).filter { !$0.isDecoration }
+                XCTAssertEqual(controls.count, 10)
+                XCTAssertTrue(controls.allSatisfy { horizontalZone.contains($0.normalizedCenter.x) }, "\(template.displayName) \(orientation.displayName) horizontal reach")
+                XCTAssertTrue(controls.allSatisfy { $0.normalizedCenter.y >= 0.47 }, "\(template.displayName) \(orientation.displayName) lower thumb zone")
+                XCTAssertTrue(controls.allSatisfy { min($0.size.width, $0.size.height) >= 44 }, "\(template.displayName) \(orientation.displayName) 44pt targets")
+
+                let report = customization.layoutQualityReport(profileName: template.displayName, canvasSize: canvasSize)
+                XCTAssertFalse(report.hasErrors, "\(template.displayName) \(orientation.displayName): \(report.issues)")
+                XCTAssertFalse(report.issues.contains { $0.code == "small-control" })
+                XCTAssertFalse(report.issues.contains { $0.code == "control-overlap" })
+            }
+        }
+    }
+
+    func testNewProfileStateUsesProductivityStarterWithoutMigratingExistingProfiles() {
+        let newUserState = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: [],
+            activeProfileID: nil,
+            defaultProfileID: nil,
+            fallbackCustomization: .defaultValue
+        )
+        XCTAssertEqual(newUserState.profiles.map(\.name), ["Productivity Starter"])
+        XCTAssertNotNil(newUserState.activeProfile?.landscapeCustomization)
+        XCTAssertNotNil(newUserState.activeProfile?.portraitCustomization)
+
+        let blankID = UUID(uuidString: "00000000-0000-0000-0000-00000000E001")!
+        let existingBlank = GamepadConfigurationProfile(id: blankID, name: "Existing Blank", customization: .blankCanvas)
+        let blankState = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: [existingBlank],
+            activeProfileID: blankID,
+            defaultProfileID: blankID
+        )
+        XCTAssertEqual(blankState.profiles, [existingBlank.normalized])
+
+        let legacyID = UUID(uuidString: "00000000-0000-0000-0000-00000000E002")!
+        var legacyCustomization = GamepadCustomization.blankCanvas
+        legacyCustomization.addCustomButton(id: UUID(uuidString: "00000000-0000-0000-0000-00000000E003")!, mappedTo: .custom1)
+        legacyCustomization.customButtons[0].label = "Legacy"
+        let legacyProfile = GamepadConfigurationProfile(
+            id: legacyID,
+            name: "Legacy Custom",
+            customization: legacyCustomization,
+            outputMode: .custom
+        )
+        let legacyState = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: [legacyProfile],
+            activeProfileID: legacyID,
+            defaultProfileID: legacyID,
+            fallbackCustomization: .defaultValue
+        )
+        XCTAssertEqual(legacyState.profiles, [legacyProfile.normalized])
+        XCTAssertEqual(legacyState.activeProfileID, legacyID)
+        XCTAssertEqual(legacyState.defaultProfileID, legacyID)
+    }
+
     func testSoftWhiteThemeAndTemplateSupportDecorationLayers() throws {
         var customization = GamepadCustomization.defaultValue
         GamepadThemePreset.softWhiteController.apply(to: &customization)
