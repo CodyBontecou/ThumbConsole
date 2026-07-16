@@ -249,58 +249,81 @@ private struct ConnectionView: View {
             }
             .geistButtonStyle(.tertiary, size: .medium)
 
-            Button {
-                client.startSmartConnect()
-            } label: {
-                Label("Smart Connect", systemImage: "bolt.horizontal.circle.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .geistButtonStyle(.primary, size: .large)
+            if client.isConnected {
+                MessageBanner(
+                    text: "The Mac remains connected. Return to the keypad or disconnect explicitly.",
+                    tone: .accent
+                )
 
-            if client.canViewSavedKeypadOffline {
                 Button {
                     onShowSavedKeypad()
                 } label: {
-                    Label("View Saved Keypad", systemImage: "rectangle.grid.2x2")
+                    Label("Return to Keypad", systemImage: "rectangle.grid.2x2.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .geistButtonStyle(.primary, size: .large)
+
+                Button {
+                    client.disconnect()
+                } label: {
+                    Label("Disconnect from Mac", systemImage: "wifi.slash")
+                        .frame(maxWidth: .infinity)
+                }
+                .geistButtonStyle(.secondary, size: .medium)
+            } else {
+                Button {
+                    client.startSmartConnect()
+                } label: {
+                    Label("Smart Connect", systemImage: "bolt.horizontal.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .geistButtonStyle(.primary, size: .large)
+
+                if client.canViewSavedKeypadOffline {
+                    Button {
+                        onShowSavedKeypad()
+                    } label: {
+                        Label("View Saved Keypad", systemImage: "rectangle.grid.2x2")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .geistButtonStyle(.secondary, size: .large)
+                }
+
+                Button {
+                    qrScanError = nil
+                    isShowingScanner = true
+                } label: {
+                    Label("Scan Mac QR Code", systemImage: "qrcode.viewfinder")
                         .frame(maxWidth: .infinity)
                 }
                 .geistButtonStyle(.secondary, size: .large)
-            }
 
-            Button {
-                qrScanError = nil
-                isShowingScanner = true
-            } label: {
-                Label("Scan Mac QR Code", systemImage: "qrcode.viewfinder")
-                    .frame(maxWidth: .infinity)
-            }
-            .geistButtonStyle(.secondary, size: .large)
+                DividerLabel("Manual Connection")
 
-            DividerLabel("Manual Connection")
+                LabeledInput(title: "Mac Host") {
+                    TextField("Mac IP, e.g. 192.168.1.24", text: $macHost)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.numbersAndPunctuation)
+                        .geistInput()
+                }
 
-            LabeledInput(title: "Mac Host") {
-                TextField("Mac IP, e.g. 192.168.1.24", text: $macHost)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.numbersAndPunctuation)
-                    .geistInput()
-            }
+                LabeledInput(title: "Port") {
+                    TextField("8765", text: $macPort)
+                        .keyboardType(.numberPad)
+                        .geistInput()
+                }
 
-            LabeledInput(title: "Port") {
-                TextField("8765", text: $macPort)
-                    .keyboardType(.numberPad)
-                    .geistInput()
+                Button {
+                    pairingCode = ""
+                    client.connect(hostField: macHost, port: macPort, pairingCode: "")
+                } label: {
+                    Text(client.state == .connecting ? "Requesting…" : "Request Pairing")
+                        .frame(maxWidth: .infinity)
+                }
+                .geistButtonStyle(.primary, size: .medium)
+                .disabled(macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-
-            Button {
-                pairingCode = ""
-                client.connect(hostField: macHost, port: macPort, pairingCode: "")
-            } label: {
-                Text(client.state == .connecting ? "Requesting…" : "Request Pairing")
-                    .frame(maxWidth: .infinity)
-            }
-            .geistButtonStyle(.primary, size: .medium)
-            .disabled(macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
             DividerLabel("iPhone Settings")
 
