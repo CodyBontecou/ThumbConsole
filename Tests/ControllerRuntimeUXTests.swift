@@ -1,6 +1,47 @@
 import XCTest
 
 final class ControllerRuntimeUXTests: XCTestCase {
+    func testConnectionViewCanOverrideConnectedKeypad() {
+        XCTAssertFalse(
+            ControllerRuntimeChromePolicy.shouldShowControllerPad(
+                prefersConnectionView: true,
+                isConnected: true,
+                canViewSavedKeypadOffline: true
+            )
+        )
+        XCTAssertTrue(
+            ControllerRuntimeChromePolicy.shouldShowControllerPad(
+                prefersConnectionView: false,
+                isConnected: true,
+                canViewSavedKeypadOffline: false
+            )
+        )
+    }
+
+    func testOfflineKeypadInteractionRequiresPracticeOrEditing() {
+        XCTAssertFalse(
+            ControllerRuntimeChromePolicy.isKeypadInteractionActive(
+                isConnected: false,
+                isPracticeModeEnabled: false,
+                isEditingLayout: false
+            )
+        )
+        XCTAssertTrue(
+            ControllerRuntimeChromePolicy.isKeypadInteractionActive(
+                isConnected: false,
+                isPracticeModeEnabled: true,
+                isEditingLayout: false
+            )
+        )
+        XCTAssertTrue(
+            ControllerRuntimeChromePolicy.isKeypadInteractionActive(
+                isConnected: false,
+                isPracticeModeEnabled: false,
+                isEditingLayout: true
+            )
+        )
+    }
+
     func testTopBarIsPinnedWhileOfflineOrEditing() {
         XCTAssertTrue(ControllerRuntimeChromePolicy.shouldPinTopBar(isConnected: false, isEditingLayout: false))
         XCTAssertTrue(ControllerRuntimeChromePolicy.shouldPinTopBar(isConnected: true, isEditingLayout: true))

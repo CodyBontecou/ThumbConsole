@@ -2108,6 +2108,7 @@ struct GamepadControlBarButtonStyle: ButtonStyle {
 
 #if os(iOS)
 private struct GamepadControlBarHapticModifier: ViewModifier {
+    @Environment(\.keypadHapticIntensity) private var globalIntensity
     let feedback: GamepadHapticFeedback
     let isPressed: Bool
     let isEnabled: Bool
@@ -2115,11 +2116,14 @@ private struct GamepadControlBarHapticModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear {
-                if isEnabled { KeypadHapticPlayer.shared.prepare(feedback) }
+                if isEnabled { KeypadHapticPlayer.shared.prepare(feedback, intensityScale: globalIntensity) }
+            }
+            .onChange(of: globalIntensity) { _, intensity in
+                if isEnabled { KeypadHapticPlayer.shared.prepare(feedback, intensityScale: intensity) }
             }
             .onChange(of: isPressed) { _, pressed in
                 guard pressed, isEnabled else { return }
-                KeypadHapticPlayer.shared.play(feedback)
+                KeypadHapticPlayer.shared.play(feedback, intensityScale: globalIntensity)
             }
     }
 }

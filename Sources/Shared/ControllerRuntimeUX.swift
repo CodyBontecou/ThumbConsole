@@ -2,6 +2,22 @@ import Foundation
 
 /// Pure policy for controller chrome that must never become unreachable.
 public enum ControllerRuntimeChromePolicy {
+    public static func shouldShowControllerPad(
+        prefersConnectionView: Bool,
+        isConnected: Bool,
+        canViewSavedKeypadOffline: Bool
+    ) -> Bool {
+        !prefersConnectionView && (isConnected || canViewSavedKeypadOffline)
+    }
+
+    public static func isKeypadInteractionActive(
+        isConnected: Bool,
+        isPracticeModeEnabled: Bool,
+        isEditingLayout: Bool
+    ) -> Bool {
+        isConnected || isPracticeModeEnabled || isEditingLayout
+    }
+
     public static func shouldPinTopBar(isConnected: Bool, isEditingLayout: Bool) -> Bool {
         !isConnected || isEditingLayout
     }

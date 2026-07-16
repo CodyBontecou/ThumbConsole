@@ -871,6 +871,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var serverCapabilities: Set<ControllerCapability> = []
     @Published private(set) var hasSavedKeypadSnapshot = false
     @Published private(set) var smartConnectStatus: String?
+    @Published private(set) var isPracticeModeEnabled: Bool
 
     private let networkQueue = DispatchQueue(label: "ThumbConsole.iOS.Network", qos: .userInteractive)
     private let inputTransport: ControllerInputTransport
@@ -961,6 +962,7 @@ final class ControllerClient: ObservableObject {
 
     init() {
         inputTransport = ControllerInputTransport(networkQueue: networkQueue)
+        isPracticeModeEnabled = UserDefaults.standard.bool(forKey: IOSKeypadPreferenceKeys.practiceMode)
         let savedCustomization = GamepadCustomizationPersistence.load()
         let loadedProfileState = GamepadConfigurationProfilePersistence.load(activeCustomization: savedCustomization)
         let savedTrustedMacCredential = Self.loadTrustedMacCredential()
@@ -1184,7 +1186,7 @@ final class ControllerClient: ObservableObject {
         // Send raw per-touch edges immediately. The Mac helper keeps physical
         // touch identity so the injected key state can change without timer delays.
         let state: ButtonPressState = pressed ? .down : .up
-        guard isConnected,
+        guard permitsOutgoingInput(.builtInButton),
               inputTransport.sendButton(button, state: state, pressIdentifier: pressIdentifier)
         else { return }
         if Self.liveInputStatusUpdatesEnabled {
@@ -1194,7 +1196,7 @@ final class ControllerClient: ObservableObject {
 
     func setElementInput(_ input: KeypadElementInputID, pressed: Bool, pressIdentifier: UInt64? = nil) {
         let state: ButtonPressState = pressed ? .down : .up
-        guard isConnected,
+        guard permitsOutgoingInput(.elementButton),
               inputTransport.sendElementInput(input, state: state, pressIdentifier: pressIdentifier)
         else { return }
         if Self.liveInputStatusUpdatesEnabled {
@@ -1203,7 +1205,7 @@ final class ControllerClient: ObservableObject {
     }
 
     func setGamepadStick(_ stick: VirtualGamepadStick, x: Double, y: Double, isFinal: Bool = false) {
-        guard isConnected else { return }
+        guard permitsOutgoingInput(.analogStick) else { return }
         let clampedX = Self.clamp(x, lower: -1, upper: 1)
         let clampedY = Self.clamp(y, lower: -1, upper: 1)
         let isNeutral = abs(clampedX) < 0.001 && abs(clampedY) < 0.001
@@ -1216,7 +1218,7 @@ final class ControllerClient: ObservableObject {
     }
 
     func setGamepadTrigger(_ trigger: VirtualGamepadTrigger, value: Double, isFinal: Bool = false) {
-        guard isConnected else { return }
+        guard permitsOutgoingInput(.analogTrigger) else { return }
         let clampedValue = Self.clamp(value, lower: 0, upper: 1)
         _ = inputTransport.sendGamepadTrigger(
             trigger,
@@ -1226,12 +1228,16 @@ final class ControllerClient: ObservableObject {
     }
 
     func sendPointerMove(deltaX: Double, deltaY: Double) {
-        guard abs(deltaX) >= 0.01 || abs(deltaY) >= 0.01 else { return }
+        guard permitsOutgoingInput(.pointerMove),
+              abs(deltaX) >= 0.01 || abs(deltaY) >= 0.01
+        else { return }
         sendPointer(kind: .move, deltaX: deltaX, deltaY: deltaY, mirrorsReliably: false)
     }
 
     func sendPointerScroll(deltaX: Double, deltaY: Double) {
-        guard abs(deltaX) >= 0.01 || abs(deltaY) >= 0.01 else { return }
+        guard permitsOutgoingInput(.pointerScroll),
+              abs(deltaX) >= 0.01 || abs(deltaY) >= 0.01
+        else { return }
         sendPointer(kind: .scroll, deltaX: deltaX, deltaY: deltaY, mirrorsReliably: false)
     }
 
@@ -1241,6 +1247,7 @@ final class ControllerClient: ObservableObject {
     }
 
     func setPointerButton(_ button: ControllerPointerButton, pressed: Bool) {
+        guard permitsOutgoingInput(.pointerButton) else { return }
         let state: ButtonPressState = pressed ? .down : .up
         sendPointer(kind: .button, pointerButton: button, state: state, mirrorsReliably: true)
     }
@@ -1253,7 +1260,12 @@ final class ControllerClient: ObservableObject {
         deltaY: Double? = nil,
         mirrorsReliably: Bool
     ) {
-        guard isConnected else { return }
+        let inputPath: ControllerInputPath = switch kind {
+        case .move: .pointerMove
+        case .scroll: .pointerScroll
+        case .button: .pointerButton
+        }
+        guard permitsOutgoingInput(inputPath) else { return }
         send(
             inputTransport.decoratingRealtimeMessage(
                 .init(
@@ -1274,6 +1286,25 @@ final class ControllerClient: ObservableObject {
     func releaseAll() {
         guard inputTransport.releaseAll() else { return }
         updateLastSentEvent("release_all", immediately: true)
+    }
+
+    /// Practice Mode is local-only. Active touches and remote state are cleared
+    /// before suppression becomes active so no held input can leak through.
+    func setPracticeModeEnabled(_ isEnabled: Bool) {
+        guard isEnabled != isPracticeModeEnabled else { return }
+        TouchCaptureUIView.deactivateAllRegisteredTouches()
+        releaseAll()
+        isPracticeModeEnabled = isEnabled
+        UserDefaults.standard.set(isEnabled, forKey: IOSKeypadPreferenceKeys.practiceMode)
+        updateLastSentEvent(isEnabled ? "practice mode enabled" : "practice mode disabled", immediately: true)
+    }
+
+    private func permitsOutgoingInput(_ path: ControllerInputPath) -> Bool {
+        ControllerInputSuppressionPolicy.permitsOutgoingInput(
+            path,
+            isConnected: isConnected,
+            isPracticeModeEnabled: isPracticeModeEnabled
+        )
     }
 
     func selectGamepadProfile(_ profileID: UUID) {

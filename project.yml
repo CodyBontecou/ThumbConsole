@@ -70,6 +70,7 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: Sources/Shared
+      - path: Sources/iOS/IOSLocalKeypadUX.swift
       - path: Tests
     settings:
       base:

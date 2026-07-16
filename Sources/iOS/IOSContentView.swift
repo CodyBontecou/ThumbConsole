@@ -17,7 +17,11 @@ struct IOSContentView: View {
     private let defaultMacPort = "8765"
 
     private var shouldShowControllerPad: Bool {
-        client.isConnected || (client.canViewSavedKeypadOffline && !prefersConnectionView)
+        ControllerRuntimeChromePolicy.shouldShowControllerPad(
+            prefersConnectionView: prefersConnectionView,
+            isConnected: client.isConnected,
+            canViewSavedKeypadOffline: client.canViewSavedKeypadOffline
+        )
     }
 
     var body: some View {
@@ -76,6 +80,7 @@ struct IOSContentView: View {
             // Pairing codes are one-time setup hints. Smart Connect uses the trusted token
             // saved after a successful pairing instead of reusing stale six-digit codes.
             pairingCode = ""
+            Self.migrateLegacyHapticPreferenceIfNeeded()
             if hasCompletedOnboarding {
                 client.startSmartConnect()
             } else {
@@ -96,24 +101,23 @@ struct IOSContentView: View {
         isShowingOnboarding = false
         client.startSmartConnect()
     }
+
+    private static func migrateLegacyHapticPreferenceIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: IOSKeypadPreferenceKeys.hapticIntensity) == nil else { return }
+        if defaults.object(forKey: IOSKeypadPreferenceKeys.legacyHapticsEnabled) != nil,
+           !defaults.bool(forKey: IOSKeypadPreferenceKeys.legacyHapticsEnabled) {
+            defaults.set(0.0, forKey: IOSKeypadPreferenceKeys.hapticIntensity)
+        } else {
+            defaults.set(IOSKeypadPreferenceKeys.defaultHapticIntensity, forKey: IOSKeypadPreferenceKeys.hapticIntensity)
+        }
+    }
 }
 
 private enum IOSKeypadSettings {
-    static let hapticsEnabledDefaultsKey = "PocketPad.iOS.keypadHapticsEnabled.v1"
     static let hasOpenedKeypadDefaultsKey = "PocketPad.iOS.hasOpenedKeypad.v1"
     static let immersiveModeDefaultsKey = "PocketPad.iOS.immersiveKeypad.v1"
     static let showBindingGlyphsDefaultsKey = "PocketPad.iOS.showBindingGlyphs.v1"
-}
-
-private struct KeypadHapticsEnabledEnvironmentKey: EnvironmentKey {
-    static let defaultValue = true
-}
-
-private extension EnvironmentValues {
-    var keypadHapticsEnabled: Bool {
-        get { self[KeypadHapticsEnabledEnvironmentKey.self] }
-        set { self[KeypadHapticsEnabledEnvironmentKey.self] = newValue }
-    }
 }
 
 private struct ConnectionView: View {
@@ -122,7 +126,8 @@ private struct ConnectionView: View {
     @Binding var macHost: String
     @Binding var macPort: String
     @Binding var pairingCode: String
-    @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
+    @AppStorage(IOSKeypadPreferenceKeys.hapticIntensity) private var keypadHapticIntensity = IOSKeypadPreferenceKeys.defaultHapticIntensity
+    @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
     @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
     let onShowSavedKeypad: () -> Void
     let onShowOnboarding: () -> Void
@@ -300,7 +305,8 @@ private struct ConnectionView: View {
             DividerLabel("iPhone Settings")
 
             KeypadAppearancePickerRow(selection: keypadColorSchemePreferenceBinding)
-            KeypadHapticsToggleRow(isEnabled: $isKeypadHapticsEnabled)
+            KeypadHapticIntensityRow(intensity: $keypadHapticIntensity)
+            KeypadBindingGlyphsToggleRow(isEnabled: $showsBindingGlyphs)
             KeypadImmersiveModeToggleRow(isEnabled: $prefersImmersiveKeypad)
         }
         .geistPanel(padding: Geist.Spacing.s6, radius: Geist.Radius.sm)
@@ -958,18 +964,51 @@ private struct KeypadAppearancePickerRow: View {
     }
 }
 
-private struct KeypadHapticsToggleRow: View {
+private struct KeypadHapticIntensityRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var intensity: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                Text("Haptic Intensity")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text("Scales every keypad haptic while preserving each control’s relative pattern strength.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Picker("Haptic Intensity", selection: $intensity) {
+                ForEach(KeypadHapticIntensityPolicy.supportedLevels, id: \.self) { level in
+                    Text(KeypadHapticIntensityPolicy.label(for: level)).tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+            Button("Test Haptic") {
+                KeypadHapticPlayer.shared.play(.init(style: .medium, pattern: .double, intensity: 0.72), intensityScale: intensity)
+            }
+            .geistButtonStyle(.secondary, size: .small)
+            .disabled(intensity <= 0)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s3)
+        .background(RoundedRectangle(cornerRadius: Geist.Radius.sm).fill(Geist.color(.gray100, scheme: colorScheme)))
+        .overlay(RoundedRectangle(cornerRadius: Geist.Radius.sm).stroke(Geist.color(.grayAlpha400, scheme: colorScheme)))
+    }
+}
+
+private struct KeypadBindingGlyphsToggleRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var isEnabled: Bool
 
     var body: some View {
         Toggle(isOn: $isEnabled) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                Text("Keypad Haptics")
+                Text("Show Binding Glyphs")
                     .geistTypography(.heading14)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
-                Text("Vibrate when you press keypad buttons.")
+                Text("Show binding hints when local binding presentation is available.")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -979,15 +1018,9 @@ private struct KeypadHapticsToggleRow: View {
         .tint(Geist.color(.blue700, scheme: colorScheme))
         .padding(.horizontal, Geist.Spacing.s3)
         .padding(.vertical, Geist.Spacing.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                .fill(Geist.color(.gray100, scheme: colorScheme))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-        )
-        .accessibilityHint("Controls whether keypad button presses vibrate.")
+        .background(RoundedRectangle(cornerRadius: Geist.Radius.sm).fill(Geist.color(.gray100, scheme: colorScheme)))
+        .overlay(RoundedRectangle(cornerRadius: Geist.Radius.sm).stroke(Geist.color(.grayAlpha400, scheme: colorScheme)))
+        .accessibilityHint("Controls local binding glyph presentation without changing keypad metadata.")
     }
 }
 
@@ -1025,14 +1058,16 @@ private struct KeypadImmersiveModeToggleRow: View {
 }
 
 private struct KeypadSettingsMenu: View {
-    @Binding var isHapticFeedbackEnabled: Bool
-    @Binding var prefersImmersiveMode: Bool
+    @Binding var hapticIntensity: Double
     @Binding var showsBindingGlyphs: Bool
+    @Binding var prefersImmersiveMode: Bool
     @Binding var colorSchemePreference: GamepadColorSchemePreference
     @Binding var orientationPreference: GamepadProfileOrientationPreference
+    @Binding var isPracticeModeEnabled: Bool
     let supportsOrientationPreferenceMutation: Bool
     let customization: GamepadCustomization
     let onShowGuide: (() -> Void)?
+    let onStartCalibration: () -> Void
     let onReleaseAllInputs: () -> Void
 
     var body: some View {
@@ -1058,16 +1093,35 @@ private struct KeypadSettingsMenu: View {
                     .disabled(true)
             }
 
-            Toggle(isOn: $isHapticFeedbackEnabled) {
-                Label("Haptic Feedback", systemImage: "waveform.path")
+            Picker(selection: $hapticIntensity) {
+                ForEach(KeypadHapticIntensityPolicy.supportedLevels, id: \.self) { level in
+                    Text(KeypadHapticIntensityPolicy.label(for: level)).tag(level)
+                }
+            } label: {
+                Label("Haptic Intensity", systemImage: "waveform.path")
+            }
+
+            Button {
+                KeypadHapticPlayer.shared.play(.init(style: .medium, pattern: .double, intensity: 0.72), intensityScale: hapticIntensity)
+            } label: {
+                Label("Test Haptic", systemImage: "waveform.path.ecg")
+            }
+            .disabled(hapticIntensity <= 0)
+
+            Toggle(isOn: $isPracticeModeEnabled) {
+                Label("Practice Mode", systemImage: "hand.tap.fill")
+            }
+
+            Toggle(isOn: $showsBindingGlyphs) {
+                Label("Show Binding Glyphs", systemImage: "command")
             }
 
             Toggle(isOn: $prefersImmersiveMode) {
                 Label("Immersive Keypad", systemImage: "arrow.up.left.and.arrow.down.right")
             }
 
-            Toggle(isOn: $showsBindingGlyphs) {
-                Label("Show Binding Glyphs", systemImage: "command")
+            Button(action: onStartCalibration) {
+                Label("Calibrate Thumb Placement", systemImage: "hand.draw.fill")
             }
 
             if let onShowGuide {
@@ -1098,7 +1152,7 @@ private struct KeypadSettingsMenu: View {
         }
         .gamepadControlBarButtonStyle(customization: customization, item: .settings)
         .accessibilityLabel("Keypad settings")
-        .accessibilityHint("Opens settings for keypad appearance, feedback, and input reset.")
+        .accessibilityHint("Opens keypad practice, haptic, binding glyph, calibration, appearance, and input reset settings.")
     }
 }
 
@@ -1200,13 +1254,15 @@ private final class IOSKeypadEditRuntime: ObservableObject {
 private struct ControllerPadView: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
+    @AppStorage(IOSKeypadPreferenceKeys.hapticIntensity) private var keypadHapticIntensity = IOSKeypadPreferenceKeys.defaultHapticIntensity
+    @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
     @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
     @AppStorage(IOSKeypadSettings.hasOpenedKeypadDefaultsKey) private var hasOpenedKeypad = false
     @State private var isTopBarVisible = true
     @State private var isShowingFirstOpenTopBar = false
     @State private var isExportingKeypadConfiguration = false
     @StateObject private var editRuntime = IOSKeypadEditRuntime()
+    @StateObject private var calibrationRuntime = ThumbPlacementCalibrationRuntime()
 
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
@@ -1235,18 +1291,23 @@ private struct ControllerPadView: View {
                 context: context,
                 isTopBarVisible: $isTopBarVisible,
                 isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
-                isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
-                prefersImmersiveKeypad: $prefersImmersiveKeypad,
                 editRuntime: editRuntime,
+                calibrationRuntime: calibrationRuntime,
                 onShowConnectionPage: showConnectionPage,
                 onShowOnboarding: onShowOnboarding
             )
         }
-        .environment(\.keypadHapticsEnabled, isKeypadHapticsEnabled)
+        .environment(\.keypadHapticIntensity, keypadHapticIntensity)
+        .environment(\.keypadShowsBindingGlyphs, showsBindingGlyphs)
+        // The physical keypad has fixed hit geometry. Cap only this scene's visual
+        // type so accessibility sizes cannot crop controls/chrome; semantic labels
+        // and VoiceOver actions remain unchanged.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .onAppear {
             applyInitialTopBarVisibility()
         }
         .onDisappear {
+            calibrationRuntime.cancel()
             releaseActiveInputs()
         }
         .onChange(of: client.state) { _, newState in
@@ -1273,8 +1334,12 @@ private struct ControllerPadView: View {
             }
         }
         .onChange(of: client.selectedGamepadProfileID) { _, _ in
+            calibrationRuntime.cancel()
             releaseActiveInputs()
             announce("Keypad changed to \(client.selectedGamepadProfileName)")
+        }
+        .onChange(of: client.isPracticeModeEnabled) { _, enabled in
+            announce(enabled ? "Practice Mode enabled. Input will not be sent." : "Practice Mode disabled. Live input enabled when connected.")
         }
         .onChange(of: client.gamepadCustomization) { _, _ in
             guard !editRuntime.isEditing else { return }
@@ -1397,9 +1462,8 @@ private struct ControllerPadGeometryScene: View {
     let context: ControllerPadRenderContext
     @Binding var isTopBarVisible: Bool
     @Binding var isExportingKeypadConfiguration: Bool
-    @Binding var isKeypadHapticsEnabled: Bool
-    @Binding var prefersImmersiveKeypad: Bool
     @ObservedObject var editRuntime: IOSKeypadEditRuntime
+    @ObservedObject var calibrationRuntime: ThumbPlacementCalibrationRuntime
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
 
@@ -1410,12 +1474,24 @@ private struct ControllerPadGeometryScene: View {
                 context: context,
                 isTopBarVisible: $isTopBarVisible,
                 isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
-                isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
-                prefersImmersiveKeypad: $prefersImmersiveKeypad,
                 editRuntime: editRuntime,
+                calibrationRuntime: calibrationRuntime,
                 onShowConnectionPage: onShowConnectionPage,
                 onShowOnboarding: onShowOnboarding
             )
+
+            if client.isPracticeModeEnabled {
+                ControllerPadPracticeBadge(safeAreaInsets: context.safeAreaInsets)
+            }
+        }
+        .overlay {
+            if calibrationRuntime.isActive {
+                ThumbPlacementCalibrationOverlay(
+                    runtime: calibrationRuntime,
+                    canvasSize: context.size,
+                    onAcceptSuggestion: acceptCalibrationSuggestion
+                )
+            }
         }
         .overlay(alignment: .bottom) {
             ControllerPadRuntimeBottomChrome(
@@ -1428,11 +1504,24 @@ private struct ControllerPadGeometryScene: View {
         .environment(\.colorScheme, context.colorScheme)
         .frame(width: context.size.width, height: context.size.height)
         .onChange(of: context.orientation) { _, _ in
+            calibrationRuntime.cancel()
             editRuntime.releaseInputs(client: client)
             if editRuntime.isEditing {
                 editRuntime.finish(client: client)
             }
         }
+    }
+
+    private func acceptCalibrationSuggestion(_ suggestion: ThumbPlacementSuggestionKind) {
+        guard let next = calibrationRuntime.customization(byApplying: suggestion, to: context.customization) else {
+            calibrationRuntime.complete()
+            return
+        }
+        if !editRuntime.isEditing {
+            editRuntime.begin(with: context.customization, client: client)
+        }
+        editRuntime.apply(next, orientation: context.orientation, isFinal: true, client: client)
+        calibrationRuntime.complete()
     }
 }
 
@@ -1448,9 +1537,18 @@ private struct ControllerPadRuntimeSurface: View {
             onCustomizationChanged: applyCustomization
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(client.isConnected || editRuntime.isEditing)
-        .saturation(client.isConnected || editRuntime.isEditing ? 1 : 0.35)
-        .opacity(client.isConnected || editRuntime.isEditing ? 1 : 0.78)
+        .allowsHitTesting(isKeypadInteractionActive)
+        .accessibilityHidden(!isKeypadInteractionActive)
+        .saturation(isKeypadInteractionActive ? 1 : 0.35)
+        .opacity(isKeypadInteractionActive ? 1 : 0.78)
+    }
+
+    private var isKeypadInteractionActive: Bool {
+        ControllerRuntimeChromePolicy.isKeypadInteractionActive(
+            isConnected: client.isConnected,
+            isPracticeModeEnabled: client.isPracticeModeEnabled,
+            isEditingLayout: editRuntime.isEditing
+        )
     }
 
     private func applyCustomization(_ customization: GamepadCustomization, isFinal: Bool) {
@@ -1468,9 +1566,8 @@ private struct ControllerPadTopChrome: View {
     let context: ControllerPadRenderContext
     @Binding var isTopBarVisible: Bool
     @Binding var isExportingKeypadConfiguration: Bool
-    @Binding var isKeypadHapticsEnabled: Bool
-    @Binding var prefersImmersiveKeypad: Bool
     @ObservedObject var editRuntime: IOSKeypadEditRuntime
+    @ObservedObject var calibrationRuntime: ThumbPlacementCalibrationRuntime
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
 
@@ -1494,9 +1591,8 @@ private struct ControllerPadTopChrome: View {
                 context: context,
                 isEditingLayout: editRuntime.isEditing,
                 isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
-                isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
-                prefersImmersiveKeypad: $prefersImmersiveKeypad,
                 onToggleEditing: toggleEditing,
+                onStartCalibration: startCalibration,
                 onShowConnectionPage: onShowConnectionPage,
                 onShowOnboarding: onShowOnboarding
             )
@@ -1504,6 +1600,17 @@ private struct ControllerPadTopChrome: View {
         .onChange(of: pinsTopBar) { _, isPinned in
             if isPinned { isTopBarVisible = true }
         }
+    }
+
+    private func startCalibration() {
+        editRuntime.releaseInputs(client: client)
+        calibrationRuntime.begin(
+            profileID: client.selectedGamepadProfileID,
+            customization: context.customization,
+            orientation: context.orientation,
+            canvasSize: context.size,
+            safeAreaInsets: context.safeAreaInsets
+        )
     }
 
     private func toggleEditing() {
@@ -1534,9 +1641,10 @@ private struct ControllerPadRuntimeBottomChrome: View {
                 )
             }
 
-            if !client.isConnected {
+            if !client.isConnected && !editRuntime.isEditing {
                 ControllerPadOfflineBanner(
                     onReconnect: reconnect,
+                    onPractice: { client.setPracticeModeEnabled(!client.isPracticeModeEnabled) },
                     onHome: onShowConnectionPage
                 )
             }
@@ -1612,7 +1720,11 @@ private struct ControllerPadFreeformLayout: View {
                 context.safeAreaInsets.trailing + Geist.Spacing.s2
             )
         )
-        .padding(.bottom, max(Geist.Spacing.s4, context.safeAreaInsets.bottom + Geist.Spacing.s2))
+        .padding(
+            .bottom,
+            max(Geist.Spacing.s4, context.safeAreaInsets.bottom + Geist.Spacing.s2)
+                + (isEditingLayout ? 72 : 0)
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             if !isEditingLayout {
@@ -1828,9 +1940,8 @@ private struct ControllerPadTopBar: View {
     let context: ControllerPadRenderContext
     let isEditingLayout: Bool
     @Binding var isExportingKeypadConfiguration: Bool
-    @Binding var isKeypadHapticsEnabled: Bool
-    @Binding var prefersImmersiveKeypad: Bool
     let onToggleEditing: () -> Void
+    let onStartCalibration: () -> Void
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
 
@@ -1845,9 +1956,8 @@ private struct ControllerPadTopBar: View {
                 isCompact: isCompact,
                 isEditingLayout: isEditingLayout,
                 isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
-                isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
-                prefersImmersiveKeypad: $prefersImmersiveKeypad,
                 onToggleEditing: onToggleEditing,
+                onStartCalibration: onStartCalibration,
                 onShowConnectionPage: onShowConnectionPage,
                 onShowOnboarding: onShowOnboarding
             )
@@ -1875,9 +1985,8 @@ private struct ControllerPadTopBarItemRouter: View {
     let isCompact: Bool
     let isEditingLayout: Bool
     @Binding var isExportingKeypadConfiguration: Bool
-    @Binding var isKeypadHapticsEnabled: Bool
-    @Binding var prefersImmersiveKeypad: Bool
     let onToggleEditing: () -> Void
+    let onStartCalibration: () -> Void
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
 
@@ -1909,8 +2018,7 @@ private struct ControllerPadTopBarItemRouter: View {
             return AnyView(
                 ControllerPadSettingsItem(
                     context: context,
-                    isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
-                    prefersImmersiveKeypad: $prefersImmersiveKeypad,
+                    onStartCalibration: onStartCalibration,
                     onShowOnboarding: onShowOnboarding
                 )
             )
@@ -2228,26 +2336,36 @@ private struct ControllerPadEditLayoutItem: View {
 
 private struct ControllerPadSettingsItem: View {
     @EnvironmentObject private var client: ControllerClient
-    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
+    @AppStorage(IOSKeypadPreferenceKeys.hapticIntensity) private var hapticIntensity = IOSKeypadPreferenceKeys.defaultHapticIntensity
+    @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
+    @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
     let context: ControllerPadRenderContext
-    @Binding var isKeypadHapticsEnabled: Bool
-    @Binding var prefersImmersiveKeypad: Bool
+    let onStartCalibration: () -> Void
     let onShowOnboarding: (() -> Void)?
 
     var body: some View {
         KeypadSettingsMenu(
-            isHapticFeedbackEnabled: $isKeypadHapticsEnabled,
-            prefersImmersiveMode: $prefersImmersiveKeypad,
+            hapticIntensity: $hapticIntensity,
             showsBindingGlyphs: $showsBindingGlyphs,
+            prefersImmersiveMode: $prefersImmersiveKeypad,
             colorSchemePreference: colorSchemePreference,
             orientationPreference: orientationPreference,
+            isPracticeModeEnabled: practiceModeBinding,
             supportsOrientationPreferenceMutation: client.supportsGamepadProfileOrientationPreferenceMutation,
             customization: context.customization,
-            onShowGuide: onShowOnboarding
+            onShowGuide: onShowOnboarding,
+            onStartCalibration: onStartCalibration
         ) {
             TouchCaptureUIView.deactivateAllRegisteredTouches()
             client.releaseAll()
         }
+    }
+
+    private var practiceModeBinding: Binding<Bool> {
+        Binding(
+            get: { client.isPracticeModeEnabled },
+            set: { client.setPracticeModeEnabled($0) }
+        )
     }
 
     private var colorSchemePreference: Binding<GamepadColorSchemePreference> {
@@ -2496,10 +2614,33 @@ private struct ControllerPadEditingCommandStrip: View {
     }
 }
 
+private struct ControllerPadPracticeBadge: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let safeAreaInsets: EdgeInsets
+
+    var body: some View {
+        Label("Practice • Input Off", systemImage: "hand.tap.fill")
+            .geistTypography(.heading14)
+            .foregroundStyle(Geist.color(.background100, scheme: colorScheme))
+            .padding(.horizontal, Geist.Spacing.s3)
+            .frame(minHeight: 44)
+            .background(Geist.color(.purple800, scheme: colorScheme), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.35)))
+            .padding(.top, max(Geist.Spacing.s2, safeAreaInsets.top + 48))
+            .padding(.trailing, max(Geist.Spacing.s3, safeAreaInsets.trailing + Geist.Spacing.s2))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .allowsHitTesting(false)
+            .accessibilityLabel("Practice Mode. Outgoing input is off.")
+            .accessibilityAddTraits(.isStaticText)
+            .zIndex(20)
+    }
+}
+
 private struct ControllerPadOfflineBanner: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
     let onReconnect: () -> Void
+    let onPractice: () -> Void
     let onHome: (() -> Void)?
 
     private var isReconnecting: Bool {
@@ -2507,31 +2648,16 @@ private struct ControllerPadOfflineBanner: View {
     }
 
     var body: some View {
-        HStack(spacing: Geist.Spacing.s3) {
-            Image(systemName: isReconnecting ? "arrow.triangle.2.circlepath" : "wifi.slash")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Geist.color(.amber900, scheme: colorScheme))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(isReconnecting ? "Reconnecting to Mac…" : "Saved keypad — offline")
-                    .geistTypography(.heading14)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                Text("Controls are disabled and will not send input.")
-                    .geistTypography(.label12)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Geist.Spacing.s3) {
+                statusContent
+                Spacer(minLength: Geist.Spacing.s1)
+                actionButtons
             }
-
-            Spacer(minLength: Geist.Spacing.s1)
-
-            Button("Reconnect", action: onReconnect)
-                .geistButtonStyle(.primary, size: .small)
-                .disabled(isReconnecting)
-
-            Button("Home") { onHome?() }
-                .geistButtonStyle(.secondary, size: .small)
-                .disabled(onHome == nil)
+            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+                statusContent
+                actionButtons
+            }
         }
         .padding(.horizontal, Geist.Spacing.s3)
         .padding(.vertical, Geist.Spacing.s2)
@@ -2543,8 +2669,55 @@ private struct ControllerPadOfflineBanner: View {
         )
         .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(isReconnecting ? "Reconnecting to Mac" : "Saved keypad offline. Controls will not send input.")
+        .accessibilityLabel(accessibilityStatus)
         .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private var statusContent: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Image(systemName: client.isPracticeModeEnabled ? "hand.tap.fill" : (isReconnecting ? "arrow.triangle.2.circlepath" : "wifi.slash"))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Geist.color(.amber900, scheme: colorScheme))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(statusTitle)
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text(statusDetail)
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+            }
+        }
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Button(client.isPracticeModeEnabled ? "End Practice" : "Practice", action: onPractice)
+                .geistButtonStyle(.secondary, size: .small)
+            Button("Reconnect", action: onReconnect)
+                .geistButtonStyle(.primary, size: .small)
+                .disabled(isReconnecting)
+            Button("Home") { onHome?() }
+                .geistButtonStyle(.secondary, size: .small)
+                .disabled(onHome == nil)
+        }
+    }
+
+    private var statusTitle: String {
+        if client.isPracticeModeEnabled { return "Practice Mode — offline" }
+        return isReconnecting ? "Reconnecting to Mac…" : "Saved keypad — offline"
+    }
+
+    private var statusDetail: String {
+        client.isPracticeModeEnabled
+            ? "Controls stay interactive with haptics, but input is not sent."
+            : "Use Practice Mode to try controls safely, or reconnect for live input."
+    }
+
+    private var accessibilityStatus: String {
+        if client.isPracticeModeEnabled { return "Practice Mode offline. Controls work locally and will not send input." }
+        return isReconnecting ? "Reconnecting to Mac" : "Saved keypad offline. Enable Practice Mode to use controls without sending input."
     }
 }
 
@@ -4489,9 +4662,12 @@ final class KeypadHapticPlayer {
 
     private init() {}
 
-    func prepare(_ feedback: GamepadHapticFeedback) {
-        let feedback = feedback.normalized
-        guard feedback.style != .none else { return }
+    func prepare(
+        _ feedback: GamepadHapticFeedback,
+        intensityScale: Double = IOSKeypadPreferenceKeys.defaultHapticIntensity
+    ) {
+        let feedback = scaled(feedback, intensityScale: intensityScale)
+        guard feedback.style != .none, feedback.intensity > 0 else { return }
         if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
             try? startEngineIfNeeded()
         } else {
@@ -4499,13 +4675,25 @@ final class KeypadHapticPlayer {
         }
     }
 
-    func play(_ feedback: GamepadHapticFeedback) {
-        let feedback = feedback.normalized
+    func play(
+        _ feedback: GamepadHapticFeedback,
+        intensityScale: Double = IOSKeypadPreferenceKeys.defaultHapticIntensity
+    ) {
+        let feedback = scaled(feedback, intensityScale: intensityScale)
         guard feedback.style != .none, feedback.intensity > 0 else { return }
         if CHHapticEngine.capabilitiesForHardware().supportsHaptics, playCoreHaptic(feedback) {
             return
         }
         playFallback(feedback)
+    }
+
+    private func scaled(_ feedback: GamepadHapticFeedback, intensityScale: Double) -> GamepadHapticFeedback {
+        var scaled = feedback.normalized
+        scaled.intensity = KeypadHapticIntensityPolicy.scaledIntensity(
+            scaled.intensity,
+            globalIntensity: intensityScale
+        )
+        return scaled
     }
 
     private func playCoreHaptic(_ feedback: GamepadHapticFeedback) -> Bool {
@@ -4621,7 +4809,7 @@ private struct GamepadTrackpad: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.keypadHapticsEnabled) private var isKeypadHapticsEnabled
+    @Environment(\.keypadHapticIntensity) private var keypadHapticIntensity
     let elementID: UUID?
     let label: String
     let size: CGSize
@@ -4702,8 +4890,8 @@ private struct GamepadTrackpad: View {
         }
         .frame(width: hitSize.width, height: hitSize.height)
         .onAppear { prepareHapticIfNeeded() }
-        .onChange(of: isKeypadHapticsEnabled) { _, isEnabled in
-            if isEnabled { prepareHapticIfNeeded() }
+        .onChange(of: keypadHapticIntensity) { _, _ in
+            prepareHapticIfNeeded()
         }
         .onDisappear {
             isActive = false
@@ -4812,17 +5000,16 @@ private struct GamepadTrackpad: View {
     }
 
     private func scheduleTapHaptic() {
-        guard isKeypadHapticsEnabled else { return }
         let feedback = customization.resolvedPresentation(for: elementCustomization, fallbackAccentStyle: resolvedAccentStyle, controlKind: .trackpad, state: .active, scheme: colorScheme).hapticFeedback
+        let intensity = keypadHapticIntensity
         DispatchQueue.main.async {
-            KeypadHapticPlayer.shared.play(feedback)
+            KeypadHapticPlayer.shared.play(feedback, intensityScale: intensity)
         }
     }
 
     private func prepareHapticIfNeeded() {
-        guard isKeypadHapticsEnabled else { return }
         let feedback = customization.resolvedPresentation(for: elementCustomization, fallbackAccentStyle: resolvedAccentStyle, controlKind: .trackpad, state: .normal, scheme: colorScheme).hapticFeedback
-        KeypadHapticPlayer.shared.prepare(feedback)
+        KeypadHapticPlayer.shared.prepare(feedback, intensityScale: keypadHapticIntensity)
     }
 }
 
@@ -4834,7 +5021,7 @@ private struct GamepadButton: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.keypadHapticsEnabled) private var isKeypadHapticsEnabled
+    @Environment(\.keypadHapticIntensity) private var keypadHapticIntensity
     var elementID: UUID? = nil
     let button: GameButton
     let size: CGSize
@@ -4941,10 +5128,8 @@ private struct GamepadButton: View {
         .onAppear {
             prepareHapticIfNeeded()
         }
-        .onChange(of: isKeypadHapticsEnabled) { _, isEnabled in
-            if isEnabled {
-                prepareHapticIfNeeded()
-            }
+        .onChange(of: keypadHapticIntensity) { _, _ in
+            prepareHapticIfNeeded()
         }
         .onDisappear {
             isPressed = false
@@ -5120,15 +5305,14 @@ private struct GamepadButton: View {
     }
 
     private func schedulePressHaptic() {
-        guard isKeypadHapticsEnabled else { return }
         let feedback = resolvedPresentation.hapticFeedback
+        let intensity = keypadHapticIntensity
         DispatchQueue.main.async {
-            KeypadHapticPlayer.shared.play(feedback)
+            KeypadHapticPlayer.shared.play(feedback, intensityScale: intensity)
         }
     }
 
     private func prepareHapticIfNeeded() {
-        guard isKeypadHapticsEnabled else { return }
-        KeypadHapticPlayer.shared.prepare(resolvedPresentation.hapticFeedback)
+        KeypadHapticPlayer.shared.prepare(resolvedPresentation.hapticFeedback, intensityScale: keypadHapticIntensity)
     }
 }
