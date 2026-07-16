@@ -40,6 +40,28 @@ public enum ControllerRuntimeChromePolicy {
     }
 }
 
+/// Admission policy for the Mac helper's single active iPhone session.
+/// A reconnect may replace an existing socket only when both sockets prove they
+/// belong to the same trusted installation. A different iPhone must never evict
+/// the active keypad and trigger competing reconnect loops.
+public enum ControllerConnectionAdmissionPolicy {
+    public static func permitsActiveClientReplacement(
+        activeAuthToken: String?,
+        incomingAuthToken: String?
+    ) -> Bool {
+        guard let activeAuthToken = normalized(activeAuthToken),
+              let incomingAuthToken = normalized(incomingAuthToken)
+        else { return false }
+        return activeAuthToken == incomingAuthToken
+    }
+
+    private static func normalized(_ token: String?) -> String? {
+        guard let token else { return nil }
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 /// Reference-semantic edit history for the iPhone's lightweight layout editor.
 /// Keeping the large customization snapshots on the heap also protects the
 /// controller's small realtime stack budget.

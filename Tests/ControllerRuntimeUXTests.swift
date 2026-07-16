@@ -76,6 +76,27 @@ final class ControllerRuntimeUXTests: XCTestCase {
         )
     }
 
+    func testOnlySameTrustedClientMayReplaceActiveConnection() {
+        XCTAssertTrue(
+            ControllerConnectionAdmissionPolicy.permitsActiveClientReplacement(
+                activeAuthToken: "trusted-phone",
+                incomingAuthToken: " trusted-phone "
+            )
+        )
+        XCTAssertFalse(
+            ControllerConnectionAdmissionPolicy.permitsActiveClientReplacement(
+                activeAuthToken: "trusted-phone",
+                incomingAuthToken: "other-phone"
+            )
+        )
+        XCTAssertFalse(
+            ControllerConnectionAdmissionPolicy.permitsActiveClientReplacement(
+                activeAuthToken: "trusted-phone",
+                incomingAuthToken: nil
+            )
+        )
+    }
+
     func testEditSessionUndoAndResetUseEntrySnapshot() {
         var entry = GamepadCustomization.defaultValue
         let session = GamepadLayoutEditSession(entrySnapshot: entry)

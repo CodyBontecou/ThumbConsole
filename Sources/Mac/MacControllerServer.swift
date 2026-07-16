@@ -218,6 +218,7 @@ final class MacControllerServer: ObservableObject {
     private var connection: NWConnection?
     private var realtimeConnection: NWConnection?
     private var pairedConnection: NWConnection?
+    private var pairedAuthToken: String?
     private var pendingPairingConnection: NWConnection?
     private var activePairingCode: String
     private var realtimeToken: String?
@@ -590,6 +591,7 @@ final class MacControllerServer: ObservableObject {
             realtimeConnection?.cancel()
             realtimeConnection = nil
             pairedConnection = nil
+            pairedAuthToken = nil
             pendingPairingConnection = nil
             realtimeToken = nil
             stopDatagramListenerOnNetworkQueue()
@@ -2053,13 +2055,89 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func acceptOnNetworkQueue(_ newConnection: NWConnection) {
+        if pairedConnection != nil {
+            inspectPotentialReplacementOnNetworkQueue(newConnection)
+            return
+        }
+        activateConnectionOnNetworkQueue(newConnection, startConnection: true)
+    }
+
+    /// Do not let a second trusted iPhone evict the active keypad before it has
+    /// identified itself. The same installation may still replace a stale socket
+    /// during a normal reconnect because it presents the same auth token.
+    private func inspectPotentialReplacementOnNetworkQueue(_ candidateConnection: NWConnection) {
+        candidateConnection.stateUpdateHandler = { [weak self, weak candidateConnection] state in
+            guard let self, let candidateConnection else { return }
+            switch state {
+            case .ready:
+                self.receivePotentialReplacementHelloOnNetworkQueue(from: candidateConnection)
+            case .failed(let error):
+                self.logDebug("candidate_connection_failed error=\(error.localizedDescription)")
+            case .cancelled:
+                self.logDebug("candidate_connection_cancelled")
+            default:
+                break
+            }
+        }
+        candidateConnection.start(queue: networkQueue)
+        logDebug("candidate_connection_waiting_for_identity")
+    }
+
+    private func receivePotentialReplacementHelloOnNetworkQueue(from candidateConnection: NWConnection) {
+        candidateConnection.receiveMessage { [weak self, weak candidateConnection] data, _, _, error in
+            guard let self, let candidateConnection else { return }
+            self.asyncOnNetworkQueue {
+                if let error {
+                    self.logDebug("candidate_connection_receive_failed error=\(error.localizedDescription)")
+                    candidateConnection.cancel()
+                    return
+                }
+                guard let data,
+                      !data.isEmpty,
+                      let message = try? ControllerWireCodec.decode(data, using: self.decoder)
+                else {
+                    self.rejectAdditionalClientOnNetworkQueue(candidateConnection)
+                    return
+                }
+
+                let mayReplace = ControllerConnectionAdmissionPolicy.permitsActiveClientReplacement(
+                    activeAuthToken: self.pairedAuthToken,
+                    incomingAuthToken: self.normalizedAuthToken(message.authToken)
+                )
+                if self.pairedConnection == nil || mayReplace {
+                    self.activateConnectionOnNetworkQueue(
+                        candidateConnection,
+                        startConnection: false,
+                        initialMessage: message
+                    )
+                } else {
+                    self.rejectAdditionalClientOnNetworkQueue(candidateConnection)
+                }
+            }
+        }
+    }
+
+    private func rejectAdditionalClientOnNetworkQueue(_ candidateConnection: NWConnection) {
+        let message = "Another iPhone is already connected. Disconnect it before connecting this iPhone."
+        send(.init(type: .error, message: message), on: candidateConnection) { [weak candidateConnection] _ in
+            candidateConnection?.cancel()
+        }
+        logDebug("candidate_connection_rejected reason=active_client")
+    }
+
+    private func activateConnectionOnNetworkQueue(
+        _ newConnection: NWConnection,
+        startConnection: Bool,
+        initialMessage: ControllerMessage? = nil
+    ) {
         if let existing = realtimeConnection {
-            releaseAllOnNetworkQueue(reason: "Replaced by new iPhone connection")
+            releaseAllOnNetworkQueue(reason: "Replaced by reconnect from the same iPhone")
             existing.cancel()
         }
         resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
         realtimeConnection = newConnection
         pairedConnection = nil
+        pairedAuthToken = nil
         pendingPairingConnection = newConnection
         realtimeToken = nil
         lastClientActivityUptime = nil
@@ -2102,7 +2180,14 @@ final class MacControllerServer: ObservableObject {
             self.logDebug("client socket accepted")
         }
 
-        newConnection.start(queue: networkQueue)
+        if startConnection {
+            newConnection.start(queue: networkQueue)
+        } else {
+            receiveNext(on: newConnection)
+            if let initialMessage {
+                handleMessageOnNetworkQueue(initialMessage, from: newConnection)
+            }
+        }
     }
 
     private func receiveNext(on connection: NWConnection) {
@@ -2511,6 +2596,7 @@ final class MacControllerServer: ObservableObject {
         activePairingCode = newPairingCode
         pendingPairingConnection = connection
         pairedConnection = nil
+        pairedAuthToken = nil
         resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
         realtimeToken = nil
 
@@ -2556,6 +2642,7 @@ final class MacControllerServer: ObservableObject {
         rememberTrustedClientOnNetworkQueue(token: trustedAuthToken, clientName: incomingClientName)
         pendingPairingConnection = nil
         pairedConnection = connection
+        pairedAuthToken = trustedAuthToken
         realtimeToken = newRealtimeToken
         lastClientActivityUptime = DispatchTime.now().uptimeNanoseconds
         heartbeatTimedOutOnNetworkQueue = false
@@ -2623,6 +2710,7 @@ final class MacControllerServer: ObservableObject {
             }
             if pairedConnection === connection {
                 pairedConnection = nil
+                pairedAuthToken = nil
             }
             if realtimeConnection === connection {
                 realtimeConnection = nil
@@ -2634,6 +2722,7 @@ final class MacControllerServer: ObservableObject {
         } else {
             pendingPairingConnection = nil
             pairedConnection = nil
+            pairedAuthToken = nil
             realtimeToken = nil
             resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
         }
@@ -4818,6 +4907,7 @@ final class MacControllerServer: ObservableObject {
             }
             if pairedConnection === disconnectedConnection {
                 pairedConnection = nil
+                pairedAuthToken = nil
                 realtimeToken = nil
                 resetRealtimeDatagramAuthenticationOnNetworkQueue(cancelConnections: true)
             }

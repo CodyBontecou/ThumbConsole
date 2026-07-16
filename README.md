@@ -215,6 +215,7 @@ Use **Default** for a single button or **Reset All** to restore the starter keyp
 - During physical tap testing, the Mac debug panel shows missing transport frames, recovered duplicate-down edges, and ignored duplicate/orphan input edges separately.
 - iOS schedules heartbeat and active-press refreshes every 250 ms on its network queue; the Mac validates each refreshed physical press independently.
 - Smart Connect stores a trusted reconnect token after successful pairing, advertises the Mac as `_pocketpad._tcp` on the local network with peer-to-peer discovery enabled, and avoids reusing stale six-digit pairing codes.
+- The Mac keeps one authoritative iPhone session: a reconnect from the same trusted installation may replace its stale socket, while a different iPhone is rejected without evicting the active keypad or starting a reconnect loop.
 - macOS releases all held keys after 1500 ms without any client activity, keeps the socket open so brief stalls can recover, and expires an individually unrefreshed physical hold after 1750 ms.
 - macOS keeps a latency-critical activity while the helper is running to avoid App Nap when the target app is focused.
 - macOS releases all held keys on client disconnect, server stop, or manual Release All.
