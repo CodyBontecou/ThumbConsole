@@ -2676,7 +2676,8 @@ private struct MacKeypadMiniPreview: View {
                         GamepadRenderedControlFace(
                             control: control,
                             customization: customization,
-                            state: .normal
+                            state: .normal,
+                            secondaryBindingText: defaultLabelProvider?(control.mappedButton)
                         )
                         .environment(\.colorScheme, previewColorScheme)
                         .rotationEffect(.degrees(control.rotationDegrees))

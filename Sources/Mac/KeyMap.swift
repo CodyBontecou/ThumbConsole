@@ -94,7 +94,7 @@ struct MacKeyStroke: Codable, Equatable, Hashable, Sendable {
     }
 
     var displayName: String {
-        "\(modifiers.displaySymbols)\(MacVirtualKey.displayName(for: keyCode))"
+        KeypadBindingFormatter.format(sharedBinding).compactText
     }
 
     func withAdditionalModifiers(_ additionalModifiers: MacKeyModifiers) -> MacKeyStroke {
@@ -167,7 +167,11 @@ struct MacKeyBinding: Codable, Equatable, Hashable, Sendable {
     }
 
     var displayName: String {
-        strokes.map(\.displayName).joined(separator: " ")
+        KeypadBindingFormatter.format(sharedBinding)?.compactText ?? "Unmapped"
+    }
+
+    var accessibleDisplayName: String {
+        KeypadBindingFormatter.format(sharedBinding)?.accessibilityText ?? "Unmapped"
     }
 
     func withAdditionalModifiers(_ additionalModifiers: MacKeyModifiers) -> MacKeyBinding {

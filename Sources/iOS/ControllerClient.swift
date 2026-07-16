@@ -865,6 +865,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var gamepadCustomization: GamepadCustomization
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
+    @Published private(set) var bindingPresentations: [GamepadProfileBindingPresentations]
     @Published private(set) var selectedGamepadProfileID: UUID
     @Published private(set) var defaultGamepadProfileID: UUID
     @Published private(set) var serverCapabilities: Set<ControllerCapability> = []
@@ -923,6 +924,29 @@ final class ControllerClient: ObservableObject {
         selectedGamepadProfile?.name ?? "Keypad"
     }
 
+    func bindingPresentation(
+        profileID: UUID,
+        orientation: GamepadEditorDeviceOrientation,
+        input: KeypadElementInputID
+    ) -> KeypadBindingPresentation? {
+        bindingPresentations.bindingPresentation(
+            profileID: profileID,
+            orientation: orientation,
+            input: input
+        )
+    }
+
+    func bindingPresentation(
+        orientation: GamepadEditorDeviceOrientation,
+        input: KeypadElementInputID
+    ) -> KeypadBindingPresentation? {
+        bindingPresentation(
+            profileID: selectedGamepadProfileID,
+            orientation: orientation,
+            input: input
+        )
+    }
+
     var isSelectedGamepadProfileDefault: Bool {
         selectedGamepadProfileID == defaultGamepadProfileID
     }
@@ -945,6 +969,7 @@ final class ControllerClient: ObservableObject {
 
         gamepadCustomization = startupCustomization
         gamepadProfiles = loadedProfileState.profiles
+        bindingPresentations = KeypadBindingPresentationPersistence.load()
         selectedGamepadProfileID = startupProfile.id
         defaultGamepadProfileID = loadedProfileState.defaultProfileID
         GamepadCustomizationPersistence.save(startupCustomization)
@@ -1396,6 +1421,12 @@ final class ControllerClient: ObservableObject {
         if let capabilities = message.capabilities {
             serverCapabilities = Set(capabilities)
         }
+        if let incomingPresentations = message.bindingPresentations {
+            // A sync payload is authoritative, including an explicitly empty list.
+            bindingPresentations = incomingPresentations
+            KeypadBindingPresentationPersistence.save(incomingPresentations)
+        }
+
         guard let incomingProfiles = message.gamepadProfiles, !incomingProfiles.isEmpty else {
             if let customization = message.gamepadCustomization {
                 applyGamepadCustomizationFromMac(customization)

@@ -15,14 +15,11 @@ struct MacControlOutputBinding: Codable, Equatable, Hashable, Sendable {
     }
 
     var displayName: String {
-        var parts: [String] = []
-        if let keyboard {
-            parts.append(keyboard.displayName)
-        }
-        if !gamepadButtons.isEmpty {
-            parts.append(gamepadButtons.sortedForDisplay.map(\.shortName).joined(separator: "+"))
-        }
-        return parts.isEmpty ? "Unmapped" : parts.joined(separator: " + ")
+        KeypadBindingFormatter.format(sharedBinding)?.compactText ?? "Unmapped"
+    }
+
+    var accessibleDisplayName: String {
+        KeypadBindingFormatter.format(sharedBinding)?.accessibilityText ?? "Unmapped"
     }
 
     func withAdditionalModifiers(_ modifiers: MacKeyModifiers) -> MacControlOutputBinding {

@@ -3302,7 +3302,7 @@ enum GamepadLayoutResolver {
                 id: .builtin(button),
                 elementID: KeypadElement.builtInID(for: button),
                 mappedButton: button,
-                label: customization.visualLabel(for: button, defaultLabel: defaultLabelProvider?(button)),
+                label: customization.visualLabel(for: button),
                 normalizedCenter: CGPoint(x: center.x / canvasSize.width, y: center.y / canvasSize.height),
                 center: center,
                 size: scaledSize,
@@ -3356,10 +3356,7 @@ enum GamepadLayoutResolver {
             )
             let center = clampedPixelCenter(normalizedCenter, visualSize: scaledSize, in: canvasSize)
 
-            let fallbackLabel = customization.visualLabel(
-                for: normalizedButton.mappedButton,
-                defaultLabel: defaultLabelProvider?(normalizedButton.mappedButton)
-            )
+            let fallbackLabel = customization.visualLabel(for: normalizedButton.mappedButton)
 
             return GamepadResolvedControl(
                 id: .custom(normalizedButton.id),
@@ -4585,16 +4582,16 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         let escapeHaptic = GamepadHapticFeedback(style: .heavy, pattern: .buzz, intensity: 0.82, sharpness: 0.72)
 
         return switch button {
-        case .up: ("↑", "arrow.up", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
-        case .down: ("↓", "arrow.down", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
-        case .left: ("←", "arrow.left", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
-        case .right: ("→", "arrow.right", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
+        case .up: ("Up", "arrow.up", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
+        case .down: ("Down", "arrow.down", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
+        case .left: ("Left", "arrow.left", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
+        case .right: ("Right", "arrow.right", GamepadButtonShapeStyle.roundedRectangle, "#334155", navigationHaptic)
         case .jump: ("Return", "return", GamepadButtonShapeStyle.capsule, "#2563EB", textHaptic)
         case .attack: ("Tab", "arrow.right.to.line", GamepadButtonShapeStyle.capsule, "#2563EB", textHaptic)
-        case .dash: ("⌘K", "command", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
-        case .focus: ("⌃B", "terminal", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
-        case .map: ("⇧⌘P", "command.square", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
-        case .pause: ("Esc", "xmark.octagon.fill", GamepadButtonShapeStyle.circle, "#9F1239", escapeHaptic)
+        case .dash: ("Command", "command", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
+        case .focus: ("Prefix", "terminal", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
+        case .map: ("Palette", "command.square", GamepadButtonShapeStyle.rectangle, "#475569", shortcutHaptic)
+        case .pause: ("Escape", "xmark.octagon.fill", GamepadButtonShapeStyle.circle, "#9F1239", escapeHaptic)
         default: (button.displayName, "keyboard", GamepadButtonShapeStyle.roundedRectangle, "#475569", navigationHaptic)
         }
     }
@@ -6141,6 +6138,7 @@ struct GamepadRenderedControlFace: View {
     let control: GamepadResolvedControl
     let customization: GamepadCustomization
     var state: GamepadControlPresentationState = .normal
+    var secondaryBindingText: String? = nil
     var selectedControlBarItem: GamepadControlBarItem? = nil
     var onSelectControlBarItem: ((GamepadControlBarItem) -> Void)? = nil
     var onMoveControlBarItem: ((GamepadControlBarItem, Int) -> Void)? = nil
@@ -6254,13 +6252,18 @@ struct GamepadRenderedControlFace: View {
         }
 
         if customization.showsButtonLabels && (presentation.icon?.placement != .center || control.label.count <= 2) {
-            Text(control.label)
-                .geistTypography(control.label.count <= 2 ? .heading32 : .button16)
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
-                .foregroundStyle(presentation.foregroundSwiftUIColor)
-                .padding(.horizontal, 4)
-                .offset(labelOffset(for: presentation.icon?.placement))
+            VStack(spacing: 1) {
+                Text(control.label)
+                    .geistTypography(control.label.count <= 2 ? .heading32 : .button16)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+                if let visibleSecondaryBindingText {
+                    secondaryBindingLabel(visibleSecondaryBindingText, color: presentation.foregroundSwiftUIColor)
+                }
+            }
+            .foregroundStyle(presentation.foregroundSwiftUIColor)
+            .padding(.horizontal, 4)
+            .offset(labelOffset(for: presentation.icon?.placement))
         }
     }
 
@@ -6330,16 +6333,45 @@ struct GamepadRenderedControlFace: View {
                 .frame(width: visualSide * knobRatio, height: visualSide * knobRatio)
 
             if customization.showsButtonLabels && !isThumbstick {
-                Text(control.label)
-                    .geistTypography(visualSide <= 88 ? .button12 : .button14)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.48)
-                    .foregroundStyle(presentation.foregroundSwiftUIColor)
-                    .padding(.horizontal, 4)
-                    .offset(y: control.size.height * (isThumbstick ? 0.58 : 0.34))
+                VStack(spacing: 1) {
+                    Text(control.label)
+                        .geistTypography(visualSide <= 88 ? .button12 : .button14)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.48)
+                    if let visibleSecondaryBindingText {
+                        secondaryBindingLabel(visibleSecondaryBindingText, color: presentation.foregroundSwiftUIColor)
+                    }
+                }
+                .foregroundStyle(presentation.foregroundSwiftUIColor)
+                .padding(.horizontal, 4)
+                .offset(y: control.size.height * 0.34)
             }
         }
         .allowsHitTesting(false)
+    }
+
+    private var visibleSecondaryBindingText: String? {
+        guard let text = secondaryBindingText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty,
+              text.caseInsensitiveCompare(control.label) != .orderedSame
+        else { return nil }
+        if let icon = resolvedPresentation.icon,
+           icon.source == .text,
+           text.caseInsensitiveCompare(icon.value) == .orderedSame {
+            return nil
+        }
+        return text
+    }
+
+    private func secondaryBindingLabel(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .allowsTightening(true)
+            .foregroundStyle(color.opacity(0.76))
+            .frame(maxWidth: control.size.width * 0.88)
+            .accessibilityHidden(true)
     }
 
     private func trackpadFace(presentation: GamepadResolvedControlPresentation) -> some View {
@@ -6354,10 +6386,15 @@ struct GamepadRenderedControlFace: View {
                 Image(systemName: "cursorarrow")
                     .font(.system(size: max(12, min(control.size.width, control.size.height) * 0.18), weight: .semibold))
                 if customization.showsButtonLabels {
-                    Text(control.label)
-                        .geistTypography(control.size.width <= 96 ? .button12 : .button14)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.48)
+                    VStack(spacing: 1) {
+                        Text(control.label)
+                            .geistTypography(control.size.width <= 96 ? .button12 : .button14)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.48)
+                        if let visibleSecondaryBindingText {
+                            secondaryBindingLabel(visibleSecondaryBindingText, color: foreground)
+                        }
+                    }
                 }
             }
             .foregroundStyle(foreground.opacity(0.82))
@@ -6788,10 +6825,9 @@ private struct GamepadEditorLayerModel {
             + (shouldListBuiltInComponents ? builtInControls.map { .builtin($0) } : [])
             + normalizedCustomButtons.map { .custom($0.id) }
 
+        _ = defaultLabelProvider
         let visualLabelForButton: (GameButton) -> String = { button in
-            let providedLabel = defaultLabelProvider?(button).map(normalizedGamepadLabel) ?? ""
-            let defaultLabel = providedLabel.isEmpty ? GamepadCustomization.defaultVisualLabel(for: button) : providedLabel
-            return customization.visualLabel(for: button, defaultLabel: defaultLabel)
+            customization.visualLabel(for: button)
         }
 
         let systemItems = systemControls.map { control -> GamepadEditorComponentItem in
@@ -20691,6 +20727,7 @@ private struct GamepadLayoutDesigner: View {
                         customization: customization,
                         isSelected: isSelected,
                         isPressed: isPressed,
+                        secondaryBindingText: defaultLabelProvider?(control.mappedButton),
                         qualityHighlightSeverity: highlightedControlIDs.contains(control.id)
                             ? (highlightedIssueSeverity ?? .warning)
                             : nil,
@@ -22574,6 +22611,7 @@ private struct GamepadDesignerButton: View {
     let customization: GamepadCustomization
     let isSelected: Bool
     var isPressed: Bool = false
+    var secondaryBindingText: String? = nil
     var qualityHighlightSeverity: GamepadLayoutIssueSeverity?
     var isTestMode: Bool = false
     var onAccessibilityTest: () -> Void = {}
@@ -22598,6 +22636,7 @@ private struct GamepadDesignerButton: View {
                 control: control,
                 customization: customization,
                 state: isPressed ? .pressed : .normal,
+                secondaryBindingText: secondaryBindingText,
                 selectedControlBarItem: selectedControlBarItem,
                 onSelectControlBarItem: onSelectControlBarItem,
                 onMoveControlBarItem: onMoveControlBarItem

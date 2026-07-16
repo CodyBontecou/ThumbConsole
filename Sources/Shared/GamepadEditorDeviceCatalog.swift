@@ -1,11 +1,11 @@
 import CoreGraphics
 import Foundation
 
-enum GamepadEditorDeviceOrientation: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum GamepadEditorDeviceOrientation: String, Codable, CaseIterable, Identifiable, Sendable {
     case landscape
     case portrait
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
     var displayName: String {
         switch self {

@@ -890,18 +890,18 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         XCTAssertTrue(GamepadControllerTemplate.allCases.contains(.softWhite))
     }
 
-    func testProductivityStarterLabelsMatchDefaultMacBindings() {
+    func testProductivityStarterKeepsFriendlyLabelsSeparateFromBindings() {
         let expectedLabels: [GameButton: String] = [
-            .left: "←",
-            .right: "→",
-            .up: "↑",
-            .down: "↓",
+            .left: "Left",
+            .right: "Right",
+            .up: "Up",
+            .down: "Down",
             .jump: "Return",
             .attack: "Tab",
-            .dash: "⌘K",
-            .focus: "⌃B",
-            .map: "⇧⌘P",
-            .pause: "Esc"
+            .dash: "Command",
+            .focus: "Prefix",
+            .map: "Palette",
+            .pause: "Escape"
         ]
         let profile = GamepadControllerTemplate.productivityStarter.makeProfile()
 

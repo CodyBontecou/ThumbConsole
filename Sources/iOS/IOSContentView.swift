@@ -102,6 +102,7 @@ private enum IOSKeypadSettings {
     static let hapticsEnabledDefaultsKey = "PocketPad.iOS.keypadHapticsEnabled.v1"
     static let hasOpenedKeypadDefaultsKey = "PocketPad.iOS.hasOpenedKeypad.v1"
     static let immersiveModeDefaultsKey = "PocketPad.iOS.immersiveKeypad.v1"
+    static let showBindingGlyphsDefaultsKey = "PocketPad.iOS.showBindingGlyphs.v1"
 }
 
 private struct KeypadHapticsEnabledEnvironmentKey: EnvironmentKey {
@@ -1026,6 +1027,7 @@ private struct KeypadImmersiveModeToggleRow: View {
 private struct KeypadSettingsMenu: View {
     @Binding var isHapticFeedbackEnabled: Bool
     @Binding var prefersImmersiveMode: Bool
+    @Binding var showsBindingGlyphs: Bool
     @Binding var colorSchemePreference: GamepadColorSchemePreference
     @Binding var orientationPreference: GamepadProfileOrientationPreference
     let supportsOrientationPreferenceMutation: Bool
@@ -1062,6 +1064,10 @@ private struct KeypadSettingsMenu: View {
 
             Toggle(isOn: $prefersImmersiveMode) {
                 Label("Immersive Keypad", systemImage: "arrow.up.left.and.arrow.down.right")
+            }
+
+            Toggle(isOn: $showsBindingGlyphs) {
+                Label("Show Binding Glyphs", systemImage: "command")
             }
 
             if let onShowGuide {
@@ -2222,6 +2228,7 @@ private struct ControllerPadEditLayoutItem: View {
 
 private struct ControllerPadSettingsItem: View {
     @EnvironmentObject private var client: ControllerClient
+    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
     let context: ControllerPadRenderContext
     @Binding var isKeypadHapticsEnabled: Bool
     @Binding var prefersImmersiveKeypad: Bool
@@ -2231,6 +2238,7 @@ private struct ControllerPadSettingsItem: View {
         KeypadSettingsMenu(
             isHapticFeedbackEnabled: $isKeypadHapticsEnabled,
             prefersImmersiveMode: $prefersImmersiveKeypad,
+            showsBindingGlyphs: $showsBindingGlyphs,
             colorSchemePreference: colorSchemePreference,
             orientationPreference: orientationPreference,
             supportsOrientationPreferenceMutation: client.supportsGamepadProfileOrientationPreferenceMutation,
@@ -3991,8 +3999,36 @@ private struct IOSGamepadOuterShadowModifier: ViewModifier {
     }
 }
 
+private struct KeypadSecondaryBindingText: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let text: String
+    let color: Color
+    var maximumWidth: CGFloat
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 11 : 10, weight: .medium, design: .monospaced))
+            .lineLimit(1)
+            .minimumScaleFactor(0.55)
+            .allowsTightening(true)
+            .foregroundStyle(color.opacity(0.78))
+            .frame(maxWidth: maximumWidth)
+            .accessibilityHidden(true)
+    }
+}
+
+private extension String {
+    func isSameBindingDisplay(as other: String) -> Bool {
+        folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .filter { !$0.isWhitespace }
+            == other.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .filter { !$0.isWhitespace }
+    }
+}
+
 private struct GamepadJoystick: View {
     @EnvironmentObject private var client: ControllerClient
+    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -4053,10 +4089,38 @@ private struct GamepadJoystick: View {
         KeypadAccessibility.label(visibleTitle: label, fallback: "Joystick")
     }
 
+    private var bindingPresentationsForDirections: [(GamepadJoystickDirection, KeypadBindingPresentation)] {
+        GamepadJoystickDirection.allCases.compactMap { direction in
+            let input = elementID.map {
+                KeypadElementInputID(elementID: $0, part: KeypadElementInputPart(direction: direction))
+            } ?? KeypadElementInputID(elementID: KeypadElement.builtInID(for: mapping[direction]))
+            return client.bindingPresentation(
+                orientation: customization.deviceCanvas.editorDeviceFrame.orientation,
+                input: input
+            ).map { (direction, $0) }
+        }
+    }
+
+    private var compactBindingText: String? {
+        let text = bindingPresentationsForDirections
+            .map { "\($0.0.shortLabel)\($0.1.compactText)" }
+            .joined(separator: " ")
+        guard showsBindingGlyphs, !text.isEmpty, !text.isSameBindingDisplay(as: label) else { return nil }
+        return text
+    }
+
+    private var accessibleBindingText: String? {
+        let text = bindingPresentationsForDirections
+            .map { "\($0.0.displayName) \($0.1.accessibilityText)" }
+            .joined(separator: ", ")
+        return text.isEmpty ? nil : text
+    }
+
     private var joystickAccessibility: CaptureAccessibilityMetadata {
-        CaptureAccessibilityMetadata(
+        let bindingHint = accessibleBindingText.map { " Binding: \($0)." } ?? ""
+        return CaptureAccessibilityMetadata(
             label: accessibleLabel,
-            hint: KeypadAccessibility.joystickHint(outputSettings: outputSettings),
+            hint: KeypadAccessibility.joystickHint(outputSettings: outputSettings) + bindingHint,
             identifier: KeypadAccessibility.identifier(kind: "joystick", elementID: elementID, fallback: accessibleLabel),
             value: KeypadAccessibility.joystickValue(
                 horizontal: normalizedOffset.width,
@@ -4160,14 +4224,23 @@ private struct GamepadJoystick: View {
             }
 
             if customization.showsButtonLabels && !isThumbstick {
-                Text(label)
-                    .geistTypography(visualSide <= 88 ? .button12 : .button14)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .foregroundStyle(foregroundColor)
-                    .padding(.horizontal, 6)
-                    .scaleEffect(visualLabelScale)
-                    .offset(y: visualSide * (isThumbstick ? 0.58 : 0.34))
+                VStack(spacing: 1) {
+                    Text(label)
+                        .geistTypography(visualSide <= 88 ? .button12 : .button14)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    if let compactBindingText {
+                        KeypadSecondaryBindingText(
+                            text: compactBindingText,
+                            color: foregroundColor,
+                            maximumWidth: visualSide * 0.92
+                        )
+                    }
+                }
+                .foregroundStyle(foregroundColor)
+                .padding(.horizontal, 4)
+                .scaleEffect(visualLabelScale)
+                .offset(y: visualSide * 0.34)
             }
         }
     }
@@ -4233,6 +4306,7 @@ private struct GamepadJoystick: View {
 
 private struct GamepadTrigger: View {
     @EnvironmentObject private var client: ControllerClient
+    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -4253,15 +4327,31 @@ private struct GamepadTrigger: View {
         KeypadAccessibility.label(visibleTitle: label, fallback: "Trigger")
     }
 
+    private var bindingPresentation: KeypadBindingPresentation? {
+        let input = KeypadElementInputID(
+            elementID: elementID ?? KeypadElement.builtInID(for: mappedButton),
+            part: elementID == nil ? .primary : .triggerDigital
+        )
+        return client.bindingPresentation(
+            orientation: customization.deviceCanvas.editorDeviceFrame.orientation,
+            input: input
+        )
+    }
+
+    private var compactBindingText: String? {
+        guard showsBindingGlyphs,
+              let text = bindingPresentation?.compactText,
+              !text.isSameBindingDisplay(as: label)
+        else { return nil }
+        return text
+    }
+
     private var triggerAccessibility: CaptureAccessibilityMetadata {
         let target = settings.normalized.target.displayName
-        let output = elementID
-            .flatMap { customization.element(for: $0)?.outputBinding(for: .triggerDigital) }
-            .flatMap(KeypadAccessibility.outputDescription(for:))
-        let outputSuffix = output.map { " Digital press activates \($0)." } ?? ""
+        let bindingSuffix = bindingPresentation.map { " Digital binding: \($0.accessibilityText)." } ?? ""
         return CaptureAccessibilityMetadata(
             label: accessibleLabel,
-            hint: "Swipe up or down to adjust \(target) from 0 to 100 percent.\(outputSuffix)",
+            hint: "Swipe up or down to adjust \(target) from 0 to 100 percent.\(bindingSuffix)",
             identifier: KeypadAccessibility.identifier(kind: "trigger", elementID: elementID, fallback: accessibleLabel),
             value: KeypadAccessibility.percentValue(value)
         )
@@ -4328,13 +4418,22 @@ private struct GamepadTrigger: View {
                 .allowsHitTesting(false)
 
             if customization.showsButtonLabels {
-                Text(label)
-                    .geistTypography(size.height <= 44 ? .button12 : .button14)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .foregroundStyle(foregroundColor)
-                    .padding(.horizontal, 8)
-                    .scaleEffect(visualLabelScale)
+                HStack(spacing: 5) {
+                    Text(label)
+                        .geistTypography(size.height <= 44 ? .button12 : .button14)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    if let compactBindingText, size.width >= 76 {
+                        KeypadSecondaryBindingText(
+                            text: compactBindingText,
+                            color: foregroundColor,
+                            maximumWidth: size.width * 0.46
+                        )
+                    }
+                }
+                .foregroundStyle(foregroundColor)
+                .padding(.horizontal, 8)
+                .scaleEffect(visualLabelScale)
             }
 
             if differentiateWithoutColor && fillFraction > 0.001 {
@@ -4515,6 +4614,7 @@ private extension GamepadHapticFeedback {
 
 private struct GamepadTrackpad: View {
     @EnvironmentObject private var client: ControllerClient
+    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -4540,12 +4640,29 @@ private struct GamepadTrackpad: View {
         KeypadAccessibility.label(visibleTitle: label, fallback: "Trackpad")
     }
 
+    private var bindingPresentation: KeypadBindingPresentation? {
+        guard let elementID else { return nil }
+        return client.bindingPresentation(
+            orientation: customization.deviceCanvas.editorDeviceFrame.orientation,
+            input: KeypadElementInputID(elementID: elementID)
+        )
+    }
+
+    private var compactBindingText: String? {
+        guard showsBindingGlyphs,
+              let text = bindingPresentation?.compactText,
+              !text.isSameBindingDisplay(as: label)
+        else { return nil }
+        return text
+    }
+
     private var trackpadAccessibility: CaptureAccessibilityMetadata {
         let scrollHint = normalizedSettings.twoFingerScroll ? " Two-finger direct touch scrolls." : ""
         let tapHint = normalizedSettings.tapToClick ? " A one-finger tap clicks." : ""
+        let bindingHint = bindingPresentation.map { " Binding: \($0.accessibilityText)." } ?? ""
         return CaptureAccessibilityMetadata(
             label: accessibleLabel,
-            hint: "Touch directly to move the pointer. Use the Click or Right Click actions.\(tapHint)\(scrollHint)",
+            hint: "Touch directly to move the pointer. Use the Click or Right Click actions.\(tapHint)\(scrollHint)\(bindingHint)",
             identifier: KeypadAccessibility.identifier(kind: "trackpad", elementID: elementID, fallback: accessibleLabel),
             value: isActive ? "\(touchCount) finger\(touchCount == 1 ? "" : "s") active" : "Idle"
         )
@@ -4630,13 +4747,22 @@ private struct GamepadTrackpad: View {
                     .foregroundStyle(foregroundColor.opacity(isActive ? 0.95 : 0.70))
 
                 if customization.showsButtonLabels {
-                    Text(label)
-                        .geistTypography(size.width <= 112 ? .button12 : .button14)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .foregroundStyle(foregroundColor.opacity(reduceTransparency ? 1 : 0.94))
-                        .padding(.horizontal, 8)
-                        .scaleEffect(visualLabelScale)
+                    VStack(spacing: 2) {
+                        Text(label)
+                            .geistTypography(size.width <= 112 ? .button12 : .button14)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                        if let compactBindingText {
+                            KeypadSecondaryBindingText(
+                                text: compactBindingText,
+                                color: foregroundColor,
+                                maximumWidth: size.width * 0.82
+                            )
+                        }
+                    }
+                    .foregroundStyle(foregroundColor.opacity(reduceTransparency ? 1 : 0.94))
+                    .padding(.horizontal, 8)
+                    .scaleEffect(visualLabelScale)
                 }
             }
 
@@ -4702,6 +4828,7 @@ private struct GamepadTrackpad: View {
 
 private struct GamepadButton: View {
     @EnvironmentObject private var client: ControllerClient
+    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -4726,10 +4853,24 @@ private struct GamepadButton: View {
         KeypadAccessibility.label(visibleTitle: title, fallback: button.displayName)
     }
 
+    private var bindingPresentation: KeypadBindingPresentation? {
+        client.bindingPresentation(
+            orientation: customization.deviceCanvas.editorDeviceFrame.orientation,
+            input: KeypadElementInputID(elementID: elementID ?? KeypadElement.builtInID(for: button))
+        )
+    }
+
+    private var compactBindingText: String? {
+        guard showsBindingGlyphs, let text = bindingPresentation?.compactText else { return nil }
+        if text.isSameBindingDisplay(as: title) { return nil }
+        if let icon = resolvedPresentation.icon,
+           icon.source == .text,
+           text.isSameBindingDisplay(as: icon.value) { return nil }
+        return text
+    }
+
     private var buttonAccessibility: CaptureAccessibilityMetadata {
-        let output = elementID
-            .flatMap { customization.element(for: $0)?.outputBinding(for: .primary) }
-            .flatMap(KeypadAccessibility.outputDescription(for:))
+        let output = bindingPresentation?.accessibilityText
         return CaptureAccessibilityMetadata(
             label: accessibleTitle,
             hint: KeypadAccessibility.buttonHint(outputDescription: output, fallbackOutputName: button.displayName),
@@ -4890,14 +5031,23 @@ private struct GamepadButton: View {
         }
 
         if customization.showsButtonLabels && (presentation.icon?.placement != .center || title.count <= 2) {
-            Text(title)
-                .geistTypography(title.count <= 2 ? .heading32 : .button16)
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
-                .foregroundStyle(presentation.foregroundSwiftUIColor)
-                .padding(.horizontal, 4)
-                .scaleEffect(visualLabelScale)
-                .offset(labelOffset(for: presentation.icon?.placement))
+            VStack(spacing: 1) {
+                Text(title)
+                    .geistTypography(title.count <= 2 ? .heading32 : .button16)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+                if let compactBindingText {
+                    KeypadSecondaryBindingText(
+                        text: compactBindingText,
+                        color: presentation.foregroundSwiftUIColor,
+                        maximumWidth: size.width * 0.88
+                    )
+                }
+            }
+            .foregroundStyle(presentation.foregroundSwiftUIColor)
+            .padding(.horizontal, 4)
+            .scaleEffect(visualLabelScale)
+            .offset(labelOffset(for: presentation.icon?.placement))
         }
     }
 

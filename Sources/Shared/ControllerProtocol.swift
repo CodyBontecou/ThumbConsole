@@ -600,6 +600,7 @@ public struct ControllerMessage: Codable, Sendable {
     public var serverID: String?
     public var gamepadCustomization: GamepadCustomization?
     public var gamepadProfiles: [GamepadConfigurationProfile]?
+    public var bindingPresentations: [GamepadProfileBindingPresentations]?
     public var gamepadProfileID: UUID?
     public var defaultGamepadProfileID: UUID?
     public var capabilities: [ControllerCapability]?
@@ -638,6 +639,7 @@ public struct ControllerMessage: Codable, Sendable {
         serverID: String? = nil,
         gamepadCustomization: GamepadCustomization? = nil,
         gamepadProfiles: [GamepadConfigurationProfile]? = nil,
+        bindingPresentations: [GamepadProfileBindingPresentations]? = nil,
         gamepadProfileID: UUID? = nil,
         defaultGamepadProfileID: UUID? = nil,
         capabilities: [ControllerCapability]? = nil,
@@ -673,6 +675,7 @@ public struct ControllerMessage: Codable, Sendable {
         self.serverID = serverID
         self.gamepadCustomization = gamepadCustomization
         self.gamepadProfiles = gamepadProfiles
+        self.bindingPresentations = bindingPresentations
         self.gamepadProfileID = gamepadProfileID
         self.defaultGamepadProfileID = defaultGamepadProfileID
         self.capabilities = capabilities
@@ -918,6 +921,7 @@ public enum ControllerWireCodec {
               message.elementPart == nil,
               message.gamepadCustomization == nil,
               message.gamepadProfiles == nil,
+              message.bindingPresentations == nil,
               message.gamepadProfileID == nil,
               message.defaultGamepadProfileID == nil,
               message.capabilities == nil,

@@ -89,13 +89,15 @@ struct ThumbConsoleCLI {
         var defaultProfileID: UUID?
         var profileKeyBindings: [String: [String: MacKeyBinding]]
         var profileOutputBindings: [String: [String: MacControlOutputBinding]]
+        var bindingPresentations: [GamepadProfileBindingPresentations]?
 
         init(
             profiles: [GamepadConfigurationProfile],
             activeProfileID: UUID?,
             defaultProfileID: UUID?,
             profileKeyBindings: [String: [String: MacKeyBinding]] = [:],
-            profileOutputBindings: [String: [String: MacControlOutputBinding]] = [:]
+            profileOutputBindings: [String: [String: MacControlOutputBinding]] = [:],
+            bindingPresentations: [GamepadProfileBindingPresentations]? = nil
         ) {
             let state = GamepadConfigurationProfilePersistence.normalizedState(
                 profiles: profiles,
@@ -107,6 +109,7 @@ struct ThumbConsoleCLI {
             self.defaultProfileID = state.defaultProfileID
             self.profileKeyBindings = profileKeyBindings
             self.profileOutputBindings = profileOutputBindings
+            self.bindingPresentations = bindingPresentations
         }
 
         init(from decoder: Decoder) throws {
@@ -149,6 +152,7 @@ struct ThumbConsoleCLI {
             defaultProfileID = state.defaultProfileID
             profileKeyBindings = try container.decodeIfPresent([String: [String: MacKeyBinding]].self, forKey: .profileKeyBindings) ?? [:]
             profileOutputBindings = try container.decodeIfPresent([String: [String: MacControlOutputBinding]].self, forKey: .profileOutputBindings) ?? [:]
+            bindingPresentations = try container.decodeIfPresent([GamepadProfileBindingPresentations].self, forKey: .bindingPresentations)
         }
     }
 
@@ -448,7 +452,14 @@ struct ThumbConsoleCLI {
                 let keyboardBindings = decodedBindings(bindings) ?? DefaultKeypadKeyMap.defaultBindings
                 let storedOutputs = decodedOutputBindings(store.profileOutputBindings[profile.id.uuidString]) ?? outputBindings(from: keyboardBindings)
                 let outputs = effectiveOutputBindings(for: profile.outputMode, keyBindings: keyboardBindings, customOutputBindings: storedOutputs)
-                try printJSON(ProfileExportEnvelope(profiles: [profile], activeProfileID: profile.id, defaultProfileID: store.defaultProfileID == profile.id ? profile.id : nil, profileKeyBindings: [profile.id.uuidString: bindings], profileOutputBindings: [profile.id.uuidString: rawOutputBindings(outputs)]))
+                try printJSON(ProfileExportEnvelope(
+                    profiles: [profile],
+                    activeProfileID: profile.id,
+                    defaultProfileID: store.defaultProfileID == profile.id ? profile.id : nil,
+                    profileKeyBindings: [profile.id.uuidString: bindings],
+                    profileOutputBindings: [profile.id.uuidString: rawOutputBindings(outputs)],
+                    bindingPresentations: bindingPresentations(for: profile, store: store)
+                ))
             } else {
                 printProfile(profile, store: store)
             }
@@ -1024,6 +1035,23 @@ struct ThumbConsoleCLI {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing binding subcommand") }
         let rest = Array(arguments.dropFirst())
         switch subcommand {
+        case "display":
+            let store = loadStore()
+            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
+            let presentations = bindingPresentations(for: profile, store: store)
+            if rest.contains("--json") {
+                try printJSON(presentations)
+            } else {
+                print("Binding display for \"\(profile.name)\":")
+                for group in presentations {
+                    let orientation = group.orientation?.rawValue.capitalized ?? "All orientations"
+                    print("\(orientation):")
+                    for entry in group.entries {
+                        print("- \(entry.input.storageKey): \(entry.compactText) (\(entry.accessibilityText))")
+                    }
+                }
+            }
+
         case "list", "ls":
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
@@ -2924,13 +2952,21 @@ struct ThumbConsoleCLI {
             let target = try resolveElementTarget(targetText, in: customization)
             switch target {
             case .builtin(let button):
-                if let label = optionValue("--label", in: arguments) { customization.setLabel(label, for: button) }
+                if arguments.contains("--clear-label") {
+                    customization.setLabel("", for: button)
+                } else if let label = optionValue("--label", in: arguments) {
+                    customization.setLabel(label, for: button)
+                }
                 var layout = customization.buttonCustomization(for: button)
                 try applyLayoutOptions(arguments, to: &layout)
                 customization.setButtonCustomization(layout, for: button)
             case .custom(let id):
                 guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { throw CLIError.message("Custom element not found") }
-                if let label = optionValue("--label", in: arguments) { customization.customButtons[index].label = normalizedLabel(label) }
+                if arguments.contains("--clear-label") {
+                    customization.customButtons[index].label = customization.visualLabel(for: customization.customButtons[index].mappedButton)
+                } else if let label = optionValue("--label", in: arguments) {
+                    customization.customButtons[index].label = normalizedLabel(label)
+                }
                 if let mapped = optionValue("--maps-to", in: arguments) { customization.customButtons[index].mappedButton = try parseButton(mapped) }
                 if let kind = optionValue("--kind", in: arguments) { customization.customButtons[index].controlKind = try parseCustomControlKind(kind) }
                 let currentKind = customization.customButtons[index].controlKind
@@ -2974,7 +3010,7 @@ struct ThumbConsoleCLI {
                 }
                 try applyLayoutOptions(arguments, to: &customization.customButtons[index].layout)
             case .system(.topBarActivation):
-                if optionValue("--label", in: arguments) != nil || optionValue("--maps-to", in: arguments) != nil || optionValue("--kind", in: arguments) != nil {
+                if arguments.contains("--clear-label") || optionValue("--label", in: arguments) != nil || optionValue("--maps-to", in: arguments) != nil || optionValue("--kind", in: arguments) != nil {
                     throw CLIError.message("The control bar hotspot only supports layout options")
                 }
                 try applyLayoutOptions(arguments, to: &customization.topBarActivationRegion)
@@ -4393,6 +4429,24 @@ struct ThumbConsoleCLI {
         }
     }
 
+    private static func bindingPresentations(
+        for profile: GamepadConfigurationProfile,
+        store: ProfileStore
+    ) -> [GamepadProfileBindingPresentations] {
+        let profileID = profile.id.uuidString
+        let keys = decodedBindings(store.profileKeyBindings[profileID]) ?? DefaultKeypadKeyMap.defaultBindings
+        let storedOutputs = decodedOutputBindings(store.profileOutputBindings[profileID]) ?? outputBindings(from: keys)
+        let outputs = effectiveOutputBindings(
+            for: profile.outputMode,
+            keyBindings: keys,
+            customOutputBindings: storedOutputs
+        )
+        return KeypadBindingPresentationBuilder.presentations(
+            for: profile,
+            effectiveLegacyOutputs: outputs.compactMapValues { $0.isEmpty ? nil : $0.sharedBinding }
+        )
+    }
+
     private static func rawOutputBindings(_ bindings: [GameButton: MacControlOutputBinding]) -> [String: MacControlOutputBinding] {
         Dictionary(uniqueKeysWithValues: bindings.map { button, binding in (button.rawValue, binding) })
     }
@@ -5342,6 +5396,7 @@ struct ThumbConsoleCLI {
 
         Bindings:
           thumbconsole binding list [--profile PROFILE]
+          thumbconsole binding display [--profile PROFILE] [--json]
           thumbconsole binding set jump Return
           thumbconsole binding set focus --sequence 'Control+B,H'
           thumbconsole binding reset jump
@@ -5381,6 +5436,7 @@ struct ThumbConsoleCLI {
           thumbconsole element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
           thumbconsole element add decoration --label Shell --material soft-white-plate --x 0.5 --y 0.5 --width 3.2 --height 1.5 --shape rounded_rectangle
           thumbconsole element set jump --keyboard Space --gamepad south
+          thumbconsole element set jump --clear-label
           thumbconsole element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
           thumbconsole element set "Right Stick" --thumb-fill '#22C55E'
           thumbconsole element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
