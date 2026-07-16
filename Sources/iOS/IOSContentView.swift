@@ -3137,6 +3137,7 @@ private struct ControllerPadResolvedTrackpad: View {
 
     var body: some View {
         GamepadTrackpad(
+            elementID: control.elementID,
             label: control.label,
             size: control.size,
             elementCustomization: control.layoutCustomization,
@@ -3969,6 +3970,11 @@ private struct IOSGamepadOuterShadowModifier: ViewModifier {
 private struct GamepadJoystick: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let elementID: UUID?
     let mapping: GamepadJoystickMapping
     let outputSettings: GamepadJoystickOutputSettings
@@ -4019,14 +4025,41 @@ private struct GamepadJoystick: View {
         }
     }
 
+    private var accessibleLabel: String {
+        KeypadAccessibility.label(visibleTitle: label, fallback: "Joystick")
+    }
+
+    private var joystickAccessibility: CaptureAccessibilityMetadata {
+        CaptureAccessibilityMetadata(
+            label: accessibleLabel,
+            hint: KeypadAccessibility.joystickHint(outputSettings: outputSettings),
+            identifier: KeypadAccessibility.identifier(kind: "joystick", elementID: elementID, fallback: accessibleLabel),
+            value: KeypadAccessibility.joystickValue(
+                horizontal: normalizedOffset.width,
+                vertical: normalizedOffset.height,
+                activeDirections: activeDirections
+            )
+        )
+    }
+
+    private var visualLabelScale: CGFloat {
+        KeypadAccessibility.visualLabelScale(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)
+    }
+
     var body: some View {
         ZStack {
             joystickBase
                 .frame(width: hitSide, height: hitSide)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
 
-            JoystickCaptureView(activationDiameter: activationDiameter) { direction, pressed, pressIdentifier in
+            JoystickCaptureView(
+                activationDiameter: activationDiameter,
+                accessibility: joystickAccessibility
+            ) { direction, pressed, pressIdentifier in
                 handleDirectionEdge(direction, pressed: pressed, pressIdentifier: pressIdentifier)
+            } onAccessibilityDirection: { direction in
+                handleAccessibilityDirection(direction)
             } onVectorChanged: { vector, directions in
                 normalizedOffset = CGSize(width: vector.dx, height: vector.dy)
                 activeDirections = directions
@@ -4035,7 +4068,6 @@ private struct GamepadJoystick: View {
             .frame(width: hitSide, height: hitSide)
         }
         .frame(width: hitSide, height: hitSide)
-        .accessibilityLabel(label)
         .onDisappear {
             activeDirections.removeAll()
             normalizedOffset = .zero
@@ -4049,12 +4081,19 @@ private struct GamepadJoystick: View {
         let fillStyle = presentation.fillStyle
         let strokeColor = presentation.strokeSwiftUIColor
         let foregroundColor = presentation.foregroundSwiftUIColor
+        let strokeWidth = presentation.strokeWidth + (colorSchemeContrast == .increased ? 1.5 : 0)
         let knobFillColor = elementCustomization.joystickKnobFill(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
         let knobStrokeColor = elementCustomization.joystickKnobStroke(accentStyle: accentStyle, isPressed: isActive, scheme: colorScheme)
         let knobOffset = CGSize(width: normalizedOffset.width * knobTravelRadius, height: normalizedOffset.height * knobTravelRadius)
         let isThumbstick = joystickVisualStyle == .thumbstick
 
         return ZStack {
+            if reduceTransparency {
+                Circle()
+                    .fill(Geist.color(.gray100, scheme: colorScheme))
+                    .frame(width: visualSide, height: visualSide)
+            }
+
             if isThumbstick && isActive {
                 Circle()
                     .stroke(foregroundColor.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [5, 7]))
@@ -4063,7 +4102,7 @@ private struct GamepadJoystick: View {
             }
 
             GamepadFillShapeLayer(shape: Circle(), fillStyle: fillStyle)
-                .overlay(Circle().stroke(strokeColor, lineWidth: presentation.strokeWidth))
+                .overlay(Circle().stroke(strokeColor, lineWidth: strokeWidth))
                 .overlay(GamepadControlEffectOverlay(shape: Circle(), presentation: presentation))
                 .gamepadOuterShadows(presentation)
                 .frame(width: visualSide, height: visualSide)
@@ -4078,10 +4117,23 @@ private struct GamepadJoystick: View {
 
             Circle()
                 .fill(knobFillColor)
-                .overlay(Circle().stroke(knobStrokeColor, lineWidth: 1))
+                .overlay(Circle().stroke(knobStrokeColor, lineWidth: colorSchemeContrast == .increased ? 2.5 : 1))
+                .overlay {
+                    if differentiateWithoutColor && isActive {
+                        Circle().stroke(style: StrokeStyle(lineWidth: 2.5, dash: [3, 3]))
+                    }
+                }
                 .frame(width: knobSide, height: knobSide)
                 .offset(knobOffset)
-                .animation(.interactiveSpring(response: 0.16, dampingFraction: 0.82), value: normalizedOffset)
+                .animation(reduceMotion ? nil : .interactiveSpring(response: 0.16, dampingFraction: 0.82), value: normalizedOffset)
+
+            if isActive {
+                Circle()
+                    .stroke(style: StrokeStyle(lineWidth: colorSchemeContrast == .increased ? 3 : 2, dash: [5, 4]))
+                    .foregroundStyle(foregroundColor)
+                    .frame(width: visualSide * 0.88, height: visualSide * 0.88)
+                    .allowsHitTesting(false)
+            }
 
             if customization.showsButtonLabels && !isThumbstick {
                 Text(label)
@@ -4090,6 +4142,7 @@ private struct GamepadJoystick: View {
                     .minimumScaleFactor(0.5)
                     .foregroundStyle(foregroundColor)
                     .padding(.horizontal, 6)
+                    .scaleEffect(visualLabelScale)
                     .offset(y: visualSide * (isThumbstick ? 0.58 : 0.34))
             }
         }
@@ -4130,6 +4183,21 @@ private struct GamepadJoystick: View {
         }
     }
 
+    private func handleAccessibilityDirection(_ direction: GamepadJoystickDirection) {
+        let settings = outputSettings.normalized
+        guard let stick = settings.analogTarget.stick else { return }
+        let vector: CGVector
+        switch direction {
+        case .up: vector = CGVector(dx: 0, dy: -1)
+        case .down: vector = CGVector(dx: 0, dy: 1)
+        case .left: vector = CGVector(dx: -1, dy: 0)
+        case .right: vector = CGVector(dx: 1, dy: 0)
+        }
+        let transformed = settings.transformedVector(x: vector.dx, y: vector.dy)
+        client.setGamepadStick(stick, x: Double(transformed.dx), y: Double(transformed.dy), isFinal: false)
+        client.setGamepadStick(stick, x: 0, y: 0, isFinal: true)
+    }
+
     private func handleVectorChanged(_ vector: CGVector) {
         let settings = outputSettings.normalized
         guard let stick = settings.analogTarget.stick else { return }
@@ -4142,6 +4210,10 @@ private struct GamepadJoystick: View {
 private struct GamepadTrigger: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let elementID: UUID?
     let mappedButton: GameButton
     let label: String
@@ -4153,20 +4225,48 @@ private struct GamepadTrigger: View {
     @State private var value: CGFloat = 0
     @State private var isDigitalPressed = false
 
+    private var accessibleLabel: String {
+        KeypadAccessibility.label(visibleTitle: label, fallback: "Trigger")
+    }
+
+    private var triggerAccessibility: CaptureAccessibilityMetadata {
+        let target = settings.normalized.target.displayName
+        let output = elementID
+            .flatMap { customization.element(for: $0)?.outputBinding(for: .triggerDigital) }
+            .flatMap(KeypadAccessibility.outputDescription(for:))
+        let outputSuffix = output.map { " Digital press activates \($0)." } ?? ""
+        return CaptureAccessibilityMetadata(
+            label: accessibleLabel,
+            hint: "Swipe up or down to adjust \(target) from 0 to 100 percent.\(outputSuffix)",
+            identifier: KeypadAccessibility.identifier(kind: "trigger", elementID: elementID, fallback: accessibleLabel),
+            value: KeypadAccessibility.percentValue(value)
+        )
+    }
+
+    private var visualLabelScale: CGFloat {
+        KeypadAccessibility.visualLabelScale(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)
+    }
+
     var body: some View {
         let hitSize = ControllerLayoutMetrics.hitSize(for: size)
         ZStack {
             triggerFace
                 .frame(width: size.width, height: size.height)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
 
-            TriggerCaptureView(orientation: settings.normalized.orientation) { rawValue, isActive in
+            TriggerCaptureView(
+                orientation: settings.normalized.orientation,
+                accessibility: triggerAccessibility,
+                accessibilityValue: value
+            ) { rawValue, isActive in
                 handleValueChanged(rawValue, isActive: isActive)
+            } onAccessibilityValueChanged: { adjustedValue in
+                handleTransformedValueChanged(adjustedValue, isActive: false)
             }
             .frame(width: hitSize.width, height: hitSize.height)
         }
         .frame(width: hitSize.width, height: hitSize.height)
-        .accessibilityLabel(label)
         .onDisappear {
             if value != 0 {
                 handleValueChanged(0, isActive: false)
@@ -4183,15 +4283,20 @@ private struct GamepadTrigger: View {
         let strokeColor = presentation.strokeSwiftUIColor
         let foregroundColor = presentation.foregroundSwiftUIColor
         let fillFraction = max(0, min(1, value))
+        let strokeWidth = presentation.strokeWidth + (colorSchemeContrast == .increased ? 1.5 : 0)
 
         return ZStack(alignment: normalizedSettings.orientation == .vertical ? .bottom : .leading) {
+            if reduceTransparency {
+                Capsule().fill(Geist.color(.gray100, scheme: colorScheme))
+            }
+
             GamepadFillShapeLayer(shape: Capsule(), fillStyle: fillStyle)
-                .overlay(Capsule().stroke(strokeColor, lineWidth: presentation.strokeWidth))
+                .overlay(Capsule().stroke(strokeColor, lineWidth: strokeWidth))
                 .overlay(GamepadControlEffectOverlay(shape: Capsule(), presentation: presentation))
                 .gamepadOuterShadows(presentation)
 
             Capsule()
-                .fill(foregroundColor.opacity(colorScheme == .dark ? 0.24 : 0.18))
+                .fill(foregroundColor.opacity(reduceTransparency ? 0.62 : (colorScheme == .dark ? 0.24 : 0.18)))
                 .frame(
                     width: normalizedSettings.orientation == .vertical ? size.width : max(4, size.width * fillFraction),
                     height: normalizedSettings.orientation == .vertical ? max(4, size.height * fillFraction) : size.height
@@ -4205,13 +4310,27 @@ private struct GamepadTrigger: View {
                     .minimumScaleFactor(0.5)
                     .foregroundStyle(foregroundColor)
                     .padding(.horizontal, 8)
+                    .scaleEffect(visualLabelScale)
+            }
+
+            if differentiateWithoutColor && fillFraction > 0.001 {
+                Text(KeypadAccessibility.percentValue(fillFraction))
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(foregroundColor)
+                    .padding(4)
+                    .background(Geist.color(.gray100, scheme: colorScheme), in: Capsule())
+                    .padding(4)
             }
         }
     }
 
     private func handleValueChanged(_ rawValue: CGFloat, isActive: Bool) {
+        handleTransformedValueChanged(settings.normalized.transformedValue(rawValue), isActive: isActive)
+    }
+
+    private func handleTransformedValueChanged(_ transformedValue: CGFloat, isActive: Bool) {
         let normalizedSettings = settings.normalized
-        let transformed = normalizedSettings.transformedValue(rawValue)
+        let transformed = min(max(transformedValue, 0), 1)
         value = transformed
         client.setGamepadTrigger(normalizedSettings.target, value: Double(transformed), isFinal: !isActive || transformed <= 0.001)
 
@@ -4373,7 +4492,13 @@ private extension GamepadHapticFeedback {
 private struct GamepadTrackpad: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.keypadHapticsEnabled) private var isKeypadHapticsEnabled
+    let elementID: UUID?
     let label: String
     let size: CGSize
     let elementCustomization: GamepadButtonCustomization
@@ -4387,6 +4512,25 @@ private struct GamepadTrackpad: View {
         settings.normalized
     }
 
+    private var accessibleLabel: String {
+        KeypadAccessibility.label(visibleTitle: label, fallback: "Trackpad")
+    }
+
+    private var trackpadAccessibility: CaptureAccessibilityMetadata {
+        let scrollHint = normalizedSettings.twoFingerScroll ? " Two-finger direct touch scrolls." : ""
+        let tapHint = normalizedSettings.tapToClick ? " A one-finger tap clicks." : ""
+        return CaptureAccessibilityMetadata(
+            label: accessibleLabel,
+            hint: "Touch directly to move the pointer. Use the Click or Right Click actions.\(tapHint)\(scrollHint)",
+            identifier: KeypadAccessibility.identifier(kind: "trackpad", elementID: elementID, fallback: accessibleLabel),
+            value: isActive ? "\(touchCount) finger\(touchCount == 1 ? "" : "s") active" : "Idle"
+        )
+    }
+
+    private var visualLabelScale: CGFloat {
+        KeypadAccessibility.visualLabelScale(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)
+    }
+
     var body: some View {
         let hitSize = CGSize(
             width: size.width + ControllerLayoutMetrics.buttonHitOutset * 2,
@@ -4397,10 +4541,12 @@ private struct GamepadTrackpad: View {
             trackpadSurface
                 .frame(width: size.width, height: size.height)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
 
             TrackpadCaptureView(
                 isTapToClickEnabled: normalizedSettings.tapToClick,
-                isTwoFingerScrollEnabled: normalizedSettings.twoFingerScroll
+                isTwoFingerScrollEnabled: normalizedSettings.twoFingerScroll,
+                accessibility: trackpadAccessibility
             ) { delta in
                 handleMove(delta)
             } onScroll: { delta in
@@ -4414,7 +4560,6 @@ private struct GamepadTrackpad: View {
             .frame(width: hitSize.width, height: hitSize.height)
         }
         .frame(width: hitSize.width, height: hitSize.height)
-        .accessibilityLabel(label)
         .onAppear { prepareHapticIfNeeded() }
         .onChange(of: isKeypadHapticsEnabled) { _, isEnabled in
             if isEnabled { prepareHapticIfNeeded() }
@@ -4439,10 +4584,15 @@ private struct GamepadTrackpad: View {
         let strokeColor = presentation.strokeSwiftUIColor
         let foregroundColor = presentation.foregroundSwiftUIColor
         let shape = UnevenRoundedRectangle(cornerRadii: resolvedCornerRadii.rectangleCornerRadii, style: .continuous)
+        let strokeWidth = presentation.strokeWidth + (colorSchemeContrast == .increased ? 1.5 : 0)
 
         return ZStack {
+            if reduceTransparency {
+                shape.fill(Geist.color(.gray100, scheme: colorScheme))
+            }
+
             GamepadFillShapeLayer(shape: shape, fillStyle: fillStyle)
-                .overlay(shape.stroke(strokeColor, lineWidth: presentation.strokeWidth))
+                .overlay(shape.stroke(strokeColor, lineWidth: strokeWidth))
                 .overlay(GamepadControlEffectOverlay(shape: shape, presentation: presentation))
                 .gamepadOuterShadows(presentation)
 
@@ -4460,21 +4610,33 @@ private struct GamepadTrackpad: View {
                         .geistTypography(size.width <= 112 ? .button12 : .button14)
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
-                        .foregroundStyle(foregroundColor.opacity(0.94))
+                        .foregroundStyle(foregroundColor.opacity(reduceTransparency ? 1 : 0.94))
                         .padding(.horizontal, 8)
+                        .scaleEffect(visualLabelScale)
                 }
             }
 
             HStack(spacing: 7) {
-                Capsule().fill(foregroundColor.opacity(isActive ? 0.42 : 0.30))
-                Capsule().fill(foregroundColor.opacity(touchCount >= 2 ? 0.42 : 0.16))
+                Capsule().fill(foregroundColor.opacity(reduceTransparency ? 0.72 : (isActive ? 0.42 : 0.30)))
+                Capsule().fill(foregroundColor.opacity(reduceTransparency ? (touchCount >= 2 ? 0.72 : 0.32) : (touchCount >= 2 ? 0.42 : 0.16)))
             }
             .frame(width: size.width * 0.32, height: max(4, size.height * 0.045))
             .offset(y: size.height * 0.37)
+
+            if isActive {
+                shape.stroke(
+                    foregroundColor,
+                    style: StrokeStyle(
+                        lineWidth: colorSchemeContrast == .increased ? 3 : 2,
+                        dash: differentiateWithoutColor ? [6, 4] : []
+                    )
+                )
+                .padding(3)
+            }
         }
-        .scaleEffect(isActive ? 0.985 : 1)
-        .animation(.interactiveSpring(response: 0.14, dampingFraction: 0.82), value: isActive)
-        .animation(.interactiveSpring(response: 0.14, dampingFraction: 0.82), value: touchCount)
+        .scaleEffect(isActive ? 0.97 : 1)
+        .animation(reduceMotion ? nil : .interactiveSpring(response: 0.14, dampingFraction: 0.82), value: isActive)
+        .animation(reduceMotion ? nil : .interactiveSpring(response: 0.14, dampingFraction: 0.82), value: touchCount)
     }
 
     private func handleMove(_ delta: CGVector) {
@@ -4517,6 +4679,10 @@ private struct GamepadTrackpad: View {
 private struct GamepadButton: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.keypadHapticsEnabled) private var isKeypadHapticsEnabled
     var elementID: UUID? = nil
     let button: GameButton
@@ -4532,9 +4698,29 @@ private struct GamepadButton: View {
         labelOverride ?? customization.visualLabel(for: button)
     }
 
+    private var accessibleTitle: String {
+        KeypadAccessibility.label(visibleTitle: title, fallback: button.displayName)
+    }
+
+    private var buttonAccessibility: CaptureAccessibilityMetadata {
+        let output = elementID
+            .flatMap { customization.element(for: $0)?.outputBinding(for: .primary) }
+            .flatMap(KeypadAccessibility.outputDescription(for:))
+        return CaptureAccessibilityMetadata(
+            label: accessibleTitle,
+            hint: KeypadAccessibility.buttonHint(outputDescription: output, fallbackOutputName: button.displayName),
+            identifier: KeypadAccessibility.identifier(kind: "button", elementID: elementID, fallback: accessibleTitle),
+            value: isPressed ? "Pressed" : nil
+        )
+    }
+
+    private var visualLabelScale: CGFloat {
+        KeypadAccessibility.visualLabelScale(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)
+    }
+
     var body: some View {
         let hitSize = ControllerLayoutMetrics.hitSize(for: size)
-        let presentation = resolvedPresentation
+        let presentation = adaptivePresentation
 
         ZStack {
             ZStack {
@@ -4551,20 +4737,42 @@ private struct GamepadButton: View {
                     }
 
                 buttonContent(presentation: presentation)
+
+                if isPressed {
+                    RoundedRectangle(cornerRadius: max(4, min(size.width, size.height) * 0.14), style: .continuous)
+                        .stroke(
+                            presentation.foregroundSwiftUIColor,
+                            style: StrokeStyle(lineWidth: colorSchemeContrast == .increased ? 3 : 2, dash: [5, 3])
+                        )
+                        .padding(3)
+
+                    if differentiateWithoutColor {
+                        Image(systemName: "checkmark")
+                            .font(.caption2.bold())
+                            .foregroundStyle(presentation.foregroundSwiftUIColor)
+                            .padding(4)
+                            .background(Geist.color(.gray100, scheme: colorScheme), in: Circle())
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .padding(4)
+                    }
+                }
             }
-            .opacity(presentation.opacity)
-            .blur(radius: presentation.blurRadius)
-            .scaleEffect(presentation.scale)
+            .opacity(reduceTransparency ? 1 : presentation.opacity)
+            .blur(radius: reduceTransparency ? 0 : presentation.blurRadius)
+            .scaleEffect(presentation.scale * (isPressed ? 0.94 : 1))
             .allowsHitTesting(false)
+            .accessibilityHidden(true)
             .frame(width: size.width, height: size.height)
 
-            TouchCaptureView(hitShape: resolvedShape) { pressed, isActive, pressIdentifier in
+            TouchCaptureView(
+                hitShape: resolvedShape,
+                accessibility: buttonAccessibility
+            ) { pressed, isActive, pressIdentifier in
                 handlePressEdge(pressed, isActive: isActive, pressIdentifier: pressIdentifier)
             }
             .frame(width: hitSize.width, height: hitSize.height)
         }
         .frame(width: hitSize.width, height: hitSize.height)
-        .accessibilityLabel(button.displayName)
         .onAppear {
             prepareHapticIfNeeded()
         }
@@ -4607,6 +4815,24 @@ private struct GamepadButton: View {
         )
     }
 
+    private var adaptivePresentation: GamepadResolvedControlPresentation {
+        var presentation = resolvedPresentation
+        if colorSchemeContrast == .increased {
+            presentation.strokeWidth = max(2, presentation.strokeWidth + 1.5)
+        }
+        if reduceTransparency {
+            presentation.opacity = 1
+            presentation.blurRadius = 0
+            presentation.glowColor = nil
+            presentation.glowRadius = 0
+            presentation.shadowRadius = 0
+            presentation.shadows = []
+            presentation.innerShadowColor = nil
+            presentation.highlightColor = nil
+        }
+        return presentation
+    }
+
     @ViewBuilder
     private func buttonBackground(presentation: GamepadResolvedControlPresentation) -> some View {
         let fillStyle = presentation.fillStyle
@@ -4646,6 +4872,7 @@ private struct GamepadButton: View {
                 .minimumScaleFactor(0.55)
                 .foregroundStyle(presentation.foregroundSwiftUIColor)
                 .padding(.horizontal, 4)
+                .scaleEffect(visualLabelScale)
                 .offset(labelOffset(for: presentation.icon?.placement))
         }
     }

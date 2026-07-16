@@ -1,19 +1,29 @@
 import SwiftUI
 import UIKit
 
+struct CaptureAccessibilityMetadata: Equatable {
+    var label: String
+    var hint: String
+    var identifier: String
+    var value: String? = nil
+}
+
 struct TouchCaptureView: UIViewRepresentable {
     var hitShape: GamepadButtonShapeStyle = .roundedRectangle
+    var accessibility: CaptureAccessibilityMetadata
     var onPressEdge: (_ pressed: Bool, _ isActive: Bool, _ pressIdentifier: UInt64) -> Void
 
     func makeUIView(context: Context) -> TouchCaptureUIView {
         let view = TouchCaptureUIView()
         view.hitShape = hitShape
+        view.captureAccessibility = accessibility
         view.onPressEdge = onPressEdge
         return view
     }
 
     func updateUIView(_ uiView: TouchCaptureUIView, context: Context) {
         uiView.hitShape = hitShape
+        uiView.captureAccessibility = accessibility
         uiView.onPressEdge = onPressEdge
     }
 
@@ -24,20 +34,26 @@ struct TouchCaptureView: UIViewRepresentable {
 
 struct JoystickCaptureView: UIViewRepresentable {
     var activationDiameter: CGFloat? = nil
+    var accessibility: CaptureAccessibilityMetadata
     var onDirectionEdge: (_ direction: GamepadJoystickDirection, _ pressed: Bool, _ pressIdentifier: UInt64) -> Void
+    var onAccessibilityDirection: (_ direction: GamepadJoystickDirection) -> Void
     var onVectorChanged: (_ vector: CGVector, _ activeDirections: Set<GamepadJoystickDirection>) -> Void
 
     func makeUIView(context: Context) -> JoystickCaptureUIView {
         let view = JoystickCaptureUIView()
         view.activationDiameter = activationDiameter
+        view.captureAccessibility = accessibility
         view.onDirectionEdge = onDirectionEdge
+        view.onAccessibilityDirection = onAccessibilityDirection
         view.onVectorChanged = onVectorChanged
         return view
     }
 
     func updateUIView(_ uiView: JoystickCaptureUIView, context: Context) {
         uiView.activationDiameter = activationDiameter
+        uiView.captureAccessibility = accessibility
         uiView.onDirectionEdge = onDirectionEdge
+        uiView.onAccessibilityDirection = onAccessibilityDirection
         uiView.onVectorChanged = onVectorChanged
     }
 
@@ -48,18 +64,27 @@ struct JoystickCaptureView: UIViewRepresentable {
 
 struct TriggerCaptureView: UIViewRepresentable {
     var orientation: GamepadTriggerOrientation
+    var accessibility: CaptureAccessibilityMetadata
+    var accessibilityValue: CGFloat
     var onValueChanged: (_ value: CGFloat, _ isActive: Bool) -> Void
+    var onAccessibilityValueChanged: (_ value: CGFloat) -> Void
 
     func makeUIView(context: Context) -> TriggerCaptureUIView {
         let view = TriggerCaptureUIView()
         view.orientation = orientation
+        view.captureAccessibility = accessibility
+        view.accessibilityControlValue = accessibilityValue
         view.onValueChanged = onValueChanged
+        view.onAccessibilityValueChanged = onAccessibilityValueChanged
         return view
     }
 
     func updateUIView(_ uiView: TriggerCaptureUIView, context: Context) {
         uiView.orientation = orientation
+        uiView.captureAccessibility = accessibility
+        uiView.accessibilityControlValue = accessibilityValue
         uiView.onValueChanged = onValueChanged
+        uiView.onAccessibilityValueChanged = onAccessibilityValueChanged
     }
 
     static func dismantleUIView(_ uiView: TriggerCaptureUIView, coordinator: ()) {
@@ -70,6 +95,7 @@ struct TriggerCaptureView: UIViewRepresentable {
 struct TrackpadCaptureView: UIViewRepresentable {
     var isTapToClickEnabled: Bool
     var isTwoFingerScrollEnabled: Bool
+    var accessibility: CaptureAccessibilityMetadata
     var onMove: (_ delta: CGVector) -> Void
     var onScroll: (_ delta: CGVector) -> Void
     var onTap: (_ fingerCount: Int) -> Void
@@ -79,6 +105,7 @@ struct TrackpadCaptureView: UIViewRepresentable {
         let view = TrackpadCaptureUIView()
         view.isTapToClickEnabled = isTapToClickEnabled
         view.isTwoFingerScrollEnabled = isTwoFingerScrollEnabled
+        view.captureAccessibility = accessibility
         view.onMove = onMove
         view.onScroll = onScroll
         view.onTap = onTap
@@ -89,6 +116,7 @@ struct TrackpadCaptureView: UIViewRepresentable {
     func updateUIView(_ uiView: TrackpadCaptureUIView, context: Context) {
         uiView.isTapToClickEnabled = isTapToClickEnabled
         uiView.isTwoFingerScrollEnabled = isTwoFingerScrollEnabled
+        uiView.captureAccessibility = accessibility
         uiView.onMove = onMove
         uiView.onScroll = onScroll
         uiView.onTap = onTap
@@ -287,6 +315,9 @@ fileprivate enum ControllerTouchReleaseWatchdog {
 }
 
 final class TouchCaptureUIView: UIView {
+    var captureAccessibility = CaptureAccessibilityMetadata(label: "Button", hint: "Activates this control.", identifier: "keypad.button") {
+        didSet { applyCaptureAccessibility() }
+    }
     var hitShape: GamepadButtonShapeStyle = .roundedRectangle {
         didSet {
             guard oldValue != hitShape else { return }
@@ -315,6 +346,9 @@ final class TouchCaptureUIView: UIView {
         isMultipleTouchEnabled = true
         isExclusiveTouch = false
         backgroundColor = .clear
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+        applyCaptureAccessibility()
     }
 
     required init?(coder: NSCoder) {
@@ -328,6 +362,23 @@ final class TouchCaptureUIView: UIView {
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         containsLocalPoint(point, in: bounds)
+    }
+
+    override func accessibilityActivate() -> Bool {
+        deactivateAllTouches()
+        let pressIdentifier = ControllerPressIdentifierAllocator.allocate()
+        defer { ControllerPressIdentifierAllocator.release(pressIdentifier) }
+        for edge in KeypadAccessibility.safeTapEdges {
+            onPressEdge?(edge.isPressed, edge.isActive, pressIdentifier)
+        }
+        return true
+    }
+
+    private func applyCaptureAccessibility() {
+        accessibilityLabel = captureAccessibility.label
+        accessibilityHint = captureAccessibility.hint
+        accessibilityIdentifier = captureAccessibility.identifier
+        accessibilityValue = captureAccessibility.value
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -670,8 +721,12 @@ final class TouchCaptureUIView: UIView {
 }
 
 final class JoystickCaptureUIView: UIView {
+    var captureAccessibility = CaptureAccessibilityMetadata(label: "Joystick", hint: "Use the direction actions.", identifier: "keypad.joystick", value: "Centered") {
+        didSet { applyCaptureAccessibility() }
+    }
     var activationDiameter: CGFloat?
     var onDirectionEdge: ((_ direction: GamepadJoystickDirection, _ pressed: Bool, _ pressIdentifier: UInt64) -> Void)?
+    var onAccessibilityDirection: ((_ direction: GamepadJoystickDirection) -> Void)?
     var onVectorChanged: ((_ vector: CGVector, _ activeDirections: Set<GamepadJoystickDirection>) -> Void)?
 
     private struct WeakJoystickOwner {
@@ -692,6 +747,9 @@ final class JoystickCaptureUIView: UIView {
         isMultipleTouchEnabled = true
         isExclusiveTouch = false
         backgroundColor = .clear
+        isAccessibilityElement = true
+        accessibilityTraits = [.button, .allowsDirectInteraction]
+        applyCaptureAccessibility()
     }
 
     required init?(coder: NSCoder) {
@@ -705,6 +763,44 @@ final class JoystickCaptureUIView: UIView {
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         containsLocalPoint(point)
+    }
+
+    override func accessibilityActivate() -> Bool {
+        performAccessibilityDirection(.up)
+    }
+
+    @objc private func accessibilityUp() -> Bool { performAccessibilityDirection(.up) }
+    @objc private func accessibilityDown() -> Bool { performAccessibilityDirection(.down) }
+    @objc private func accessibilityLeft() -> Bool { performAccessibilityDirection(.left) }
+    @objc private func accessibilityRight() -> Bool { performAccessibilityDirection(.right) }
+
+    private func performAccessibilityDirection(_ direction: GamepadJoystickDirection) -> Bool {
+        deactivateTouch()
+        let pressIdentifier = ControllerPressIdentifierAllocator.allocate()
+        defer { ControllerPressIdentifierAllocator.release(pressIdentifier) }
+        for edge in KeypadAccessibility.safeTapEdges {
+            onDirectionEdge?(direction, edge.isPressed, pressIdentifier)
+        }
+        onAccessibilityDirection?(direction)
+        accessibilityValue = captureAccessibility.value ?? "Centered"
+        return true
+    }
+
+    private func applyCaptureAccessibility() {
+        accessibilityLabel = captureAccessibility.label
+        accessibilityHint = captureAccessibility.hint
+        accessibilityIdentifier = captureAccessibility.identifier
+        accessibilityValue = captureAccessibility.value ?? KeypadAccessibility.joystickValue(
+            horizontal: currentVector.dx,
+            vertical: currentVector.dy,
+            activeDirections: activeDirections
+        )
+        accessibilityCustomActions = [
+            UIAccessibilityCustomAction(name: "Up", target: self, selector: #selector(accessibilityUp)),
+            UIAccessibilityCustomAction(name: "Down", target: self, selector: #selector(accessibilityDown)),
+            UIAccessibilityCustomAction(name: "Left", target: self, selector: #selector(accessibilityLeft)),
+            UIAccessibilityCustomAction(name: "Right", target: self, selector: #selector(accessibilityRight))
+        ]
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -872,6 +968,11 @@ final class JoystickCaptureUIView: UIView {
         let nextDirections = directions(for: vector)
         currentVector = vector
         applyActiveDirections(nextDirections)
+        accessibilityValue = KeypadAccessibility.joystickValue(
+            horizontal: vector.dx,
+            vertical: vector.dy,
+            activeDirections: nextDirections
+        )
         onVectorChanged?(CGVector(dx: vector.dx, dy: vector.dy), nextDirections)
     }
 
@@ -898,6 +999,7 @@ final class JoystickCaptureUIView: UIView {
         }
 
         currentVector = CGVector(dx: 0, dy: 0)
+        accessibilityValue = "Centered"
         let directions = activeDirections
         activeDirections.removeAll()
         for direction in directions {
@@ -1015,8 +1117,15 @@ final class JoystickCaptureUIView: UIView {
 }
 
 final class TriggerCaptureUIView: UIView {
+    var captureAccessibility = CaptureAccessibilityMetadata(label: "Trigger", hint: "Swipe up or down to adjust.", identifier: "keypad.trigger", value: "0 percent") {
+        didSet { applyCaptureAccessibility() }
+    }
+    var accessibilityControlValue: CGFloat = 0 {
+        didSet { accessibilityValue = KeypadAccessibility.percentValue(accessibilityControlValue) }
+    }
     var orientation: GamepadTriggerOrientation = .vertical
     var onValueChanged: ((_ value: CGFloat, _ isActive: Bool) -> Void)?
+    var onAccessibilityValueChanged: ((_ value: CGFloat) -> Void)?
 
     private struct WeakTriggerOwner {
         weak var view: TriggerCaptureUIView?
@@ -1033,6 +1142,9 @@ final class TriggerCaptureUIView: UIView {
         isMultipleTouchEnabled = true
         isExclusiveTouch = false
         backgroundColor = .clear
+        isAccessibilityElement = true
+        accessibilityTraits = [.adjustable, .allowsDirectInteraction]
+        applyCaptureAccessibility()
     }
 
     required init?(coder: NSCoder) {
@@ -1046,6 +1158,29 @@ final class TriggerCaptureUIView: UIView {
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         bounds.contains(point)
+    }
+
+    override func accessibilityIncrement() {
+        adjustAccessibilityValue(incrementing: true)
+    }
+
+    override func accessibilityDecrement() {
+        adjustAccessibilityValue(incrementing: false)
+    }
+
+    private func adjustAccessibilityValue(incrementing: Bool) {
+        deactivateTouch()
+        let nextValue = KeypadAccessibility.adjustedValue(accessibilityControlValue, incrementing: incrementing)
+        guard nextValue != accessibilityControlValue else { return }
+        accessibilityControlValue = nextValue
+        onAccessibilityValueChanged?(nextValue)
+    }
+
+    private func applyCaptureAccessibility() {
+        accessibilityLabel = captureAccessibility.label
+        accessibilityHint = captureAccessibility.hint
+        accessibilityIdentifier = captureAccessibility.identifier
+        accessibilityValue = KeypadAccessibility.percentValue(accessibilityControlValue)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -1294,6 +1429,9 @@ final class TriggerCaptureUIView: UIView {
 }
 
 final class TrackpadCaptureUIView: UIView {
+    var captureAccessibility = CaptureAccessibilityMetadata(label: "Trackpad", hint: "Touch directly to move the pointer.", identifier: "keypad.trackpad") {
+        didSet { applyCaptureAccessibility() }
+    }
     var isTapToClickEnabled = true
     var isTwoFingerScrollEnabled = true
     var onMove: ((_ delta: CGVector) -> Void)?
@@ -1323,6 +1461,9 @@ final class TrackpadCaptureUIView: UIView {
         isMultipleTouchEnabled = true
         isExclusiveTouch = false
         backgroundColor = .clear
+        isAccessibilityElement = true
+        accessibilityTraits = [.allowsDirectInteraction]
+        applyCaptureAccessibility()
     }
 
     required init?(coder: NSCoder) {
@@ -1336,6 +1477,33 @@ final class TrackpadCaptureUIView: UIView {
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         bounds.contains(point)
+    }
+
+    override func accessibilityActivate() -> Bool {
+        accessibilityClick()
+    }
+
+    @objc private func accessibilityClick() -> Bool {
+        deactivateAllTouches(allowsTap: false)
+        onTap?(1)
+        return true
+    }
+
+    @objc private func accessibilityRightClick() -> Bool {
+        deactivateAllTouches(allowsTap: false)
+        onTap?(2)
+        return true
+    }
+
+    private func applyCaptureAccessibility() {
+        accessibilityLabel = captureAccessibility.label
+        accessibilityHint = captureAccessibility.hint
+        accessibilityIdentifier = captureAccessibility.identifier
+        accessibilityValue = captureAccessibility.value
+        accessibilityCustomActions = [
+            UIAccessibilityCustomAction(name: "Click", target: self, selector: #selector(accessibilityClick)),
+            UIAccessibilityCustomAction(name: "Right Click", target: self, selector: #selector(accessibilityRightClick))
+        ]
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
