@@ -70,6 +70,7 @@
 		7539E94D0AAE13A9A69005F1 /* ControllerRuntimeUX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D57C2DB61F557F37DB934D0 /* ControllerRuntimeUX.swift */; };
 		791781654D49B429BC42A2D8 /* ButtonPulseSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7784C1B1D650CE231A0006D1 /* ButtonPulseSequencer.swift */; };
 		79940E196AE4216E1B8D19E9 /* GamepadControllerPresentationRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715C0649D97E0109CABD7903 /* GamepadControllerPresentationRouting.swift */; };
+		7BF8245DA91DA068B769D578 /* TopBarActivationRegionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5767860F14CAA192A4888C15 /* TopBarActivationRegionTests.swift */; };
 		7E34EF9CAFA1D71F5607A94D /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 905ACA7D04EE125E23E5064D /* ControllerProtocol.swift */; };
 		7EB2A10C011BCB8EE71ABBD5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 30D2479965F8E76160864D75 /* Assets.xcassets */; };
 		800D9B7FC2D396E5808F986C /* ControllerActiveInputState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13289689DC501F5697ACA30C /* ControllerActiveInputState.swift */; };
@@ -166,6 +167,7 @@
 		422B84A7E525126E458BB71E /* ThumbPlacementCalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbPlacementCalibrationView.swift; sourceTree = "<group>"; };
 		43ACCA9BA9875BEDFDE5AB69 /* PairingPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPayload.swift; sourceTree = "<group>"; };
 		44597CCB55B17A782B892464 /* ThumbConsoleCLISmokeTestSuite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbConsoleCLISmokeTestSuite.swift; sourceTree = "<group>"; };
+		5767860F14CAA192A4888C15 /* TopBarActivationRegionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopBarActivationRegionTests.swift; sourceTree = "<group>"; };
 		6301462F2C07B2844F790E2D /* TouchCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchCaptureView.swift; sourceTree = "<group>"; };
 		631AE7538DE6064A67FDDFDD /* ControllerRuntimeUXTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerRuntimeUXTests.swift; sourceTree = "<group>"; };
 		634278DE830E73727BE0417A /* OrientationPreferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationPreferenceTests.swift; sourceTree = "<group>"; };
@@ -217,6 +219,7 @@
 				F40E1BF03FDE687F9906A99F /* KeypadBindingPresentationTests.swift */,
 				634278DE830E73727BE0417A /* OrientationPreferenceTests.swift */,
 				44597CCB55B17A782B892464 /* ThumbConsoleCLISmokeTestSuite.swift */,
+				5767860F14CAA192A4888C15 /* TopBarActivationRegionTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -587,6 +590,7 @@
 				CEA45BD1F7E2AF870BB0D3F2 /* ProfileOrientationSupport.swift in Sources */,
 				8A44E603A7EF0FC1769224F8 /* ThumbConsoleCLISmokeTestSuite.swift in Sources */,
 				40924B405E2F830CC6D676E2 /* ThumbConsoleInputLatencySimulation.swift in Sources */,
+				7BF8245DA91DA068B769D578 /* TopBarActivationRegionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

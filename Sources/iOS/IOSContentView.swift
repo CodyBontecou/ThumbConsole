@@ -2863,8 +2863,6 @@ private struct ControllerTopBarDrawer<Content: View>: View {
             if isVisible {
                 content
                     .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.08), radius: 10, y: 4)
-                    .contentShape(Rectangle())
-                    .simultaneousGesture(drawerDragGesture)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -2873,9 +2871,9 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         .padding(.top, topPadding)
         .padding(.leading, leadingPadding)
         .padding(.trailing, trailingPadding)
+        // Leave the empty width around the drawer transparent to touches. The
+        // visible bar and compact reveal handle install their own drag gestures.
         .frame(maxWidth: .infinity, alignment: .top)
-        .contentShape(Rectangle())
-        .highPriorityGesture(drawerDragGesture)
         .background {
             ControllerTopBarSwipeBridge(
                 isVisible: $isVisible,
@@ -3134,34 +3132,46 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
 
             let location = touch.location(in: hostView)
 
+            let targetFrame: CGRect
             if isVisible.wrappedValue {
-                let paddedFrame = activationFrame.insetBy(dx: -24, dy: -24)
-                if !paddedFrame.isNull, paddedFrame.width > 1, paddedFrame.height > 1, paddedFrame.contains(location) {
-                    return true
-                }
+                targetFrame = compactHandleFrame(in: activationFrame)
             } else {
-                let paddedFrame = configuredActivationFrame.insetBy(dx: -24, dy: -24)
-                if !paddedFrame.isNull, paddedFrame.width > 1, paddedFrame.height > 1 {
-                    return paddedFrame.contains(location)
-                }
+                targetFrame = configuredActivationFrame
+            }
+            let paddedFrame = targetFrame.insetBy(dx: -12, dy: -12)
+            if !paddedFrame.isNull, paddedFrame.width > 1, paddedFrame.height > 1 {
+                return paddedFrame.contains(location)
             }
 
             // On a cold launch into the saved keypad, SwiftUI can install the
-            // bridge before the drawer's background view has a stable frame.
-            // Keep the edge swipe available from the top interaction band so
-            // the bar can still be hidden without visiting Home and reopening.
+            // bridge before either activation frame is stable. Keep a compact
+            // center target available instead of claiming the full top edge.
             return fallbackActivationFrame(in: hostView).contains(location)
         }
 
-        private func fallbackActivationFrame(in hostView: UIView) -> CGRect {
-            let topInset = hostView.safeAreaInsets.top
-            let height = if isVisible.wrappedValue {
-                min(220, max(120, topInset + 132))
-            } else {
-                min(140, max(72, topInset + 80))
-            }
+        private func compactHandleFrame(in drawerFrame: CGRect) -> CGRect {
+            guard !drawerFrame.isNull, drawerFrame.width > 1, drawerFrame.height > 1 else { return .null }
+            let width = min(60, drawerFrame.width)
+            let height = min(44, drawerFrame.height)
+            return CGRect(
+                x: drawerFrame.midX - width / 2,
+                y: drawerFrame.maxY - height,
+                width: width,
+                height: height
+            )
+        }
 
-            return CGRect(x: 0, y: 0, width: hostView.bounds.width, height: height)
+        private func fallbackActivationFrame(in hostView: UIView) -> CGRect {
+            let width = min(60, hostView.bounds.width)
+            let height: CGFloat = 44
+            let topInset = hostView.safeAreaInsets.top
+            let originY = max(0, topInset)
+            return CGRect(
+                x: hostView.bounds.midX - width / 2,
+                y: originY,
+                width: width,
+                height: height
+            ).insetBy(dx: -12, dy: -12)
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

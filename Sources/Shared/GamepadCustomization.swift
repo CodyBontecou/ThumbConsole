@@ -29,6 +29,13 @@ public enum GamepadLayoutMode: String, Codable, CaseIterable, Identifiable, Send
         case .southpaw: "Action keys left, navigation controls right"
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .standard: "dpad.fill"
+        case .southpaw: "a.circle.fill"
+        }
+    }
 }
 
 public enum GamepadControlScale: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -53,6 +60,14 @@ public enum GamepadControlScale: String, Codable, CaseIterable, Identifiable, Se
         case .large: 1.14
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .compact: "arrow.down.right.and.arrow.up.left"
+        case .standard: "square"
+        case .large: "arrow.up.left.and.arrow.down.right"
+        }
+    }
 }
 
 public enum GamepadColorSchemePreference: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -75,6 +90,14 @@ public enum GamepadColorSchemePreference: String, Codable, CaseIterable, Identif
         case .system: "Match the current device appearance."
         case .light: "Always render the keypad in light mode."
         case .dark: "Always render the keypad in dark mode."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max.fill"
+        case .dark: "moon.fill"
         }
     }
 
@@ -3051,13 +3074,13 @@ public enum GamepadSystemControl: String, Codable, CaseIterable, Identifiable, S
 
     var displayName: String {
         switch self {
-        case .topBarActivation: "Control Bar"
+        case .topBarActivation: "Control Bar Toggle"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .topBarActivation: "iPhone control bar hotspot & contents"
+        case .topBarActivation: "iPhone control bar toggle hotspot"
         }
     }
 
@@ -3392,7 +3415,7 @@ enum GamepadLayoutResolver {
         guard !layout.isHidden else { return [] }
 
         let shape = layout.resolvedShape(defaultShape: .capsule)
-        let baseControlSize = topBarActivationBaseSize(for: customization, in: canvasSize)
+        let baseControlSize = topBarActivationBaseSize
         let scaledSize = effectiveSize(
             CGSize(
                 width: baseControlSize.width * layout.widthScale,
@@ -3643,30 +3666,9 @@ enum GamepadLayoutResolver {
         return CGSize(width: width, height: height)
     }
 
-    private static func topBarActivationBaseSize(for customization: GamepadCustomization, in canvasSize: CGSize) -> CGSize {
-        let isLandscape = canvasSize.width >= canvasSize.height
-        let horizontalPadding: CGFloat
-        if isLandscape {
-            let estimatedSafeSideInset: CGFloat = switch customization.deviceCanvas.editorDeviceFrame.frameStyle {
-            case .dynamicIsland: 59
-            case .notch: 44
-            case .homeButton: 0
-            }
-            horizontalPadding = max(Geist.Spacing.s6, estimatedSafeSideInset + Geist.Spacing.s3)
-        } else {
-            horizontalPadding = Geist.Spacing.s4
-        }
-
-        // Match ControllerTopBarDrawer's available width. Height follows the
-        // tallest visible child (32pt at 100%), bar padding, spacing, and handle.
-        let width = max(120, canvasSize.width - horizontalPadding * 2)
-        let tallestItemScale = customization.normalized.controlBarItems
-            .filter { $0 != .spacer && !customization.controlBarItemCustomization(for: $0).isHidden }
-            .map { customization.controlBarItemCustomization(for: $0).heightScale }
-            .max() ?? 1
-        let height = 41 + (32 * GamepadButtonCustomization.clamp(tallestItemScale, lower: 0.5, upper: 2))
-        return CGSize(width: width, height: height)
-    }
+    /// Matches the compact 60×44 pt reveal handle used by the iPhone runtime.
+    /// Width and height scaling remain available for intentionally larger hotspots.
+    private static let topBarActivationBaseSize = CGSize(width: 60, height: 44)
 
     private static func effectiveSize(_ size: CGSize, shape: GamepadButtonShapeStyle) -> CGSize {
         size
@@ -6149,51 +6151,37 @@ struct GamepadRenderedControlFace: View {
 
     @ViewBuilder
     var body: some View {
-        if control.id == .system(.topBarActivation) {
-            GamepadControlBarOutputPreview(
-                customization: customization,
-                items: customization.normalized.controlBarItems,
-                isLandscape: customization.deviceCanvas.editorDeviceFrame.isLandscape,
-                context: controlBarPreviewContext,
-                selectedItem: selectedControlBarItem,
-                onSelectItem: onSelectControlBarItem,
-                onMoveItem: onMoveControlBarItem
-            )
-            .frame(width: control.size.width, height: control.size.height, alignment: .top)
-            .accessibilityLabel(control.label)
-        } else {
-            let presentation = resolvedPresentation
+        let presentation = resolvedPresentation
 
-            ZStack {
-                if let glowColor = presentation.glowSwiftUIColor, presentation.glowRadius > 0 {
-                    controlSilhouette(fill: glowColor)
-                        .blur(radius: presentation.glowRadius)
-                        .opacity(0.68)
-                        .allowsHitTesting(false)
-                }
-
-                controlBackground(presentation: presentation)
-                    .gamepadOuterShadows(presentation)
-
-                if control.isDecoration {
-                    if let icon = presentation.icon {
-                        controlIcon(icon, presentation: presentation)
-                            .padding(.horizontal, 4)
-                    }
-                } else if control.isJoystick {
-                    joystickFace(presentation: presentation)
-                } else if control.isTrackpad {
-                    trackpadFace(presentation: presentation)
-                } else {
-                    buttonContent(presentation: presentation)
-                }
+        ZStack {
+            if let glowColor = presentation.glowSwiftUIColor, presentation.glowRadius > 0 {
+                controlSilhouette(fill: glowColor)
+                    .blur(radius: presentation.glowRadius)
+                    .opacity(0.68)
+                    .allowsHitTesting(false)
             }
-            .opacity(presentation.opacity)
-            .blur(radius: presentation.blurRadius)
-            .scaleEffect(presentation.scale)
-            .frame(width: control.size.width, height: control.size.height)
-            .accessibilityLabel(control.label)
+
+            controlBackground(presentation: presentation)
+                .gamepadOuterShadows(presentation)
+
+            if control.isDecoration {
+                if let icon = presentation.icon {
+                    controlIcon(icon, presentation: presentation)
+                        .padding(.horizontal, 4)
+                }
+            } else if control.isJoystick {
+                joystickFace(presentation: presentation)
+            } else if control.isTrackpad {
+                trackpadFace(presentation: presentation)
+            } else {
+                buttonContent(presentation: presentation)
+            }
         }
+        .opacity(presentation.opacity)
+        .blur(radius: presentation.blurRadius)
+        .scaleEffect(presentation.scale)
+        .frame(width: control.size.width, height: control.size.height)
+        .accessibilityLabel(control.label)
     }
 
     private var resolvedPresentation: GamepadResolvedControlPresentation {
@@ -7255,7 +7243,22 @@ private struct GeistSegmentedPicker<Option: Hashable>: View {
     let title: String
     let options: [Option]
     @Binding var selection: Option
+    let systemImage: ((Option) -> String)?
     let label: (Option) -> String
+
+    init(
+        title: String,
+        options: [Option],
+        selection: Binding<Option>,
+        systemImage: ((Option) -> String)? = nil,
+        label: @escaping (Option) -> String
+    ) {
+        self.title = title
+        self.options = options
+        _selection = selection
+        self.systemImage = systemImage
+        self.label = label
+    }
 
     var body: some View {
         HStack(spacing: 2) {
@@ -7268,24 +7271,32 @@ private struct GeistSegmentedPicker<Option: Hashable>: View {
                         selection = option
                     }
                 } label: {
-                    Text(label(option))
-                        .geistTypography(.button14)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                        .foregroundStyle(isSelected ? selectedForeground : Geist.color(.gray900, scheme: colorScheme))
-                        .padding(.horizontal, Geist.Spacing.s2)
-                        .frame(minHeight: 28)
-                        .frame(maxWidth: .infinity)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(isSelected ? selectedFill : Color.clear)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    Group {
+                        if let systemImage {
+                            Image(systemName: systemImage(option))
+                                .font(.system(size: 14, weight: .semibold))
+                        } else {
+                            Text(label(option))
+                                .geistTypography(.button14)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                        }
+                    }
+                    .foregroundStyle(isSelected ? selectedForeground : Geist.color(.gray900, scheme: colorScheme))
+                    .padding(.horizontal, Geist.Spacing.s2)
+                    .frame(minHeight: 28)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isSelected ? selectedFill : Color.clear)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("\(title): \(label(option))"))
                 .accessibilityValue(Text(isSelected ? "Selected" : "Not selected"))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .help(label(option))
             }
         }
         .padding(2)
@@ -8439,35 +8450,74 @@ struct GamepadCustomizationEditor: View {
                 .help("Fit canvas (⌘0)")
 
             Menu {
-                Button("Undo") { _ = performUndo() }
-                    .disabled(!(undoManager?.canUndo ?? false))
-                Button("Redo") { _ = performRedo() }
-                    .disabled(!(undoManager?.canRedo ?? false))
+                Button {
+                    _ = performUndo()
+                } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(!(undoManager?.canUndo ?? false))
+                Button {
+                    _ = performRedo()
+                } label: {
+                    Label("Redo", systemImage: "arrow.uturn.forward")
+                }
+                .disabled(!(undoManager?.canRedo ?? false))
 
                 if isControlSelectionActive && interactionMode == .edit {
                     Divider()
-                    Button("Zoom to Selection", action: zoomToSelection)
-                    Button("Duplicate Selection") { _ = duplicateSelectedControls() }
-                        .disabled(!canDuplicateSelectedControls)
-                    Button("Delete Selection") { _ = deleteSelectedControl() }
+                    Button(action: zoomToSelection) {
+                        Label("Zoom to Selection", systemImage: "scope")
+                    }
+                    Button {
+                        _ = duplicateSelectedControls()
+                    } label: {
+                        Label("Duplicate Selection", systemImage: "plus.square.on.square")
+                    }
+                    .disabled(!canDuplicateSelectedControls)
+                    Button {
+                        _ = deleteSelectedControl()
+                    } label: {
+                        Label("Delete Selection", systemImage: "trash")
+                    }
                 }
 
                 Divider()
-                Menu("Orientation") {
+                Menu {
                     ForEach(GamepadEditorDeviceOrientation.allCases) { orientation in
                         Button("Edit \(orientation.displayName)") {
                             setDeviceFrame(GamepadEditorDeviceFrame(spec: activeDeviceFrame.spec, orientation: orientation))
                         }
                     }
                     Button("Compare Orientations…") { isOrientationComparisonPresented = true }
+                } label: {
+                    Label("Orientation", systemImage: activeDeviceFrame.orientation == .landscape ? "rectangle" : "rectangle.portrait")
                 }
-                Button(canvasFocusCommandTitle, action: toggleCanvasFocusMode)
-                    .keyboardShortcut("0", modifiers: [.command, .option])
-                Button(isConfigurationSidebarVisible ? "Hide Setups" : "Show Setups", action: toggleConfigurationSidebarVisibility)
-                Button(isInspectorSidebarVisible ? "Hide Inspector" : "Show Inspector", action: toggleInspectorSidebarVisibility)
+                Button(action: toggleCanvasFocusMode) {
+                    Label(
+                        canvasFocusCommandTitle,
+                        systemImage: isCanvasFocusMode || (!isConfigurationSidebarVisible && !isInspectorSidebarVisible)
+                            ? "arrow.down.right.and.arrow.up.left"
+                            : "arrow.up.left.and.arrow.down.right"
+                    )
+                }
+                .keyboardShortcut("0", modifiers: [.command, .option])
+                Button(action: toggleConfigurationSidebarVisibility) {
+                    Label(isConfigurationSidebarVisible ? "Hide Setups" : "Show Setups", systemImage: "sidebar.left")
+                }
+                Button(action: toggleInspectorSidebarVisibility) {
+                    Label(isInspectorSidebarVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
+                }
                 Divider()
-                Button("Keyboard Shortcuts…") { isShortcutReferencePresented = true }
-                Button("Tour Editor") { restartFirstKeypadOnboarding() }
+                Button {
+                    isShortcutReferencePresented = true
+                } label: {
+                    Label("Keyboard Shortcuts…", systemImage: "keyboard")
+                }
+                Button {
+                    restartFirstKeypadOnboarding()
+                } label: {
+                    Label("Tour Editor", systemImage: "sparkles")
+                }
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .frame(width: 28, height: 28)
@@ -8616,20 +8666,26 @@ struct GamepadCustomizationEditor: View {
             }
 
             HStack(spacing: Geist.Spacing.s2) {
-                Button("Add Soft Plate") {
+                Button {
                     addDecorationControl(kind: .plate)
                     isAddControlPalettePresented = false
+                } label: {
+                    Label("Add Soft Plate", systemImage: "rectangle.fill")
                 }
                 .geistButtonStyle(.secondary, size: .small)
-                Button("Add Ring") {
+                Button {
                     addDecorationControl(kind: .ring)
                     isAddControlPalettePresented = false
+                } label: {
+                    Label("Add Ring", systemImage: "circle")
                 }
                 .geistButtonStyle(.secondary, size: .small)
                 Spacer()
-                Button("Show Default Controls") {
+                Button {
                     setBuiltInControlsHidden(false)
                     isAddControlPalettePresented = false
+                } label: {
+                    Label("Show Default Controls", systemImage: "square.grid.3x3")
                 }
                 .geistButtonStyle(.tertiary, size: .small)
             }
@@ -9218,25 +9274,51 @@ struct GamepadCustomizationEditor: View {
 
     private func profileActionMenu(_ profile: GamepadConfigurationProfile) -> some View {
         Menu {
-            Button("Rename…") { beginRenamingProfile(profile) }
-            Button("Duplicate") { duplicateProfile(profile) }
-            Button("Make Default") {
+            Button {
+                beginRenamingProfile(profile)
+            } label: {
+                Label("Rename…", systemImage: "pencil")
+            }
+            Button {
+                duplicateProfile(profile)
+            } label: {
+                Label("Duplicate", systemImage: "doc.on.doc")
+            }
+            Button {
                 if profile.id != selectedProfileID { selectProfile(profile, expandsDetails: false) }
                 setSelectedProfileAsDefault()
+            } label: {
+                Label("Make Default", systemImage: "star")
             }
             .disabled(profile.id == defaultProfileID)
             Divider()
-            Button("Move Earlier") { moveProfile(profile, by: -1) }
-                .disabled(profiles.first?.id == profile.id)
-            Button("Move Later") { moveProfile(profile, by: 1) }
-                .disabled(profiles.last?.id == profile.id)
+            Button {
+                moveProfile(profile, by: -1)
+            } label: {
+                Label("Move Earlier", systemImage: "arrow.up")
+            }
+            .disabled(profiles.first?.id == profile.id)
+            Button {
+                moveProfile(profile, by: 1)
+            } label: {
+                Label("Move Later", systemImage: "arrow.down")
+            }
+            .disabled(profiles.last?.id == profile.id)
             if onExportProfiles != nil {
                 Divider()
-                Button("Export…") { exportProfiles(profileID: profile.id) }
+                Button {
+                    exportProfiles(profileID: profile.id)
+                } label: {
+                    Label("Export…", systemImage: "square.and.arrow.up")
+                }
             }
             Divider()
-            Button("Delete", role: .destructive) { deleteProfile(profile) }
-                .disabled(profiles.count <= 1)
+            Button(role: .destructive) {
+                deleteProfile(profile)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .disabled(profiles.count <= 1)
         } label: {
             Image(systemName: "ellipsis")
                 .frame(width: 28, height: 32)
@@ -9273,8 +9355,14 @@ struct GamepadCustomizationEditor: View {
                 importMenu(showsTitle: true)
                 exportMenu(showsTitle: true)
 
-                Button("New") { createProfile() }
-                    .geistButtonStyle(.secondary, size: .small)
+                Button {
+                    createProfile()
+                } label: {
+                    Label("New keypad setup", systemImage: "plus")
+                        .labelStyle(.iconOnly)
+                }
+                .geistButtonStyle(.secondary, size: .small)
+                .help("New keypad setup")
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -9597,14 +9685,18 @@ struct GamepadCustomizationEditor: View {
                 Spacer(minLength: Geist.Spacing.s1)
 
                 if let selectedLayerGroup {
-                    Button("Ungroup") {
+                    Button {
                         ungroupLayerGroup(selectedLayerGroup.id)
+                    } label: {
+                        Label("Ungroup", systemImage: "rectangle.3.group")
                     }
                     .geistButtonStyle(.tertiary, size: .small)
                     .help("Remove this group while keeping its children on the canvas")
                 } else if canGroupSelectedControls {
-                    Button("Group") {
+                    Button {
                         groupSelectedControls()
+                    } label: {
+                        Label("Group", systemImage: "rectangle.3.group")
                     }
                     .geistButtonStyle(.secondary, size: .small)
                     .help("Create a Figma-style group from the selected layers (⌘G)")
@@ -9788,23 +9880,45 @@ struct GamepadCustomizationEditor: View {
             hoveredLayerListItemID = isHovering ? "group.\(group.id.uuidString)" : nil
         }
         .contextMenu {
-            Button("Duplicate Group") {
+            Button {
                 selectLayerGroup(group)
                 _ = duplicateSelectedControls()
+            } label: {
+                Label("Duplicate Group", systemImage: "doc.on.doc")
             }
             .disabled(!group.childIdentities.allSatisfy(isDuplicableControl))
-            Button("Rename Group…") { beginRenamingGroup(group) }
+            Button {
+                beginRenamingGroup(group)
+            } label: {
+                Label("Rename Group…", systemImage: "pencil")
+            }
             Divider()
-            Button("Bring to Front") { update(actionName: "Bring Group To Front") { $0.bringLayersToFront(group.childIdentitySet) } }
-            Button("Send to Back") { update(actionName: "Send Group To Back") { $0.sendLayersToBack(group.childIdentitySet) } }
-            Button(group.isLocationLocked ? "Unlock Group" : "Lock Group") {
+            Button {
+                update(actionName: "Bring Group To Front") { $0.bringLayersToFront(group.childIdentitySet) }
+            } label: {
+                Label("Bring to Front", systemImage: "arrow.up.to.line")
+            }
+            Button {
+                update(actionName: "Send Group To Back") { $0.sendLayersToBack(group.childIdentitySet) }
+            } label: {
+                Label("Send to Back", systemImage: "arrow.down.to.line")
+            }
+            Button {
                 setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
+            } label: {
+                Label(group.isLocationLocked ? "Unlock Group" : "Lock Group", systemImage: group.isLocationLocked ? "lock.fill" : "lock.open")
             }
-            Button(group.isHidden ? "Show Group" : "Hide Group") {
+            Button {
                 setLayerGroupHidden(!group.isHidden, groupID: group.id)
+            } label: {
+                Label(group.isHidden ? "Show Group" : "Hide Group", systemImage: group.isHidden ? "eye.slash" : "eye")
             }
             Divider()
-            Button("Ungroup") { ungroupLayerGroup(group.id) }
+            Button {
+                ungroupLayerGroup(group.id)
+            } label: {
+                Label("Ungroup", systemImage: "rectangle.3.group")
+            }
         }
         .onDrag { layerDragItemProvider(group.childIdentities) }
         .onDrop(
@@ -9919,33 +10033,65 @@ struct GamepadCustomizationEditor: View {
             hoveredLayerListItemID = isHovering ? "component.\(item.identity.id)" : nil
         }
         .contextMenu {
-            Button("Duplicate") {
+            Button {
                 selectComponent(item.identity)
                 _ = duplicateSelectedControls()
+            } label: {
+                Label("Duplicate", systemImage: "doc.on.doc")
             }
             .disabled(!isDuplicableControl(item.identity))
             if canRenameComponent(item.identity) {
-                Button("Rename…") { beginRenamingComponent(item.identity) }
+                Button {
+                    beginRenamingComponent(item.identity)
+                } label: {
+                    Label("Rename…", systemImage: "pencil")
+                }
             }
             Divider()
-            Button("Bring Forward") { bringLayerForward(item.identity) }
-            Button("Send Backward") { sendLayerBackward(item.identity) }
-            Button("Bring to Front") {
+            Button {
+                bringLayerForward(item.identity)
+            } label: {
+                Label("Bring Forward", systemImage: "arrow.up")
+            }
+            Button {
+                sendLayerBackward(item.identity)
+            } label: {
+                Label("Send Backward", systemImage: "arrow.down")
+            }
+            Button {
                 update(actionName: "Bring Layer To Front") { $0.bringLayersToFront([item.identity]) }
+            } label: {
+                Label("Bring to Front", systemImage: "arrow.up.to.line")
             }
-            Button("Send to Back") {
+            Button {
                 update(actionName: "Send Layer To Back") { $0.sendLayersToBack([item.identity]) }
+            } label: {
+                Label("Send to Back", systemImage: "arrow.down.to.line")
             }
-            Button(item.isLocationLocked ? "Unlock" : "Lock") { toggleComponentLock(item.identity) }
-            Button(item.isHidden ? "Show" : "Hide") { toggleComponentVisibility(item.identity) }
+            Button {
+                toggleComponentLock(item.identity)
+            } label: {
+                Label(item.isLocationLocked ? "Unlock" : "Lock", systemImage: item.isLocationLocked ? "lock.fill" : "lock.open")
+            }
+            Button {
+                toggleComponentVisibility(item.identity)
+            } label: {
+                Label(item.isHidden ? "Show" : "Hide", systemImage: item.isHidden ? "eye.slash" : "eye")
+            }
             if canGroupSelectedControls {
                 Divider()
-                Button("Group Selection") { groupSelectedControls() }
+                Button {
+                    groupSelectedControls()
+                } label: {
+                    Label("Group Selection", systemImage: "rectangle.3.group")
+                }
             }
             Divider()
-            Button("Delete", role: .destructive) {
+            Button(role: .destructive) {
                 selectComponent(item.identity)
                 _ = deleteSelectedControl()
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
         .onDrag { layerDragItemProvider([item.identity]) }
@@ -10062,8 +10208,10 @@ struct GamepadCustomizationEditor: View {
                 }
             }
 
-            Button("Reset Current Setup") {
+            Button {
                 resetActiveConfiguration()
+            } label: {
+                Label("Reset Current Setup", systemImage: "arrow.counterclockwise")
             }
             .geistButtonStyle(.tertiary, size: .small)
         }
@@ -10154,22 +10302,34 @@ struct GamepadCustomizationEditor: View {
         let actionIDs = selectedProfileActionIDs
         let selectedCount = actionIDs.count
 
-        Button("Rename") {
+        Button {
             beginRenamingSelectedProfile()
+        } label: {
+            Label("Rename", systemImage: "pencil")
+                .labelStyle(.iconOnly)
         }
         .geistButtonStyle(.secondary, size: .small)
         .disabled(selectedCount != 1)
+        .help("Rename setup")
 
-        Button(selectedCount > 1 ? "Duplicate Selected" : "Duplicate") {
+        Button {
             duplicateProfiles(ids: actionIDs)
+        } label: {
+            Label(selectedCount > 1 ? "Duplicate Selected" : "Duplicate", systemImage: "doc.on.doc")
+                .labelStyle(.iconOnly)
         }
         .geistButtonStyle(.secondary, size: .small)
+        .help(selectedCount > 1 ? "Duplicate selected setups" : "Duplicate setup")
 
-        Button(selectedCount > 1 ? "Delete Selected" : "Delete") {
+        Button {
             deleteProfiles(actionIDs)
+        } label: {
+            Label(selectedCount > 1 ? "Delete Selected" : "Delete", systemImage: "trash")
+                .labelStyle(.iconOnly)
         }
         .geistButtonStyle(.tertiary, size: .small)
         .disabled(!canDeleteProfiles(actionIDs))
+        .help(selectedCount > 1 ? "Delete selected setups" : "Delete setup")
     }
 
     private var canvasPasteboardColor: Color {
@@ -10537,37 +10697,53 @@ struct GamepadCustomizationEditor: View {
             }
 
             toolbarMenu(systemImage: "square.grid.3x3", accessibilityLabel: "Layout tools") {
-                Button("Show Default Controls") {
+                Button {
                     setBuiltInControlsHidden(false)
+                } label: {
+                    Label("Show Default Controls", systemImage: "eye")
                 }
-                Button("Hide Built-in Controls") {
+                Button {
                     setBuiltInControlsHidden(true)
+                } label: {
+                    Label("Hide Built-in Controls", systemImage: "eye.slash")
                 }
                 Divider()
-                Button("Add Joystick") {
+                Button {
                     addJoystickControl()
+                } label: {
+                    Label("Add Joystick", systemImage: "circle.grid.cross")
                 }
                 .disabled(customization.customButtons.filter { $0.normalized.isJoystick }.count >= GamepadCustomization.maximumJoysticks || customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
-                Button("Add Trigger") {
+                Button {
                     addTriggerControl()
+                } label: {
+                    Label("Add Trigger", systemImage: "slider.horizontal.3")
                 }
                 .disabled(customization.customButtons.filter { $0.normalized.isTrigger }.count >= GamepadCustomization.maximumTriggers || customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
-                Button("Add Trackpad") {
+                Button {
                     addTrackpadControl()
+                } label: {
+                    Label("Add Trackpad", systemImage: "rectangle.and.hand.point.up.left")
                 }
                 .disabled(customization.customButtons.filter { $0.normalized.isTrackpad }.count >= GamepadCustomization.maximumTrackpads || customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
                 Divider()
-                Button("Add Soft Plate") {
+                Button {
                     addDecorationControl(kind: .plate)
+                } label: {
+                    Label("Add Soft Plate", systemImage: "rectangle.fill")
                 }
                 .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
-                Button("Add Ring") {
+                Button {
                     addDecorationControl(kind: .ring)
+                } label: {
+                    Label("Add Ring", systemImage: "circle")
                 }
                 .disabled(customization.customButtons.count >= GamepadCustomization.maximumCustomButtons)
                 Divider()
-                Button("Reset Key Layout") {
+                Button {
                     resetKeyLayout()
+                } label: {
+                    Label("Reset Key Layout", systemImage: "arrow.counterclockwise")
                 }
                 .disabled(!customization.usesFreeformLayout)
             }
@@ -11439,14 +11615,18 @@ struct GamepadCustomizationEditor: View {
                 Spacer(minLength: Geist.Spacing.s1)
 
                 if selectedControlIsEditable {
-                    Button("Keypad") {
+                    Button {
                         selectKeypadInspector()
                         announceEditor("Showing keypad-level properties.")
+                    } label: {
+                        Label("Show keypad properties", systemImage: "iphone")
+                            .labelStyle(.iconOnly)
                     }
                     .buttonStyle(.plain)
                     .geistTypography(.label12)
                     .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
                     .accessibilityLabel("Deselect control and show keypad properties")
+                    .help("Show keypad properties")
                 }
             }
             .padding(.horizontal, Geist.Spacing.s3)
@@ -11554,30 +11734,42 @@ struct GamepadCustomizationEditor: View {
                         Button {
                             moveControlBarItem(item, by: -1)
                         } label: {
-                            Label("Earlier", systemImage: "chevron.left")
+                            Label("Move Earlier", systemImage: "chevron.left")
+                                .labelStyle(.iconOnly)
                         }
                         .geistButtonStyle(.secondary, size: .small)
                         .disabled(customization.normalized.controlBarItems.first == item)
+                        .help("Move earlier")
 
                         Button {
                             moveControlBarItem(item, by: 1)
                         } label: {
-                            Label("Later", systemImage: "chevron.right")
+                            Label("Move Later", systemImage: "chevron.right")
+                                .labelStyle(.iconOnly)
                         }
                         .geistButtonStyle(.secondary, size: .small)
                         .disabled(customization.normalized.controlBarItems.last == item)
+                        .help("Move later")
                     }
 
                     HStack(spacing: Geist.Spacing.s2) {
-                        Button("Reset Appearance") {
+                        Button {
                             resetSelectedControl()
+                        } label: {
+                            Label("Reset Appearance", systemImage: "arrow.counterclockwise")
+                                .labelStyle(.iconOnly)
                         }
                         .geistButtonStyle(.tertiary, size: .small)
+                        .help("Reset appearance")
 
-                        Button("Remove") {
+                        Button {
                             _ = deleteSelectedControl()
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                                .labelStyle(.iconOnly)
                         }
                         .geistButtonStyle(.error, size: .small)
+                        .help("Remove from control bar")
                     }
                 }
             }
@@ -12054,9 +12246,13 @@ struct GamepadCustomizationEditor: View {
                 Text("Saved Mode")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                GeistSegmentedPicker(title: "Saved Mode", options: GamepadColorSchemePreference.allCases, selection: binding(\.colorSchemePreference)) { preference in
-                    preference.displayName
-                }
+                GeistSegmentedPicker(
+                    title: "Saved Mode",
+                    options: GamepadColorSchemePreference.allCases,
+                    selection: binding(\.colorSchemePreference),
+                    systemImage: { $0.systemImage },
+                    label: { $0.displayName }
+                )
                 Text(customization.colorSchemePreference.description)
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -12067,9 +12263,13 @@ struct GamepadCustomizationEditor: View {
                 Text("View Mode")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                GeistSegmentedPicker(title: "View Mode", options: GamepadEditorColorScheme.allCases, selection: editorColorSchemeBinding) { scheme in
-                    scheme.displayName
-                }
+                GeistSegmentedPicker(
+                    title: "View Mode",
+                    options: GamepadEditorColorScheme.allCases,
+                    selection: editorColorSchemeBinding,
+                    systemImage: { $0.systemImage },
+                    label: { $0.displayName }
+                )
                 Text("The canvas is viewing \(editorColorScheme.displayName.lowercased()) mode and editing the \(Self.displayName(for: activeKeypadColorScheme).lowercased()) color palette.")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -12082,12 +12282,20 @@ struct GamepadCustomizationEditor: View {
                 Text("Default Layout")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                GeistSegmentedPicker(title: "Default Layout", options: GamepadLayoutMode.allCases, selection: binding(\.layoutMode)) { mode in
-                    mode.displayName
-                }
-                GeistSegmentedPicker(title: "Control Scale", options: GamepadControlScale.allCases, selection: binding(\.controlScale)) { scale in
-                    scale.displayName
-                }
+                GeistSegmentedPicker(
+                    title: "Default Layout",
+                    options: GamepadLayoutMode.allCases,
+                    selection: binding(\.layoutMode),
+                    systemImage: { $0.systemImage },
+                    label: { $0.displayName }
+                )
+                GeistSegmentedPicker(
+                    title: "Control Scale",
+                    options: GamepadControlScale.allCases,
+                    selection: binding(\.controlScale),
+                    systemImage: { $0.systemImage },
+                    label: { $0.displayName }
+                )
                 GeistCheckboxToggle(title: "Show control labels", isOn: binding(\.showsButtonLabels))
                 Text("Layout and scale apply to controls that still use their default positions. Freeform positions and sizes remain unchanged.")
                     .geistTypography(.copy13)
@@ -12207,10 +12415,14 @@ struct GamepadCustomizationEditor: View {
                 .geistButtonStyle(.secondary, size: .small)
                 .disabled(GamepadControlBarItem.allCases.allSatisfy { items.contains($0) })
 
-                Button("Reset") {
+                Button {
                     resetControlBarItems()
+                } label: {
+                    Label("Reset Control Bar", systemImage: "arrow.counterclockwise")
+                        .labelStyle(.iconOnly)
                 }
                 .geistButtonStyle(.tertiary, size: .small)
+                .help("Reset control bar")
             }
         }
     }
@@ -12339,8 +12551,10 @@ struct GamepadCustomizationEditor: View {
 
                 if case .custom(let id) = selectedControlID,
                    let customButton = customButton(id: id)?.normalized {
-                    Button(deleteTitle(for: customButton)) {
+                    Button {
                         _ = deleteCustomButton(id: id)
+                    } label: {
+                        Label(deleteTitle(for: customButton), systemImage: "trash")
                     }
                     .geistButtonStyle(.error, size: .small)
                 }
@@ -12355,17 +12569,30 @@ struct GamepadCustomizationEditor: View {
                 pulseTestInput(input)
             } label: {
                 Label("Test", systemImage: "play.fill")
+                    .labelStyle(.iconOnly)
             }
             .geistButtonStyle(.primary, size: .small)
             .help("Send this control’s real configured output")
         }
 
-        Button("Duplicate") { _ = duplicateSelectedControls() }
-            .geistButtonStyle(.secondary, size: .small)
-            .disabled(!canDuplicateSelectedControls)
+        Button {
+            _ = duplicateSelectedControls()
+        } label: {
+            Label("Duplicate", systemImage: "plus.square.on.square")
+                .labelStyle(.iconOnly)
+        }
+        .geistButtonStyle(.secondary, size: .small)
+        .disabled(!canDuplicateSelectedControls)
+        .help("Duplicate control")
 
-        Button("Reset") { resetSelectedControl() }
-            .geistButtonStyle(.tertiary, size: .small)
+        Button {
+            resetSelectedControl()
+        } label: {
+            Label("Reset", systemImage: "arrow.counterclockwise")
+                .labelStyle(.iconOnly)
+        }
+        .geistButtonStyle(.tertiary, size: .small)
+        .help("Reset control")
     }
 
     private func selectedGroupIdentitySection(_ group: GamepadEditorLayerGroupItem) -> some View {
@@ -12390,8 +12617,10 @@ struct GamepadCustomizationEditor: View {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s2) { selectedGroupStateButtons(group) }
             }
 
-            Button("Ungroup") {
+            Button {
                 ungroupLayerGroup(group.id)
+            } label: {
+                Label("Ungroup", systemImage: "rectangle.3.group")
             }
             .geistButtonStyle(.tertiary, size: .small)
 
@@ -12404,15 +12633,23 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private func selectedGroupStateButtons(_ group: GamepadEditorLayerGroupItem) -> some View {
-        Button(group.isHidden ? "Show Group" : "Hide Group") {
+        Button {
             setLayerGroupHidden(!group.isHidden, groupID: group.id)
+        } label: {
+            Label(group.isHidden ? "Show Group" : "Hide Group", systemImage: group.isHidden ? "eye.slash" : "eye")
+                .labelStyle(.iconOnly)
         }
         .geistButtonStyle(.secondary, size: .small)
+        .help(group.isHidden ? "Show group" : "Hide group")
 
-        Button(group.isLocationLocked ? "Unlock Group" : "Lock Group") {
+        Button {
             setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
+        } label: {
+            Label(group.isLocationLocked ? "Unlock Group" : "Lock Group", systemImage: group.isLocationLocked ? "lock.fill" : "lock.open")
+                .labelStyle(.iconOnly)
         }
         .geistButtonStyle(.secondary, size: .small)
+        .help(group.isLocationLocked ? "Unlock group" : "Lock group")
     }
 
     private var shouldShowSelectedElementArrangementSection: Bool {
@@ -12441,13 +12678,21 @@ struct GamepadCustomizationEditor: View {
     @ViewBuilder
     private var groupingButtons: some View {
         if let selectedLayerGroup {
-            Button("Ungroup") { ungroupLayerGroup(selectedLayerGroup.id) }
-                .geistButtonStyle(.tertiary, size: .small)
+            Button {
+                ungroupLayerGroup(selectedLayerGroup.id)
+            } label: {
+                Label("Ungroup", systemImage: "rectangle.3.group")
+            }
+            .geistButtonStyle(.tertiary, size: .small)
         } else {
-            Button("Group") { groupSelectedControls() }
-                .geistButtonStyle(.secondary, size: .small)
-                .disabled(!canGroupSelectedControls)
-                .help("Create a Figma-style group from the selected layers (⌘G)")
+            Button {
+                groupSelectedControls()
+            } label: {
+                Label("Group", systemImage: "rectangle.3.group")
+            }
+            .geistButtonStyle(.secondary, size: .small)
+            .disabled(!canGroupSelectedControls)
+            .help("Create a Figma-style group from the selected layers (⌘G)")
         }
     }
 
@@ -12481,11 +12726,19 @@ struct GamepadCustomizationEditor: View {
     private var selectedElementStyleFoundationSection: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
             HStack(spacing: Geist.Spacing.s2) {
-                Button("Copy Style") { copySelectedElementStyle() }
-                    .geistButtonStyle(.secondary, size: .small)
-                Button("Paste Style") { pasteStyleToSelectedElements() }
-                    .geistButtonStyle(.secondary, size: .small)
-                    .disabled(copiedElementStyle == nil)
+                Button {
+                    copySelectedElementStyle()
+                } label: {
+                    Label("Copy Style", systemImage: "doc.on.doc")
+                }
+                .geistButtonStyle(.secondary, size: .small)
+                Button {
+                    pasteStyleToSelectedElements()
+                } label: {
+                    Label("Paste Style", systemImage: "clipboard")
+                }
+                .geistButtonStyle(.secondary, size: .small)
+                .disabled(copiedElementStyle == nil)
             }
 
             if !customization.styleLibrary.normalized.styles.isEmpty {
@@ -12495,16 +12748,20 @@ struct GamepadCustomizationEditor: View {
             }
 
             HStack(spacing: Geist.Spacing.s2) {
-                Button("Create from Selection") {
+                Button {
                     createStyleFromSelectedElement()
                     resourceLibraryTab = .styles
                     isResourceLibraryPresented = true
+                } label: {
+                    Label("Create from Selection", systemImage: "plus")
                 }
                 .geistButtonStyle(.secondary, size: .small)
 
-                Button("Manage Styles…") {
+                Button {
                     resourceLibraryTab = .styles
                     isResourceLibraryPresented = true
+                } label: {
+                    Label("Manage Styles…", systemImage: "paintbrush")
                 }
                 .geistButtonStyle(.tertiary, size: .small)
             }
@@ -13721,8 +13978,10 @@ struct GamepadCustomizationEditor: View {
                 .geistButtonStyle(.secondary, size: .small)
             }
 
-            Button("Clear material effects") {
+            Button {
                 clearMaterialEffects(for: selectedControlID)
+            } label: {
+                Label("Clear material effects", systemImage: "arrow.counterclockwise")
             }
             .geistButtonStyle(.tertiary, size: .small)
 
@@ -13830,11 +14089,13 @@ struct GamepadCustomizationEditor: View {
                 range: 0.5...1.5,
                 valueText: String(format: "%.2fx", Double(pressed.scale ?? 1))
             )
-            Button("Reset pressed response") {
+            Button {
                 updatePressedVisualStyle(for: selectedControlID) { pressed in
                     pressed.fillStyle = nil
                     pressed.scale = nil
                 }
+            } label: {
+                Label("Reset pressed response", systemImage: "arrow.counterclockwise")
             }
             .geistButtonStyle(.tertiary, size: .small)
         }

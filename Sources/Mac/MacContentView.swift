@@ -3147,7 +3147,7 @@ private struct MacKeypadElementOutputInspector: View {
 
                 Spacer(minLength: Geist.Spacing.s2)
 
-                Button("Clear") {
+                Button {
                     performUndoableMacGamepadChange(
                         undoManager: undoManager,
                         undoTarget: undoTarget,
@@ -3156,9 +3156,13 @@ private struct MacKeypadElementOutputInspector: View {
                     ) {
                         server.clearElementOutputBinding(for: input)
                     }
+                } label: {
+                    Label("Clear Shortcut", systemImage: "xmark.circle")
+                        .labelStyle(.iconOnly)
                 }
                 .geistButtonStyle(.tertiary, size: .small)
                 .disabled(server.directElementOutputBinding(for: input) == nil)
+                .help("Clear shortcut")
             }
 
             MacElementKeyBindingRecorderField(input: input)
