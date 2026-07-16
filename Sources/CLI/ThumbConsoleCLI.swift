@@ -700,6 +700,10 @@ struct ThumbConsoleCLI {
             basePortraitCustomization = profile.portraitCustomization
             baseOrientationPreference = profile.orientationPreference
             defaultName = profile.name
+            if let recommendedBindings = template.recommendedMacOutputBindings {
+                baseBindings = recommendedBindings.keyboardBindings
+                baseOutputBindings = rawOutputBindings(recommendedBindings)
+            }
         } else if let fromProfile {
             let profile = try resolveProfile(fromProfile, in: store)
             baseCustomization = profile.customization
@@ -975,7 +979,8 @@ struct ThumbConsoleCLI {
             let makeDefault = rest.contains("--default") && !rest.contains("--no-default")
             let store = loadStore()
             let inheritedBindings = decodedBindings(store.profileKeyBindings[store.activeProfileID.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
-            try install(profile: profile, macBindings: inheritedBindings, select: select, makeDefault: makeDefault)
+            let templateBindings = template.recommendedMacOutputBindings?.keyboardBindings ?? inheritedBindings
+            try install(profile: profile, macBindings: templateBindings, select: select, makeDefault: makeDefault)
             print("Installed template \"\(profile.name)\".")
         case "show":
             guard let name = firstPositional(in: rest) else { throw CLIError.message("Missing template name") }

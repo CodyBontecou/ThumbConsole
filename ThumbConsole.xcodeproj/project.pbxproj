@@ -15,6 +15,7 @@
 		1197961E7D5495577898BAF2 /* GamepadCustomization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D5DC24890D0A2C0E1E007A8 /* GamepadCustomization.swift */; };
 		13EA513C0892611727DFD81F /* MacControlOutputBinding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C2F9B15C284D8C31A0096E1 /* MacControlOutputBinding.swift */; };
 		14ED562C1C0123A5F646592E /* ButtonPulseSequencerSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA717DD6C27DE719ACB1BE6 /* ButtonPulseSequencerSmokeTests.swift */; };
+		178F1CFB73FFB4AA6C5CD0E0 /* MacControlOutputBinding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C2F9B15C284D8C31A0096E1 /* MacControlOutputBinding.swift */; };
 		17B667B47BE7BC40E9A4C8C0 /* GamepadCustomization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D5DC24890D0A2C0E1E007A8 /* GamepadCustomization.swift */; };
 		1B9989A6FAC09A46CB668EF0 /* GamepadSharedOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A67F82F9E44E453E0F527F /* GamepadSharedOperations.swift */; };
 		1E65800CFC7CA5168EF1F9DF /* ControllerActiveInputState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13289689DC501F5697ACA30C /* ControllerActiveInputState.swift */; };
@@ -75,6 +76,7 @@
 		8071EDC1557A41AEEE267E3C /* GameKeypadGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1EC7DD2CFDD4C1EE8BD8FF /* GameKeypadGenerator.swift */; };
 		808D42183C581D09BFB6113F /* GamepadOutputTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962587D02BDBA3EF4956E2D2 /* GamepadOutputTypes.swift */; };
 		81195B141CCB7B4047485302 /* ControllerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 905ACA7D04EE125E23E5064D /* ControllerProtocol.swift */; };
+		8213B93218639413EB20D8D2 /* KeyMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C57B88FFE8CAA2A03F022F9A /* KeyMap.swift */; };
 		84C1CA67005F1ABE13DC9F65 /* ProfileOrientationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04DA865D5F8BD7084DA56D90 /* ProfileOrientationSupport.swift */; };
 		866B4A3ABFA5ED3702FE157B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C0CB17482E1D86009A0E4ABD /* Assets.xcassets */; };
 		86886F29A6F5D035416EFC28 /* PairingPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43ACCA9BA9875BEDFDE5AB69 /* PairingPayload.swift */; };
@@ -573,11 +575,13 @@
 				5C013EE81A17C3442912E5E9 /* IOSLocalKeypadUX.swift in Sources */,
 				41C0EBEE452ACCF8A4DBF0CD /* IOSLocalKeypadUXTests.swift in Sources */,
 				E21B3AF23AEC20A4B1394888 /* InputLatencySimulationSmokeTests.swift in Sources */,
+				8213B93218639413EB20D8D2 /* KeyMap.swift in Sources */,
 				8A828791F66CA368266E8083 /* KeypadAccessibility.swift in Sources */,
 				931E0631B390C27B9C8C2903 /* KeypadAccessibilityTests.swift in Sources */,
 				C1C900D4F76C7B4F9CB631D2 /* KeypadBindingPresentation.swift in Sources */,
 				3E01F5157AAC54096C9814C5 /* KeypadBindingPresentationTests.swift in Sources */,
 				CC1A61AAE13AE518E27960BE /* KeypadConfigurationExport.swift in Sources */,
+				178F1CFB73FFB4AA6C5CD0E0 /* MacControlOutputBinding.swift in Sources */,
 				DC9260B94C48CB617E5FFFB2 /* OrientationPreferenceTests.swift in Sources */,
 				5467E388C5A370EF357D35AE /* PairingPayload.swift in Sources */,
 				CEA45BD1F7E2AF870BB0D3F2 /* ProfileOrientationSupport.swift in Sources */,

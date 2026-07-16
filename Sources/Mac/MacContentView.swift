@@ -1079,6 +1079,7 @@ struct MacContentView: View {
     private func installTemplate(_ template: GamepadControllerTemplate) {
         var profiles = server.gamepadProfiles
         let selectedProfileID: UUID
+        var seededBindings: [UUID: [GameButton: MacControlOutputBinding]] = [:]
 
         if let existingID = existingProfileID(for: template) {
             selectedProfileID = existingID
@@ -1086,12 +1087,16 @@ struct MacContentView: View {
             let profile = template.makeProfile()
             profiles.append(profile)
             selectedProfileID = profile.id
+            if let recommendedBindings = template.recommendedMacOutputBindings {
+                seededBindings[profile.id] = recommendedBindings
+            }
         }
 
         server.setGamepadProfileState(
             profiles: profiles,
             activeProfileID: selectedProfileID,
-            defaultProfileID: server.defaultGamepadProfileID
+            defaultProfileID: server.defaultGamepadProfileID,
+            seededProfileOutputBindings: seededBindings
         )
     }
 

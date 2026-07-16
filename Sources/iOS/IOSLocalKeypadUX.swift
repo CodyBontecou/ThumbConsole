@@ -36,6 +36,143 @@ enum ControllerInputSuppressionPolicy {
     }
 }
 
+struct PendingKeypadLayoutEdit: Codable, Equatable, Identifiable {
+    var profileID: UUID
+    var orientation: GamepadEditorDeviceOrientation
+    var customization: GamepadCustomization
+    /// The trusted Mac identity that owned the profile when it was edited.
+    /// A nil identity is retained locally but is never uploaded automatically.
+    var serverID: String?
+    var updatedAt: Int64
+
+    init(
+        profileID: UUID,
+        orientation: GamepadEditorDeviceOrientation,
+        customization: GamepadCustomization,
+        serverID: String?,
+        updatedAt: Int64 = Date.currentMilliseconds
+    ) {
+        self.profileID = profileID
+        self.orientation = orientation
+        self.customization = customization.normalized
+        self.serverID = serverID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.updatedAt = updatedAt
+    }
+
+    var id: String { "\(serverID ?? "untrusted"):\(profileID.uuidString):\(orientation.rawValue)" }
+}
+
+struct PendingKeypadLayoutReconciliation: Equatable {
+    var profiles: [GamepadConfigurationProfile]
+    var remainingEdits: [PendingKeypadLayoutEdit]
+    var editsToUpload: [PendingKeypadLayoutEdit]
+    var acknowledgedEditIDs: [String]
+}
+
+enum PendingKeypadLayoutReconciler {
+    static func reconcile(
+        incomingProfiles: [GamepadConfigurationProfile],
+        pendingEdits: [PendingKeypadLayoutEdit],
+        authoritativeServerID: String?
+    ) -> PendingKeypadLayoutReconciliation {
+        var profiles = incomingProfiles.map(\.normalized)
+        var remaining: [PendingKeypadLayoutEdit] = []
+        var uploads: [PendingKeypadLayoutEdit] = []
+        var acknowledged: [String] = []
+        let serverID = authoritativeServerID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+
+        for edit in pendingEdits {
+            guard let editServerID = edit.serverID,
+                  let serverID,
+                  editServerID == serverID
+            else {
+                remaining.append(edit)
+                continue
+            }
+
+            guard let profileIndex = profiles.firstIndex(where: { $0.id == edit.profileID }) else {
+                // The profile was removed while the iPhone was offline. Restore
+                // the edited layout as an explicit recovered copy instead of
+                // retaining an invisible, permanently unsynchronizable record.
+                var recovered = GamepadConfigurationProfile(
+                    id: edit.profileID,
+                    name: "Recovered iPhone Layout",
+                    customization: edit.customization,
+                    updatedAt: edit.updatedAt
+                )
+                recovered.setCustomization(edit.customization, for: edit.orientation)
+                profiles.append(recovered.normalized)
+                remaining.append(edit)
+                uploads.append(edit)
+                continue
+            }
+
+            let remoteCustomization = profiles[profileIndex].customization(for: edit.orientation).normalized
+            if remoteCustomization.hasSamePresentation(as: edit.customization.normalized) {
+                acknowledged.append(edit.id)
+                continue
+            }
+
+            // Local pending edits win until the Mac echoes them. This prevents
+            // the first reconnect snapshot from silently discarding offline work.
+            profiles[profileIndex].setCustomization(edit.customization, for: edit.orientation)
+            profiles[profileIndex].updatedAt = max(profiles[profileIndex].updatedAt, edit.updatedAt)
+            remaining.append(edit)
+            uploads.append(edit)
+        }
+
+        return PendingKeypadLayoutReconciliation(
+            profiles: profiles,
+            remainingEdits: deduplicated(remaining),
+            editsToUpload: deduplicated(uploads),
+            acknowledgedEditIDs: acknowledged.sorted()
+        )
+    }
+
+    static func recording(
+        _ edit: PendingKeypadLayoutEdit,
+        in existing: [PendingKeypadLayoutEdit]
+    ) -> [PendingKeypadLayoutEdit] {
+        deduplicated(existing.filter { $0.id != edit.id } + [edit])
+    }
+
+    private static func deduplicated(_ edits: [PendingKeypadLayoutEdit]) -> [PendingKeypadLayoutEdit] {
+        var latestByID: [String: PendingKeypadLayoutEdit] = [:]
+        for edit in edits {
+            if let current = latestByID[edit.id], current.updatedAt > edit.updatedAt { continue }
+            latestByID[edit.id] = edit
+        }
+        return latestByID.values.sorted {
+            if $0.updatedAt == $1.updatedAt { return $0.id < $1.id }
+            return $0.updatedAt < $1.updatedAt
+        }
+    }
+}
+
+enum PendingKeypadLayoutPersistence {
+    static let defaultsKey = "PocketPad.iOS.pendingKeypadLayoutEdits.v1"
+
+    static func load(defaults: UserDefaults = .standard) -> [PendingKeypadLayoutEdit] {
+        guard let data = defaults.data(forKey: defaultsKey),
+              let edits = try? JSONDecoder().decode([PendingKeypadLayoutEdit].self, from: data)
+        else { return [] }
+        return edits
+    }
+
+    static func save(_ edits: [PendingKeypadLayoutEdit], defaults: UserDefaults = .standard) {
+        if edits.isEmpty {
+            defaults.removeObject(forKey: defaultsKey)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(edits) else { return }
+        defaults.set(data, forKey: defaultsKey)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
 enum KeypadHapticIntensityPolicy {
     static let supportedLevels: [Double] = [0, 0.25, 0.50, 0.75, 1]
 

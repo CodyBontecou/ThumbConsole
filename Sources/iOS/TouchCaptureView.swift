@@ -8,8 +8,18 @@ struct CaptureAccessibilityMetadata: Equatable {
     var value: String? = nil
 }
 
+private extension UIView {
+    func applyCaptureAvailability(_ isEnabled: Bool, enabledTraits: UIAccessibilityTraits) {
+        isUserInteractionEnabled = isEnabled
+        isAccessibilityElement = isEnabled
+        accessibilityElementsHidden = !isEnabled
+        accessibilityTraits = isEnabled ? enabledTraits : enabledTraits.union(.notEnabled)
+    }
+}
+
 struct TouchCaptureView: UIViewRepresentable {
     var hitShape: GamepadButtonShapeStyle = .roundedRectangle
+    var isEnabled = true
     var accessibility: CaptureAccessibilityMetadata
     var onPressEdge: (_ pressed: Bool, _ isActive: Bool, _ pressIdentifier: UInt64) -> Void
 
@@ -18,6 +28,7 @@ struct TouchCaptureView: UIViewRepresentable {
         view.hitShape = hitShape
         view.captureAccessibility = accessibility
         view.onPressEdge = onPressEdge
+        view.applyCaptureAvailability(isEnabled, enabledTraits: .button)
         return view
     }
 
@@ -25,6 +36,7 @@ struct TouchCaptureView: UIViewRepresentable {
         uiView.hitShape = hitShape
         uiView.captureAccessibility = accessibility
         uiView.onPressEdge = onPressEdge
+        uiView.applyCaptureAvailability(isEnabled, enabledTraits: .button)
     }
 
     static func dismantleUIView(_ uiView: TouchCaptureUIView, coordinator: ()) {
@@ -34,6 +46,7 @@ struct TouchCaptureView: UIViewRepresentable {
 
 struct JoystickCaptureView: UIViewRepresentable {
     var activationDiameter: CGFloat? = nil
+    var isEnabled = true
     var accessibility: CaptureAccessibilityMetadata
     var onDirectionEdge: (_ direction: GamepadJoystickDirection, _ pressed: Bool, _ pressIdentifier: UInt64) -> Void
     var onAccessibilityDirection: (_ direction: GamepadJoystickDirection) -> Void
@@ -46,6 +59,7 @@ struct JoystickCaptureView: UIViewRepresentable {
         view.onDirectionEdge = onDirectionEdge
         view.onAccessibilityDirection = onAccessibilityDirection
         view.onVectorChanged = onVectorChanged
+        view.applyCaptureAvailability(isEnabled, enabledTraits: [.button, .allowsDirectInteraction])
         return view
     }
 
@@ -55,6 +69,7 @@ struct JoystickCaptureView: UIViewRepresentable {
         uiView.onDirectionEdge = onDirectionEdge
         uiView.onAccessibilityDirection = onAccessibilityDirection
         uiView.onVectorChanged = onVectorChanged
+        uiView.applyCaptureAvailability(isEnabled, enabledTraits: [.button, .allowsDirectInteraction])
     }
 
     static func dismantleUIView(_ uiView: JoystickCaptureUIView, coordinator: ()) {
@@ -64,6 +79,7 @@ struct JoystickCaptureView: UIViewRepresentable {
 
 struct TriggerCaptureView: UIViewRepresentable {
     var orientation: GamepadTriggerOrientation
+    var isEnabled = true
     var accessibility: CaptureAccessibilityMetadata
     var accessibilityValue: CGFloat
     var onValueChanged: (_ value: CGFloat, _ isActive: Bool) -> Void
@@ -76,6 +92,7 @@ struct TriggerCaptureView: UIViewRepresentable {
         view.accessibilityControlValue = accessibilityValue
         view.onValueChanged = onValueChanged
         view.onAccessibilityValueChanged = onAccessibilityValueChanged
+        view.applyCaptureAvailability(isEnabled, enabledTraits: [.adjustable, .allowsDirectInteraction])
         return view
     }
 
@@ -85,6 +102,7 @@ struct TriggerCaptureView: UIViewRepresentable {
         uiView.accessibilityControlValue = accessibilityValue
         uiView.onValueChanged = onValueChanged
         uiView.onAccessibilityValueChanged = onAccessibilityValueChanged
+        uiView.applyCaptureAvailability(isEnabled, enabledTraits: [.adjustable, .allowsDirectInteraction])
     }
 
     static func dismantleUIView(_ uiView: TriggerCaptureUIView, coordinator: ()) {
@@ -95,6 +113,7 @@ struct TriggerCaptureView: UIViewRepresentable {
 struct TrackpadCaptureView: UIViewRepresentable {
     var isTapToClickEnabled: Bool
     var isTwoFingerScrollEnabled: Bool
+    var isEnabled = true
     var accessibility: CaptureAccessibilityMetadata
     var onMove: (_ delta: CGVector) -> Void
     var onScroll: (_ delta: CGVector) -> Void
@@ -110,6 +129,7 @@ struct TrackpadCaptureView: UIViewRepresentable {
         view.onScroll = onScroll
         view.onTap = onTap
         view.onActiveChanged = onActiveChanged
+        view.applyCaptureAvailability(isEnabled, enabledTraits: [.button, .allowsDirectInteraction])
         return view
     }
 
@@ -121,6 +141,7 @@ struct TrackpadCaptureView: UIViewRepresentable {
         uiView.onScroll = onScroll
         uiView.onTap = onTap
         uiView.onActiveChanged = onActiveChanged
+        uiView.applyCaptureAvailability(isEnabled, enabledTraits: [.button, .allowsDirectInteraction])
     }
 
     static func dismantleUIView(_ uiView: TrackpadCaptureUIView, coordinator: ()) {
@@ -365,6 +386,7 @@ final class TouchCaptureUIView: UIView {
     }
 
     override func accessibilityActivate() -> Bool {
+        guard isUserInteractionEnabled, isAccessibilityElement else { return false }
         deactivateAllTouches()
         let pressIdentifier = ControllerPressIdentifierAllocator.allocate()
         defer { ControllerPressIdentifierAllocator.release(pressIdentifier) }
@@ -775,6 +797,7 @@ final class JoystickCaptureUIView: UIView {
     @objc private func accessibilityRight() -> Bool { performAccessibilityDirection(.right) }
 
     private func performAccessibilityDirection(_ direction: GamepadJoystickDirection) -> Bool {
+        guard isUserInteractionEnabled, isAccessibilityElement else { return false }
         deactivateTouch()
         let pressIdentifier = ControllerPressIdentifierAllocator.allocate()
         defer { ControllerPressIdentifierAllocator.release(pressIdentifier) }
@@ -1169,6 +1192,7 @@ final class TriggerCaptureUIView: UIView {
     }
 
     private func adjustAccessibilityValue(incrementing: Bool) {
+        guard isUserInteractionEnabled, isAccessibilityElement else { return }
         deactivateTouch()
         let nextValue = KeypadAccessibility.adjustedValue(accessibilityControlValue, incrementing: incrementing)
         guard nextValue != accessibilityControlValue else { return }
@@ -1484,12 +1508,14 @@ final class TrackpadCaptureUIView: UIView {
     }
 
     @objc private func accessibilityClick() -> Bool {
+        guard isUserInteractionEnabled, isAccessibilityElement else { return false }
         deactivateAllTouches(allowsTap: false)
         onTap?(1)
         return true
     }
 
     @objc private func accessibilityRightClick() -> Bool {
+        guard isUserInteractionEnabled, isAccessibilityElement else { return false }
         deactivateAllTouches(allowsTap: false)
         onTap?(2)
         return true

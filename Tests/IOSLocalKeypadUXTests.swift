@@ -98,6 +98,120 @@ final class IOSLocalKeypadUXTests: XCTestCase {
         )
     }
 
+    func testPendingLayoutReconciliationPreservesOfflineEditUntilMacAcknowledges() throws {
+        let profileID = UUID()
+        var remote = GamepadCustomization.defaultValue
+        remote.setLabel("Remote", for: .jump)
+        var local = remote
+        local.setLabel("Offline Edit", for: .jump)
+        let profile = GamepadConfigurationProfile(
+            id: profileID,
+            name: "Work",
+            customization: remote,
+            landscapeCustomization: remote
+        )
+        let pending = PendingKeypadLayoutEdit(
+            profileID: profileID,
+            orientation: .landscape,
+            customization: local,
+            serverID: "trusted-mac",
+            updatedAt: 42
+        )
+
+        let first = PendingKeypadLayoutReconciler.reconcile(
+            incomingProfiles: [profile],
+            pendingEdits: [pending],
+            authoritativeServerID: "trusted-mac"
+        )
+        XCTAssertEqual(first.remainingEdits, [pending])
+        XCTAssertEqual(first.editsToUpload, [pending])
+        XCTAssertEqual(
+            try XCTUnwrap(first.profiles.first).customization(for: .landscape).visualLabel(for: .jump),
+            "Offline Edit"
+        )
+
+        var acknowledgedProfile = profile
+        acknowledgedProfile.setCustomization(local, for: .landscape)
+        let acknowledged = PendingKeypadLayoutReconciler.reconcile(
+            incomingProfiles: [acknowledgedProfile],
+            pendingEdits: [pending],
+            authoritativeServerID: "trusted-mac"
+        )
+        XCTAssertTrue(acknowledged.remainingEdits.isEmpty)
+        XCTAssertTrue(acknowledged.editsToUpload.isEmpty)
+        XCTAssertEqual(acknowledged.acknowledgedEditIDs, [pending.id])
+    }
+
+    func testPendingLayoutReconciliationRestoresProfileRemovedWhileOffline() throws {
+        let profileID = UUID()
+        var customization = GamepadCustomization.defaultValue
+        customization.setLabel("Recovered", for: .jump)
+        let pending = PendingKeypadLayoutEdit(
+            profileID: profileID,
+            orientation: .portrait,
+            customization: customization,
+            serverID: "trusted-mac",
+            updatedAt: 99
+        )
+
+        let result = PendingKeypadLayoutReconciler.reconcile(
+            incomingProfiles: [GamepadControllerTemplate.nes.makeProfile()],
+            pendingEdits: [pending],
+            authoritativeServerID: "trusted-mac"
+        )
+        let recovered = try XCTUnwrap(result.profiles.first(where: { $0.id == profileID }))
+        XCTAssertEqual(recovered.name, "Recovered iPhone Layout")
+        XCTAssertEqual(recovered.customization(for: .portrait).visualLabel(for: .jump), "Recovered")
+        XCTAssertEqual(result.remainingEdits, [pending])
+        XCTAssertEqual(result.editsToUpload, [pending])
+    }
+
+    func testPendingLayoutReconciliationNeverUploadsToDifferentMac() {
+        let profile = GamepadControllerTemplate.productivityStarter.makeProfile()
+        let pending = PendingKeypadLayoutEdit(
+            profileID: profile.id,
+            orientation: .portrait,
+            customization: profile.customization(for: .portrait),
+            serverID: "original-mac"
+        )
+        let result = PendingKeypadLayoutReconciler.reconcile(
+            incomingProfiles: [profile],
+            pendingEdits: [pending],
+            authoritativeServerID: "different-mac"
+        )
+        XCTAssertEqual(result.remainingEdits, [pending])
+        XCTAssertTrue(result.editsToUpload.isEmpty)
+    }
+
+    func testPendingLayoutPersistenceRoundTripAndDeduplication() throws {
+        let suiteName = "IOSLocalKeypadPendingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let profile = GamepadControllerTemplate.productivityStarter.makeProfile()
+        let older = PendingKeypadLayoutEdit(
+            profileID: profile.id,
+            orientation: .portrait,
+            customization: profile.customization(for: .portrait),
+            serverID: "trusted-mac",
+            updatedAt: 1
+        )
+        var changed = profile.customization(for: .portrait)
+        changed.setLabel("Changed", for: .jump)
+        let newer = PendingKeypadLayoutEdit(
+            profileID: profile.id,
+            orientation: .portrait,
+            customization: changed,
+            serverID: "trusted-mac",
+            updatedAt: 2
+        )
+        let recorded = PendingKeypadLayoutReconciler.recording(newer, in: [older])
+        XCTAssertEqual(recorded, [newer])
+        PendingKeypadLayoutPersistence.save(recorded, defaults: defaults)
+        XCTAssertEqual(PendingKeypadLayoutPersistence.load(defaults: defaults), [newer])
+        PendingKeypadLayoutPersistence.save([], defaults: defaults)
+        XCTAssertTrue(PendingKeypadLayoutPersistence.load(defaults: defaults).isEmpty)
+    }
+
     func testCalibrationPersistenceKeyIncludesEveryIdentityDimension() throws {
         let suiteName = "IOSLocalKeypadUXTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

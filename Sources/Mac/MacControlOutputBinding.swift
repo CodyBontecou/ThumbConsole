@@ -106,6 +106,20 @@ extension Set where Element == VirtualGamepadButton {
     }
 }
 
+extension GamepadControllerTemplate {
+    /// Templates whose visible actions promise the standard Mac productivity
+    /// shortcuts must install those bindings atomically with the profile rather
+    /// than inheriting whichever profile happened to be active.
+    var recommendedMacOutputBindings: [GameButton: MacControlOutputBinding]? {
+        switch self {
+        case .productivityStarter, .productivityOneHandedLeft, .productivityOneHandedRight:
+            DefaultMacControlOutputMap.defaultBindings
+        default:
+            nil
+        }
+    }
+}
+
 enum DefaultMacControlOutputMap {
     static let defaultBindings: [GameButton: MacControlOutputBinding] = Dictionary(
         uniqueKeysWithValues: DefaultKeypadKeyMap.defaultBindings.map { button, binding in

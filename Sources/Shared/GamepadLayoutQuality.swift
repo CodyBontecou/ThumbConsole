@@ -194,16 +194,16 @@ enum GamepadLayoutErgonomicRole {
 struct GamepadLayoutQualityReport: Codable, Equatable {
     static let runtimeHitOutset: CGFloat = 10
 
+    /// The region where a new touch can initially activate the control.
+    /// Thumbsticks intentionally use only their visible center nub here; their
+    /// much larger drag range applies after ownership has already been acquired.
     static func runtimeHitFrame(for control: GamepadResolvedControl) -> CGRect {
         if control.isJoystick {
             let visualSide = min(control.size.width, control.size.height)
             let style = control.layoutCustomization.joystickVisualStyle ?? .pad
-            let hitSide: CGFloat = switch style {
-            case .pad:
-                max(visualSide + runtimeHitOutset * 2, visualSide)
-            case .thumbstick:
-                max(visualSide + runtimeHitOutset * 2, visualSide * 2.55, 104)
-            }
+            let hitSide = style == .thumbstick
+                ? max(44, visualSide)
+                : max(visualSide + runtimeHitOutset * 2, visualSide)
             return CGRect(
                 x: control.center.x - hitSide / 2,
                 y: control.center.y - hitSide / 2,
@@ -212,6 +212,23 @@ struct GamepadLayoutQualityReport: Codable, Equatable {
             )
         }
         return control.frame.insetBy(dx: -runtimeHitOutset, dy: -runtimeHitOutset)
+    }
+
+    /// The post-activation travel/retention area used by compact thumbsticks.
+    /// It is exposed separately so diagnostics do not mistake travel space for
+    /// a region that can steal a neighboring control's initial touch.
+    static func runtimeRetentionFrame(for control: GamepadResolvedControl) -> CGRect? {
+        guard control.isJoystick,
+              (control.layoutCustomization.joystickVisualStyle ?? .pad) == .thumbstick
+        else { return nil }
+        let visualSide = min(control.size.width, control.size.height)
+        let travelSide = max(visualSide * 2.55, 104)
+        return CGRect(
+            x: control.center.x - travelSide / 2,
+            y: control.center.y - travelSide / 2,
+            width: travelSide,
+            height: travelSide
+        )
     }
 
     var profileName: String?

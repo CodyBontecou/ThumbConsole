@@ -189,7 +189,7 @@ final class GamepadLayoutQualityErgonomicsTests: XCTestCase {
         XCTAssertEqual(Set(lockedRepair.skippedLockedControlIDs), Set(lockedIssue.controls))
     }
 
-    func testThumbstickValidationUsesItsLargerInvisibleRuntimeRange() throws {
+    func testThumbstickValidationUsesActivationAreaNotPostActivationTravelRange() throws {
         let joystickID = uuid(75)
         let buttonID = uuid(76)
         var customization = makeCustomization([
@@ -207,15 +207,17 @@ final class GamepadLayoutQualityErgonomicsTests: XCTestCase {
         let joystick = try XCTUnwrap(preliminary.first { $0.id == .custom(joystickID) })
         let buttonControl = try XCTUnwrap(preliminary.first { $0.id == .custom(buttonID) })
         let joystickHitFrame = GamepadLayoutQualityReport.runtimeHitFrame(for: joystick)
-        XCTAssertGreaterThan(joystickHitFrame.width, joystick.frame.width + 20)
+        let joystickRetentionFrame = try XCTUnwrap(GamepadLayoutQualityReport.runtimeRetentionFrame(for: joystick))
+        XCTAssertEqual(joystickHitFrame.width, max(44, min(joystick.size.width, joystick.size.height)), accuracy: 0.001)
+        XCTAssertGreaterThan(joystickRetentionFrame.width, joystickHitFrame.width + 20)
 
-        let visualGap: CGFloat = 6
+        let visualGap: CGFloat = 14
         customization.customButtons[0].layout.centerX = (
             joystick.frame.maxX + visualGap + buttonControl.frame.width / 2
         ) / landscape.width
         let report = customization.layoutQualityReport(canvasSize: landscape)
         XCTAssertFalse(report.issues.contains { $0.code == "control-overlap" })
-        XCTAssertTrue(report.issues.contains {
+        XCTAssertFalse(report.issues.contains {
             $0.code == "expanded-hit-overlap"
                 && Set($0.controls) == Set(["custom.\(joystickID.uuidString)", "custom.\(buttonID.uuidString)"])
         })

@@ -913,6 +913,21 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         }
     }
 
+    func testProductivityTemplatesSeedTheBindingsTheirActionsPromise() throws {
+        for template in [
+            GamepadControllerTemplate.productivityStarter,
+            .productivityOneHandedLeft,
+            .productivityOneHandedRight
+        ] {
+            let recommended = try XCTUnwrap(template.recommendedMacOutputBindings)
+            XCTAssertEqual(recommended, DefaultMacControlOutputMap.defaultBindings)
+            XCTAssertEqual(recommended[.dash]?.displayName, "⌘K")
+            XCTAssertEqual(recommended[.focus]?.displayName, "⌃B")
+            XCTAssertEqual(recommended[.map]?.displayName, "⇧⌘P")
+        }
+        XCTAssertNil(GamepadControllerTemplate.nes.recommendedMacOutputBindings)
+    }
+
     func testProductivityStarterHasSeparatelyDesignedOrientationVariants() throws {
         let profile = GamepadControllerTemplate.productivityStarter.makeProfile()
         let landscape = try XCTUnwrap(profile.landscapeCustomization)

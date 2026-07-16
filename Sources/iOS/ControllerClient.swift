@@ -866,6 +866,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var gamepadCustomization: GamepadCustomization
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
     @Published private(set) var bindingPresentations: [GamepadProfileBindingPresentations]
+    @Published private(set) var pendingKeypadLayoutEdits: [PendingKeypadLayoutEdit]
     @Published private(set) var selectedGamepadProfileID: UUID
     @Published private(set) var defaultGamepadProfileID: UUID
     @Published private(set) var serverCapabilities: Set<ControllerCapability> = []
@@ -952,6 +953,10 @@ final class ControllerClient: ObservableObject {
         selectedGamepadProfileID == defaultGamepadProfileID
     }
 
+    var hasPendingKeypadLayoutEdits: Bool {
+        !pendingKeypadLayoutEdits.isEmpty
+    }
+
     var selectedGamepadProfileOrientationPreference: GamepadProfileOrientationPreference {
         selectedGamepadProfile?.orientationPreference ?? .automatic
     }
@@ -972,6 +977,7 @@ final class ControllerClient: ObservableObject {
         gamepadCustomization = startupCustomization
         gamepadProfiles = loadedProfileState.profiles
         bindingPresentations = KeypadBindingPresentationPersistence.load()
+        pendingKeypadLayoutEdits = PendingKeypadLayoutPersistence.load()
         selectedGamepadProfileID = startupProfile.id
         defaultGamepadProfileID = loadedProfileState.defaultProfileID
         GamepadCustomizationPersistence.save(startupCustomization)
@@ -1391,15 +1397,82 @@ final class ControllerClient: ObservableObject {
         markSavedKeypadSnapshotAvailable()
 
         guard sendsToMac else { return }
+        recordPendingKeypadLayoutEdit(
+            profileID: selectedGamepadProfileID,
+            orientation: orientation,
+            customization: stampedCustomization
+        )
+        if isConnected {
+            sendPendingKeypadLayoutEdit(
+                PendingKeypadLayoutEdit(
+                    profileID: selectedGamepadProfileID,
+                    orientation: orientation,
+                    customization: stampedCustomization,
+                    serverID: currentKeypadSyncServerID
+                )
+            )
+        }
+        updateLastSentEvent(
+            isConnected ? "keypad layout saved; awaiting Mac confirmation" : "keypad layout saved locally; sync pending",
+            immediately: true
+        )
+    }
+
+    private var currentKeypadSyncServerID: String? {
+        trustedMacCredential?.serverID.nilIfBlank ?? currentExpectedServerID?.nilIfBlank
+    }
+
+    private func recordPendingKeypadLayoutEdit(
+        profileID: UUID,
+        orientation: GamepadEditorDeviceOrientation,
+        customization: GamepadCustomization
+    ) {
+        let edit = PendingKeypadLayoutEdit(
+            profileID: profileID,
+            orientation: orientation,
+            customization: customization,
+            serverID: currentKeypadSyncServerID
+        )
+        pendingKeypadLayoutEdits = PendingKeypadLayoutReconciler.recording(
+            edit,
+            in: pendingKeypadLayoutEdits
+        )
+        PendingKeypadLayoutPersistence.save(pendingKeypadLayoutEdits)
+    }
+
+    private func sendPendingKeypadLayoutEdit(_ edit: PendingKeypadLayoutEdit) {
+        // Offline layout sync and orientation mutation shipped in the same
+        // protocol revision, so this capability also gates safe inactive-profile updates.
+        guard isConnected,
+              serverCapabilities.contains(.gamepadProfileOrientationPreferenceMutation),
+              let serverID = currentKeypadSyncServerID,
+              edit.serverID == serverID,
+              gamepadProfiles.contains(where: { $0.id == edit.profileID })
+        else { return }
         send(
             .init(
                 type: .gamepadCustomization,
                 timestamp: 0,
-                gamepadCustomization: stampedCustomization,
-                gamepadProfileID: selectedGamepadProfileID
+                gamepadCustomization: edit.customization,
+                gamepadProfileID: edit.profileID
             )
         )
-        updateLastSentEvent(isConnected ? "keypad layout saved" : "keypad layout saved locally", immediately: true)
+    }
+
+    private func flushPendingKeypadLayoutEdits() {
+        guard isConnected else { return }
+        guard serverCapabilities.contains(.gamepadProfileOrientationPreferenceMutation) else {
+            if !pendingKeypadLayoutEdits.isEmpty {
+                updateLastSentEvent("Update the Mac app to sync saved iPhone layout edits", immediately: true)
+            }
+            return
+        }
+        for edit in pendingKeypadLayoutEdits {
+            sendPendingKeypadLayoutEdit(edit)
+        }
+        if !pendingKeypadLayoutEdits.isEmpty {
+            updateLastSentEvent("syncing saved iPhone layout edits", immediately: true)
+        }
     }
 
     func setKeypadColorSchemePreference(_ preference: GamepadColorSchemePreference) {
@@ -1415,15 +1488,23 @@ final class ControllerClient: ObservableObject {
 
         applyLocalGamepadCustomization(stampedCustomization)
         persistGamepadProfiles()
-        send(
-            .init(
-                type: .gamepadCustomization,
-                timestamp: 0,
-                gamepadCustomization: stampedCustomization,
-                gamepadProfileID: selectedGamepadProfileID
-            )
+        let orientation = stampedCustomization.deviceCanvas.editorDeviceFrame.orientation
+        recordPendingKeypadLayoutEdit(
+            profileID: selectedGamepadProfileID,
+            orientation: orientation,
+            customization: stampedCustomization
         )
-        updateLastSentEvent("keypad appearance: \(preference.displayName)", immediately: true)
+        if let edit = pendingKeypadLayoutEdits.last(where: {
+            $0.profileID == selectedGamepadProfileID && $0.orientation == orientation
+        }) {
+            sendPendingKeypadLayoutEdit(edit)
+        }
+        updateLastSentEvent(
+            isConnected
+                ? "keypad appearance: \(preference.displayName); awaiting Mac confirmation"
+                : "keypad appearance saved locally; sync pending",
+            immediately: true
+        )
     }
 
     private static func customization(_ customization: GamepadCustomization, matching orientation: GamepadEditorDeviceOrientation) -> GamepadCustomization {
@@ -1471,18 +1552,35 @@ final class ControllerClient: ObservableObject {
             defaultProfileID: message.defaultGamepadProfileID,
             fallbackCustomization: message.gamepadCustomization ?? gamepadCustomization
         )
-        gamepadProfiles = state.profiles
-        selectedGamepadProfileID = state.activeProfileID
-        defaultGamepadProfileID = state.defaultProfileID
+        let authoritativeServerID = message.serverID?.nilIfBlank ?? currentKeypadSyncServerID
+        let reconciliation = PendingKeypadLayoutReconciler.reconcile(
+            incomingProfiles: state.profiles,
+            pendingEdits: pendingKeypadLayoutEdits,
+            authoritativeServerID: authoritativeServerID
+        )
+        let reconciledState = GamepadConfigurationProfilePersistence.normalizedState(
+            profiles: reconciliation.profiles,
+            activeProfileID: state.activeProfileID,
+            defaultProfileID: state.defaultProfileID,
+            fallbackCustomization: message.gamepadCustomization ?? gamepadCustomization
+        )
+        pendingKeypadLayoutEdits = reconciliation.remainingEdits
+        PendingKeypadLayoutPersistence.save(pendingKeypadLayoutEdits)
+        gamepadProfiles = reconciledState.profiles
+        selectedGamepadProfileID = reconciledState.activeProfileID
+        defaultGamepadProfileID = reconciledState.defaultProfileID
         markSavedKeypadSnapshotAvailable()
 
-        if let customization = message.gamepadCustomization {
-            applyGamepadCustomizationFromMac(customization)
-        } else if let activeProfile = state.activeProfile {
+        if let activeProfile = reconciledState.activeProfile {
             applyGamepadCustomizationFromMac(activeProfile.customization)
+        } else if let customization = message.gamepadCustomization {
+            applyGamepadCustomizationFromMac(customization)
         }
 
         persistGamepadProfiles()
+        if isConnected, !reconciliation.editsToUpload.isEmpty {
+            flushPendingKeypadLayoutEdits()
+        }
     }
 
     private func persistGamepadProfiles() {
@@ -1789,6 +1887,7 @@ final class ControllerClient: ObservableObject {
         reconnectTask = nil
         autoReconnectEnabled = trustedMacCredential != nil
         state = .connected
+        flushPendingKeypadLayoutEdits()
         lastError = nil
         smartConnectStatus = nil
         lastSentEvent = message ?? "Pairing complete"

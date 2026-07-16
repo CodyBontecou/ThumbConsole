@@ -70,6 +70,8 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: Sources/Shared
+      - path: Sources/Mac/KeyMap.swift
+      - path: Sources/Mac/MacControlOutputBinding.swift
       - path: Sources/iOS/IOSLocalKeypadUX.swift
       - path: Tests
     settings:

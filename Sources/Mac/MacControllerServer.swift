@@ -1332,7 +1332,12 @@ final class MacControllerServer: ObservableObject {
 
     func setGamepadCustomization(_ customization: GamepadCustomization) {
         var normalizedCustomization = customization.normalized
-        guard !normalizedCustomization.hasSamePresentation(as: gamepadCustomization) else { return }
+        guard !normalizedCustomization.hasSamePresentation(as: gamepadCustomization) else {
+            asyncOnNetworkQueue { [weak self] in
+                self?.sendGamepadProfileStateOnNetworkQueue()
+            }
+            return
+        }
         normalizedCustomization = normalizedCustomization.stampedForLocalUpdate
 
         gamepadCustomization = normalizedCustomization
@@ -1365,6 +1370,68 @@ final class MacControllerServer: ObservableObject {
         publishRuntimeStatus()
     }
 
+    func setGamepadCustomization(_ customization: GamepadCustomization, forProfileID profileID: UUID) {
+        guard profileID != activeGamepadProfileID else {
+            setGamepadCustomization(customization)
+            return
+        }
+
+        var normalizedCustomization = customization.normalized
+        let orientation = normalizedCustomization.deviceCanvas.editorDeviceFrame.orientation
+        let profileIndex: Int
+        let recoveredProfile: Bool
+        if let existingIndex = gamepadProfiles.firstIndex(where: { $0.id == profileID }) {
+            profileIndex = existingIndex
+            recoveredProfile = false
+            guard !normalizedCustomization.hasSamePresentation(
+                as: gamepadProfiles[profileIndex].customization(for: orientation)
+            ) else {
+                asyncOnNetworkQueue { [weak self] in
+                    self?.sendGamepadProfileStateOnNetworkQueue()
+                }
+                return
+            }
+        } else {
+            var profile = GamepadConfigurationProfile(
+                id: profileID,
+                name: "Recovered iPhone Layout",
+                customization: normalizedCustomization
+            )
+            profile.setCustomization(normalizedCustomization, for: orientation)
+            gamepadProfiles.append(profile)
+            profileIndex = gamepadProfiles.count - 1
+            recoveredProfile = true
+            profileKeyBindings[profileID] = DefaultKeypadKeyMap.defaultBindings
+            profileOutputBindings[profileID] = DefaultMacControlOutputMap.defaultBindings
+        }
+
+        normalizedCustomization = normalizedCustomization.stampedForLocalUpdate
+        gamepadProfiles[profileIndex].setCustomization(normalizedCustomization, for: orientation)
+        gamepadProfiles[profileIndex].updatedAt = Date.currentMilliseconds
+        persistGamepadProfileState()
+        if recoveredProfile {
+            saveProfileKeyBindings()
+            saveProfileOutputBindings()
+        }
+
+        let updatedProfiles = gamepadProfiles
+        let updatedPresentations = bindingPresentationsSnapshot()
+        lastReceivedEvent = recoveredProfile
+            ? "Recovered an offline iPhone layout"
+            : "Updated \(gamepadProfiles[profileIndex].name) layout from iPhone"
+        let deliveryRevision = beginEditorDelivery(
+            detail: recoveredProfile ? "Recovered offline iPhone layout on this Mac" : "Offline iPhone layout synced to this Mac"
+        )
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            self.realtimeGamepadProfiles = updatedProfiles
+            self.realtimeBindingPresentations = updatedPresentations
+            self.sendGamepadProfileStateOnNetworkQueue(editorDeliveryRevision: deliveryRevision)
+        }
+        logDebug("gamepad_customization_updated source=iphone profile=\(profileID.uuidString) background=true recovered=\(recoveredProfile)")
+        publishRuntimeStatus()
+    }
+
     func resetGamepadCustomization() {
         setGamepadCustomization(.defaultValue)
     }
@@ -1372,8 +1439,13 @@ final class MacControllerServer: ObservableObject {
     func setGamepadProfileState(
         profiles: [GamepadConfigurationProfile],
         activeProfileID: UUID,
-        defaultProfileID: UUID
+        defaultProfileID: UUID,
+        seededProfileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]] = [:]
     ) {
+        for (profileID, bindings) in seededProfileOutputBindings {
+            profileOutputBindings[profileID] = bindings
+            profileKeyBindings[profileID] = bindings.keyboardBindings
+        }
         let state = GamepadConfigurationProfilePersistence.normalizedState(
             profiles: profiles,
             activeProfileID: activeProfileID,
@@ -2374,12 +2446,11 @@ final class MacControllerServer: ObservableObject {
             let profileID = message.gamepadProfileID
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                if let profileID,
-                   profileID != self.activeGamepadProfileID,
-                   self.gamepadProfiles.contains(where: { $0.id == profileID }) {
-                    self.selectGamepadProfile(profileID, source: "iphone")
+                if let profileID {
+                    self.setGamepadCustomization(clientCustomization, forProfileID: profileID)
+                } else {
+                    self.setGamepadCustomization(clientCustomization)
                 }
-                self.setGamepadCustomization(clientCustomization)
                 self.lastReceivedEvent = "Updated keypad layout from iPhone"
                 self.publishRuntimeStatus()
             }

@@ -117,7 +117,6 @@ struct IOSContentView: View {
 private enum IOSKeypadSettings {
     static let hasOpenedKeypadDefaultsKey = "PocketPad.iOS.hasOpenedKeypad.v1"
     static let immersiveModeDefaultsKey = "PocketPad.iOS.immersiveKeypad.v1"
-    static let showBindingGlyphsDefaultsKey = "PocketPad.iOS.showBindingGlyphs.v1"
 }
 
 private struct ConnectionView: View {
@@ -1229,7 +1228,9 @@ private final class IOSKeypadEditRuntime: ObservableObject {
         }
         client.updateSelectedKeypadLayout(customization, orientation: orientation, sendsToMac: isFinal)
         if isFinal {
-            feedback = client.isConnected ? "Saved and synced to Mac" : "Saved on this iPhone"
+            feedback = client.isConnected
+                ? "Saved — awaiting Mac confirmation"
+                : "Saved on this iPhone — sync pending"
             refreshSessionState()
             announce(feedback)
         }
@@ -1335,6 +1336,9 @@ private struct ControllerPadView: View {
         }
         .onChange(of: client.selectedGamepadProfileID) { _, _ in
             calibrationRuntime.cancel()
+            if editRuntime.isEditing {
+                editRuntime.finish(client: client)
+            }
             releaseActiveInputs()
             announce("Keypad changed to \(client.selectedGamepadProfileName)")
         }
@@ -1480,9 +1484,6 @@ private struct ControllerPadGeometryScene: View {
                 onShowOnboarding: onShowOnboarding
             )
 
-            if client.isPracticeModeEnabled {
-                ControllerPadPracticeBadge(safeAreaInsets: context.safeAreaInsets)
-            }
         }
         .overlay {
             if calibrationRuntime.isActive {
@@ -1585,7 +1586,9 @@ private struct ControllerPadTopChrome: View {
             safeAreaInsets: context.safeAreaInsets,
             isLandscape: context.isLandscape,
             activationFrame: context.customization.topBarActivationFrame(in: context.size),
-            collapsedTitle: client.isConnected ? "Connected" : "Saved keypad"
+            collapsedTitle: client.isPracticeModeEnabled
+                ? "Practice • Input Off"
+                : (client.isConnected ? "Connected" : "Saved keypad")
         ) {
             ControllerPadTopBar(
                 context: context,
@@ -1641,7 +1644,7 @@ private struct ControllerPadRuntimeBottomChrome: View {
                 )
             }
 
-            if !client.isConnected && !editRuntime.isEditing {
+            if !client.isConnected && !client.isPracticeModeEnabled && !editRuntime.isEditing {
                 ControllerPadOfflineBanner(
                     onReconnect: reconnect,
                     onPractice: { client.setPracticeModeEnabled(!client.isPracticeModeEnabled) },
@@ -1999,6 +2002,7 @@ private struct ControllerPadTopBarItemRouter: View {
                 ControllerPadProfileMenuItem(
                     context: context,
                     isCompact: isCompact,
+                    isEditingLayout: isEditingLayout,
                     isExportingKeypadConfiguration: $isExportingKeypadConfiguration
                 )
             )
@@ -2010,6 +2014,7 @@ private struct ControllerPadTopBarItemRouter: View {
             return AnyView(
                 ControllerPadEditLayoutItem(
                     context: context,
+                    isCompact: isCompact,
                     isEditingLayout: isEditingLayout,
                     onToggleEditing: onToggleEditing
                 )
@@ -2052,11 +2057,13 @@ private struct ControllerPadStatusItem: View {
             systemImage: systemImage,
             tone: tone
         )
+        .accessibilityLabel(client.isPracticeModeEnabled ? "Practice Mode. Outgoing input is off." : title)
         .accessibilityAddTraits(.updatesFrequently)
     }
 
     private var title: String {
-        switch client.state {
+        if client.isPracticeModeEnabled { return "Practice" }
+        return switch client.state {
         case .connected: "Connected"
         case .connecting: "Connecting…"
         case .pairingCodeRequired: "Pairing Needed"
@@ -2065,7 +2072,8 @@ private struct ControllerPadStatusItem: View {
     }
 
     private var systemImage: String {
-        switch client.state {
+        if client.isPracticeModeEnabled { return "hand.tap.fill" }
+        return switch client.state {
         case .connected: "wifi"
         case .connecting: "arrow.triangle.2.circlepath"
         case .pairingCodeRequired: "key.fill"
@@ -2074,7 +2082,8 @@ private struct ControllerPadStatusItem: View {
     }
 
     private var tone: GeistInterfaceTone {
-        switch client.state {
+        if client.isPracticeModeEnabled { return .warning }
+        return switch client.state {
         case .connected: .success
         case .connecting, .pairingCodeRequired: .warning
         case .failed, .disconnected: .neutral
@@ -2086,6 +2095,7 @@ private struct ControllerPadProfileMenuItem: View {
     @EnvironmentObject private var client: ControllerClient
     let context: ControllerPadRenderContext
     let isCompact: Bool
+    let isEditingLayout: Bool
     @Binding var isExportingKeypadConfiguration: Bool
 
     var body: some View {
@@ -2119,7 +2129,9 @@ private struct ControllerPadProfileMenuItem: View {
             ControllerPadProfileMenuLabelRouter(context: context, isCompact: isCompact)
         }
         .gamepadControlBarButtonStyle(customization: context.customization, item: .profileMenu)
+        .disabled(isEditingLayout)
         .accessibilityLabel(isCompact ? "Keypad setup: \(client.selectedGamepadProfileName)" : "Keypad setup")
+        .accessibilityHint(isEditingLayout ? "Finish editing before switching keypad setups." : "Switches, defaults, or exports keypad setups.")
     }
 
     private func profileSystemImage(_ profile: GamepadConfigurationProfile) -> String {
@@ -2304,6 +2316,7 @@ private struct ControllerPadSpacerItem: View {
 
 private struct ControllerPadEditLayoutItem: View {
     let context: ControllerPadRenderContext
+    let isCompact: Bool
     let isEditingLayout: Bool
     let onToggleEditing: () -> Void
 
@@ -2320,8 +2333,10 @@ private struct ControllerPadEditLayoutItem: View {
                     defaultSystemImage: isEditingLayout ? "checkmark" : "slider.horizontal.3",
                     fontSize: 13
                 )
-                Text(isEditingLayout ? "Done" : "Edit")
-                    .lineLimit(1)
+                if !isCompact {
+                    Text(isEditingLayout ? "Done" : "Edit")
+                        .lineLimit(1)
+                }
             }
         }
         .gamepadControlBarButtonStyle(
@@ -2563,6 +2578,7 @@ private struct ControllerPadTextConnectionLabel: View {
 
 private struct ControllerPadEditingCommandStrip: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let canUndo: Bool
     let hasChanges: Bool
     let feedback: String
@@ -2573,27 +2589,44 @@ private struct ControllerPadEditingCommandStrip: View {
     var body: some View {
         HStack(spacing: Geist.Spacing.s2) {
             Button(action: onCancel) {
-                Label("Cancel", systemImage: "xmark")
+                if usesCompactCommands {
+                    Image(systemName: "xmark")
+                } else {
+                    Label("Cancel", systemImage: "xmark")
+                }
             }
             .geistButtonStyle(.secondary, size: .small)
             .disabled(!hasChanges)
+            .accessibilityLabel("Cancel editing")
             .accessibilityHint("Restores the layout from when editing began, then exits editing.")
 
             Button(action: onUndo) {
-                Label("Undo", systemImage: "arrow.uturn.backward")
+                if usesCompactCommands {
+                    Image(systemName: "arrow.uturn.backward")
+                } else {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
             }
             .geistButtonStyle(.secondary, size: .small)
             .disabled(!canUndo)
+            .accessibilityLabel("Undo layout change")
 
             Spacer(minLength: Geist.Spacing.s1)
 
             if !feedback.isEmpty {
-                Label(feedback, systemImage: "checkmark.circle.fill")
-                    .geistTypography(.label12)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.75)
-                    .accessibilityAddTraits(.updatesFrequently)
+                Group {
+                    if usesCompactCommands {
+                        Image(systemName: "checkmark.circle.fill")
+                    } else {
+                        Label(feedback, systemImage: "checkmark.circle.fill")
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.75)
+                    }
+                }
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .accessibilityLabel(feedback)
+                .accessibilityAddTraits(.updatesFrequently)
             }
 
             Button(action: onDone) {
@@ -2612,27 +2645,9 @@ private struct ControllerPadEditingCommandStrip: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Layout editing commands")
     }
-}
 
-private struct ControllerPadPracticeBadge: View {
-    @Environment(\.colorScheme) private var colorScheme
-    let safeAreaInsets: EdgeInsets
-
-    var body: some View {
-        Label("Practice • Input Off", systemImage: "hand.tap.fill")
-            .geistTypography(.heading14)
-            .foregroundStyle(Geist.color(.background100, scheme: colorScheme))
-            .padding(.horizontal, Geist.Spacing.s3)
-            .frame(minHeight: 44)
-            .background(Geist.color(.purple800, scheme: colorScheme), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.35)))
-            .padding(.top, max(Geist.Spacing.s2, safeAreaInsets.top + 48))
-            .padding(.trailing, max(Geist.Spacing.s3, safeAreaInsets.trailing + Geist.Spacing.s2))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .allowsHitTesting(false)
-            .accessibilityLabel("Practice Mode. Outgoing input is off.")
-            .accessibilityAddTraits(.isStaticText)
-            .zIndex(20)
+    private var usesCompactCommands: Bool {
+        horizontalSizeClass == .compact
     }
 }
 
@@ -2649,8 +2664,8 @@ private struct ControllerPadOfflineBanner: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: Geist.Spacing.s3) {
-                statusContent
+            HStack(spacing: Geist.Spacing.s2) {
+                compactStatusContent
                 Spacer(minLength: Geist.Spacing.s1)
                 actionButtons
             }
@@ -2671,6 +2686,13 @@ private struct ControllerPadOfflineBanner: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityStatus)
         .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private var compactStatusContent: some View {
+        Label(isReconnecting ? "Connecting…" : "Offline", systemImage: isReconnecting ? "arrow.triangle.2.circlepath" : "wifi.slash")
+            .geistTypography(.heading14)
+            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+            .lineLimit(1)
     }
 
     private var statusContent: some View {
@@ -3369,6 +3391,49 @@ private struct ControllerPadResolvedButton: View {
     }
 }
 
+private struct IOSKeypadEditAccessibilityModifier: ViewModifier {
+    let label: String
+    let value: String
+    let hint: String
+    let isLocked: Bool
+    let onSelect: () -> Void
+    let onNudge: (CGSize) -> Void
+    let onResize: (CGFloat) -> Void
+    let onRotate: (CGFloat) -> Void
+    let onDelete: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let base = content
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(label)
+            .accessibilityValue(value)
+            .accessibilityHint(hint)
+            .accessibilityAction { onSelect() }
+            .accessibilityAction(named: Text("Delete")) { onDelete() }
+
+        if isLocked {
+            base
+        } else {
+            base
+                .accessibilityAction(named: Text("Move Left")) { onNudge(CGSize(width: -4, height: 0)) }
+                .accessibilityAction(named: Text("Move Right")) { onNudge(CGSize(width: 4, height: 0)) }
+                .accessibilityAction(named: Text("Move Up")) { onNudge(CGSize(width: 0, height: -4)) }
+                .accessibilityAction(named: Text("Move Down")) { onNudge(CGSize(width: 0, height: 4)) }
+                .accessibilityAction(named: Text("Rotate Counterclockwise")) { onRotate(-15) }
+                .accessibilityAction(named: Text("Rotate Clockwise")) { onRotate(15) }
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: onResize(0.1)
+                    case .decrement: onResize(-0.1)
+                    @unknown default: break
+                    }
+                }
+        }
+    }
+}
+
 private struct GamepadFreeformControllerCanvas: View {
     @Environment(\.colorScheme) private var colorScheme
     let context: ControllerPadRenderContext
@@ -3400,6 +3465,7 @@ private struct GamepadFreeformControllerCanvas: View {
                 ForEach(controls) { control in
                     ControllerPadResolvedControlRouter(context: context, control: control)
                         .allowsHitTesting(!isEditingLayout && !control.isDecoration)
+                        .accessibilityHidden(isEditingLayout)
                         .rotationEffect(.degrees(control.rotationDegrees))
                         .position(control.center)
                         .zIndex(0)
@@ -3527,9 +3593,81 @@ private struct GamepadFreeformControllerCanvas: View {
         .gesture(editDragGesture(for: control, canvasSize: canvasSize))
         .rotationEffect(.degrees(control.rotationDegrees))
         .position(control.center)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(control.isLocationLocked ? "\(control.label) locked" : "Edit \(control.label)")
-        .accessibilityHint(control.isLocationLocked ? "This control is locked in the Mac keypad editor. Use the trash button to delete it." : "Drag to move. Use the corner handles to resize, the rotate handle at the top-right to rotate, or the trash button to delete.")
+        .modifier(
+            IOSKeypadEditAccessibilityModifier(
+                label: control.isLocationLocked ? "\(control.label) locked" : "Edit \(control.label)",
+                value: accessibilityLayoutValue(for: control),
+                hint: control.isLocationLocked
+                    ? "This control is locked in the Mac keypad editor. Use the Delete action to remove it."
+                    : "Activate to select. Swipe up or down to resize, or use the Move, Rotate, and Delete accessibility actions.",
+                isLocked: control.isLocationLocked,
+                onSelect: { selectedControlID = control.id },
+                onNudge: { accessibilityNudge(control, by: $0, in: canvasSize) },
+                onResize: { accessibilityResize(control, scaleDelta: $0) },
+                onRotate: { accessibilityRotate(control, by: $0) },
+                onDelete: { requestDelete(control) }
+            )
+        )
+    }
+
+    private func accessibilityLayoutValue(for control: GamepadResolvedControl) -> String {
+        let x = Int((control.normalizedCenter.x * 100).rounded())
+        let y = Int((control.normalizedCenter.y * 100).rounded())
+        let width = Int((control.layoutCustomization.widthScale * 100).rounded())
+        let height = Int((control.layoutCustomization.heightScale * 100).rounded())
+        let rotation = Int(control.layoutCustomization.rotationDegrees.rounded())
+        return "Position \(x) percent across, \(y) percent down. Size \(width) by \(height) percent. Rotation \(rotation) degrees."
+    }
+
+    private func accessibilityNudge(
+        _ control: GamepadResolvedControl,
+        by translation: CGSize,
+        in canvasSize: CGSize
+    ) {
+        selectedControlID = control.id
+        guard !control.isLocationLocked,
+              let next = customization.nudgedControls([control.id], by: translation, in: canvasSize)
+        else { return }
+        onCustomizationChanged(next, true)
+        accessibilityAnnounce("Moved \(control.label)")
+    }
+
+    private func accessibilityResize(_ control: GamepadResolvedControl, scaleDelta: CGFloat) {
+        selectedControlID = control.id
+        guard !control.isLocationLocked else { return }
+        guard let next = customization.iosUpdatingControlLayout(for: control.id, { layout in
+            layout.widthScale = GamepadButtonCustomization.clamp(
+                layout.widthScale + scaleDelta,
+                lower: GamepadButtonCustomization.minimumScale,
+                upper: GamepadButtonCustomization.maximumScale
+            )
+            layout.heightScale = GamepadButtonCustomization.clamp(
+                layout.heightScale + scaleDelta,
+                lower: GamepadButtonCustomization.minimumScale,
+                upper: GamepadButtonCustomization.maximumScale
+            )
+        }) else { return }
+        guard next.normalized != customization.normalized else { return }
+        onCustomizationChanged(next, true)
+        accessibilityAnnounce(scaleDelta > 0 ? "Enlarged \(control.label)" : "Reduced \(control.label)")
+    }
+
+    private func accessibilityRotate(_ control: GamepadResolvedControl, by delta: CGFloat) {
+        selectedControlID = control.id
+        guard !control.isLocationLocked else { return }
+        guard let next = customization.iosUpdatingControlLayout(for: control.id, { layout in
+            layout.rotationDegrees = GamepadButtonCustomization.normalizedRotationDegrees(
+                layout.rotationDegrees + delta
+            )
+        }) else { return }
+        guard next.normalized != customization.normalized else { return }
+        onCustomizationChanged(next, true)
+        accessibilityAnnounce(delta > 0 ? "Rotated \(control.label) clockwise" : "Rotated \(control.label) counterclockwise")
+    }
+
+    private func accessibilityAnnounce(_ message: String) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     private func selectedEditHandles(for control: GamepadResolvedControl, overlaySize: CGSize, handleOutset: CGFloat, canvasSize: CGSize) -> some View {
@@ -4201,7 +4339,7 @@ private extension String {
 
 private struct GamepadJoystick: View {
     @EnvironmentObject private var client: ControllerClient
-    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
+    @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -4314,19 +4452,22 @@ private struct GamepadJoystick: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
-            JoystickCaptureView(
-                activationDiameter: activationDiameter,
-                accessibility: joystickAccessibility
-            ) { direction, pressed, pressIdentifier in
-                handleDirectionEdge(direction, pressed: pressed, pressIdentifier: pressIdentifier)
-            } onAccessibilityDirection: { direction in
-                handleAccessibilityDirection(direction)
-            } onVectorChanged: { vector, directions in
-                normalizedOffset = CGSize(width: vector.dx, height: vector.dy)
-                activeDirections = directions
-                handleVectorChanged(vector)
+            if client.isConnected || client.isPracticeModeEnabled {
+                JoystickCaptureView(
+                    activationDiameter: activationDiameter,
+                    isEnabled: true,
+                    accessibility: joystickAccessibility
+                ) { direction, pressed, pressIdentifier in
+                    handleDirectionEdge(direction, pressed: pressed, pressIdentifier: pressIdentifier)
+                } onAccessibilityDirection: { direction in
+                    handleAccessibilityDirection(direction)
+                } onVectorChanged: { vector, directions in
+                    normalizedOffset = CGSize(width: vector.dx, height: vector.dy)
+                    activeDirections = directions
+                    handleVectorChanged(vector)
+                }
+                .frame(width: hitSide, height: hitSide)
             }
-            .frame(width: hitSide, height: hitSide)
         }
         .frame(width: hitSide, height: hitSide)
         .onDisappear {
@@ -4479,7 +4620,7 @@ private struct GamepadJoystick: View {
 
 private struct GamepadTrigger: View {
     @EnvironmentObject private var client: ControllerClient
-    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
+    @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -4542,16 +4683,19 @@ private struct GamepadTrigger: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
-            TriggerCaptureView(
-                orientation: settings.normalized.orientation,
-                accessibility: triggerAccessibility,
-                accessibilityValue: value
-            ) { rawValue, isActive in
-                handleValueChanged(rawValue, isActive: isActive)
-            } onAccessibilityValueChanged: { adjustedValue in
-                handleTransformedValueChanged(adjustedValue, isActive: false)
+            if client.isConnected || client.isPracticeModeEnabled {
+                TriggerCaptureView(
+                    orientation: settings.normalized.orientation,
+                    isEnabled: true,
+                    accessibility: triggerAccessibility,
+                    accessibilityValue: value
+                ) { rawValue, isActive in
+                    handleValueChanged(rawValue, isActive: isActive)
+                } onAccessibilityValueChanged: { adjustedValue in
+                    handleTransformedValueChanged(adjustedValue, isActive: false)
+                }
+                .frame(width: hitSize.width, height: hitSize.height)
             }
-            .frame(width: hitSize.width, height: hitSize.height)
         }
         .frame(width: hitSize.width, height: hitSize.height)
         .onDisappear {
@@ -4802,7 +4946,7 @@ private extension GamepadHapticFeedback {
 
 private struct GamepadTrackpad: View {
     @EnvironmentObject private var client: ControllerClient
-    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
+    @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -4872,21 +5016,24 @@ private struct GamepadTrackpad: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
-            TrackpadCaptureView(
-                isTapToClickEnabled: normalizedSettings.tapToClick,
-                isTwoFingerScrollEnabled: normalizedSettings.twoFingerScroll,
-                accessibility: trackpadAccessibility
-            ) { delta in
-                handleMove(delta)
-            } onScroll: { delta in
-                handleScroll(delta)
-            } onTap: { fingerCount in
-                handleTap(fingerCount: fingerCount)
-            } onActiveChanged: { active, count in
-                isActive = active
-                touchCount = count
+            if client.isConnected || client.isPracticeModeEnabled {
+                TrackpadCaptureView(
+                    isTapToClickEnabled: normalizedSettings.tapToClick,
+                    isTwoFingerScrollEnabled: normalizedSettings.twoFingerScroll,
+                    isEnabled: true,
+                    accessibility: trackpadAccessibility
+                ) { delta in
+                    handleMove(delta)
+                } onScroll: { delta in
+                    handleScroll(delta)
+                } onTap: { fingerCount in
+                    handleTap(fingerCount: fingerCount)
+                } onActiveChanged: { active, count in
+                    isActive = active
+                    touchCount = count
+                }
+                .frame(width: hitSize.width, height: hitSize.height)
             }
-            .frame(width: hitSize.width, height: hitSize.height)
         }
         .frame(width: hitSize.width, height: hitSize.height)
         .onAppear { prepareHapticIfNeeded() }
@@ -5015,7 +5162,7 @@ private struct GamepadTrackpad: View {
 
 private struct GamepadButton: View {
     @EnvironmentObject private var client: ControllerClient
-    @AppStorage(IOSKeypadSettings.showBindingGlyphsDefaultsKey) private var showsBindingGlyphs = true
+    @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -5116,13 +5263,16 @@ private struct GamepadButton: View {
             .accessibilityHidden(true)
             .frame(width: size.width, height: size.height)
 
-            TouchCaptureView(
-                hitShape: resolvedShape,
-                accessibility: buttonAccessibility
-            ) { pressed, isActive, pressIdentifier in
-                handlePressEdge(pressed, isActive: isActive, pressIdentifier: pressIdentifier)
+            if client.isConnected || client.isPracticeModeEnabled {
+                TouchCaptureView(
+                    hitShape: resolvedShape,
+                    isEnabled: true,
+                    accessibility: buttonAccessibility
+                ) { pressed, isActive, pressIdentifier in
+                    handlePressEdge(pressed, isActive: isActive, pressIdentifier: pressIdentifier)
+                }
+                .frame(width: hitSize.width, height: hitSize.height)
             }
-            .frame(width: hitSize.width, height: hitSize.height)
         }
         .frame(width: hitSize.width, height: hitSize.height)
         .onAppear {
