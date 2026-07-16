@@ -363,53 +363,49 @@ public extension GamepadCustomization {
         return GamepadLayerGroupDuplicationResult(group: normalizedGroup, elements: elements)
     }
 
-    /// Applies one deterministic repair emitted by `layoutQualityReport`.
-    /// Locked controls are always treated as fixed obstacles.
+    /// Packs selected movable controls without changing size or layer order. Every
+    /// non-selected control remains a fixed obstacle. Empty `controlIDs` means all.
     @discardableResult
-    internal mutating func applyLayoutRepair(
-        _ repair: GamepadLayoutSuggestedRepair,
-        in canvasSize: CGSize
+    mutating func separateExpandedHitTargets(
+        in canvasSize: CGSize,
+        controlIDs: Set<GamepadControlIdentity> = [],
+        respectingLocks: Bool = true
     ) -> Bool {
-        switch repair.kind {
-        case .separateExpandedHitTargets:
-            return separateExpandedHitTargets(in: canvasSize)
-        case .ergonomicAutoArrange:
-            return ergonomicallyAutoArrange(in: canvasSize)
-        }
-    }
-
-    /// Applies all currently suggested repairs in report order.
-    @discardableResult
-    internal mutating func applySuggestedLayoutRepairs(in canvasSize: CGSize) -> [GamepadLayoutRepairKind] {
-        let repairs = layoutQualityReport(canvasSize: canvasSize).suggestedRepairs
-        var applied: [GamepadLayoutRepairKind] = []
-        for repair in repairs where applyLayoutRepair(repair, in: canvasSize) {
-            applied.append(repair.kind)
-        }
-        return applied
-    }
-
-    /// Packs unlocked controls without changing their size or layer order. Runtime
-    /// hit frames are visual frames expanded by 10pt on every side.
-    @discardableResult
-    mutating func separateExpandedHitTargets(in canvasSize: CGSize) -> Bool {
         guard canvasSize.width > 1, canvasSize.height > 1 else { return false }
         let controls = resolvedControls(in: canvasSize).filter { !$0.isDecoration }
-        let locked = controls.filter(\.isLocationLocked).sorted { $0.id.id < $1.id.id }
-        let movable = controls.filter { !$0.isLocationLocked }.sorted { $0.id.id < $1.id.id }
-        var occupied = locked.map(\.frame)
+        let movable = controls.filter { control in
+            (controlIDs.isEmpty || controlIDs.contains(control.id))
+                && (!respectingLocks || !control.isLocationLocked)
+        }.sorted { $0.id.id < $1.id.id }
+        guard !movable.isEmpty else { return false }
+
+        let movableIDs = Set(movable.map(\.id))
+        var occupiedHitFrames = controls
+            .filter { !movableIDs.contains($0.id) }
+            .sorted { $0.id.id < $1.id.id }
+            .map(GamepadLayoutQualityReport.runtimeHitFrame(for:))
         var next = self
         var changed = false
 
         for control in movable {
             let candidate = Self.nearestSeparatedFrame(
-                to: control.frame,
-                avoiding: occupied,
+                for: control,
+                avoidingHitFrames: occupiedHitFrames,
                 in: canvasSize
             )
-            occupied.append(candidate)
+            let originalHitFrame = GamepadLayoutQualityReport.runtimeHitFrame(for: control)
+            occupiedHitFrames.append(
+                originalHitFrame.offsetBy(
+                    dx: candidate.midX - control.frame.midX,
+                    dy: candidate.midY - control.frame.midY
+                )
+            )
             guard hypot(candidate.midX - control.center.x, candidate.midY - control.center.y) > 0.01 else { continue }
-            let position = GamepadLayoutResolver.normalizedPosition(for: CGPoint(x: candidate.midX, y: candidate.midY), visualSize: control.size, in: canvasSize)
+            let position = GamepadLayoutResolver.normalizedPosition(
+                for: CGPoint(x: candidate.midX, y: candidate.midY),
+                visualSize: control.size,
+                in: canvasSize
+            )
             next.setPosition(position, for: control.id)
             changed = true
         }
@@ -419,44 +415,91 @@ public extension GamepadCustomization {
         return true
     }
 
-    /// Places primary movement/actions in lower side thumb arcs for the current
-    /// orientation, while leaving utilities, trackpads, joysticks, triggers, and
-    /// locked controls untouched.
+    /// Places selected primary movement/actions in lower thumb arcs for the current
+    /// orientation, leaving utilities and specialized controls untouched.
     @discardableResult
-    mutating func ergonomicallyAutoArrange(in canvasSize: CGSize) -> Bool {
+    mutating func ergonomicallyAutoArrange(
+        in canvasSize: CGSize,
+        controlIDs: Set<GamepadControlIdentity> = [],
+        respectingLocks: Bool = true
+    ) -> Bool {
         guard canvasSize.width > 1, canvasSize.height > 1 else { return false }
         let portrait = canvasSize.height > canvasSize.width
-        let controls = resolvedControls(in: canvasSize).filter { !$0.isDecoration && !$0.isLocationLocked }
+        let controls = resolvedControls(in: canvasSize).filter { control in
+            !control.isDecoration
+                && (controlIDs.isEmpty || controlIDs.contains(control.id))
+                && (!respectingLocks || !control.isLocationLocked)
+        }
         let movement = controls.filter { GamepadLayoutErgonomicRole.role(for: $0) == .movement }.sorted(by: Self.ergonomicControlSort)
         let actions = controls.filter { GamepadLayoutErgonomicRole.role(for: $0) == .action }.sorted(by: Self.ergonomicControlSort)
         guard !movement.isEmpty || !actions.isEmpty else { return false }
 
         var next = self
-        var changed = false
-        let movementAnchor = CGPoint(x: canvasSize.width * (portrait ? 0.27 : 0.18), y: canvasSize.height * (portrait ? 0.76 : 0.68))
-        let actionAnchor = CGPoint(x: canvasSize.width * (portrait ? 0.73 : 0.82), y: canvasSize.height * (portrait ? 0.76 : 0.68))
-        changed = Self.placeErgonomicCluster(movement, anchor: movementAnchor, movementCluster: true, canvasSize: canvasSize, customization: &next) || changed
-        changed = Self.placeErgonomicCluster(actions, anchor: actionAnchor, movementCluster: false, canvasSize: canvasSize, customization: &next) || changed
-        if changed {
-            self = next.normalized
+        let reachMode = layoutReachMode
+        let changed: Bool
+        switch reachMode {
+        case .twoHanded:
+            let movementAnchor = CGPoint(x: canvasSize.width * (portrait ? 0.27 : 0.18), y: canvasSize.height * (portrait ? 0.76 : 0.68))
+            let actionAnchor = CGPoint(x: canvasSize.width * (portrait ? 0.73 : 0.82), y: canvasSize.height * (portrait ? 0.76 : 0.68))
+            let movedMovement = Self.placeErgonomicCluster(
+                movement,
+                anchor: movementAnchor,
+                movementCluster: true,
+                canvasSize: canvasSize,
+                customization: &next
+            )
+            let movedActions = Self.placeErgonomicCluster(
+                actions,
+                anchor: actionAnchor,
+                movementCluster: false,
+                canvasSize: canvasSize,
+                customization: &next
+            )
+            changed = movedMovement || movedActions
+        case .oneHandedLeft, .oneHandedRight:
+            let anchorX: CGFloat = reachMode == .oneHandedLeft
+                ? (portrait ? 0.27 : 0.25)
+                : (portrait ? 0.73 : 0.75)
+            changed = Self.placeOneHandedErgonomicCluster(
+                (movement + actions).sorted(by: Self.ergonomicControlSort),
+                anchor: CGPoint(x: canvasSize.width * anchorX, y: canvasSize.height * (portrait ? 0.86 : 0.82)),
+                canvasSize: canvasSize,
+                customization: &next
+            )
         }
-        let separated = separateExpandedHitTargets(in: canvasSize)
+        if changed { self = next.normalized }
+        let affectedIDs = Set(movement.map(\.id) + actions.map(\.id))
+        let separated = separateExpandedHitTargets(
+            in: canvasSize,
+            controlIDs: affectedIDs,
+            respectingLocks: respectingLocks
+        )
         return changed || separated
     }
 
     private static func nearestSeparatedFrame(
-        to original: CGRect,
-        avoiding obstacles: [CGRect],
+        for control: GamepadResolvedControl,
+        avoidingHitFrames obstacles: [CGRect],
         in canvasSize: CGSize
     ) -> CGRect {
-        let gap = GamepadLayoutQualityReport.runtimeHitOutset * 2
+        let original = control.frame
+        let originalHitFrame = GamepadLayoutQualityReport.runtimeHitFrame(for: control)
+        let hitLeadingOutset = original.minX - originalHitFrame.minX
+        let hitTopOutset = original.minY - originalHitFrame.minY
         let canvas = CGRect(origin: .zero, size: canvasSize)
+
+        func hitFrame(for frame: CGRect) -> CGRect {
+            originalHitFrame.offsetBy(
+                dx: frame.midX - original.midX,
+                dy: frame.midY - original.midY
+            )
+        }
+
         func fits(_ frame: CGRect) -> Bool {
             guard canvas.contains(frame) else { return false }
-            let expanded = frame.insetBy(dx: -GamepadLayoutQualityReport.runtimeHitOutset, dy: -GamepadLayoutQualityReport.runtimeHitOutset)
+            let candidateHitFrame = hitFrame(for: frame)
             return obstacles.allSatisfy { obstacle in
-                let other = obstacle.insetBy(dx: -GamepadLayoutQualityReport.runtimeHitOutset, dy: -GamepadLayoutQualityReport.runtimeHitOutset)
-                let intersection = expanded.intersection(other)
+                let intersection = candidateHitFrame.intersection(obstacle)
                 return intersection.isNull || intersection.width <= 0.5 || intersection.height <= 0.5
             }
         }
@@ -465,23 +508,25 @@ public extension GamepadCustomization {
         var xValues: [CGFloat] = [original.minX, 0, canvasSize.width - original.width]
         var yValues: [CGFloat] = [original.minY, 0, canvasSize.height - original.height]
         for obstacle in obstacles {
-            xValues.append(obstacle.minX - gap - original.width)
-            xValues.append(obstacle.maxX + gap)
-            yValues.append(obstacle.minY - gap - original.height)
-            yValues.append(obstacle.maxY + gap)
+            xValues.append(obstacle.minX - originalHitFrame.width + hitLeadingOutset)
+            xValues.append(obstacle.maxX + hitLeadingOutset)
+            yValues.append(obstacle.minY - originalHitFrame.height + hitTopOutset)
+            yValues.append(obstacle.maxY + hitTopOutset)
         }
         xValues = Array(Set(xValues.filter { $0 >= 0 && $0 + original.width <= canvasSize.width }))
         yValues = Array(Set(yValues.filter { $0 >= 0 && $0 + original.height <= canvasSize.height }))
 
-        let candidates = xValues.flatMap { x in yValues.map { y in CGRect(x: x, y: y, width: original.width, height: original.height) } }
-            .filter(fits)
-            .sorted { lhs, rhs in
-                let lhsDistance = hypot(lhs.midX - original.midX, lhs.midY - original.midY)
-                let rhsDistance = hypot(rhs.midX - original.midX, rhs.midY - original.midY)
-                if abs(lhsDistance - rhsDistance) > 0.001 { return lhsDistance < rhsDistance }
-                if abs(lhs.minY - rhs.minY) > 0.001 { return lhs.minY < rhs.minY }
-                return lhs.minX < rhs.minX
-            }
+        let candidates = xValues.flatMap { x in
+            yValues.map { y in CGRect(x: x, y: y, width: original.width, height: original.height) }
+        }
+        .filter(fits)
+        .sorted { lhs, rhs in
+            let lhsDistance = hypot(lhs.midX - original.midX, lhs.midY - original.midY)
+            let rhsDistance = hypot(rhs.midX - original.midX, rhs.midY - original.midY)
+            if abs(lhsDistance - rhsDistance) > 0.001 { return lhsDistance < rhsDistance }
+            if abs(lhs.minY - rhs.minY) > 0.001 { return lhs.minY < rhs.minY }
+            return lhs.minX < rhs.minX
+        }
         return candidates.first ?? original
     }
 
@@ -495,6 +540,37 @@ public extension GamepadCustomization {
         let lhsOrder = order[lhs.mappedButton] ?? 100
         let rhsOrder = order[rhs.mappedButton] ?? 100
         return lhsOrder == rhsOrder ? lhs.id.id < rhs.id.id : lhsOrder < rhsOrder
+    }
+
+    private static func placeOneHandedErgonomicCluster(
+        _ controls: [GamepadResolvedControl],
+        anchor: CGPoint,
+        canvasSize: CGSize,
+        customization: inout GamepadCustomization
+    ) -> Bool {
+        guard !controls.isEmpty else { return false }
+        let maxDimension = controls.map { max($0.size.width, $0.size.height) }.max() ?? 44
+        let step = maxDimension + GamepadLayoutQualityReport.runtimeHitOutset * 2 + 2
+        var changed = false
+        for (index, control) in controls.enumerated() {
+            let column = CGFloat((index % 3) - 1)
+            let row = CGFloat(index / 3)
+            let proposed = CGPoint(
+                x: anchor.x + column * step,
+                y: anchor.y - row * step
+            )
+            let position = GamepadLayoutResolver.normalizedPosition(
+                for: proposed,
+                visualSize: control.size,
+                in: canvasSize
+            )
+            let resolvedCenter = CGPoint(x: position.x * canvasSize.width, y: position.y * canvasSize.height)
+            if hypot(resolvedCenter.x - control.center.x, resolvedCenter.y - control.center.y) > 0.01 {
+                customization.setPosition(position, for: control.id)
+                changed = true
+            }
+        }
+        return changed
     }
 
     private static func placeErgonomicCluster(
@@ -552,6 +628,293 @@ public extension GamepadCustomization {
         case .builtin, .custom, .system: true
         case .controlBarItem: false
         }
+    }
+}
+
+struct GamepadLayoutRepairResult: Codable, Equatable {
+    var repair: GamepadLayoutRepairKind
+    var changedControlIDs: [String]
+    var skippedLockedControlIDs: [String]
+    var issueCountBefore: Int
+    var issueCountAfter: Int
+
+    var didChange: Bool { !changedControlIDs.isEmpty }
+}
+
+extension GamepadCustomization {
+    @discardableResult
+    mutating func applyLayoutRepair(
+        _ repair: GamepadLayoutRepairKind,
+        issue: GamepadLayoutIssue? = nil,
+        canvasSize: CGSize? = nil,
+        respectingLocks: Bool = true
+    ) -> GamepadLayoutRepairResult {
+        let effectiveCanvasSize = canvasSize ?? deviceCanvas.editorDeviceFrame.screenRect.size
+        let beforeReport = layoutQualityReport(canvasSize: effectiveCanvasSize)
+        let requestedIDs = Set((issue?.controls ?? []).compactMap(GamepadControlIdentity.init(stableID:)))
+        var changedIDs = Set<GamepadControlIdentity>()
+        var skippedLockedIDs = Set<GamepadControlIdentity>()
+
+        switch repair {
+        case .showDefaultControls:
+            for button in GameButton.builtInControls {
+                var layout = buttonCustomization(for: button)
+                guard layout.isHidden else { continue }
+                layout.isHidden = false
+                setButtonCustomization(layout, for: button)
+                changedIDs.insert(.builtin(button))
+            }
+
+        case .minimumTouchTarget:
+            let controls = repairControls(in: effectiveCanvasSize, requestedIDs: requestedIDs)
+            for control in controls where !control.isDecoration {
+                if respectingLocks && control.isLocationLocked {
+                    skippedLockedIDs.insert(control.id)
+                    continue
+                }
+                let targetWidth = min(effectiveCanvasSize.width, max(44, control.size.width))
+                let targetHeight = min(effectiveCanvasSize.height, max(44, control.size.height))
+                guard targetWidth > control.size.width + 0.001 || targetHeight > control.size.height + 0.001 else { continue }
+                updateRepairLayout(for: control.id) { layout in
+                    layout.widthScale *= targetWidth / max(control.size.width, 0.001)
+                    layout.heightScale *= targetHeight / max(control.size.height, 0.001)
+                }
+                let center = GamepadLayoutResolver.normalizedPosition(
+                    for: control.center,
+                    visualSize: CGSize(width: targetWidth, height: targetHeight),
+                    in: effectiveCanvasSize
+                )
+                setPosition(center, for: control.id)
+                changedIDs.insert(control.id)
+            }
+
+        case .moveInsideSafeArea:
+            let controls = repairControls(in: effectiveCanvasSize, requestedIDs: requestedIDs)
+            let inset = min(12, max(2, min(effectiveCanvasSize.width, effectiveCanvasSize.height) * 0.03))
+            for control in controls where !control.isDecoration {
+                if respectingLocks && control.isLocationLocked {
+                    skippedLockedIDs.insert(control.id)
+                    continue
+                }
+                let center = CGPoint(
+                    x: Self.safeCenterCoordinate(
+                        control.center.x,
+                        itemLength: control.size.width,
+                        canvasLength: effectiveCanvasSize.width,
+                        inset: inset
+                    ),
+                    y: Self.safeCenterCoordinate(
+                        control.center.y,
+                        itemLength: control.size.height,
+                        canvasLength: effectiveCanvasSize.height,
+                        inset: inset
+                    )
+                )
+                guard hypot(center.x - control.center.x, center.y - control.center.y) > 0.001 else { continue }
+                setPosition(
+                    CGPoint(
+                        x: center.x / max(effectiveCanvasSize.width, 1),
+                        y: center.y / max(effectiveCanvasSize.height, 1)
+                    ),
+                    for: control.id
+                )
+                changedIDs.insert(control.id)
+            }
+
+        case .resolveOverlap:
+            let allControls = resolvedControls(in: effectiveCanvasSize).filter { !$0.isDecoration }
+            let candidates = repairControls(in: effectiveCanvasSize, requestedIDs: requestedIDs).filter { !$0.isDecoration }
+            let hasLockedCandidate = respectingLocks && candidates.contains(where: \.isLocationLocked)
+            var stationaryFrames = allControls.filter { control in
+                !candidates.contains(where: { $0.id == control.id })
+                    || (respectingLocks && control.isLocationLocked)
+            }.map(\.frame)
+
+            for (index, control) in candidates.enumerated() {
+                if respectingLocks && control.isLocationLocked {
+                    skippedLockedIDs.insert(control.id)
+                    continue
+                }
+                // With two movable controls, preserve the first. If one issue control
+                // is locked, move every unlocked candidate around the locked obstacle.
+                if index == 0, requestedIDs.count > 1, !hasLockedCandidate {
+                    stationaryFrames.append(control.frame)
+                    continue
+                }
+                guard let frame = GamepadLayoutResolver.nonOverlappingFrame(
+                    for: control.frame,
+                    avoiding: stationaryFrames,
+                    in: effectiveCanvasSize
+                ) else {
+                    stationaryFrames.append(control.frame)
+                    continue
+                }
+                stationaryFrames.append(frame)
+                guard hypot(frame.midX - control.frame.midX, frame.midY - control.frame.midY) > 0.001 else { continue }
+                setPosition(
+                    CGPoint(
+                        x: frame.midX / max(effectiveCanvasSize.width, 1),
+                        y: frame.midY / max(effectiveCanvasSize.height, 1)
+                    ),
+                    for: control.id
+                )
+                changedIDs.insert(control.id)
+            }
+
+        case .autoArrange:
+            let allControls = resolvedControls(in: effectiveCanvasSize).filter { !$0.isDecoration }
+            let candidates = allControls.filter { requestedIDs.isEmpty || requestedIDs.contains($0.id) }
+            let unlocked = candidates.filter { control in
+                if respectingLocks && control.isLocationLocked {
+                    skippedLockedIDs.insert(control.id)
+                    return false
+                }
+                return true
+            }
+            guard let sourceBounds = Self.unionFrame(unlocked.map(\.frame)), !unlocked.isEmpty else { break }
+            let padding = min(24, max(10, min(effectiveCanvasSize.width, effectiveCanvasSize.height) * 0.06))
+            var placedFrames = allControls.filter { control in
+                !unlocked.contains(where: { $0.id == control.id })
+            }.map(\.frame)
+
+            for (index, control) in unlocked.enumerated() {
+                let xProgress = sourceBounds.width > 1
+                    ? (control.center.x - sourceBounds.minX) / sourceBounds.width
+                    : CGFloat(index + 1) / CGFloat(unlocked.count + 1)
+                let yProgress = sourceBounds.height > 1
+                    ? (control.center.y - sourceBounds.minY) / sourceBounds.height
+                    : CGFloat((index % 2) + 1) / 3
+                let minCenterX = padding + control.size.width / 2
+                let maxCenterX = max(minCenterX, effectiveCanvasSize.width - padding - control.size.width / 2)
+                let minCenterY = padding + control.size.height / 2
+                let maxCenterY = max(minCenterY, effectiveCanvasSize.height - padding - control.size.height / 2)
+                let proposedCenter = CGPoint(
+                    x: minCenterX + min(max(xProgress, 0), 1) * (maxCenterX - minCenterX),
+                    y: minCenterY + min(max(yProgress, 0), 1) * (maxCenterY - minCenterY)
+                )
+                let proposedFrame = CGRect(
+                    x: proposedCenter.x - control.size.width / 2,
+                    y: proposedCenter.y - control.size.height / 2,
+                    width: control.size.width,
+                    height: control.size.height
+                )
+                let arrangedFrame = GamepadLayoutResolver.nonOverlappingFrame(
+                    for: proposedFrame,
+                    avoiding: placedFrames,
+                    in: effectiveCanvasSize
+                ) ?? proposedFrame
+                placedFrames.append(arrangedFrame)
+                guard hypot(arrangedFrame.midX - control.center.x, arrangedFrame.midY - control.center.y) > 0.001 else { continue }
+                setPosition(
+                    CGPoint(
+                        x: arrangedFrame.midX / max(effectiveCanvasSize.width, 1),
+                        y: arrangedFrame.midY / max(effectiveCanvasSize.height, 1)
+                    ),
+                    for: control.id
+                )
+                changedIDs.insert(control.id)
+            }
+
+        case .separateExpandedHitTargets:
+            let candidates = repairControls(in: effectiveCanvasSize, requestedIDs: requestedIDs)
+                .filter { !$0.isDecoration }
+            for control in candidates where respectingLocks && control.isLocationLocked {
+                skippedLockedIDs.insert(control.id)
+            }
+            let candidateIDs = Set(candidates.map(\.id))
+            let beforeCenters = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0.center) })
+            if separateExpandedHitTargets(
+                in: effectiveCanvasSize,
+                controlIDs: candidateIDs,
+                respectingLocks: respectingLocks
+            ) {
+                for control in resolvedControls(in: effectiveCanvasSize) {
+                    guard let before = beforeCenters[control.id],
+                          hypot(control.center.x - before.x, control.center.y - before.y) > 0.001
+                    else { continue }
+                    changedIDs.insert(control.id)
+                }
+            }
+
+        case .ergonomicAutoArrange:
+            let candidates = repairControls(in: effectiveCanvasSize, requestedIDs: requestedIDs)
+                .filter {
+                    let role = GamepadLayoutErgonomicRole.role(for: $0)
+                    return role == .movement || role == .action
+                }
+            for control in candidates where respectingLocks && control.isLocationLocked {
+                skippedLockedIDs.insert(control.id)
+            }
+            let candidateIDs = Set(candidates.map(\.id))
+            let beforeCenters = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0.center) })
+            if ergonomicallyAutoArrange(
+                in: effectiveCanvasSize,
+                controlIDs: candidateIDs,
+                respectingLocks: respectingLocks
+            ) {
+                for control in resolvedControls(in: effectiveCanvasSize) {
+                    guard let before = beforeCenters[control.id],
+                          hypot(control.center.x - before.x, control.center.y - before.y) > 0.001
+                    else { continue }
+                    changedIDs.insert(control.id)
+                }
+            }
+        }
+
+        self = normalized
+        let afterReport = layoutQualityReport(canvasSize: effectiveCanvasSize)
+        return GamepadLayoutRepairResult(
+            repair: repair,
+            changedControlIDs: changedIDs.map(\.id).sorted(),
+            skippedLockedControlIDs: skippedLockedIDs.map(\.id).sorted(),
+            issueCountBefore: beforeReport.issues.count,
+            issueCountAfter: afterReport.issues.count
+        )
+    }
+
+    private func repairControls(
+        in canvasSize: CGSize,
+        requestedIDs: Set<GamepadControlIdentity>
+    ) -> [GamepadResolvedControl] {
+        resolvedControls(in: canvasSize).filter { requestedIDs.isEmpty || requestedIDs.contains($0.id) }
+    }
+
+    private mutating func updateRepairLayout(
+        for identity: GamepadControlIdentity,
+        mutate: (inout GamepadButtonCustomization) -> Void
+    ) {
+        switch identity {
+        case .builtin(let button):
+            var layout = buttonCustomization(for: button)
+            mutate(&layout)
+            setButtonCustomization(layout.normalized, for: button)
+        case .custom(let id):
+            guard let index = customButtons.firstIndex(where: { $0.id == id }) else { return }
+            mutate(&customButtons[index].layout)
+            customButtons[index].layout = customButtons[index].layout.normalized
+        case .system(.topBarActivation):
+            mutate(&topBarActivationRegion)
+            topBarActivationRegion = topBarActivationRegion.normalized
+        case .controlBarItem:
+            break
+        }
+    }
+
+    private static func safeCenterCoordinate(
+        _ value: CGFloat,
+        itemLength: CGFloat,
+        canvasLength: CGFloat,
+        inset: CGFloat
+    ) -> CGFloat {
+        let lower = inset + itemLength / 2
+        let upper = canvasLength - inset - itemLength / 2
+        guard lower <= upper else { return canvasLength / 2 }
+        return min(max(value, lower), upper)
+    }
+
+    private static func unionFrame(_ frames: [CGRect]) -> CGRect? {
+        guard let first = frames.first else { return nil }
+        return frames.dropFirst().reduce(first) { $0.union($1) }
     }
 }
 

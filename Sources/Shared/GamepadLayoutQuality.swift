@@ -12,26 +12,73 @@ enum GamepadLayoutIssueSeverity: String, Codable, CaseIterable {
     case error
 }
 
-struct GamepadLayoutIssue: Codable, Equatable {
+enum GamepadLayoutRepairKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case showDefaultControls = "show-default-controls"
+    case moveInsideSafeArea = "move-inside-safe-area"
+    case minimumTouchTarget = "minimum-touch-target"
+    case resolveOverlap = "resolve-overlap"
+    case autoArrange = "auto-arrange"
+    case separateExpandedHitTargets = "separate-expanded-hit-targets"
+    case ergonomicAutoArrange = "ergonomic-auto-arrange"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .showDefaultControls: "Show Default Controls"
+        case .moveInsideSafeArea: "Move Inside Safe Area"
+        case .minimumTouchTarget: "Make at Least 44 pt"
+        case .resolveOverlap: "Separate Overlapping Controls"
+        case .autoArrange: "Auto-arrange Layout"
+        case .separateExpandedHitTargets: "Separate Touch Targets"
+        case .ergonomicAutoArrange: "Arrange for Thumb Reach"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .showDefaultControls: "square.grid.3x3"
+        case .moveInsideSafeArea: "arrow.down.right.and.arrow.up.left"
+        case .minimumTouchTarget: "arrow.up.left.and.arrow.down.right"
+        case .resolveOverlap: "square.2.layers.3d"
+        case .autoArrange: "wand.and.stars"
+        case .separateExpandedHitTargets: "arrow.left.and.right"
+        case .ergonomicAutoArrange: "hand.point.up.left"
+        }
+    }
+}
+
+struct GamepadLayoutIssue: Codable, Equatable, Identifiable {
     var severity: GamepadLayoutIssueSeverity
     var code: String
     var message: String
     var controls: [String]
     var metric: Double?
-}
 
-enum GamepadLayoutRepairKind: String, Codable, CaseIterable {
-    case separateExpandedHitTargets = "separate-expanded-hit-targets"
-    case ergonomicAutoArrange = "ergonomic-auto-arrange"
-}
+    var id: String {
+        ([code] + controls.sorted()).joined(separator: "|")
+    }
 
-struct GamepadLayoutSuggestedRepair: Codable, Equatable, Identifiable {
-    var kind: GamepadLayoutRepairKind
-    var title: String
-    var message: String
-    var controls: [String]
-
-    var id: String { kind.rawValue }
+    var suggestedRepairs: [GamepadLayoutRepairKind] {
+        switch code {
+        case "no-visible-controls":
+            [.showDefaultControls]
+        case "control-overlap":
+            [.resolveOverlap, .autoArrange]
+        case "expanded-hit-overlap", "hit-region-z-order-ambiguous", "hit-region-z-order-mismatch":
+            [.separateExpandedHitTargets]
+        case "layout-displacement", "edge-hugging-control":
+            [.moveInsideSafeArea]
+        case "small-control":
+            [.minimumTouchTarget]
+        case "primary-control-too-high", "primary-control-too-central", "primary-control-out-of-reach", "portrait-primary-action-distribution", "portrait-dead-space":
+            [.ergonomicAutoArrange]
+        case "underused-bottom-space", "low-vertical-coverage", "low-horizontal-coverage":
+            [.autoArrange]
+        default:
+            []
+        }
+    }
 }
 
 struct GamepadLayoutRectSummary: Codable, Equatable {
@@ -66,7 +113,7 @@ struct GamepadLayoutControlSummary: Codable, Equatable {
     var shape: GamepadButtonShapeStyle
     var requestedFrame: GamepadLayoutRectSummary
     var resolvedFrame: GamepadLayoutRectSummary
-    /// The runtime touch frame used on iPhone. Button capture adds 10pt on every side.
+    /// The actual runtime touch frame used on iPhone, including expanded thumbstick range.
     var expandedHitFrame: GamepadLayoutRectSummary?
     var displacement: Double
     var widthRatio: Double
@@ -88,7 +135,7 @@ struct GamepadLayoutControlSummary: Codable, Equatable {
         shape = requested.shape
         requestedFrame = GamepadLayoutRectSummary(requested.frame)
         resolvedFrame = GamepadLayoutRectSummary(resolved.frame)
-        expandedHitFrame = GamepadLayoutRectSummary(resolved.frame.insetBy(dx: -GamepadLayoutQualityReport.runtimeHitOutset, dy: -GamepadLayoutQualityReport.runtimeHitOutset))
+        expandedHitFrame = GamepadLayoutRectSummary(GamepadLayoutQualityReport.runtimeHitFrame(for: resolved))
         displacement = Double(hypot(resolved.center.x - requested.center.x, resolved.center.y - requested.center.y))
         widthRatio = Double(resolved.frame.width / max(canvasSize.width, 1))
         heightRatio = Double(resolved.frame.height / max(canvasSize.height, 1))
@@ -105,6 +152,12 @@ struct GamepadLayoutQualitySummary: Codable, Equatable {
     var layoutWidthCoverage: Double
     var layoutHeightCoverage: Double
     var bottomUnusedRatio: Double
+}
+
+enum GamepadLayoutReachMode: Equatable {
+    case twoHanded
+    case oneHandedLeft
+    case oneHandedRight
 }
 
 enum GamepadLayoutErgonomicRole {
@@ -141,47 +194,31 @@ enum GamepadLayoutErgonomicRole {
 struct GamepadLayoutQualityReport: Codable, Equatable {
     static let runtimeHitOutset: CGFloat = 10
 
+    static func runtimeHitFrame(for control: GamepadResolvedControl) -> CGRect {
+        if control.isJoystick {
+            let visualSide = min(control.size.width, control.size.height)
+            let style = control.layoutCustomization.joystickVisualStyle ?? .pad
+            let hitSide: CGFloat = switch style {
+            case .pad:
+                max(visualSide + runtimeHitOutset * 2, visualSide)
+            case .thumbstick:
+                max(visualSide + runtimeHitOutset * 2, visualSide * 2.55, 104)
+            }
+            return CGRect(
+                x: control.center.x - hitSide / 2,
+                y: control.center.y - hitSide / 2,
+                width: hitSide,
+                height: hitSide
+            )
+        }
+        return control.frame.insetBy(dx: -runtimeHitOutset, dy: -runtimeHitOutset)
+    }
+
     var profileName: String?
     var canvas: GamepadLayoutCanvasSummary
     var controls: [GamepadLayoutControlSummary]
     var issues: [GamepadLayoutIssue]
     var summary: GamepadLayoutQualitySummary
-    var suggestedRepairs: [GamepadLayoutSuggestedRepair]
-
-    init(
-        profileName: String?,
-        canvas: GamepadLayoutCanvasSummary,
-        controls: [GamepadLayoutControlSummary],
-        issues: [GamepadLayoutIssue],
-        summary: GamepadLayoutQualitySummary,
-        suggestedRepairs: [GamepadLayoutSuggestedRepair] = []
-    ) {
-        self.profileName = profileName
-        self.canvas = canvas
-        self.controls = controls
-        self.issues = issues
-        self.summary = summary
-        self.suggestedRepairs = suggestedRepairs
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case profileName
-        case canvas
-        case controls
-        case issues
-        case summary
-        case suggestedRepairs
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        profileName = try container.decodeIfPresent(String.self, forKey: .profileName)
-        canvas = try container.decode(GamepadLayoutCanvasSummary.self, forKey: .canvas)
-        controls = try container.decode([GamepadLayoutControlSummary].self, forKey: .controls)
-        issues = try container.decode([GamepadLayoutIssue].self, forKey: .issues)
-        summary = try container.decode(GamepadLayoutQualitySummary.self, forKey: .summary)
-        suggestedRepairs = try container.decodeIfPresent([GamepadLayoutSuggestedRepair].self, forKey: .suggestedRepairs) ?? []
-    }
 
     var hasErrors: Bool {
         issues.contains { $0.severity == .error }
@@ -197,6 +234,15 @@ struct GamepadLayoutQualityReport: Codable, Equatable {
 }
 
 extension GamepadCustomization {
+    var layoutReachMode: GamepadLayoutReachMode {
+        let tags = Set((designMetadata?.tags ?? []).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        })
+        if tags.contains("left-hand") || tags.contains("one-handed-left") { return .oneHandedLeft }
+        if tags.contains("right-hand") || tags.contains("one-handed-right") { return .oneHandedRight }
+        return .twoHanded
+    }
+
     func layoutQualityReport(
         profileName: String? = nil,
         canvasSize: CGSize? = nil
@@ -209,7 +255,8 @@ extension GamepadCustomization {
             canvasSize: canvasSize,
             requestedControls: requestedControls,
             resolvedControls: resolvedControls,
-            validatesFreeformLayout: usesFreeformLayout
+            validatesFreeformLayout: usesFreeformLayout,
+            reachMode: layoutReachMode
         )
     }
 }
@@ -220,7 +267,8 @@ private extension GamepadLayoutQualityReport {
         canvasSize: CGSize,
         requestedControls: [GamepadResolvedControl],
         resolvedControls: [GamepadResolvedControl],
-        validatesFreeformLayout: Bool
+        validatesFreeformLayout: Bool,
+        reachMode: GamepadLayoutReachMode
     ) -> GamepadLayoutQualityReport {
         let resolvedByID = Dictionary(uniqueKeysWithValues: resolvedControls.map { ($0.id, $0) })
         let controlSummaries = requestedControls.compactMap { requested -> GamepadLayoutControlSummary? in
@@ -248,12 +296,20 @@ private extension GamepadLayoutQualityReport {
         if validatesFreeformLayout {
             issues.append(contentsOf: overlapIssues(controls: interactiveResolvedControls))
             issues.append(contentsOf: displacementIssues(interactiveSummaries, canvasSize: canvasSize))
-            issues.append(contentsOf: sizeIssues(interactiveSummaries, canvasSize: canvasSize))
+            issues.append(contentsOf: sizeIssues(interactiveSummaries))
             issues.append(contentsOf: edgeIssues(interactiveSummaries, canvasSize: canvasSize))
             issues.append(contentsOf: utilizationIssues(interactiveSummaries, canvasSize: canvasSize))
-            issues.append(contentsOf: ergonomicIssues(controls: interactiveResolvedControls, canvasSize: canvasSize))
+            issues.append(contentsOf: ergonomicIssues(
+                controls: interactiveResolvedControls,
+                canvasSize: canvasSize,
+                reachMode: reachMode
+            ))
             if canvasSize.height > canvasSize.width {
-                issues.append(contentsOf: portraitIssues(controls: interactiveResolvedControls, canvasSize: canvasSize))
+                issues.append(contentsOf: portraitIssues(
+                    controls: interactiveResolvedControls,
+                    canvasSize: canvasSize,
+                    reachMode: reachMode
+                ))
             }
         }
 
@@ -276,8 +332,7 @@ private extension GamepadLayoutQualityReport {
             canvas: GamepadLayoutCanvasSummary(canvasSize),
             controls: controlSummaries,
             issues: issues,
-            summary: summary,
-            suggestedRepairs: suggestedRepairs(for: issues, controls: interactiveResolvedControls)
+            summary: summary
         )
     }
 
@@ -314,7 +369,7 @@ private extension GamepadLayoutQualityReport {
                         GamepadLayoutIssue(
                             severity: .warning,
                             code: "expanded-hit-overlap",
-                            message: "\(back.label) and \(front.label) look separate, but their iPhone hit regions overlap by \(Int(overlapPoints.rounded()))pt after the 10pt touch expansion.",
+                            message: "\(back.label) and \(front.label) look separate, but their actual iPhone hit regions overlap by \(Int(overlapPoints.rounded()))pt.",
                             controls: controlIDs,
                             metric: Double(hitRatio)
                         )
@@ -352,7 +407,7 @@ private extension GamepadLayoutQualityReport {
     }
 
     static func expandedHitFrame(for control: GamepadResolvedControl) -> CGRect {
-        control.frame.insetBy(dx: -runtimeHitOutset, dy: -runtimeHitOutset)
+        runtimeHitFrame(for: control)
     }
 
     static func positiveIntersection(_ lhs: CGRect, _ rhs: CGRect) -> CGRect? {
@@ -397,50 +452,17 @@ private extension GamepadLayoutQualityReport {
         }
     }
 
-    static func sizeIssues(
-        _ controls: [GamepadLayoutControlSummary],
-        canvasSize: CGSize
-    ) -> [GamepadLayoutIssue] {
+    static func sizeIssues(_ controls: [GamepadLayoutControlSummary]) -> [GamepadLayoutIssue] {
         controls.compactMap { control in
             let minDimension = min(control.resolvedFrame.width, control.resolvedFrame.height)
-            if minDimension < 44 {
-                return GamepadLayoutIssue(
-                    severity: .warning,
-                    code: "small-control",
-                    message: "\(control.label) renders at only \(Int(minDimension.rounded()))pt on its shortest side; aim for at least 44pt visual size.",
-                    controls: [control.id],
-                    metric: minDimension
-                )
-            }
-
-            let isJoystick = control.kind == "joystick"
-            let isTrackpad = control.kind == "trackpad"
-            let heightWarning = isJoystick ? 0.44 : (isTrackpad ? 0.36 : 0.24)
-            let heightError = isJoystick ? 0.52 : (isTrackpad ? 0.46 : 0.30)
-            let widthWarning = isJoystick ? 0.34 : (isTrackpad ? 0.58 : 0.34)
-            let widthError = isJoystick ? 0.44 : (isTrackpad ? 0.72 : 0.48)
-
-            if control.heightRatio > heightError || control.widthRatio > widthError {
-                return GamepadLayoutIssue(
-                    severity: .error,
-                    code: "oversized-control",
-                    message: "\(control.label) is oversized for the canvas (\(Int((control.widthRatio * 100).rounded()))% wide, \(Int((control.heightRatio * 100).rounded()))% tall).",
-                    controls: [control.id],
-                    metric: max(control.widthRatio, control.heightRatio)
-                )
-            }
-
-            if control.heightRatio > heightWarning || control.widthRatio > widthWarning {
-                return GamepadLayoutIssue(
-                    severity: .warning,
-                    code: "large-control",
-                    message: "\(control.label) is very large for the canvas (\(Int((control.widthRatio * 100).rounded()))% wide, \(Int((control.heightRatio * 100).rounded()))% tall).",
-                    controls: [control.id],
-                    metric: max(control.widthRatio, control.heightRatio)
-                )
-            }
-
-            return nil
+            guard minDimension < 44 else { return nil }
+            return GamepadLayoutIssue(
+                severity: .warning,
+                code: "small-control",
+                message: "\(control.label) renders at only \(Int(minDimension.rounded()))pt on its shortest side; aim for at least 44pt visual size.",
+                controls: [control.id],
+                metric: minDimension
+            )
         }
     }
 
@@ -524,7 +546,8 @@ private extension GamepadLayoutQualityReport {
 
     static func ergonomicIssues(
         controls: [GamepadResolvedControl],
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        reachMode: GamepadLayoutReachMode
     ) -> [GamepadLayoutIssue] {
         let portrait = canvasSize.height > canvasSize.width
         return controls.compactMap { control in
@@ -532,11 +555,25 @@ private extension GamepadLayoutQualityReport {
             guard role == .movement || role == .action else { return nil }
             let x = control.center.x / max(canvasSize.width, 1)
             let y = control.center.y / max(canvasSize.height, 1)
-            let sideAnchorX: CGFloat = role == .movement
-                ? (portrait ? 0.27 : 0.18)
-                : (portrait ? 0.73 : 0.82)
+            let sideAnchorX: CGFloat
+            let expectedSide: String
+            switch reachMode {
+            case .twoHanded:
+                sideAnchorX = role == .movement
+                    ? (portrait ? 0.27 : 0.18)
+                    : (portrait ? 0.73 : 0.82)
+                expectedSide = role == .movement ? "left" : "right"
+            case .oneHandedLeft:
+                sideAnchorX = portrait ? 0.27 : 0.25
+                expectedSide = "left"
+            case .oneHandedRight:
+                sideAnchorX = portrait ? 0.73 : 0.75
+                expectedSide = "right"
+            }
             let anchorY: CGFloat = portrait ? 0.76 : 0.68
-            let horizontalReach: CGFloat = portrait ? 0.36 : 0.34
+            let horizontalReach: CGFloat = reachMode == .twoHanded
+                ? (portrait ? 0.36 : 0.34)
+                : (portrait ? 0.48 : 0.50)
             let verticalReach: CGFloat = portrait ? 0.38 : 0.43
             let reach = hypot((x - sideAnchorX) / horizontalReach, (y - anchorY) / verticalReach)
             let orientationName = portrait ? "portrait" : "landscape"
@@ -551,7 +588,7 @@ private extension GamepadLayoutQualityReport {
                 )
             }
 
-            if x >= 0.40, x <= 0.60, y < (portrait ? 0.78 : 0.74) {
+            if reachMode == .twoHanded, x >= 0.40, x <= 0.60, y < (portrait ? 0.78 : 0.74) {
                 let centrality = 0.5 - abs(x - 0.5)
                 return GamepadLayoutIssue(
                     severity: .warning,
@@ -566,7 +603,7 @@ private extension GamepadLayoutQualityReport {
             return GamepadLayoutIssue(
                 severity: .warning,
                 code: "primary-control-out-of-reach",
-                message: "\(control.label) is outside the expected \(role == .movement ? "left" : "right") lower-thumb reach zone in \(orientationName).",
+                message: "\(control.label) is outside the expected \(expectedSide) lower-thumb reach zone in \(orientationName).",
                 controls: [control.id.id],
                 metric: Double(reach)
             )
@@ -575,7 +612,8 @@ private extension GamepadLayoutQualityReport {
 
     static func portraitIssues(
         controls: [GamepadResolvedControl],
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        reachMode: GamepadLayoutReachMode
     ) -> [GamepadLayoutIssue] {
         var issues: [GamepadLayoutIssue] = []
         let primary = controls.filter {
@@ -583,7 +621,7 @@ private extension GamepadLayoutQualityReport {
             return role == .movement || role == .action
         }
 
-        if primary.count >= 4 {
+        if reachMode == .twoHanded, primary.count >= 4 {
             let lowerLeft = primary.filter { $0.center.x < canvasSize.width * 0.48 && $0.center.y > canvasSize.height * 0.52 }.count
             let lowerRight = primary.filter { $0.center.x > canvasSize.width * 0.52 && $0.center.y > canvasSize.height * 0.52 }.count
             if lowerLeft == 0 || lowerRight == 0 {
@@ -636,49 +674,6 @@ private extension GamepadLayoutQualityReport {
             }
         }
         return largest / max(canvasHeight, 1)
-    }
-
-    static func suggestedRepairs(
-        for issues: [GamepadLayoutIssue],
-        controls: [GamepadResolvedControl]
-    ) -> [GamepadLayoutSuggestedRepair] {
-        let unlockedIDs = Set(controls.filter { !$0.isLocationLocked }.map { $0.id.id })
-        let collisionCodes: Set<String> = [
-            "expanded-hit-overlap",
-            "hit-region-z-order-ambiguous",
-            "hit-region-z-order-mismatch"
-        ]
-        let ergonomicCodes: Set<String> = [
-            "primary-control-too-high",
-            "primary-control-too-central",
-            "primary-control-out-of-reach",
-            "portrait-primary-action-distribution",
-            "portrait-dead-space"
-        ]
-        var repairs: [GamepadLayoutSuggestedRepair] = []
-        let collisionControls = Set(issues.filter { collisionCodes.contains($0.code) }.flatMap(\.controls)).intersection(unlockedIDs).sorted()
-        if !collisionControls.isEmpty {
-            repairs.append(
-                GamepadLayoutSuggestedRepair(
-                    kind: .separateExpandedHitTargets,
-                    title: "Separate Touch Targets",
-                    message: "Move unlocked controls just enough to separate their 10pt-expanded iPhone hit regions.",
-                    controls: collisionControls
-                )
-            )
-        }
-        let ergonomicControls = Set(issues.filter { ergonomicCodes.contains($0.code) }.flatMap(\.controls)).intersection(unlockedIDs).sorted()
-        if !ergonomicControls.isEmpty {
-            repairs.append(
-                GamepadLayoutSuggestedRepair(
-                    kind: .ergonomicAutoArrange,
-                    title: "Arrange for Thumb Reach",
-                    message: "Place unlocked movement and action buttons into orientation-aware lower thumb arcs, then separate touch targets.",
-                    controls: ergonomicControls
-                )
-            )
-        }
-        return repairs
     }
 
     static func issueSort(_ lhs: GamepadLayoutIssue, _ rhs: GamepadLayoutIssue) -> Bool {

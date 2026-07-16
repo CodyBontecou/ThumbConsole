@@ -1306,7 +1306,7 @@ struct ThumbConsoleCLI {
         case "validate", "check", "lint":
             try validateLayout(arguments: rest)
         case "fix", "repair", "autofix", "auto-fix":
-            try fixLayout(arguments: rest)
+            try repairLayout(arguments: rest)
         case "preview", "render":
             try previewLayout(arguments: rest)
         case "set":
@@ -1447,57 +1447,108 @@ struct ThumbConsoleCLI {
         )
     }
 
-    private static func fixLayout(arguments: [String]) throws {
-        var store = loadStore()
-        let profileIndex = try resolveProfileIndex(layoutProfileTarget(in: arguments), in: store)
+    private static func repairLayout(arguments: [String]) throws {
+        let target = (optionValue("--repair", in: arguments) ?? firstPositional(in: arguments)).map(normalizedLookup) ?? "all"
         let variant = try customizationVariant(in: arguments)
-        var resolvedCustomization = variant.map { store.profiles[profileIndex].customization(for: $0) } ?? store.profiles[profileIndex].customization
-        let canvasSize = try parseLayoutCanvasSize(arguments, fallback: resolvedCustomization.deviceCanvas.editorDeviceFrame.screenRect.size)
-        let report = resolvedCustomization.layoutQualityReport(profileName: store.profiles[profileIndex].name, canvasSize: canvasSize)
-        let repairValue = optionValue("--repair", in: arguments)
-        let requestedKind: GamepadLayoutRepairKind?
-        if let repairValue, normalizedLookup(repairValue) != "all" {
-            requestedKind = try parseLayoutRepairKind(repairValue)
-        } else {
-            requestedKind = nil
-        }
-        let repairs = report.suggestedRepairs.filter { requestedKind == nil || $0.kind == requestedKind }
-        var applied: [GamepadLayoutRepairKind] = []
-        for repair in repairs where resolvedCustomization.applyLayoutRepair(repair, in: canvasSize) {
-            applied.append(repair.kind)
-        }
+        let profileTarget = optionValue("--profile", in: arguments)
+        let respectsLocks = !arguments.contains("--unlock") && !arguments.contains("--include-locked")
+        var results: [GamepadLayoutRepairResult] = []
 
-        if !applied.isEmpty {
-            let normalizedCustomization = resolvedCustomization.normalized
-            if let variant {
-                store.profiles[profileIndex].setCustomization(normalizedCustomization, for: variant)
+        try mutateCustomization(profileTarget: profileTarget, variant: variant) { customization in
+            let canvasSize = try parseLayoutCanvasSize(
+                arguments,
+                fallback: customization.deviceCanvas.editorDeviceFrame.screenRect.size
+            )
+            let report = customization.layoutQualityReport(canvasSize: canvasSize)
+
+            if target == "all" || target == "suggested" {
+                for _ in 0..<3 {
+                    let currentReport = customization.layoutQualityReport(canvasSize: canvasSize)
+                    let orderedIssues = currentReport.issues.sorted {
+                        layoutRepairPriority(for: $0.code) < layoutRepairPriority(for: $1.code)
+                    }
+                    var changedThisPass = false
+                    var appliedAutoArrange = false
+                    for issue in orderedIssues {
+                        guard let repair = issue.suggestedRepairs.first else { continue }
+                        if repair == .autoArrange {
+                            guard !appliedAutoArrange else { continue }
+                            appliedAutoArrange = true
+                        }
+                        let result = customization.applyLayoutRepair(
+                            repair,
+                            issue: repair == .autoArrange ? nil : issue,
+                            canvasSize: canvasSize,
+                            respectingLocks: respectsLocks
+                        )
+                        results.append(result)
+                        changedThisPass = changedThisPass || result.didChange
+                    }
+                    if !changedThisPass { break }
+                }
+            } else if let repair = parseLayoutRepairKind(target) {
+                results.append(
+                    customization.applyLayoutRepair(
+                        repair,
+                        issue: nil,
+                        canvasSize: canvasSize,
+                        respectingLocks: respectsLocks
+                    )
+                )
             } else {
-                store.profiles[profileIndex].setCustomization(normalizedCustomization, for: normalizedCustomization.deviceCanvas.editorDeviceFrame.orientation)
+                let matchingIssues = report.issues.filter { normalizedLookup($0.code) == target }
+                guard !matchingIssues.isEmpty else {
+                    throw CLIError.message("No layout issue or repair named \"\(target)\". Use all, small-control, control-overlap, expanded-hit-overlap, edge-hugging-control, thumb-reach, coverage, minimum-touch-target, move-inside-safe-area, resolve-overlap, separate-expanded-hit-targets, ergonomic-auto-arrange, or auto-arrange.")
+                }
+                for issue in matchingIssues {
+                    guard let repair = issue.suggestedRepairs.first else { continue }
+                    results.append(
+                        customization.applyLayoutRepair(
+                            repair,
+                            issue: issue,
+                            canvasSize: canvasSize,
+                            respectingLocks: respectsLocks
+                        )
+                    )
+                }
             }
-            store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
-            try persistStore(store)
         }
 
-        let updatedReport = resolvedCustomization.layoutQualityReport(profileName: store.profiles[profileIndex].name, canvasSize: canvasSize)
         if arguments.contains("--json") {
-            try printJSON(updatedReport)
-        } else if applied.isEmpty {
-            print("No applicable layout repairs found.")
-            printLayoutReport(updatedReport)
+            try printJSON(results)
         } else {
-            print("Applied layout repairs: \(applied.map(\.rawValue).joined(separator: ", ")).")
-            printLayoutReport(updatedReport)
+            let changed = Set(results.flatMap(\.changedControlIDs)).count
+            let skipped = Set(results.flatMap(\.skippedLockedControlIDs)).count
+            let remaining = results.last?.issueCountAfter ?? 0
+            print("Repaired layout: \(changed) control\(changed == 1 ? "" : "s") changed, \(remaining) issue\(remaining == 1 ? "" : "s") remaining.")
+            if skipped > 0 {
+                print("Skipped \(skipped) locked control\(skipped == 1 ? "" : "s"). Re-run with --unlock to include them.")
+            }
         }
     }
 
-    private static func parseLayoutRepairKind(_ value: String) throws -> GamepadLayoutRepairKind {
+    private static func parseLayoutRepairKind(_ value: String) -> GamepadLayoutRepairKind? {
         switch normalizedLookup(value) {
-        case "hits", "hit-targets", "targets", "separate", "separate-expanded-hit-targets":
-            return .separateExpandedHitTargets
-        case "ergonomic", "ergonomics", "thumb-reach", "arrange", "ergonomic-auto-arrange":
-            return .ergonomicAutoArrange
-        default:
-            throw CLIError.message("Unknown layout repair: \(value). Use hit-targets or ergonomic.")
+        case "showdefaultcontrols", "showdefaults": .showDefaultControls
+        case "moveinsidesafearea", "moveinside": .moveInsideSafeArea
+        case "minimumtouchtarget", "minimumsize": .minimumTouchTarget
+        case "resolveoverlap", "separate": .resolveOverlap
+        case "autoarrange", "arrange", "coverage": .autoArrange
+        case "hits", "hittargets", "targets", "separateexpandedhittargets": .separateExpandedHitTargets
+        case "ergonomic", "ergonomics", "thumbreach", "ergonomicautoarrange": .ergonomicAutoArrange
+        default: nil
+        }
+    }
+
+    private static func layoutRepairPriority(for issueCode: String) -> Int {
+        switch issueCode {
+        case "no-visible-controls": 0
+        case "small-control": 1
+        case "layout-displacement", "edge-hugging-control": 2
+        case "control-overlap", "expanded-hit-overlap", "hit-region-z-order-ambiguous", "hit-region-z-order-mismatch": 3
+        case "primary-control-too-high", "primary-control-too-central", "primary-control-out-of-reach", "portrait-primary-action-distribution", "portrait-dead-space": 4
+        case "underused-bottom-space", "low-vertical-coverage", "low-horizontal-coverage": 5
+        default: 6
         }
     }
 
@@ -5256,7 +5307,7 @@ struct ThumbConsoleCLI {
           thumbconsole orientation copy landscape portrait [--profile PROFILE] [--no-arrange]
           thumbconsole orientation arrange portrait [--from landscape] [--profile PROFILE]
           thumbconsole layout validate [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--json|--strict]
-          thumbconsole layout fix|repair|autofix [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--repair hit-targets|ergonomic] [--json]
+          thumbconsole layout fix|repair|autofix [all|small-control|control-overlap|expanded-hit-overlap|edge-hugging-control|thumb-reach|coverage] [--repair hit-targets|ergonomic] [--profile PROFILE] [--variant portrait|landscape] [--unlock] [--json]
           thumbconsole layout preview [PROFILE|--profile PROFILE] -o preview.png [--variant portrait|landscape] [--canvas iphone-17-pro-landscape]
           thumbconsole device list
           thumbconsole device set iphone-17-pro --orientation landscape

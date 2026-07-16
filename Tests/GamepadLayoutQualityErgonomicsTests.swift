@@ -24,7 +24,7 @@ final class GamepadLayoutQualityErgonomicsTests: XCTestCase {
         XCTAssertFalse(report.issues.contains { $0.code == "control-overlap" })
         XCTAssertEqual(hitIssue.controls, ["custom.\(firstID.uuidString)", "custom.\(secondID.uuidString)"])
         XCTAssertGreaterThan(try XCTUnwrap(hitIssue.metric), 0)
-        XCTAssertEqual(report.suggestedRepairs.first?.kind, .separateExpandedHitTargets)
+        XCTAssertEqual(hitIssue.suggestedRepairs.first, .separateExpandedHitTargets)
         XCTAssertNotNil(report.controls.first?.expandedHitFrame)
 
         XCTAssertTrue(customization.separateExpandedHitTargets(in: landscape))
@@ -73,7 +73,7 @@ final class GamepadLayoutQualityErgonomicsTests: XCTestCase {
         XCTAssertTrue(report.issues.contains { $0.code == "primary-control-too-high" && $0.controls == ["custom.\(uuid(30).uuidString)"] })
         XCTAssertTrue(report.issues.contains { $0.code == "primary-control-too-central" && $0.controls == ["custom.\(uuid(31).uuidString)"] })
         XCTAssertTrue(report.issues.contains { $0.code == "primary-control-out-of-reach" && $0.controls == ["custom.\(uuid(32).uuidString)"] })
-        XCTAssertEqual(report.suggestedRepairs.last?.kind, .ergonomicAutoArrange)
+        XCTAssertTrue(report.issues.contains { $0.suggestedRepairs.contains(.ergonomicAutoArrange) })
     }
 
     func testPortraitDeadSpaceAndUnbalancedPrimaryDistributionAreReported() {
@@ -178,22 +178,80 @@ final class GamepadLayoutQualityErgonomicsTests: XCTestCase {
         bothLocked.customButtons[1].layout.centerY = bothLocked.customButtons[0].layout.centerY
         let lockedReport = bothLocked.layoutQualityReport(canvasSize: landscape)
         XCTAssertTrue(lockedReport.issues.contains { $0.code == "control-overlap" })
-        XCTAssertFalse(lockedReport.suggestedRepairs.contains { $0.kind == .separateExpandedHitTargets })
-        XCTAssertFalse(bothLocked.separateExpandedHitTargets(in: landscape))
+        let lockedIssue = try XCTUnwrap(lockedReport.issues.first { $0.code == "control-overlap" })
+        let lockedRepair = bothLocked.applyLayoutRepair(
+            .separateExpandedHitTargets,
+            issue: lockedIssue,
+            canvasSize: landscape,
+            respectingLocks: true
+        )
+        XCTAssertFalse(lockedRepair.didChange)
+        XCTAssertEqual(Set(lockedRepair.skippedLockedControlIDs), Set(lockedIssue.controls))
+    }
+
+    func testThumbstickValidationUsesItsLargerInvisibleRuntimeRange() throws {
+        let joystickID = uuid(75)
+        let buttonID = uuid(76)
+        var customization = makeCustomization([
+            button(buttonID, .jump, x: 0.70, y: 0.70, scale: 0.55)
+        ])
+        customization.addJoystick(id: joystickID, label: "Aim", mapping: .secondary)
+        let joystickIndex = customization.customButtons.count - 1
+        customization.customButtons[joystickIndex].layout.centerX = 0.30
+        customization.customButtons[joystickIndex].layout.centerY = 0.70
+        customization.customButtons[joystickIndex].layout.widthScale = 0.45
+        customization.customButtons[joystickIndex].layout.heightScale = 0.45
+        customization.customButtons[joystickIndex].layout.joystickVisualStyle = .thumbstick
+
+        let preliminary = customization.resolvedControls(in: landscape)
+        let joystick = try XCTUnwrap(preliminary.first { $0.id == .custom(joystickID) })
+        let buttonControl = try XCTUnwrap(preliminary.first { $0.id == .custom(buttonID) })
+        let joystickHitFrame = GamepadLayoutQualityReport.runtimeHitFrame(for: joystick)
+        XCTAssertGreaterThan(joystickHitFrame.width, joystick.frame.width + 20)
+
+        let visualGap: CGFloat = 6
+        customization.customButtons[0].layout.centerX = (
+            joystick.frame.maxX + visualGap + buttonControl.frame.width / 2
+        ) / landscape.width
+        let report = customization.layoutQualityReport(canvasSize: landscape)
+        XCTAssertFalse(report.issues.contains { $0.code == "control-overlap" })
+        XCTAssertTrue(report.issues.contains {
+            $0.code == "expanded-hit-overlap"
+                && Set($0.controls) == Set(["custom.\(joystickID.uuidString)", "custom.\(buttonID.uuidString)"])
+        })
+    }
+
+    func testOneHandedTemplateMetadataSuppressesTwoHandedFalsePositives() {
+        for template in [
+            GamepadControllerTemplate.productivityOneHandedLeft,
+            .productivityOneHandedRight
+        ] {
+            let profile = template.makeProfile()
+            for orientation in GamepadEditorDeviceOrientation.allCases {
+                let customization = profile.customization(for: orientation)
+                let report = customization.layoutQualityReport(
+                    profileName: profile.name,
+                    canvasSize: customization.deviceCanvas.editorDeviceFrame.screenRect.size
+                )
+                XCTAssertFalse(report.issues.contains {
+                    $0.code == "portrait-primary-action-distribution"
+                        || $0.code == "primary-control-too-central"
+                        || $0.code == "primary-control-out-of-reach"
+                }, "\(template.displayName) \(orientation.displayName): \(report.issues)")
+            }
+        }
     }
 
     func testQualityReportDecodesWithoutNewRepairAndExpandedHitFields() throws {
         let report = makeCustomization([button(uuid(80), .jump, x: 0.8, y: 0.75)]).layoutQualityReport(canvasSize: landscape)
         let encoded = try JSONEncoder().encode(report)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        object.removeValue(forKey: "suggestedRepairs")
         if var controls = object["controls"] as? [[String: Any]] {
             for index in controls.indices { controls[index].removeValue(forKey: "expandedHitFrame") }
             object["controls"] = controls
         }
         let legacyData = try JSONSerialization.data(withJSONObject: object)
         let decoded = try JSONDecoder().decode(GamepadLayoutQualityReport.self, from: legacyData)
-        XCTAssertEqual(decoded.suggestedRepairs, [])
         XCTAssertNil(decoded.controls.first?.expandedHitFrame)
     }
 

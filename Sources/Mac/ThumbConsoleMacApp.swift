@@ -10,7 +10,9 @@ struct ThumbConsoleMacApp: App {
             MacContentView()
                 .environmentObject(server)
                 .frame(minWidth: 840, minHeight: 620)
-                .onAppear { server.start() }
+                .onAppear {
+                    server.start()
+                }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     server.releaseAll(reason: "Mac helper quitting")
                 }

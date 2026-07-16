@@ -1048,6 +1048,28 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         XCTAssertTrue(report.controls.contains { $0.kind == "decoration" })
     }
 
+    func testLayoutQualityAllowsIntentionallyLargeControls() {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-00000000F001")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.customButtons = [
+            GamepadCustomButton(
+                id: id,
+                mappedButton: .custom1,
+                label: "Large Action",
+                layout: GamepadButtonCustomization(
+                    centerX: 0.5,
+                    centerY: 0.5,
+                    widthScale: 5,
+                    heightScale: 5,
+                    shape: .circle
+                )
+            )
+        ]
+
+        let report = customization.layoutQualityReport(canvasSize: CGSize(width: 874, height: 402))
+        XCTAssertFalse(report.issues.contains { $0.code == "large-control" || $0.code == "oversized-control" })
+    }
+
     func testDecorationAgentSpecDoesNotCreateKeyBinding() throws {
         let json = """
         {

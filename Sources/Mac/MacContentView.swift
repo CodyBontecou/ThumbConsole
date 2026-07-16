@@ -10,7 +10,7 @@ struct MacContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
     @AppStorage(ThumbConsoleMacIPC.onboardingCompletedDefaultsKey) private var hasCompletedOnboarding = false
-    @State private var selectedSection: MacSidebarSection? = .home
+    @State private var selectedSection: MacSidebarSection? = .gamepad
     @State private var advancedConfigExpanded = false
     @State private var isShowingOnboarding = false
     @State private var gamepadEditorUndoTarget = MacGamepadEditorUndoTarget()

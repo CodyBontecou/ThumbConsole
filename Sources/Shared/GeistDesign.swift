@@ -97,7 +97,29 @@ enum Geist {
         let letterSpacing: CGFloat
 
         var font: Font {
-            Font.custom(family.rawValue, fixedSize: fontSize).weight(weight)
+            Font.custom(family.rawValue, size: fontSize, relativeTo: relativeTextStyle)
+                .weight(weight)
+        }
+
+        private var relativeTextStyle: Font.TextStyle {
+            switch fontSize {
+            case 40...:
+                return .largeTitle
+            case 28..<40:
+                return .title
+            case 22..<28:
+                return .title2
+            case 18..<22:
+                return .title3
+            case 16..<18:
+                return .body
+            case 14..<16:
+                return .callout
+            case 13..<14:
+                return .footnote
+            default:
+                return .caption
+            }
         }
 
         var lineSpacing: CGFloat {
@@ -269,7 +291,7 @@ struct GeistButtonStyle: ButtonStyle {
             .minimumScaleFactor(0.75)
             .foregroundStyle(foreground)
             .padding(.horizontal, size.horizontalPadding)
-            .frame(height: size.height)
+            .frame(minHeight: size.height)
             .background(
                 RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
                     .fill(background)
@@ -375,7 +397,7 @@ struct GeistInputModifier: ViewModifier {
             .geistTypography(size.inputTypography)
             .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
             .padding(.horizontal, 12)
-            .frame(height: size.height)
+            .frame(minHeight: size.height)
             .background(
                 RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
                     .fill(Geist.color(.background100, scheme: colorScheme))

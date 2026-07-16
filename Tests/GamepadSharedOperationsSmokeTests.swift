@@ -174,6 +174,116 @@ final class GamepadSharedOperationsSmokeTests: XCTestCase {
         XCTAssertEqual(distributed[1].center.x - distributed[0].center.x, distributed[2].center.x - distributed[1].center.x, accuracy: 0.001)
     }
 
+    func testMinimumTouchTargetRepairGrowsOnlyAffectedUnlockedControls() throws {
+        let smallID = UUID(uuidString: "00000000-0000-0000-0000-00000000E001")!
+        let lockedID = UUID(uuidString: "00000000-0000-0000-0000-00000000E002")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addCustomButton(id: smallID, mappedTo: .custom1)
+        customization.addCustomButton(id: lockedID, mappedTo: .custom2)
+        customization.customButtons[0].layout.widthScale = 0.2
+        customization.customButtons[0].layout.heightScale = 0.2
+        customization.customButtons[1].layout.widthScale = 0.2
+        customization.customButtons[1].layout.heightScale = 0.2
+        customization.customButtons[1].layout.isLocationLocked = true
+        let canvas = CGSize(width: 600, height: 300)
+        let issue = GamepadLayoutIssue(
+            severity: .warning,
+            code: "small-control",
+            message: "Small controls",
+            controls: [GamepadControlIdentity.custom(smallID).id, GamepadControlIdentity.custom(lockedID).id],
+            metric: 20
+        )
+
+        let result = customization.applyLayoutRepair(.minimumTouchTarget, issue: issue, canvasSize: canvas)
+        let repaired = try XCTUnwrap(customization.resolvedControls(in: canvas).first { $0.id == .custom(smallID) })
+        let locked = try XCTUnwrap(customization.resolvedControls(in: canvas).first { $0.id == .custom(lockedID) })
+
+        XCTAssertGreaterThanOrEqual(repaired.size.width, 43.9)
+        XCTAssertGreaterThanOrEqual(repaired.size.height, 43.9)
+        XCTAssertLessThan(locked.size.width, 44)
+        XCTAssertTrue(result.changedControlIDs.contains(GamepadControlIdentity.custom(smallID).id))
+        XCTAssertTrue(result.skippedLockedControlIDs.contains(GamepadControlIdentity.custom(lockedID).id))
+    }
+
+    func testEdgeRepairMovesControlToComfortableInset() throws {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-00000000E003")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addCustomButton(id: id, mappedTo: .custom1)
+        customization.customButtons[0].layout.centerX = 0
+        customization.customButtons[0].layout.centerY = 0
+        let canvas = CGSize(width: 600, height: 300)
+        let issue = GamepadLayoutIssue(
+            severity: .warning,
+            code: "edge-hugging-control",
+            message: "Edge",
+            controls: [GamepadControlIdentity.custom(id).id],
+            metric: nil
+        )
+
+        let result = customization.applyLayoutRepair(.moveInsideSafeArea, issue: issue, canvasSize: canvas)
+        let repaired = try XCTUnwrap(customization.resolvedControls(in: canvas).first { $0.id == .custom(id) })
+
+        XCTAssertGreaterThan(repaired.frame.minX, 1)
+        XCTAssertGreaterThan(repaired.frame.minY, 1)
+        XCTAssertTrue(result.didChange)
+    }
+
+    func testOverlapRepairSeparatesSecondControl() throws {
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-00000000E004")!
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-00000000E005")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addCustomButton(id: firstID, mappedTo: .custom1)
+        customization.addCustomButton(id: secondID, mappedTo: .custom2)
+        customization.customButtons[0].layout.centerX = 0.5
+        customization.customButtons[0].layout.centerY = 0.5
+        customization.customButtons[1].layout.centerX = 0.5
+        customization.customButtons[1].layout.centerY = 0.5
+        let canvas = CGSize(width: 600, height: 300)
+        let issue = GamepadLayoutIssue(
+            severity: .warning,
+            code: "control-overlap",
+            message: "Overlap",
+            controls: [GamepadControlIdentity.custom(firstID).id, GamepadControlIdentity.custom(secondID).id],
+            metric: 1
+        )
+
+        let result = customization.applyLayoutRepair(.resolveOverlap, issue: issue, canvasSize: canvas)
+        let controls = customization.resolvedControls(in: canvas).filter { $0.id == .custom(firstID) || $0.id == .custom(secondID) }
+
+        XCTAssertEqual(controls.count, 2)
+        XCTAssertFalse(controls[0].frame.intersects(controls[1].frame))
+        XCTAssertTrue(result.changedControlIDs.contains(GamepadControlIdentity.custom(secondID).id))
+    }
+
+    func testOverlapRepairMovesUnlockedControlAroundLockedPeer() throws {
+        let unlockedID = UUID(uuidString: "00000000-0000-0000-0000-00000000E006")!
+        let lockedID = UUID(uuidString: "00000000-0000-0000-0000-00000000E007")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addCustomButton(id: unlockedID, mappedTo: .custom1)
+        customization.addCustomButton(id: lockedID, mappedTo: .custom2)
+        customization.customButtons[0].layout.centerX = 0.5
+        customization.customButtons[0].layout.centerY = 0.5
+        customization.customButtons[1].layout.centerX = 0.5
+        customization.customButtons[1].layout.centerY = 0.5
+        customization.customButtons[1].layout.isLocationLocked = true
+        let canvas = CGSize(width: 600, height: 300)
+        let issue = GamepadLayoutIssue(
+            severity: .warning,
+            code: "control-overlap",
+            message: "Overlap",
+            controls: [GamepadControlIdentity.custom(unlockedID).id, GamepadControlIdentity.custom(lockedID).id],
+            metric: 1
+        )
+
+        let result = customization.applyLayoutRepair(.resolveOverlap, issue: issue, canvasSize: canvas)
+        let unlocked = try XCTUnwrap(customization.resolvedControls(in: canvas).first { $0.id == .custom(unlockedID) })
+        let locked = try XCTUnwrap(customization.resolvedControls(in: canvas).first { $0.id == .custom(lockedID) })
+
+        XCTAssertFalse(unlocked.frame.intersects(locked.frame))
+        XCTAssertTrue(result.changedControlIDs.contains(GamepadControlIdentity.custom(unlockedID).id))
+        XCTAssertTrue(result.skippedLockedControlIDs.contains(GamepadControlIdentity.custom(lockedID).id))
+    }
+
     func testGroupRenameAndDuplicateCloneChildrenAndOutputs() throws {
         let firstID = UUID(uuidString: "00000000-0000-0000-0000-00000000D001")!
         let secondID = UUID(uuidString: "00000000-0000-0000-0000-00000000D002")!

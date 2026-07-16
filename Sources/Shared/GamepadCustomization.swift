@@ -6998,7 +6998,12 @@ private enum GamepadEditorInspectorMode: String, CaseIterable, Identifiable {
     case advanced
 
     var id: String { rawValue }
-    var displayName: String { rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .basic: "Essentials"
+        case .advanced: "Design"
+        }
+    }
 }
 
 private struct GamepadPendingOrientationChange: Identifiable {
@@ -7199,7 +7204,7 @@ private struct GeistSegmentedPicker<Option: Hashable>: View {
                         .minimumScaleFactor(0.72)
                         .foregroundStyle(isSelected ? selectedForeground : Geist.color(.gray900, scheme: colorScheme))
                         .padding(.horizontal, Geist.Spacing.s2)
-                        .frame(height: 28)
+                        .frame(minHeight: 28)
                         .frame(maxWidth: .infinity)
                         .background(
                             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -7209,10 +7214,12 @@ private struct GeistSegmentedPicker<Option: Hashable>: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("\(title): \(label(option))"))
+                .accessibilityValue(Text(isSelected ? "Selected" : "Not selected"))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
         .padding(2)
-        .frame(height: Geist.Spacing.s8)
+        .frame(minHeight: Geist.Spacing.s8)
         .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
@@ -7244,7 +7251,7 @@ private struct GamepadShapeSegmentedPicker: View {
                 } label: {
                     GamepadShapeSegmentedIcon(shape: shape, color: foreground)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 28)
+                        .frame(minHeight: 28)
                         .background(
                             RoundedRectangle(cornerRadius: 5, style: .continuous)
                                 .fill(isSelected ? selectedFill : Color.clear)
@@ -7253,10 +7260,12 @@ private struct GamepadShapeSegmentedPicker: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Shape: \(shape.displayName)"))
+                .accessibilityValue(Text(isSelected ? "Selected" : "Not selected"))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
         .padding(2)
-        .frame(height: Geist.Spacing.s8)
+        .frame(minHeight: Geist.Spacing.s8)
         .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
@@ -7444,11 +7453,11 @@ private struct GamepadEditorDeviceFrameView: View {
     }
 
     private var deviceOuterStrokeColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.22)
+        colorScheme == .dark ? Color.white.opacity(0.28) : Color.black.opacity(0.22)
     }
 
     private var deviceInnerStrokeColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.16) : Color.black.opacity(0.18)
+        colorScheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.18)
     }
 
     private func scaled(_ size: CGSize) -> CGSize {
@@ -7651,6 +7660,9 @@ struct GamepadCustomizationEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var accessibilityDifferentiateWithoutColor
+    @Environment(\.colorSchemeContrast) private var accessibilityContrast
+    @ScaledMetric(relativeTo: .body) private var editorCommandBarHeight: CGFloat = 48
     @Binding private var externalCustomization: GamepadCustomization
     @State private var customization: GamepadCustomization
     @State private var editorLayerModel: GamepadEditorLayerModel
@@ -7681,6 +7693,7 @@ struct GamepadCustomizationEditor: View {
     private static let defaultDeviceFrame: GamepadEditorDeviceFrame = GamepadEditorDeviceCatalog.defaultFrame
     private static let canvasZoomMin: CGFloat = 0.5
     private static let canvasZoomMax: CGFloat = 2.25
+    private static let canvasFitInset: CGFloat = 24
     private static let deviceFrameSpringAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.08)
     private static let deviceFrameMotionSettleDelay: TimeInterval = 0.12
     private static let externalCommitDebounceDelay: TimeInterval = 0.20
@@ -7719,12 +7732,15 @@ struct GamepadCustomizationEditor: View {
     @State private var locallyPressedTestInputs: Set<KeypadElementInputID> = []
     @State private var lastTestActionText: String?
     @State private var editorOperationError: String?
+    @State private var setupSearchText = ""
     @State private var layerSearchText = ""
     @State private var hoveredLayerListItemID: String?
     @State private var draggingLayerControlIDs: [GamepadControlIdentity] = []
     @State private var groupRenameTargetID: UUID?
     @State private var groupRenameDraft = ""
     @State private var highlightedQualityControlIDs: Set<GamepadControlIdentity> = []
+    @State private var highlightedQualitySeverity: GamepadLayoutIssueSeverity?
+    @State private var activeLayoutQualityIssue: GamepadLayoutIssue?
     @State private var isFillColorPopoverPresented = false
     @State private var isJoystickKnobColorPopoverPresented = false
     @State private var isBackgroundColorPopoverPresented = false
@@ -7751,17 +7767,24 @@ struct GamepadCustomizationEditor: View {
     @State private var draftConfigurationSidebarWidth: CGFloat?
     @State private var draftInspectorSidebarWidth: CGFloat?
     @State private var draftCanvasZoom: CGFloat?
+    @State private var isCanvasFitMode = true
+    @State private var canvasViewportSize = CGSize.zero
+    @State private var canvasScrollRequestID: UUID?
+    @State private var isCanvasFocusMode = false
+    @State private var focusModeRestoresConfigurationSidebar = true
+    @State private var focusModeRestoresInspectorSidebar = true
     @State private var undoTarget = GamepadEditorUndoTarget()
     @State private var activeFirstKeypadOnboardingStep: GamepadEditorFirstKeypadStep?
     @FocusState private var isProfileNameFieldFocused: Bool
     @FocusState private var isElementLabelFieldFocused: Bool
+    @AccessibilityFocusState private var isLayoutIssueAccessibilityFocused: Bool
     @AppStorage(ThumbConsoleMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey) private var hasCompletedFirstKeypadOnboarding = false
     @AppStorage(ThumbConsoleMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey) private var isFirstKeypadOnboardingReplayRequested = false
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarVisible") private var isConfigurationSidebarVisible = true
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarVisible") private var isInspectorSidebarVisible = true
-    @AppStorage("PocketPad.GamepadEditor.canvasZoom") private var canvasZoomValue: Double = 1.0
+    @State private var canvasZoomValue: Double = 1.0
     @AppStorage(GamepadEditorDeviceCatalog.selectedFrameDefaultsKey) private var deviceFrameRawValue: String = GamepadEditorDeviceCatalog.defaultFrameID
     @AppStorage(GamepadEditorDeviceCatalog.didChooseFrameDefaultsKey) private var didChooseDeviceFrameManually = false
     @AppStorage("PocketPad.GamepadEditor.editingColorScheme") private var editingColorSchemeRawValue: String = GamepadEditorColorScheme.system.rawValue
@@ -7954,7 +7977,7 @@ struct GamepadCustomizationEditor: View {
                         }
                     }
                 } else {
-                    ScrollView(.vertical, showsIndicators: false) {
+                    ScrollView(.vertical, showsIndicators: true) {
                         inspectorCompactSection
                             .padding(Geist.Spacing.s4)
                     }
@@ -8002,6 +8025,9 @@ struct GamepadCustomizationEditor: View {
         .onChange(of: customization.deviceCanvas) { _, _ in
             selectedProfileOrientation = activeDeviceFrame.orientation
             noteCanvasLayoutSize(width: activeDesignCanvasSize.width, height: activeDesignCanvasSize.height)
+            draftCanvasZoom = nil
+            canvasZoomValue = 1
+            isCanvasFitMode = true
         }
         .onChange(of: connectedDeviceInfo) { _, _ in
             applyConnectedDeviceFrameIfAvailable()
@@ -8025,7 +8051,14 @@ struct GamepadCustomizationEditor: View {
                 activeCanvasTool = .select
                 isControlSelectionActive = false
                 selectedControlIDs.removeAll()
+                announceEditor("Test mode. Keypad controls send their configured outputs.")
+            } else {
+                announceEditor("Edit mode. Keypad controls can be selected and arranged.")
             }
+        }
+        .onChange(of: editorDeliveryStatusText) { _, status in
+            guard let status, status.localizedCaseInsensitiveContains("fail") || status.localizedCaseInsensitiveContains("offline") else { return }
+            announceEditor(status)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             releaseAllTestInputs()
@@ -8158,46 +8191,35 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var editorCommandBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Geist.Spacing.s2) {
-                Menu {
-                ForEach(profiles) { profile in
-                    Button {
-                        selectProfile(profile)
-                    } label: {
-                        Label(profile.name, systemImage: profile.id == selectedProfileID ? "checkmark" : "rectangle")
-                    }
+        GeometryReader { proxy in
+            Group {
+                if proxy.size.width >= 1_160 {
+                    editorCommandBarFullContent
+                } else {
+                    editorCommandBarCompactContent
                 }
-                Divider()
-                Button("New Blank Setup", action: createProfile)
-                Menu("New from Template") {
-                    ForEach(GamepadControllerTemplate.allCases) { template in
-                        Button(template.displayName) { createProfile(from: template) }
-                    }
-                }
-            } label: {
-                HStack(spacing: Geist.Spacing.s2) {
-                    Image(systemName: "rectangle.stack")
-                    Text(selectedProfile?.name ?? "Current Setup")
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                }
-                .frame(maxWidth: 190, alignment: .leading)
             }
-            .menuStyle(.button)
-            .geistButtonStyle(.secondary, size: .small)
-            .help("Switch keypad setup")
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .frame(height: min(max(editorCommandBarHeight, 48), 80))
+        .background(Geist.color(.background100, scheme: colorScheme))
+    }
 
-            Picker("Mode", selection: $interactionMode) {
-                ForEach(GamepadEditorInteractionMode.allCases) { mode in
-                    Label(mode.displayName, systemImage: mode.systemImage).tag(mode)
+    private var editorCommandBarFullContent: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+                if shouldShowCommandBarProfileSwitcher {
+                    commandBarProfileSwitcher
                 }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 132)
-            .help(interactionMode == .edit ? "Edit controls on the canvas" : "Press controls to send their real outputs")
+
+                Picker("Mode", selection: $interactionMode) {
+                    ForEach(GamepadEditorInteractionMode.allCases) { mode in
+                        Label(mode.displayName, systemImage: mode.systemImage).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 132)
+                .help(interactionMode == .edit ? "Edit controls on the canvas" : "Press controls to send their real outputs")
 
             Divider().frame(height: 24)
 
@@ -8256,23 +8278,40 @@ struct GamepadCustomizationEditor: View {
                 commandBarIconButton(systemImage: "minus", label: "Zoom Out", isDisabled: effectiveCanvasZoom <= Self.canvasZoomMin + 0.001) {
                     changeCanvasZoom(by: -0.10)
                 }
-                Button(canvasZoomPercentageText) { setCanvasZoomAndCommit(1) }
+                Button(canvasZoomPercentageText, action: fitCanvas)
                     .buttonStyle(.plain)
                     .geistTypography(.label12Mono)
                     .frame(minWidth: 42)
-                    .help("Fit canvas (⌘0)")
+                    .accessibilityLabel(isCanvasFitMode ? "Canvas zoom, fit" : "Canvas zoom, \(canvasZoomPercentageText) of fit")
+                    .help(isCanvasFitMode ? "Canvas is fit to the workspace (⌘0)" : "\(canvasZoomPercentageText) of fitted size · Click to fit (⌘0)")
                 commandBarIconButton(systemImage: "plus", label: "Zoom In", isDisabled: effectiveCanvasZoom >= Self.canvasZoomMax - 0.001) {
                     changeCanvasZoom(by: 0.10)
+                }
+                if isControlSelectionActive {
+                    commandBarIconButton(systemImage: "scope", label: "Zoom to Selection", isDisabled: selectedControlIDs.isEmpty) {
+                        zoomToSelection()
+                    }
                 }
             }
             .padding(.horizontal, Geist.Spacing.s1)
             .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+
+            commandBarIconButton(
+                systemImage: isCanvasFocusMode || (!isConfigurationSidebarVisible && !isInspectorSidebarVisible)
+                    ? "arrow.down.right.and.arrow.up.left"
+                    : "arrow.up.left.and.arrow.down.right",
+                label: canvasFocusCommandTitle,
+                isDisabled: false,
+                action: toggleCanvasFocusMode
+            )
 
             Menu {
                 Button("Keyboard Shortcuts…") { isShortcutReferencePresented = true }
                     .keyboardShortcut("/", modifiers: .command)
                 Button("Tour Editor") { restartFirstKeypadOnboarding() }
                 Divider()
+                Button(canvasFocusCommandTitle, action: toggleCanvasFocusMode)
+                    .keyboardShortcut("0", modifiers: [.command, .option])
                 Button(isConfigurationSidebarVisible ? "Hide Setups" : "Show Setups", action: toggleConfigurationSidebarVisibility)
                 Button(isInspectorSidebarVisible ? "Hide Inspector" : "Show Inspector", action: toggleInspectorSidebarVisibility)
             } label: {
@@ -8283,10 +8322,120 @@ struct GamepadCustomizationEditor: View {
                 .geistButtonStyle(.tertiary, size: .small)
                 .accessibilityLabel("Editor help")
             }
-            .padding(.horizontal, Geist.Spacing.s3)
-            .padding(.vertical, Geist.Spacing.s2)
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+    }
+
+    private var editorCommandBarCompactContent: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            if shouldShowCommandBarProfileSwitcher {
+                commandBarProfileSwitcher
+                    .frame(maxWidth: 170)
+            }
+
+            Picker("Mode", selection: $interactionMode) {
+                ForEach(GamepadEditorInteractionMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 108)
+
+            addControlMenu
+                .disabled(interactionMode == .test)
+
+            layoutQualityMenu
+
+            Spacer(minLength: Geist.Spacing.s1)
+
+            Label(editorSaveAndSyncStatusText, systemImage: editorSaveAndSyncStatusImage)
+                .labelStyle(.iconOnly)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .accessibilityLabel(editorSaveAndSyncStatusText)
+                .help(editorSaveAndSyncStatusText)
+
+            Button(canvasZoomPercentageText, action: fitCanvas)
+                .buttonStyle(.plain)
+                .geistTypography(.label12Mono)
+                .frame(minWidth: 42)
+                .help("Fit canvas (⌘0)")
+
+            Menu {
+                Button("Undo") { _ = performUndo() }
+                    .disabled(!(undoManager?.canUndo ?? false))
+                Button("Redo") { _ = performRedo() }
+                    .disabled(!(undoManager?.canRedo ?? false))
+
+                if isControlSelectionActive && interactionMode == .edit {
+                    Divider()
+                    Button("Zoom to Selection", action: zoomToSelection)
+                    Button("Duplicate Selection") { _ = duplicateSelectedControls() }
+                        .disabled(!canDuplicateSelectedControls)
+                    Button("Delete Selection") { _ = deleteSelectedControl() }
+                }
+
+                Divider()
+                Menu("Orientation") {
+                    ForEach(GamepadEditorDeviceOrientation.allCases) { orientation in
+                        Button("Edit \(orientation.displayName)") {
+                            setDeviceFrame(GamepadEditorDeviceFrame(spec: activeDeviceFrame.spec, orientation: orientation))
+                        }
+                    }
+                    Button("Compare Orientations…") { isOrientationComparisonPresented = true }
+                }
+                Button(canvasFocusCommandTitle, action: toggleCanvasFocusMode)
+                    .keyboardShortcut("0", modifiers: [.command, .option])
+                Button(isConfigurationSidebarVisible ? "Hide Setups" : "Show Setups", action: toggleConfigurationSidebarVisibility)
+                Button(isInspectorSidebarVisible ? "Hide Inspector" : "Show Inspector", action: toggleInspectorSidebarVisibility)
+                Divider()
+                Button("Keyboard Shortcuts…") { isShortcutReferencePresented = true }
+                Button("Tour Editor") { restartFirstKeypadOnboarding() }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .frame(width: 28, height: 28)
+            }
+            .menuStyle(.button)
+            .geistButtonStyle(.secondary, size: .small)
+            .accessibilityLabel("More editor actions")
         }
-        .background(Geist.color(.background100, scheme: colorScheme))
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+    }
+
+    private var shouldShowCommandBarProfileSwitcher: Bool {
+        !isConfigurationSidebarVisible || configurationSidebarTab != .setups
+    }
+
+    private var commandBarProfileSwitcher: some View {
+        Menu {
+            ForEach(profiles) { profile in
+                Button {
+                    selectProfile(profile)
+                } label: {
+                    Label(profile.name, systemImage: profile.id == selectedProfileID ? "checkmark" : "rectangle")
+                }
+            }
+            Divider()
+            Button("New Blank Setup", action: createProfile)
+            Menu("New from Template") {
+                ForEach(GamepadControllerTemplate.allCases) { template in
+                    Button(template.displayName) { createProfile(from: template) }
+                }
+            }
+        } label: {
+            HStack(spacing: Geist.Spacing.s2) {
+                Image(systemName: "rectangle.stack")
+                Text(selectedProfile?.name ?? "Current Setup")
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .frame(maxWidth: 190, alignment: .leading)
+        }
+        .menuStyle(.button)
+        .geistButtonStyle(.secondary, size: .small)
+        .help("Switch keypad setup")
     }
 
     private func commandBarIconButton(
@@ -8486,10 +8635,24 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func orientationStatusDot(_ orientation: GamepadEditorDeviceOrientation) -> some View {
-        Circle()
-            .fill(hasSavedOrientation(orientation) ? Geist.color(.blue700, scheme: colorScheme) : Geist.color(.grayAlpha400, scheme: colorScheme))
-            .frame(width: 6, height: 6)
-            .accessibilityLabel("\(orientation.displayName) \(hasSavedOrientation(orientation) ? "customized" : "not customized")")
+        let isSaved = hasSavedOrientation(orientation)
+        return ZStack {
+            if isSaved {
+                Circle()
+                    .fill(Geist.color(.blue700, scheme: colorScheme))
+                if accessibilityDifferentiateWithoutColor {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 5, weight: .bold))
+                        .foregroundStyle(Color.white)
+                }
+            } else {
+                Circle()
+                    .stroke(Geist.color(.gray900, scheme: colorScheme), lineWidth: accessibilityContrast == .increased ? 1.5 : 1)
+            }
+        }
+        .frame(width: accessibilityDifferentiateWithoutColor ? 10 : 7, height: accessibilityDifferentiateWithoutColor ? 10 : 7)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(orientation.displayName) \(isSaved ? "customized" : "not customized")")
     }
 
     private func hasSavedOrientation(_ orientation: GamepadEditorDeviceOrientation) -> Bool {
@@ -8498,33 +8661,38 @@ struct GamepadCustomizationEditor: View {
 
     private var layoutQualityMenu: some View {
         let report = currentLayoutQualityReport
+        let errors = report.issues.filter { $0.severity == .error }
+        let warnings = report.issues.filter { $0.severity == .warning }
+
         return Menu {
             Section {
                 Text("\(report.summary.errorCount) errors · \(report.summary.warningCount) warnings")
                 Text("Uses \(Int((report.summary.layoutWidthCoverage * 100).rounded()))% width · \(Int((report.summary.layoutHeightCoverage * 100).rounded()))% height")
             }
+
             if report.issues.isEmpty {
-                Text("No layout issues found")
+                Label("No layout issues found", systemImage: "checkmark.circle.fill")
             } else {
-                Section("Suggestions") {
-                    ForEach(Array(report.issues.enumerated()), id: \.offset) { _, issue in
-                        Button {
-                            selectLayoutQualityIssue(issue)
-                        } label: {
-                            Label(issue.message, systemImage: issue.severity == .error ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                if !errors.isEmpty {
+                    Section("Errors") {
+                        ForEach(errors) { issue in
+                            layoutQualityIssueMenuItem(issue)
                         }
                     }
                 }
-                if !report.suggestedRepairs.isEmpty {
-                    Section("Automatic Repairs") {
-                        ForEach(report.suggestedRepairs) { repair in
-                            Button {
-                                applyLayoutQualityRepair(repair)
-                            } label: {
-                                Label(repair.title, systemImage: repair.kind == .separateExpandedHitTargets ? "arrow.left.and.right" : "hand.point.up.left")
-                            }
-                            .help(repair.message)
+
+                if !warnings.isEmpty {
+                    Section("Warnings") {
+                        ForEach(warnings) { issue in
+                            layoutQualityIssueMenuItem(issue)
                         }
+                    }
+                }
+
+                if !highlightedQualityControlIDs.isEmpty || highlightedQualitySeverity != nil {
+                    Divider()
+                    Button("Clear Layout Highlight") {
+                        clearLayoutQualityHighlight()
                     }
                 }
             }
@@ -8540,10 +8708,75 @@ struct GamepadCustomizationEditor: View {
         customization.layoutQualityReport(profileName: selectedProfile?.name, canvasSize: activeDesignCanvasSize)
     }
 
+    @ViewBuilder
+    private func layoutQualityIssueMenuItem(_ issue: GamepadLayoutIssue) -> some View {
+        Menu {
+            Button {
+                selectLayoutQualityIssue(issue)
+            } label: {
+                Label("Show on Canvas", systemImage: "scope")
+            }
+
+            if !issue.suggestedRepairs.isEmpty {
+                Divider()
+                ForEach(issue.suggestedRepairs) { repair in
+                    Button {
+                        selectLayoutQualityIssue(issue)
+                        applyLayoutRepair(repair, to: issue)
+                    } label: {
+                        Label(repair.displayName, systemImage: repair.systemImage)
+                    }
+                }
+            }
+        } label: {
+            Label(
+                layoutIssueMenuTitle(issue),
+                systemImage: issue.severity == .error ? "xmark.octagon.fill" : "exclamationmark.triangle.fill"
+            )
+        }
+        .help(issue.message)
+    }
+
+    private func layoutIssueMenuTitle(_ issue: GamepadLayoutIssue) -> String {
+        issue.controls.isEmpty ? issue.message : issue.message
+    }
+
     private func layoutQualityBadgeText(_ report: GamepadLayoutQualityReport) -> String {
-        if report.hasErrors { return "Layout \(report.summary.errorCount)" }
-        if report.hasWarnings { return "Layout \(report.summary.warningCount)" }
-        return "Layout Good"
+        let prioritizedIssues = report.hasErrors
+            ? report.issues.filter { $0.severity == .error }
+            : report.issues.filter { $0.severity == .warning }
+        guard let firstIssue = prioritizedIssues.first else { return "Layout Good" }
+
+        let matchingCount = prioritizedIssues.filter { $0.code == firstIssue.code }.count
+        let remainingCount = prioritizedIssues.count - matchingCount
+        let primaryLabel = layoutIssueCategoryLabel(code: firstIssue.code, count: matchingCount)
+        return remainingCount > 0 ? "\(primaryLabel) +\(remainingCount)" : primaryLabel
+    }
+
+    private func layoutIssueCategoryLabel(code: String, count: Int) -> String {
+        let plural = count != 1
+        switch code {
+        case "no-visible-controls":
+            return "No Controls"
+        case "control-overlap":
+            return plural ? "\(count) Overlaps" : "Overlap"
+        case "expanded-hit-overlap", "hit-region-z-order-ambiguous", "hit-region-z-order-mismatch":
+            return plural ? "\(count) Touch Conflicts" : "Touch Conflict"
+        case "primary-control-too-high", "primary-control-too-central", "primary-control-out-of-reach":
+            return plural ? "\(count) Reach Issues" : "Thumb Reach"
+        case "portrait-primary-action-distribution", "portrait-dead-space":
+            return plural ? "\(count) Portrait Issues" : "Portrait Layout"
+        case "layout-displacement":
+            return plural ? "\(count) Displaced" : "Displaced Control"
+        case "small-control":
+            return plural ? "\(count) Small Controls" : "Small Control"
+        case "edge-hugging-control":
+            return plural ? "\(count) Edge Issues" : "Edge Spacing"
+        case "underused-bottom-space", "low-vertical-coverage", "low-horizontal-coverage":
+            return plural ? "\(count) Coverage Issues" : "Canvas Coverage"
+        default:
+            return plural ? "\(count) Layout Issues" : "Layout Issue"
+        }
     }
 
     private func layoutQualityBadgeImage(_ report: GamepadLayoutQualityReport) -> String {
@@ -8563,6 +8796,17 @@ struct GamepadCustomizationEditor: View {
         return connectedDeviceInfo == nil ? "iphone.slash" : "checkmark.icloud"
     }
 
+    private func announceEditor(_ message: String) {
+        NSAccessibility.post(
+            element: NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: message,
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue
+            ]
+        )
+    }
+
     private var wideEditor: some View {
         GeometryReader { proxy in
             let sidebarWidths = effectiveSidebarWidths(totalWidth: proxy.size.width)
@@ -8574,6 +8818,8 @@ struct GamepadCustomizationEditor: View {
 
                     GamepadEditorResizeHandle(
                         accessibilityLabel: "Resize setups sidebar",
+                        accessibilityValue: "\(Int(sidebarWidths.configuration.rounded())) points wide",
+                        onAccessibilityAdjust: adjustConfigurationSidebarWidth,
                         onDragChanged: { value in
                             resizeConfigurationSidebar(with: value, totalWidth: proxy.size.width)
                         },
@@ -8590,6 +8836,8 @@ struct GamepadCustomizationEditor: View {
                 if isInspectorSidebarVisible {
                     GamepadEditorResizeHandle(
                         accessibilityLabel: "Resize inspector sidebar",
+                        accessibilityValue: "\(Int(sidebarWidths.inspector.rounded())) points wide",
+                        onAccessibilityAdjust: adjustInspectorSidebarWidth,
                         onDragChanged: { value in
                             resizeInspectorSidebar(with: value, totalWidth: proxy.size.width)
                         },
@@ -8609,7 +8857,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var compactEditor: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        ScrollView(.vertical, showsIndicators: true) {
             VStack(spacing: Geist.Spacing.s4) {
                 if isConfigurationSidebarVisible {
                     configurationCompactSection
@@ -8663,35 +8911,71 @@ struct GamepadCustomizationEditor: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+
+                if configurationSidebarTab == .setups {
+                    setupSearchField
+                }
             }
             .padding(Geist.Spacing.s4)
 
             Divider()
 
             if configurationSidebarTab == .setups {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: Geist.Spacing.s2) {
-                        ForEach(profiles) { profile in
-                            profileNavigationRow(profile)
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(spacing: Geist.Spacing.s2) {
+                            if filteredSetupProfiles.isEmpty {
+                                VStack(spacing: Geist.Spacing.s2) {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                                    Text("No setups match “\(setupSearchText)”.")
+                                        .geistTypography(.copy13)
+                                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                                        .multilineTextAlignment(.center)
+                                    Button("Clear Search") { setupSearchText = "" }
+                                        .geistButtonStyle(.secondary, size: .small)
+                                }
+                                .padding(Geist.Spacing.s4)
+                                .frame(maxWidth: .infinity)
+                            } else {
+                                ForEach(filteredSetupProfiles) { profile in
+                                    profileNavigationRow(profile)
+                                        .id(profile.id)
+                                }
+                            }
                         }
-                    }
-                    .padding(Geist.Spacing.s3)
-                    .onDrop(
-                        of: [Self.profileDragUTType],
-                        delegate: GamepadProfileDropDelegate(
-                            targetProfileID: nil,
-                            draggingProfileIDs: $draggingProfileIDs,
-                            onMove: moveDraggedProfiles,
-                            onDropEnded: finishProfileDrag
+                        .padding(Geist.Spacing.s3)
+                        .onDrop(
+                            of: [Self.profileDragUTType],
+                            delegate: GamepadProfileDropDelegate(
+                                targetProfileID: nil,
+                                draggingProfileIDs: $draggingProfileIDs,
+                                onMove: moveDraggedProfiles,
+                                onDropEnded: finishProfileDrag
+                            )
                         )
-                    )
+                    }
+                    .onAppear {
+                        scrollToSelectedSetup(in: proxy, clearsHiddenFilter: true, animated: false)
+                    }
+                    .onChange(of: selectedProfileID) { _, _ in
+                        scrollToSelectedSetup(in: proxy, clearsHiddenFilter: true)
+                    }
+                    .onChange(of: profiles.map(\.id)) { _, _ in
+                        scrollToSelectedSetup(in: proxy, clearsHiddenFilter: false)
+                    }
+                    .onChange(of: setupSearchText) { _, _ in
+                        scrollToSelectedSetup(in: proxy, clearsHiddenFilter: false)
+                    }
+                    .onMoveCommand(perform: moveSetupSelection)
                 }
 
                 Divider()
                 configurationFooter
                     .padding(Geist.Spacing.s3)
             } else {
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
                         selectedSetupNameEditor
                         activeSetupComponentsList
@@ -8704,43 +8988,144 @@ struct GamepadCustomizationEditor: View {
         .gamepadEditorOnboardingTarget(.setups)
     }
 
+    private var setupSearchField: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            TextField("Search setups", text: $setupSearchText)
+                .textFieldStyle(.plain)
+            if !setupSearchText.isEmpty {
+                Button { setupSearchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear setup search")
+            }
+        }
+        .padding(.horizontal, Geist.Spacing.s2)
+        .frame(height: Geist.Spacing.s8)
+        .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha300, scheme: colorScheme), lineWidth: 1)
+        )
+    }
+
+    private var filteredSetupProfiles: [GamepadConfigurationProfile] {
+        let query = setupSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return profiles }
+        return profiles.filter { profile in
+            [
+                profile.name,
+                profile.launchTarget?.displayName,
+                profile.launchTarget?.detailText
+            ]
+            .compactMap { $0 }
+            .contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    private func moveSetupSelection(_ direction: MoveCommandDirection) {
+        let visibleProfiles = filteredSetupProfiles
+        guard !visibleProfiles.isEmpty else { return }
+        let currentIndex = visibleProfiles.firstIndex { $0.id == selectedProfileID } ?? 0
+        let delta: Int
+        switch direction {
+        case .up, .left:
+            delta = -1
+        case .down, .right:
+            delta = 1
+        @unknown default:
+            return
+        }
+        let nextIndex = min(max(currentIndex + delta, 0), visibleProfiles.count - 1)
+        guard nextIndex != currentIndex else { return }
+        let profile = visibleProfiles[nextIndex]
+        selectProfile(profile, expandsDetails: false)
+        announceEditor("Selected \(profile.name) keypad setup.")
+    }
+
+    private func scrollToSelectedSetup(
+        in proxy: ScrollViewProxy,
+        clearsHiddenFilter: Bool,
+        animated: Bool = true
+    ) {
+        let selectedID = selectedProfileID
+        let activeSetupIsVisible = filteredSetupProfiles.contains { $0.id == selectedID }
+        if !activeSetupIsVisible {
+            guard clearsHiddenFilter else { return }
+            setupSearchText = ""
+        }
+
+        DispatchQueue.main.async {
+            if animated && !accessibilityReduceMotion {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    proxy.scrollTo(selectedID, anchor: .center)
+                }
+            } else {
+                proxy.scrollTo(selectedID, anchor: .center)
+            }
+        }
+    }
+
     private func profileNavigationRow(_ profile: GamepadConfigurationProfile) -> some View {
         let isActive = profile.id == selectedProfileID
         let isSelected = selectedProfileIDs.contains(profile.id)
 
-        return Button {
-            handleProfileClick(profile, expandsDetails: false)
-        } label: {
-            HStack(spacing: Geist.Spacing.s2) {
-                Image(systemName: profile.launchTarget == nil ? "rectangle" : "app.badge.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 16)
-                Text(profile.name)
-                    .geistTypography(.heading14)
-                    .lineLimit(1)
-                Spacer(minLength: Geist.Spacing.s1)
-                if profile.id == defaultProfileID {
-                    Image(systemName: "star.fill")
-                        .help("Default")
+        return HStack(spacing: 0) {
+            Button {
+                handleProfileClick(profile, expandsDetails: false)
+            } label: {
+                HStack(spacing: Geist.Spacing.s2) {
+                    Image(systemName: profile.launchTarget == nil ? "rectangle" : "app.badge.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 16)
+                    Text(profile.name)
+                        .geistTypography(.heading14)
+                        .lineLimit(1)
+                    Spacer(minLength: Geist.Spacing.s1)
+                    if profile.id == defaultProfileID {
+                        Image(systemName: "star.fill")
+                            .help("Default")
+                    }
+                    if isActive {
+                        Image(systemName: accessibilityDifferentiateWithoutColor ? "checkmark.circle.fill" : "circle.fill")
+                            .help("Active")
+                    }
                 }
-                if isActive {
-                    Image(systemName: "checkmark.circle.fill")
-                        .help("Active")
-                }
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .padding(.leading, Geist.Spacing.s3)
+                .padding(.trailing, Geist.Spacing.s1)
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-            .padding(.horizontal, Geist.Spacing.s3)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                    .fill(profileSelectionFill(isActive: isActive, isSelected: isSelected))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                    .stroke(profileSelectionStroke(isActive: isActive, isSelected: isSelected), lineWidth: isSelected ? 1.5 : 1)
-            )
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(profile.name) keypad setup")
+            .accessibilityValue(profileAccessibilityState(profile))
+            .accessibilityAddTraits(isActive ? .isSelected : [])
+            .accessibilityAction(named: Text("Rename")) { beginRenamingProfile(profile) }
+            .accessibilityAction(named: Text("Duplicate")) { duplicateProfile(profile) }
+            .accessibilityAction(named: Text("Make Default")) {
+                if profile.id != selectedProfileID { selectProfile(profile, expandsDetails: false) }
+                setSelectedProfileAsDefault()
+            }
+            .accessibilityAction(named: Text("Move Earlier")) { moveProfile(profile, by: -1) }
+            .accessibilityAction(named: Text("Move Later")) { moveProfile(profile, by: 1) }
+
+            profileActionMenu(profile)
+                .padding(.trailing, Geist.Spacing.s1)
         }
-        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .fill(profileSelectionFill(isActive: isActive, isSelected: isSelected))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(
+                    profileSelectionStroke(isActive: isActive, isSelected: isSelected),
+                    lineWidth: accessibilityContrast == .increased || isSelected ? 2 : 1
+                )
+        )
         .contextMenu { profileContextMenu(for: profile) }
         .onDrag { profileDragItemProvider(for: profile) }
         .onDrop(
@@ -8752,6 +9137,45 @@ struct GamepadCustomizationEditor: View {
                 onDropEnded: finishProfileDrag
             )
         )
+    }
+
+    private func profileActionMenu(_ profile: GamepadConfigurationProfile) -> some View {
+        Menu {
+            Button("Rename…") { beginRenamingProfile(profile) }
+            Button("Duplicate") { duplicateProfile(profile) }
+            Button("Make Default") {
+                if profile.id != selectedProfileID { selectProfile(profile, expandsDetails: false) }
+                setSelectedProfileAsDefault()
+            }
+            .disabled(profile.id == defaultProfileID)
+            Divider()
+            Button("Move Earlier") { moveProfile(profile, by: -1) }
+                .disabled(profiles.first?.id == profile.id)
+            Button("Move Later") { moveProfile(profile, by: 1) }
+                .disabled(profiles.last?.id == profile.id)
+            if onExportProfiles != nil {
+                Divider()
+                Button("Export…") { exportProfiles(profileID: profile.id) }
+            }
+            Divider()
+            Button("Delete", role: .destructive) { deleteProfile(profile) }
+                .disabled(profiles.count <= 1)
+        } label: {
+            Image(systemName: "ellipsis")
+                .frame(width: 28, height: 32)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Actions for \(profile.name)")
+        .help("Setup actions")
+    }
+
+    private func profileAccessibilityState(_ profile: GamepadConfigurationProfile) -> String {
+        var states: [String] = []
+        if profile.id == selectedProfileID { states.append("Active") }
+        if profile.id == defaultProfileID { states.append("Default") }
+        if profile.launchTarget != nil { states.append("Application attached") }
+        return states.isEmpty ? "Not active" : states.joined(separator: ", ")
     }
 
     private var configurationCompactSection: some View {
@@ -9228,7 +9652,26 @@ struct GamepadCustomizationEditor: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Select \(group.name) group")
+            .accessibilityLabel("\(group.name) group")
+            .accessibilityValue("\(isSelected ? "Selected, " : "")\(group.isHidden ? "Hidden, " : "Visible, ")\(group.isLocationLocked ? "Locked" : "Unlocked"), \(group.children.count) layers")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityAction(named: Text(group.isLocationLocked ? "Unlock Group" : "Lock Group")) {
+                setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
+            }
+            .accessibilityAction(named: Text(group.isHidden ? "Show Group" : "Hide Group")) {
+                setLayerGroupHidden(!group.isHidden, groupID: group.id)
+            }
+            .accessibilityAction(named: Text("Duplicate Group")) {
+                selectLayerGroup(group)
+                _ = duplicateSelectedControls()
+            }
+            .accessibilityAction(named: Text("Bring Group to Front")) {
+                update(actionName: "Bring Group To Front") { $0.bringLayersToFront(group.childIdentitySet) }
+            }
+            .accessibilityAction(named: Text("Send Group to Back")) {
+                update(actionName: "Send Group To Back") { $0.sendLayersToBack(group.childIdentitySet) }
+            }
+            .accessibilityAction(named: Text("Ungroup")) { ungroupLayerGroup(group.id) }
             .help("Select the group to move or resize all nested layers together")
 
             HStack(spacing: Geist.Spacing.s1) {
@@ -9248,8 +9691,8 @@ struct GamepadCustomizationEditor: View {
                     setLayerGroupHidden(!group.isHidden, groupID: group.id)
                 }
             }
-            .opacity(hoveredLayerListItemID == "group.\(group.id.uuidString)" || isSelected ? 1 : 0)
-            .allowsHitTesting(hoveredLayerListItemID == "group.\(group.id.uuidString)" || isSelected)
+            .opacity(1)
+            .allowsHitTesting(true)
         }
         .padding(.leading, Geist.Spacing.s1)
         .padding(.trailing, Geist.Spacing.s1)
@@ -9259,7 +9702,10 @@ struct GamepadCustomizationEditor: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                .stroke(isSelected ? Geist.color(.blue700, scheme: colorScheme) : Color.clear, lineWidth: 1.5)
+                .stroke(
+                    isSelected ? Geist.color(.blue700, scheme: colorScheme) : Color.clear,
+                    lineWidth: accessibilityContrast == .increased ? 2.5 : 1.5
+                )
         )
         .onHover { isHovering in
             hoveredLayerListItemID = isHovering ? "group.\(group.id.uuidString)" : nil
@@ -9340,7 +9786,25 @@ struct GamepadCustomizationEditor: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Select \(item.title)")
+            .accessibilityLabel(item.title)
+            .accessibilityValue("\(isSelected ? "Selected, " : "")\(item.subtitle), \(item.isHidden ? "Hidden, " : "Visible, ")\(item.isLocationLocked ? "Locked" : "Unlocked")")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityAction(named: Text(item.isLocationLocked ? "Unlock Location" : "Lock Location")) {
+                toggleComponentLock(item.identity)
+            }
+            .accessibilityAction(named: Text(item.isHidden ? "Show" : "Hide")) {
+                toggleComponentVisibility(item.identity)
+            }
+            .accessibilityAction(named: Text("Duplicate")) {
+                selectComponent(item.identity)
+                _ = duplicateSelectedControls()
+            }
+            .accessibilityAction(named: Text("Bring Forward")) { bringLayerForward(item.identity) }
+            .accessibilityAction(named: Text("Send Backward")) { sendLayerBackward(item.identity) }
+            .accessibilityAction(named: Text("Delete")) {
+                selectComponent(item.identity)
+                _ = deleteSelectedControl()
+            }
 
             HStack(spacing: Geist.Spacing.s1) {
                 componentIconButton(
@@ -9359,8 +9823,8 @@ struct GamepadCustomizationEditor: View {
                     toggleComponentVisibility(item.identity)
                 }
             }
-            .opacity(hoveredLayerListItemID == "component.\(item.identity.id)" || isSelected ? 1 : 0)
-            .allowsHitTesting(hoveredLayerListItemID == "component.\(item.identity.id)" || isSelected)
+            .opacity(1)
+            .allowsHitTesting(true)
         }
         .padding(.trailing, Geist.Spacing.s1)
         .background(
@@ -9369,7 +9833,10 @@ struct GamepadCustomizationEditor: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
-                .stroke(isSelected ? Geist.color(.blue700, scheme: colorScheme) : Color.clear, lineWidth: 1.5)
+                .stroke(
+                    isSelected ? Geist.color(.blue700, scheme: colorScheme) : Color.clear,
+                    lineWidth: accessibilityContrast == .increased ? 2.5 : 1.5
+                )
         )
         .onHover { isHovering in
             hoveredLayerListItemID = isHovering ? "component.\(item.identity.id)" : nil
@@ -9481,6 +9948,13 @@ struct GamepadCustomizationEditor: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(profile.name) keypad setup")
+        .accessibilityValue(profileAccessibilityState(profile))
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityAction(named: Text("Rename")) { beginRenamingProfile(profile) }
+        .accessibilityAction(named: Text("Duplicate")) { duplicateProfile(profile) }
+        .accessibilityAction(named: Text("Move Earlier")) { moveProfile(profile, by: -1) }
+        .accessibilityAction(named: Text("Move Later")) { moveProfile(profile, by: 1) }
         .contextMenu {
             profileContextMenu(for: profile)
         }
@@ -9621,13 +10095,19 @@ struct GamepadCustomizationEditor: View {
         .disabled(!canDeleteProfiles(actionIDs))
     }
 
+    private var canvasPasteboardColor: Color {
+        colorScheme == .dark
+            ? Geist.color(.gray100, scheme: colorScheme)
+            : Geist.color(.background200, scheme: colorScheme)
+    }
+
     private var canvasStage: some View {
         GeometryReader { proxy in
             let viewportWidth = max(160, proxy.size.width)
             let viewportHeight = max(160, proxy.size.height)
             let deviceFrame = activeDeviceFrame
-            let fitWidth = max(120, viewportWidth)
-            let fitHeight = max(120, viewportHeight)
+            let fitWidth = max(120, viewportWidth - (Self.canvasFitInset * 2))
+            let fitHeight = max(120, viewportHeight - (Self.canvasFitInset * 2))
             let fitScale = max(
                 0.001,
                 min(
@@ -9651,7 +10131,11 @@ struct GamepadCustomizationEditor: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Geist.color(.background100, scheme: colorScheme))
             .onAppear {
+                canvasViewportSize = proxy.size
                 noteCanvasLayoutSize(width: deviceFrame.screenRect.width, height: deviceFrame.screenRect.height)
+            }
+            .onChange(of: proxy.size) { _, newSize in
+                canvasViewportSize = newSize
             }
         }
         .gamepadEditorOnboardingTarget(.canvas)
@@ -9674,19 +10158,35 @@ struct GamepadCustomizationEditor: View {
         )
         let outerWidth = deviceWidth
         let outerHeight = deviceHeight
+        let selectionAnchorPoint = canvasSelectionBounds.map { bounds in
+            CGPoint(
+                x: screenDisplayRect.minX + bounds.midX * displayScale,
+                y: screenDisplayRect.minY + bounds.midY * displayScale
+            )
+        }
 
-        return ScrollView([.horizontal, .vertical], showsIndicators: false) {
-            ZStack {
-                Rectangle()
-                    .fill(Color.clear)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard activeCanvasTool == .select else { return }
-                        isControlSelectionActive = false
-                        selectedControlIDs.removeAll()
+        return ScrollViewReader { scrollProxy in
+            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                ZStack {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard activeCanvasTool == .select else { return }
+                            isControlSelectionActive = false
+                            selectedControlIDs.removeAll()
+                        }
+
+                    if let selectionAnchorPoint {
+                        Color.clear
+                            .frame(width: 2, height: 2)
+                            .position(selectionAnchorPoint)
+                            .id("canvas-selection-anchor")
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
 
-                ZStack(alignment: .topLeading) {
+                    ZStack(alignment: .topLeading) {
                     GamepadLayoutDesigner(
                         customization: editorBinding,
                         selectedControlID: $selectedControlID,
@@ -9696,6 +10196,7 @@ struct GamepadCustomizationEditor: View {
                         interactionMode: interactionMode,
                         pressedElementInputs: locallyPressedTestInputs.union(externallyPressedElementInputs),
                         highlightedControlIDs: highlightedQualityControlIDs,
+                        highlightedIssueSeverity: highlightedQualitySeverity,
                         onTestInputChanged: handleTestInputChanged,
                         layoutSize: screenRect.size,
                         displayScale: displayScale,
@@ -9717,10 +10218,25 @@ struct GamepadCustomizationEditor: View {
                         .frame(width: deviceWidth, height: deviceHeight)
                 }
                 .frame(width: deviceWidth, height: deviceHeight, alignment: .topLeading)
+                .shadow(
+                    color: Color.black.opacity(colorScheme == .dark ? 0.72 : 0.16),
+                    radius: colorScheme == .dark ? 22 : 14,
+                    x: 0,
+                    y: colorScheme == .dark ? 10 : 7
+                )
                 .rotationEffect(.degrees(deviceFrameMotionRotationDegrees))
                 .offset(deviceFrameMotionOffset)
             }
-            .frame(width: max(viewportWidth, outerWidth), height: max(viewportHeight, outerHeight))
+                .frame(width: max(viewportWidth, outerWidth), height: max(viewportHeight, outerHeight))
+            }
+            .onChange(of: canvasScrollRequestID) { _, requestID in
+                guard requestID != nil, selectionAnchorPoint != nil else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    withAnimation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                        scrollProxy.scrollTo("canvas-selection-anchor", anchor: .center)
+                    }
+                }
+            }
         }
         .frame(height: viewportHeight)
         .overlay {
@@ -9730,15 +10246,23 @@ struct GamepadCustomizationEditor: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
+        .overlay(alignment: .bottom) {
+            if let activeLayoutQualityIssue {
+                layoutIssueRepairBanner(activeLayoutQualityIssue)
+                    .padding(Geist.Spacing.s4)
+            }
+        }
         .overlay(alignment: .topLeading) {
             canvasSidebarToggleBar
                 .padding(Geist.Spacing.s4)
         }
         .overlay(alignment: .topTrailing) {
-            canvasAppearanceBadge
-                .padding(Geist.Spacing.s4)
+            if !isInspectorSidebarVisible {
+                canvasAppearanceBadge
+                    .padding(Geist.Spacing.s4)
+            }
         }
-        .background(Geist.color(.background200, scheme: colorScheme))
+        .background(canvasPasteboardColor)
         .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
@@ -9758,6 +10282,72 @@ struct GamepadCustomizationEditor: View {
                     commitCanvasZoomDraft()
                 }
         )
+    }
+
+    private func layoutIssueRepairBanner(_ issue: GamepadLayoutIssue) -> some View {
+        HStack(spacing: Geist.Spacing.s3) {
+            Image(systemName: issue.severity == .error ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Geist.color(issue.severity == .error ? .red900 : .amber900, scheme: colorScheme))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(issue.severity == .error ? "Layout Error" : "Layout Suggestion")
+                    .geistTypography(.heading14)
+                Text(issue.message)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: Geist.Spacing.s2)
+
+            if let recommendedRepair = issue.suggestedRepairs.first {
+                Button(recommendedRepair.displayName) {
+                    applyLayoutRepair(recommendedRepair, to: issue)
+                }
+                .geistButtonStyle(.primary, size: .small)
+            }
+
+            if issue.suggestedRepairs.count > 1 {
+                Menu {
+                    ForEach(issue.suggestedRepairs.dropFirst()) { repair in
+                        Button {
+                            applyLayoutRepair(repair, to: issue)
+                        } label: {
+                            Label(repair.displayName, systemImage: repair.systemImage)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.button)
+                .geistButtonStyle(.secondary, size: .small)
+                .accessibilityLabel("More layout repairs")
+            }
+
+            Button {
+                clearLayoutQualityHighlight()
+            } label: {
+                Image(systemName: "xmark")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss layout suggestion")
+        }
+        .padding(Geist.Spacing.s3)
+        .frame(maxWidth: 680)
+        .background(Geist.color(.background100, scheme: colorScheme).opacity(0.97), in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                .stroke(
+                    Geist.color(issue.severity == .error ? .red700 : .amber700, scheme: colorScheme),
+                    lineWidth: accessibilityContrast == .increased ? 2.5 : 1.5
+                )
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.38 : 0.14), radius: 12, y: 5)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(issue.severity.rawValue.capitalized): \(issue.message)")
+        .accessibilityFocused($isLayoutIssueAccessibilityFocused)
     }
 
     private var canvasSidebarToggleBar: some View {
@@ -9995,6 +10585,7 @@ struct GamepadCustomizationEditor: View {
                     shortcutGroup("View", shortcuts: [
                         ("⌘0", "Fit canvas"),
                         ("⌘+ / ⌘−", "Zoom in or out"),
+                        ("⌥⌘0", "Focus canvas or restore sidebars"),
                         ("⌥⌘1", "Toggle Setups sidebar"),
                         ("⌥⌘2", "Toggle Inspector"),
                         ("⌘/", "Show this reference")
@@ -10734,7 +11325,7 @@ struct GamepadCustomizationEditor: View {
 
             Divider()
 
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical, showsIndicators: true) {
                 inspectorContent
                     .padding(Geist.Spacing.s4)
             }
@@ -10754,31 +11345,37 @@ struct GamepadCustomizationEditor: View {
 
     private var inspectorHeader: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-            HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s3) {
-                Text("Inspector")
-                    .geistTypography(.heading20)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-
-                Spacer(minLength: Geist.Spacing.s2)
-
-                Text(canvasZoomPercentageText)
-                    .geistTypography(.label13Mono)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                    .accessibilityLabel("Canvas zoom \(canvasZoomPercentageText)")
-            }
+            Text("Inspector")
+                .geistTypography(.heading20)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
 
             Text(selectedControlIsEditable ? "Selected element properties" : "Keypad-level properties")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
 
-            Label(selectedInspectorTitle, systemImage: selectedControlIsEditable ? "scope" : "iphone")
-                .geistTypography(.label13)
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                .padding(.horizontal, Geist.Spacing.s3)
-                .padding(.vertical, Geist.Spacing.s2)
-                .background(Geist.color(.gray100, scheme: colorScheme), in: Capsule())
-                .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1))
-                .lineLimit(1)
+            HStack(spacing: Geist.Spacing.s2) {
+                Label(selectedInspectorTitle, systemImage: selectedControlIsEditable ? "scope" : "iphone")
+                    .geistTypography(.label13)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .lineLimit(1)
+
+                Spacer(minLength: Geist.Spacing.s1)
+
+                if selectedControlIsEditable {
+                    Button("Keypad") {
+                        selectKeypadInspector()
+                        announceEditor("Showing keypad-level properties.")
+                    }
+                    .buttonStyle(.plain)
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
+                    .accessibilityLabel("Deselect control and show keypad properties")
+                }
+            }
+            .padding(.horizontal, Geist.Spacing.s3)
+            .padding(.vertical, Geist.Spacing.s2)
+            .background(Geist.color(.gray100, scheme: colorScheme), in: Capsule())
+            .overlay(Capsule().stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: accessibilityContrast == .increased ? 2 : 1))
 
             Picker("Inspector detail", selection: $inspectorMode) {
                 ForEach(GamepadEditorInspectorMode.allCases) { mode in
@@ -13834,7 +14431,8 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var effectiveCanvasZoom: CGFloat {
-        Self.clamp(
+        guard !isCanvasFitMode else { return 1 }
+        return Self.clamp(
             draftCanvasZoom ?? CGFloat(canvasZoomValue),
             lower: Self.canvasZoomMin,
             upper: Self.canvasZoomMax
@@ -13842,13 +14440,44 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var canvasZoomPercentageText: String {
-        abs(effectiveCanvasZoom - 1) < 0.001 ? "Fit" : "\(Int((effectiveCanvasZoom * 100).rounded()))%"
+        isCanvasFitMode ? "Fit" : "\(Int((effectiveCanvasZoom * 100).rounded()))%"
+    }
+
+    private var canvasFocusCommandTitle: String {
+        isCanvasFocusMode || (!isConfigurationSidebarVisible && !isInspectorSidebarVisible)
+            ? "Exit Focus Canvas"
+            : "Focus Canvas"
+    }
+
+    private func toggleCanvasFocusMode() {
+        let animation: Animation? = accessibilityReduceMotion ? nil : .easeInOut(duration: 0.18)
+        withAnimation(animation) {
+            if isCanvasFocusMode {
+                isConfigurationSidebarVisible = focusModeRestoresConfigurationSidebar
+                isInspectorSidebarVisible = focusModeRestoresInspectorSidebar
+                isCanvasFocusMode = false
+            } else if !isConfigurationSidebarVisible && !isInspectorSidebarVisible {
+                isConfigurationSidebarVisible = true
+                isInspectorSidebarVisible = true
+            } else {
+                focusModeRestoresConfigurationSidebar = isConfigurationSidebarVisible
+                focusModeRestoresInspectorSidebar = isInspectorSidebarVisible
+                isConfigurationSidebarVisible = false
+                isInspectorSidebarVisible = false
+                isCanvasFocusMode = true
+            }
+            configurationSidebarDragStart = nil
+            inspectorSidebarDragStart = nil
+            draftConfigurationSidebarWidth = nil
+            draftInspectorSidebarWidth = nil
+        }
     }
 
     private func toggleConfigurationSidebarVisibility() {
         let animation: Animation? = accessibilityReduceMotion ? nil : .easeInOut(duration: 0.18)
         withAnimation(animation) {
             isConfigurationSidebarVisible.toggle()
+            isCanvasFocusMode = false
             configurationSidebarDragStart = nil
             draftConfigurationSidebarWidth = nil
         }
@@ -13858,6 +14487,7 @@ struct GamepadCustomizationEditor: View {
         let animation: Animation? = accessibilityReduceMotion ? nil : .easeInOut(duration: 0.18)
         withAnimation(animation) {
             isInspectorSidebarVisible.toggle()
+            isCanvasFocusMode = false
             inspectorSidebarDragStart = nil
             draftInspectorSidebarWidth = nil
         }
@@ -13929,6 +14559,17 @@ struct GamepadCustomizationEditor: View {
         self.draftConfigurationSidebarWidth = nil
     }
 
+    private func adjustConfigurationSidebarWidth(grows: Bool) {
+        let width = Self.clamp(
+            configurationSidebarWidth + (grows ? 20 : -20),
+            lower: Self.configurationSidebarMinWidth,
+            upper: Self.configurationSidebarMaxWidth
+        )
+        configurationSidebarWidthValue = Double(width)
+        draftConfigurationSidebarWidth = nil
+        announceEditor("Setups sidebar is \(Int(width.rounded())) points wide.")
+    }
+
     private func resizeInspectorSidebar(with value: DragGesture.Value, totalWidth: CGFloat) {
         let currentWidths = effectiveSidebarWidths(totalWidth: totalWidth)
         if inspectorSidebarDragStart == nil {
@@ -13954,7 +14595,19 @@ struct GamepadCustomizationEditor: View {
         self.draftInspectorSidebarWidth = nil
     }
 
+    private func adjustInspectorSidebarWidth(grows: Bool) {
+        let width = Self.clamp(
+            inspectorSidebarWidth + (grows ? 20 : -20),
+            lower: Self.inspectorSidebarMinWidth,
+            upper: Self.inspectorSidebarMaxWidth
+        )
+        inspectorSidebarWidthValue = Double(width)
+        draftInspectorSidebarWidth = nil
+        announceEditor("Inspector sidebar is \(Int(width.rounded())) points wide.")
+    }
+
     private func setCanvasZoom(_ zoom: CGFloat) {
+        isCanvasFitMode = false
         draftCanvasZoom = Self.clamp(zoom, lower: Self.canvasZoomMin, upper: Self.canvasZoomMax)
     }
 
@@ -13969,13 +14622,51 @@ struct GamepadCustomizationEditor: View {
         commitCanvasZoomDraft()
     }
 
+    private func fitCanvas() {
+        draftCanvasZoom = nil
+        canvasZoomValue = 1
+        isCanvasFitMode = true
+        announceEditor("Canvas fit to the available workspace.")
+    }
+
     private func changeCanvasZoom(by delta: CGFloat) {
         setCanvasZoomAndCommit(effectiveCanvasZoom + delta)
     }
 
+    private func zoomToSelection() {
+        guard let selectionBounds = canvasSelectionBounds,
+              canvasViewportSize.width > 1,
+              canvasViewportSize.height > 1
+        else { return }
+
+        let fitWidth = max(120, canvasViewportSize.width - Self.canvasFitInset * 2)
+        let fitHeight = max(120, canvasViewportSize.height - Self.canvasFitInset * 2)
+        let fitScale = max(
+            0.001,
+            min(fitWidth / activeDeviceFrame.imageSize.width, fitHeight / activeDeviceFrame.imageSize.height)
+        )
+        let selectionInset: CGFloat = 96
+        let desiredScale = min(
+            max(80, canvasViewportSize.width - selectionInset) / max(selectionBounds.width, 44),
+            max(80, canvasViewportSize.height - selectionInset) / max(selectionBounds.height, 44)
+        )
+        setCanvasZoomAndCommit(Self.clamp(desiredScale / fitScale, lower: 1, upper: Self.canvasZoomMax))
+        canvasScrollRequestID = UUID()
+        announceEditor("Zoomed to the selected control\(selectedControlIDs.count == 1 ? "" : "s").")
+    }
+
+    private var canvasSelectionBounds: CGRect? {
+        guard isControlSelectionActive, !selectedControlIDs.isEmpty else { return nil }
+        let frames = customization.resolvedControls(in: activeDesignCanvasSize)
+            .filter { selectedControlIDs.contains($0.id) }
+            .map(\.frame)
+        guard let first = frames.first else { return nil }
+        return frames.dropFirst().reduce(first) { $0.union($1) }
+    }
+
     private func handleZoomShortcut(_ direction: Int) -> Bool {
         if direction == 0 {
-            setCanvasZoomAndCommit(1)
+            fitCanvas()
         } else {
             changeCanvasZoom(by: direction > 0 ? 0.10 : -0.10)
         }
@@ -14622,8 +15313,14 @@ struct GamepadCustomizationEditor: View {
         )
     }
 
-    private func selectComponent(_ identity: GamepadControlIdentity) {
+    private func clearLayoutQualityHighlight() {
         highlightedQualityControlIDs.removeAll()
+        highlightedQualitySeverity = nil
+        activeLayoutQualityIssue = nil
+    }
+
+    private func selectComponent(_ identity: GamepadControlIdentity) {
+        clearLayoutQualityHighlight()
         selectedControlID = identity
         selectedControlIDs = [identity]
         isControlSelectionActive = true
@@ -14631,7 +15328,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func selectKeypadInspector() {
-        highlightedQualityControlIDs.removeAll()
+        clearLayoutQualityHighlight()
         selectedControlIDs.removeAll()
         isControlSelectionActive = false
         layerSelectionAnchorID = nil
@@ -16467,6 +17164,9 @@ struct GamepadCustomizationEditor: View {
             registerUndoSnapshot(actionName: undoActionName)
         }
 
+        activeLayoutQualityIssue = nil
+        highlightedQualityControlIDs.removeAll()
+        highlightedQualitySeverity = nil
         setEditorCustomization(normalizedCustomization)
         selectedControlID = nextPrimaryControlID
         selectedControlIDs = resolvedSelectionIDs
@@ -16870,27 +17570,75 @@ struct GamepadCustomizationEditor: View {
         return false
     }
 
-    private func applyLayoutQualityRepair(_ repair: GamepadLayoutSuggestedRepair) {
-        var next = customization
-        guard next.applyLayoutRepair(repair, in: activeDesignCanvasSize) else { return }
-        applyCustomization(next, undoActionName: repair.title)
-        highlightedQualityControlIDs.removeAll()
-    }
-
     private func selectLayoutQualityIssue(_ issue: GamepadLayoutIssue) {
         let available = Set(componentListItems.map(\.identity))
         let identities = Set(issue.controls.compactMap(GamepadControlIdentity.init(stableID:)).filter { available.contains($0) })
-        highlightedQualityControlIDs = identities
+        activeLayoutQualityIssue = issue
+        announceEditor("Layout issue. \(issue.message)")
+        DispatchQueue.main.async {
+            isLayoutIssueAccessibilityFocused = true
+        }
+
         guard !identities.isEmpty else {
-            selectKeypadInspector()
+            selectedControlIDs.removeAll()
+            isControlSelectionActive = false
+            inspectorMode = .advanced
+            configurationSidebarTab = .layers
+            isConfigurationSidebarVisible = true
+            isInspectorSidebarVisible = true
+            isCanvasFocusMode = false
             expandedInspectorSections.insert(.keypadComponents)
             return
         }
+
+        highlightedQualityControlIDs = identities
+        highlightedQualitySeverity = issue.severity
         selectedControlIDs = identities
         selectedControlID = layerSelectionControlIdentities.first(where: { identities.contains($0) }) ?? identities.first ?? selectedControlID
         isControlSelectionActive = true
         isInspectorSidebarVisible = true
+        isCanvasFocusMode = false
         expandedInspectorSections.insert(identities.count > 1 ? .selectedElementArrangement : .selectedElementPosition)
+        zoomToSelection()
+    }
+
+    private func applyLayoutRepair(_ repair: GamepadLayoutRepairKind, to issue: GamepadLayoutIssue?) {
+        var next = customization
+        let result = next.applyLayoutRepair(
+            repair,
+            issue: issue,
+            canvasSize: activeDesignCanvasSize,
+            respectingLocks: true
+        )
+
+        guard result.didChange else {
+            let message = result.skippedLockedControlIDs.isEmpty
+                ? "No controls needed \(repair.displayName.lowercased())."
+                : "The affected controls are locked. Unlock them in Layers before applying this repair."
+            announceEditor(message)
+            editorOperationError = message
+            return
+        }
+
+        let changedIdentities = Set(result.changedControlIDs.compactMap(GamepadControlIdentity.init(stableID:)))
+        applyCustomization(
+            next,
+            selecting: changedIdentities.first ?? selectedControlID,
+            selectionSet: changedIdentities,
+            undoActionName: repair.displayName
+        )
+        highlightedQualityControlIDs = changedIdentities
+        highlightedQualitySeverity = result.issueCountAfter < result.issueCountBefore ? .info : .warning
+        activeLayoutQualityIssue = nil
+        isControlSelectionActive = !changedIdentities.isEmpty
+        expandedInspectorSections.insert(changedIdentities.count > 1 ? .selectedElementArrangement : .selectedElementPosition)
+        zoomToSelection()
+
+        var message = "\(repair.displayName) applied to \(changedIdentities.count) control\(changedIdentities.count == 1 ? "" : "s")."
+        if !result.skippedLockedControlIDs.isEmpty {
+            message += " \(result.skippedLockedControlIDs.count) locked control\(result.skippedLockedControlIDs.count == 1 ? " was" : "s were") skipped."
+        }
+        announceEditor(message)
     }
 
     private func primaryTestInput(for identity: GamepadControlIdentity) -> KeypadElementInputID? {
@@ -17251,6 +17999,17 @@ struct GamepadCustomizationEditor: View {
 
         selectProfile(profile, expandsDetails: false)
         return [profile.id]
+    }
+
+    private func moveProfile(_ profile: GamepadConfigurationProfile, by offset: Int) {
+        guard let sourceIndex = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        let destinationIndex = min(max(sourceIndex + offset, 0), profiles.count - 1)
+        guard destinationIndex != sourceIndex else { return }
+        registerProfileUndoSnapshot(actionName: "Reorder Setups")
+        let moved = profiles.remove(at: sourceIndex)
+        profiles.insert(moved, at: destinationIndex)
+        persistProfiles()
+        announceEditor("Moved \(profile.name) \(offset < 0 ? "earlier" : "later") in the setup list.")
     }
 
     private func moveDraggedProfiles(_ movingIDs: [UUID], targetProfileID: UUID?) {
@@ -18330,6 +19089,8 @@ private struct GamepadEditorResizeHandle: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let accessibilityLabel: String
+    let accessibilityValue: String
+    let onAccessibilityAdjust: (Bool) -> Void
     let onDragChanged: (DragGesture.Value) -> Void
     let onDragEnded: () -> Void
 
@@ -18355,7 +19116,15 @@ private struct GamepadEditorResizeHandle: View {
                 .onEnded { _ in onDragEnded() }
         )
         .accessibilityLabel(Text(accessibilityLabel))
-        .accessibilityHint(Text("Drag horizontally to resize"))
+        .accessibilityValue(Text(accessibilityValue))
+        .accessibilityHint(Text("Drag horizontally, or use increment and decrement, to resize"))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: onAccessibilityAdjust(true)
+            case .decrement: onAccessibilityAdjust(false)
+            @unknown default: break
+            }
+        }
     }
 }
 
@@ -19783,6 +20552,7 @@ private struct GamepadLayoutDesigner: View {
     var interactionMode: GamepadEditorInteractionMode = .edit
     var pressedElementInputs: Set<KeypadElementInputID> = []
     var highlightedControlIDs: Set<GamepadControlIdentity> = []
+    var highlightedIssueSeverity: GamepadLayoutIssueSeverity? = nil
     var onTestInputChanged: (KeypadElementInputID, Bool) -> Void = { _, _ in }
     var layoutSize: CGSize?
     var displayScale: CGFloat = 1
@@ -19852,10 +20622,27 @@ private struct GamepadLayoutDesigner: View {
                         customization: customization,
                         isSelected: isSelected,
                         isPressed: isPressed,
-                        isQualityHighlighted: highlightedControlIDs.contains(control.id),
+                        qualityHighlightSeverity: highlightedControlIDs.contains(control.id)
+                            ? (highlightedIssueSeverity ?? .warning)
+                            : nil,
                         isTestMode: interactionMode == .test,
                         onAccessibilityTest: {
                             pulseAccessibilityTest(for: control)
+                        },
+                        onAccessibilitySelect: {
+                            selectOnly(control.id)
+                        },
+                        onAccessibilityNudge: { direction in
+                            accessibilityNudge(control, direction: direction, canvasSize: resolvedLayoutSize)
+                        },
+                        onAccessibilityResize: { grows in
+                            accessibilityResize(control, grows: grows)
+                        },
+                        onAccessibilityRotate: { clockwise in
+                            accessibilityRotate(control, clockwise: clockwise)
+                        },
+                        onAccessibilityRadiusAdjust: { increases in
+                            accessibilityAdjustRadius(control, increases: increases)
                         },
                         showsSelectionHandles: !isMultiSelection,
                         displayScale: resolvedDisplayScale,
@@ -20031,6 +20818,9 @@ private struct GamepadLayoutDesigner: View {
                         onRotationEnded: {
                             activeRotation = nil
                             onEndEditingGesture()
+                        },
+                        onAccessibilityAdjust: { clockwise in
+                            accessibilityRotate(selectedDesignerControl, clockwise: clockwise)
                         }
                     )
                     .position(
@@ -20043,6 +20833,10 @@ private struct GamepadLayoutDesigner: View {
                 if isMultiSelection,
                    let selectionFrame = selectionBounds(for: selectedDesignerControls) {
                     GamepadGroupSelectionOverlay(
+                        selectionSize: selectionFrame.size,
+                        onAccessibilityResize: { grows in
+                            accessibilityResizeSelection(selectedDesignerControls, grows: grows, canvasSize: resolvedLayoutSize)
+                        },
                         onResizeChanged: { corner, value in
                             updateGroupResize(corner, value: value, selectedControls: selectedDesignerControls, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
                         },
@@ -20148,6 +20942,7 @@ private struct GamepadLayoutDesigner: View {
                 drawingGesture(canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale),
                 including: activeTool.isDrawingShape ? .gesture : .none
             )
+            .gamepadDrawingCursor(isActive: activeTool.isDrawingShape)
             .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
@@ -20462,7 +21257,7 @@ private struct GamepadLayoutDesigner: View {
         HStack(spacing: Geist.Spacing.s2) {
             Image(systemName: activeTool.systemImage)
                 .font(.system(size: 11, weight: .semibold))
-            Text("Drag to draw \(activeTool.displayName)")
+            Text("Click to place or drag to draw \(activeTool.displayName) · Esc to cancel")
                 .geistTypography(.label12)
         }
         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
@@ -21170,6 +21965,101 @@ private struct GamepadLayoutDesigner: View {
         }
     }
 
+    private func accessibilityNudge(
+        _ control: GamepadResolvedControl,
+        direction: GamepadEditorNudgeDirection,
+        canvasSize: CGSize
+    ) {
+        guard !control.isLocationLocked else { return }
+        onBeginUndoableChange("Move Key")
+        let nextCenter = CGPoint(
+            x: control.center.x + direction.translation(step: 4).width,
+            y: control.center.y + direction.translation(step: 4).height
+        )
+        let normalizedPosition = GamepadLayoutResolver.normalizedPosition(
+            for: nextCenter,
+            visualSize: control.size,
+            in: canvasSize
+        )
+        var next = customization
+        next.setPosition(normalizedPosition, for: control.id)
+        customization = next.normalized
+        onEndEditingGesture()
+    }
+
+    private func accessibilityResize(_ control: GamepadResolvedControl, grows: Bool) {
+        guard !control.isLocationLocked else { return }
+        onBeginUndoableChange("Resize Key")
+        let multiplier: CGFloat = grows ? 1.1 : 0.9
+        updateLayoutCustomization(for: control.id) { layout in
+            layout.widthScale *= multiplier
+            layout.heightScale *= multiplier
+        }
+        onEndEditingGesture()
+    }
+
+    private func accessibilityResizeSelection(
+        _ controls: [GamepadResolvedControl],
+        grows: Bool,
+        canvasSize: CGSize
+    ) {
+        let unlocked = controls.filter { !$0.isLocationLocked }
+        guard !unlocked.isEmpty, let bounds = selectionBounds(for: unlocked) else { return }
+        let multiplier: CGFloat = grows ? 1.1 : 0.9
+        onBeginUndoableChange("Resize Selection")
+        for control in unlocked {
+            updateLayoutCustomization(for: control.id) { layout in
+                layout.widthScale *= multiplier
+                layout.heightScale *= multiplier
+            }
+            let center = CGPoint(
+                x: bounds.midX + (control.center.x - bounds.midX) * multiplier,
+                y: bounds.midY + (control.center.y - bounds.midY) * multiplier
+            )
+            var next = customization
+            next.setPosition(
+                GamepadLayoutResolver.normalizedPosition(
+                    for: center,
+                    visualSize: CGSize(width: control.size.width * multiplier, height: control.size.height * multiplier),
+                    in: canvasSize
+                ),
+                for: control.id
+            )
+            customization = next.normalized
+        }
+        onEndEditingGesture()
+    }
+
+    private func accessibilityRotate(_ control: GamepadResolvedControl, clockwise: Bool) {
+        guard !control.isLocationLocked else { return }
+        onBeginUndoableChange("Rotate Key")
+        updateLayoutCustomization(for: control.id) { layout in
+            layout.rotationDegrees = GamepadButtonCustomization.normalizedRotationDegrees(
+                layout.rotationDegrees + (clockwise ? 15 : -15)
+            )
+        }
+        onEndEditingGesture()
+    }
+
+    private func accessibilityAdjustRadius(_ control: GamepadResolvedControl, increases: Bool) {
+        guard !control.isLocationLocked, control.shape.usesEditableCornerRadii else { return }
+        let defaultRadius = control.shape.defaultEditableCornerRadius(in: control.size)
+        let currentRadius = layoutCustomization(for: control.id).resolvedCornerRadii(defaultRadius: defaultRadius).averageRadius
+        let maximumRadius = max(GamepadButtonCustomization.minimumCornerRadius, min(control.size.width, control.size.height) / 2)
+        let nextRadius = Self.clamp(
+            currentRadius + (increases ? 2 : -2),
+            lower: GamepadButtonCustomization.minimumCornerRadius,
+            upper: maximumRadius
+        )
+        guard abs(nextRadius - currentRadius) > 0.001 else { return }
+        onBeginUndoableChange("Round Corners")
+        updateLayoutCustomization(for: control.id) { layout in
+            layout.cornerRadius = nil
+            layout.cornerRadii = abs(nextRadius - defaultRadius) < 0.001 ? nil : .uniform(nextRadius)
+        }
+        onEndEditingGesture()
+    }
+
     private func layoutCustomization(for identity: GamepadControlIdentity) -> GamepadButtonCustomization {
         switch identity {
         case .builtin(let button):
@@ -21313,6 +22203,8 @@ private struct GamepadGroupResizeState {
 
 private struct GamepadGroupSelectionOverlay: View {
     @Environment(\.colorScheme) private var colorScheme
+    let selectionSize: CGSize
+    let onAccessibilityResize: (Bool) -> Void
     let onResizeChanged: (GamepadResizeHandleCorner, DragGesture.Value) -> Void
     let onResizeEnded: () -> Void
 
@@ -21331,6 +22223,14 @@ private struct GamepadGroupSelectionOverlay: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Selected component group"))
+        .accessibilityValue(Text("\(Int(selectionSize.width.rounded())) by \(Int(selectionSize.height.rounded())) points"))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: onAccessibilityResize(true)
+            case .decrement: onAccessibilityResize(false)
+            @unknown default: break
+            }
+        }
     }
 
     private func resizeHandle(_ corner: GamepadResizeHandleCorner) -> some View {
@@ -21349,7 +22249,15 @@ private struct GamepadGroupSelectionOverlay: View {
                     .onEnded { _ in onResizeEnded() }
             )
             .accessibilityLabel(Text(corner.accessibilityLabel))
-            .accessibilityHint(Text("Drag to resize all selected components"))
+            .accessibilityValue(Text("\(Int(selectionSize.width.rounded())) by \(Int(selectionSize.height.rounded())) points"))
+            .accessibilityHint(Text("Drag, or use increment and decrement, to resize all selected components"))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: onAccessibilityResize(true)
+                case .decrement: onAccessibilityResize(false)
+                @unknown default: break
+                }
+            }
     }
 
     private func handlePosition(for corner: GamepadResizeHandleCorner, in size: CGSize) -> CGPoint {
@@ -21372,6 +22280,7 @@ private struct GamepadControlRotationOverlay: View {
     let displayScale: CGFloat
     let onRotationChanged: (DragGesture.Value) -> Void
     let onRotationEnded: () -> Void
+    let onAccessibilityAdjust: (Bool) -> Void
 
     private static let handleHitSize: CGFloat = 36
     private static let handleVisualSize: CGFloat = 24
@@ -21447,7 +22356,15 @@ private struct GamepadControlRotationOverlay: View {
                     .onEnded { _ in onRotationEnded() }
             )
             .accessibilityLabel(Text("Rotate selected component"))
-            .accessibilityHint(Text("Press and drag this handle to rotate it"))
+            .accessibilityValue(Text("\(Int(control.rotationDegrees.rounded())) degrees"))
+            .accessibilityHint(Text("Press and drag, or use increment and decrement, to rotate it"))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: onAccessibilityAdjust(true)
+                case .decrement: onAccessibilityAdjust(false)
+                @unknown default: break
+                }
+            }
     }
 }
 
@@ -21456,6 +22373,19 @@ private extension View {
     func gamepadRotationCursor() -> some View {
 #if os(macOS)
         modifier(GamepadCursorModifier(cursor: .gamepadRotation))
+#else
+        self
+#endif
+    }
+
+    @ViewBuilder
+    func gamepadDrawingCursor(isActive: Bool) -> some View {
+#if os(macOS)
+        if isActive {
+            modifier(GamepadCursorModifier(cursor: .crosshair))
+        } else {
+            self
+        }
 #else
         self
 #endif
@@ -21525,15 +22455,64 @@ private extension NSCursor {
 }
 #endif
 
+private struct GamepadDesignerAccessibilityActionsModifier: ViewModifier {
+    let isTestMode: Bool
+    let supportsCornerRadius: Bool
+    let onTest: () -> Void
+    let onSelect: () -> Void
+    let onNudge: (GamepadEditorNudgeDirection) -> Void
+    let onResize: (Bool) -> Void
+    let onRotate: (Bool) -> Void
+    let onRadiusAdjust: (Bool) -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isTestMode {
+            content.accessibilityAction { onTest() }
+        } else {
+            let editableContent = content
+                .accessibilityAction { onSelect() }
+                .accessibilityAction(named: Text("Show in Inspector")) { onSelect() }
+                .accessibilityAction(named: Text("Move Left")) { onNudge(.left) }
+                .accessibilityAction(named: Text("Move Right")) { onNudge(.right) }
+                .accessibilityAction(named: Text("Move Up")) { onNudge(.up) }
+                .accessibilityAction(named: Text("Move Down")) { onNudge(.down) }
+                .accessibilityAction(named: Text("Rotate Counterclockwise")) { onRotate(false) }
+                .accessibilityAction(named: Text("Rotate Clockwise")) { onRotate(true) }
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: onResize(true)
+                    case .decrement: onResize(false)
+                    @unknown default: break
+                    }
+                }
+
+            if supportsCornerRadius {
+                editableContent
+                    .accessibilityAction(named: Text("Increase Corner Radius")) { onRadiusAdjust(true) }
+                    .accessibilityAction(named: Text("Decrease Corner Radius")) { onRadiusAdjust(false) }
+            } else {
+                editableContent
+            }
+        }
+    }
+}
+
 private struct GamepadDesignerButton: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var accessibilityContrast
     let control: GamepadResolvedControl
     let customization: GamepadCustomization
     let isSelected: Bool
     var isPressed: Bool = false
-    var isQualityHighlighted: Bool = false
+    var qualityHighlightSeverity: GamepadLayoutIssueSeverity?
     var isTestMode: Bool = false
     var onAccessibilityTest: () -> Void = {}
+    var onAccessibilitySelect: () -> Void = {}
+    var onAccessibilityNudge: (GamepadEditorNudgeDirection) -> Void = { _ in }
+    var onAccessibilityResize: (Bool) -> Void = { _ in }
+    var onAccessibilityRotate: (Bool) -> Void = { _ in }
+    var onAccessibilityRadiusAdjust: (Bool) -> Void = { _ in }
     let showsSelectionHandles: Bool
     let displayScale: CGFloat
     var selectedControlBarItem: GamepadControlBarItem? = nil
@@ -21558,9 +22537,17 @@ private struct GamepadDesignerButton: View {
             if isSelected {
                 background(isSelected: true)
                     .foregroundStyle(.clear)
-            } else if isQualityHighlighted {
+            }
+
+            if let qualityHighlightSeverity {
                 RoundedRectangle(cornerRadius: 8 * inverseDisplayScale, style: .continuous)
-                    .stroke(Geist.color(.amber900, scheme: colorScheme), style: StrokeStyle(lineWidth: 3 * inverseDisplayScale, dash: [6 * inverseDisplayScale, 4 * inverseDisplayScale]))
+                    .stroke(
+                        qualityHighlightColor(qualityHighlightSeverity),
+                        style: StrokeStyle(
+                            lineWidth: 3 * inverseDisplayScale,
+                            dash: [6 * inverseDisplayScale, 4 * inverseDisplayScale]
+                        )
+                    )
                     .padding(-4 * inverseDisplayScale)
             }
 
@@ -21576,13 +22563,33 @@ private struct GamepadDesignerButton: View {
             x: 0,
             y: isSelected ? 3 * resolvedShadowStrength : 0
         )
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(control.label)
-        .accessibilityAddTraits(isTestMode ? .isButton : [])
-        .accessibilityAction {
-            if isTestMode {
-                onAccessibilityTest()
-            }
-        }
+        .accessibilityValue(accessibilityValue)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .modifier(
+            GamepadDesignerAccessibilityActionsModifier(
+                isTestMode: isTestMode,
+                supportsCornerRadius: control.shape.usesEditableCornerRadii,
+                onTest: onAccessibilityTest,
+                onSelect: onAccessibilitySelect,
+                onNudge: onAccessibilityNudge,
+                onResize: onAccessibilityResize,
+                onRotate: onAccessibilityRotate,
+                onRadiusAdjust: onAccessibilityRadiusAdjust
+            )
+        )
+    }
+
+    private var accessibilityValue: String {
+        var values: [String] = []
+        if isSelected { values.append("Selected") }
+        if control.isLocationLocked { values.append("Locked") }
+        values.append("X \(Int(control.frame.minX.rounded())), Y \(Int(control.frame.minY.rounded()))")
+        values.append("\(Int(control.size.width.rounded())) by \(Int(control.size.height.rounded())) points")
+        values.append("\(Int(control.rotationDegrees.rounded())) degrees")
+        return values.joined(separator: ", ")
     }
 
     private var resolvedAccentStyle: GamepadAccentStyle {
@@ -21603,6 +22610,17 @@ private struct GamepadDesignerButton: View {
 
     private var inverseDisplayScale: CGFloat {
         1 / max(displayScale, 0.001)
+    }
+
+    private func qualityHighlightColor(_ severity: GamepadLayoutIssueSeverity) -> Color {
+        switch severity {
+        case .error:
+            Geist.color(.red900, scheme: colorScheme)
+        case .warning:
+            Geist.color(.amber900, scheme: colorScheme)
+        case .info:
+            Geist.color(.blue900, scheme: colorScheme)
+        }
     }
 
     private var selectionHandles: some View {
@@ -21636,7 +22654,15 @@ private struct GamepadDesignerButton: View {
                     .onEnded { _ in onResizeEnded() }
             )
             .accessibilityLabel(Text(corner.accessibilityLabel))
-            .accessibilityHint(Text("Drag to resize this component"))
+            .accessibilityHint(Text("Drag to resize this component, or use increment and decrement."))
+            .accessibilityValue(Text("\(Int(control.size.width.rounded())) by \(Int(control.size.height.rounded())) points"))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: onAccessibilityResize(true)
+                case .decrement: onAccessibilityResize(false)
+                @unknown default: break
+                }
+            }
     }
 
     private var radiusHandle: some View {
@@ -21654,7 +22680,15 @@ private struct GamepadDesignerButton: View {
                     .onEnded { _ in onRadiusEnded() }
             )
             .accessibilityLabel(Text("Adjust border radius"))
-            .accessibilityHint(Text("Drag diagonally to round all corners"))
+            .accessibilityValue(Text("\(Int(resolvedCornerRadii.averageRadius.rounded())) points"))
+            .accessibilityHint(Text("Drag diagonally, or use increment and decrement, to round all corners"))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: onAccessibilityRadiusAdjust(true)
+                case .decrement: onAccessibilityRadiusAdjust(false)
+                @unknown default: break
+                }
+            }
     }
 
     private func handlePosition(for corner: GamepadResizeHandleCorner) -> CGPoint {
@@ -21740,7 +22774,7 @@ private struct GamepadDesignerButton: View {
         let presentation = resolvedPresentation
         let fillStyle: GamepadFillStyle = isSelected ? .solid(GamepadRGBAColor(red: 0, green: 0, blue: 0, alpha: 0)) : presentation.fillStyle
         let strokeColor = isSelected ? Geist.color(.blue700, scheme: colorScheme) : presentation.strokeSwiftUIColor
-        let lineWidth: CGFloat = isSelected ? 3 : presentation.strokeWidth
+        let lineWidth: CGFloat = isSelected ? (accessibilityContrast == .increased ? 4.5 : 3) : presentation.strokeWidth
 
         switch control.shape {
         case .roundedRectangle, .rectangle, .capsule, .circle, .ellipse:
