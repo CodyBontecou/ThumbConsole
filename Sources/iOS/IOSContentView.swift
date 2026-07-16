@@ -9,6 +9,7 @@ struct IOSContentView: View {
     @AppStorage("macPort") private var macPort = "8765"
     @AppStorage("pairingCode") private var pairingCode = ""
     @AppStorage("PocketPad.iOS.onboarding.completed.v1") private var hasCompletedOnboarding = false
+    @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
     @State private var prefersConnectionView = true
     @State private var isShowingOnboarding = false
 
@@ -21,6 +22,10 @@ struct IOSContentView: View {
 
     var body: some View {
         let isShowingControllerPad = shouldShowControllerPad
+        let hidesSystemOverlays = ControllerRuntimeChromePolicy.shouldHideSystemOverlays(
+            isShowingController: isShowingControllerPad,
+            userPrefersImmersiveMode: prefersImmersiveKeypad
+        )
 
         ZStack {
             if isShowingControllerPad {
@@ -48,8 +53,8 @@ struct IOSContentView: View {
             }
         }
         .geistScreenBackground()
-        .statusBarHidden(isShowingControllerPad)
-        .persistentSystemOverlays(isShowingControllerPad ? .hidden : .automatic)
+        .statusBarHidden(hidesSystemOverlays)
+        .persistentSystemOverlays(hidesSystemOverlays ? .hidden : .automatic)
         .sheet(isPresented: $isShowingOnboarding) {
             IOSOnboardingView(
                 onStartSmartConnect: {
@@ -96,6 +101,7 @@ struct IOSContentView: View {
 private enum IOSKeypadSettings {
     static let hapticsEnabledDefaultsKey = "PocketPad.iOS.keypadHapticsEnabled.v1"
     static let hasOpenedKeypadDefaultsKey = "PocketPad.iOS.hasOpenedKeypad.v1"
+    static let immersiveModeDefaultsKey = "PocketPad.iOS.immersiveKeypad.v1"
 }
 
 private struct KeypadHapticsEnabledEnvironmentKey: EnvironmentKey {
@@ -116,6 +122,7 @@ private struct ConnectionView: View {
     @Binding var macPort: String
     @Binding var pairingCode: String
     @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
+    @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
     let onShowSavedKeypad: () -> Void
     let onShowOnboarding: () -> Void
 
@@ -293,6 +300,7 @@ private struct ConnectionView: View {
 
             KeypadAppearancePickerRow(selection: keypadColorSchemePreferenceBinding)
             KeypadHapticsToggleRow(isEnabled: $isKeypadHapticsEnabled)
+            KeypadImmersiveModeToggleRow(isEnabled: $prefersImmersiveKeypad)
         }
         .geistPanel(padding: Geist.Spacing.s6, radius: Geist.Radius.sm)
     }
@@ -982,8 +990,42 @@ private struct KeypadHapticsToggleRow: View {
     }
 }
 
+private struct KeypadImmersiveModeToggleRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var isEnabled: Bool
+
+    var body: some View {
+        Toggle(isOn: $isEnabled) {
+            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                Text("Immersive Keypad")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+
+                Text("Hide the status bar and Home indicator while the keypad is open.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .toggleStyle(.switch)
+        .tint(Geist.color(.blue700, scheme: colorScheme))
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .fill(Geist.color(.gray100, scheme: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+        .accessibilityHint("When off, iOS system status and navigation affordances remain available over the keypad.")
+    }
+}
+
 private struct KeypadSettingsMenu: View {
     @Binding var isHapticFeedbackEnabled: Bool
+    @Binding var prefersImmersiveMode: Bool
     @Binding var colorSchemePreference: GamepadColorSchemePreference
     let customization: GamepadCustomization
     let onShowGuide: (() -> Void)?
@@ -1001,6 +1043,10 @@ private struct KeypadSettingsMenu: View {
 
             Toggle(isOn: $isHapticFeedbackEnabled) {
                 Label("Haptic Feedback", systemImage: "waveform.path")
+            }
+
+            Toggle(isOn: $prefersImmersiveMode) {
+                Label("Immersive Keypad", systemImage: "arrow.up.left.and.arrow.down.right")
             }
 
             if let onShowGuide {
@@ -1035,15 +1081,111 @@ private struct KeypadSettingsMenu: View {
     }
 }
 
+@MainActor
+private final class IOSKeypadEditRuntime: ObservableObject {
+    @Published private(set) var isEditing = false
+    @Published private(set) var canUndo = false
+    @Published private(set) var hasChanges = false
+    @Published private(set) var feedback = ""
+    private var session: GamepadLayoutEditSession?
+
+    func begin(with customization: GamepadCustomization, client: ControllerClient) {
+        releaseInputs(client: client)
+        session = GamepadLayoutEditSession(entrySnapshot: customization)
+        feedback = client.isConnected ? "Changes save and sync to Mac" : "Changes save on this iPhone"
+        refreshSessionState()
+        isEditing = true
+        announce("Editing keypad layout. Done, Undo, and Cancel are available.")
+    }
+
+    func finish(client: ControllerClient) {
+        releaseInputs(client: client)
+        isEditing = false
+        session = nil
+        canUndo = false
+        hasChanges = false
+        feedback = ""
+        announce("Layout editing finished")
+    }
+
+    func undo(client: ControllerClient) {
+        releaseInputs(client: client)
+        guard session?.undo(apply: { previous in
+            client.updateSelectedKeypadLayout(
+                previous,
+                orientation: previous.deviceCanvas.editorDeviceFrame.orientation,
+                sendsToMac: true
+            )
+        }) == true else { return }
+        feedback = client.isConnected ? "Undo saved and synced" : "Undo saved on this iPhone"
+        refreshSessionState()
+        announce(feedback)
+    }
+
+    func cancel(client: ControllerClient) {
+        guard let session else {
+            finish(client: client)
+            return
+        }
+        releaseInputs(client: client)
+        session.resetToEntry { entrySnapshot in
+            client.updateSelectedKeypadLayout(
+                entrySnapshot,
+                orientation: entrySnapshot.deviceCanvas.editorDeviceFrame.orientation,
+                sendsToMac: true
+            )
+        }
+        isEditing = false
+        self.session = nil
+        canUndo = false
+        hasChanges = false
+        feedback = ""
+        announce("Layout changes canceled and the starting layout restored")
+    }
+
+    func apply(
+        _ customization: GamepadCustomization,
+        orientation: GamepadEditorDeviceOrientation,
+        isFinal: Bool,
+        client: ControllerClient
+    ) {
+        if isFinal {
+            _ = session?.commit(customization)
+        }
+        client.updateSelectedKeypadLayout(customization, orientation: orientation, sendsToMac: isFinal)
+        if isFinal {
+            feedback = client.isConnected ? "Saved and synced to Mac" : "Saved on this iPhone"
+            refreshSessionState()
+            announce(feedback)
+        }
+    }
+
+    func releaseInputs(client: ControllerClient) {
+        TouchCaptureUIView.deactivateAllRegisteredTouches()
+        client.releaseAll()
+    }
+
+    private func refreshSessionState() {
+        canUndo = session?.canUndo == true
+        hasChanges = session?.hasChanges == true
+    }
+
+    private func announce(_ message: String) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
+}
+
 private struct ControllerPadView: View {
     @EnvironmentObject private var client: ControllerClient
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(IOSKeypadSettings.hapticsEnabledDefaultsKey) private var isKeypadHapticsEnabled = true
+    @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
     @AppStorage(IOSKeypadSettings.hasOpenedKeypadDefaultsKey) private var hasOpenedKeypad = false
     @State private var isTopBarVisible = true
     @State private var isShowingFirstOpenTopBar = false
     @State private var isExportingKeypadConfiguration = false
-    @State private var isEditingKeypadLayout = false
+    @StateObject private var editRuntime = IOSKeypadEditRuntime()
 
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
@@ -1064,17 +1206,18 @@ private struct ControllerPadView: View {
                 safeAreaInsets: proxy.safeAreaInsets,
                 client: client,
                 orientation: orientation,
-                isEditingLayout: isEditingKeypadLayout,
+                isEditingLayout: editRuntime.isEditing,
                 systemColorScheme: colorScheme
             )
 
             ControllerPadGeometryScene(
                 context: context,
                 isTopBarVisible: $isTopBarVisible,
-                isEditingLayout: $isEditingKeypadLayout,
                 isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
                 isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
-                onShowConnectionPage: onShowConnectionPage,
+                prefersImmersiveKeypad: $prefersImmersiveKeypad,
+                editRuntime: editRuntime,
+                onShowConnectionPage: showConnectionPage,
                 onShowOnboarding: onShowOnboarding
             )
         }
@@ -1082,24 +1225,43 @@ private struct ControllerPadView: View {
         .onAppear {
             applyInitialTopBarVisibility()
         }
-        .onChange(of: client.isConnected) { _, isConnected in
-            guard !isShowingFirstOpenTopBar else { return }
-            isTopBarVisible = !isConnected
+        .onDisappear {
+            releaseActiveInputs()
+        }
+        .onChange(of: client.state) { _, newState in
+            releaseActiveInputs()
+            if ControllerRuntimeChromePolicy.shouldPinTopBar(
+                isConnected: newState == .connected,
+                isEditingLayout: editRuntime.isEditing
+            ) {
+                isTopBarVisible = true
+            } else if !isShowingFirstOpenTopBar {
+                isTopBarVisible = false
+            }
+            announce("Connection status: \(newState.label)")
+        }
+        .onChange(of: editRuntime.isEditing) { _, isEditing in
+            releaseActiveInputs()
+            if isEditing {
+                isTopBarVisible = true
+            }
         }
         .onChange(of: isTopBarVisible) { _, isVisible in
             if !isVisible {
                 isShowingFirstOpenTopBar = false
             }
         }
+        .onChange(of: client.selectedGamepadProfileID) { _, _ in
+            releaseActiveInputs()
+            announce("Keypad changed to \(client.selectedGamepadProfileName)")
+        }
         .onChange(of: client.gamepadCustomization) { _, _ in
-            guard !isEditingKeypadLayout else { return }
-            TouchCaptureUIView.deactivateAllRegisteredTouches()
-            client.releaseAll()
+            guard !editRuntime.isEditing else { return }
+            releaseActiveInputs()
         }
         .onChange(of: client.gamepadProfiles) { _, _ in
-            guard !isEditingKeypadLayout else { return }
-            TouchCaptureUIView.deactivateAllRegisteredTouches()
-            client.releaseAll()
+            guard !editRuntime.isEditing else { return }
+            releaseActiveInputs()
         }
         .fileExporter(
             isPresented: $isExportingKeypadConfiguration,
@@ -1114,12 +1276,30 @@ private struct ControllerPadView: View {
         // profile switching, settings, and Home are discoverable.
         if hasOpenedKeypad {
             isShowingFirstOpenTopBar = false
-            isTopBarVisible = !client.isConnected
+            isTopBarVisible = ControllerRuntimeChromePolicy.resolvedTopBarVisibility(
+                requestedVisibility: false,
+                isConnected: client.isConnected,
+                isEditingLayout: editRuntime.isEditing
+            )
         } else {
             hasOpenedKeypad = true
             isShowingFirstOpenTopBar = true
             isTopBarVisible = true
         }
+    }
+
+    private func showConnectionPage() {
+        releaseActiveInputs()
+        onShowConnectionPage?()
+    }
+
+    private func releaseActiveInputs() {
+        editRuntime.releaseInputs(client: client)
+    }
+
+    private func announce(_ message: String) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     private var keypadExportDocument: ThumbConsoleKeypadConfigurationJSONDocument {
@@ -1135,7 +1315,6 @@ private struct ControllerPadView: View {
     private var keypadExportFilename: String {
         ThumbConsoleKeypadConfigurationExport.suggestedFilename(activeProfileName: client.selectedGamepadProfileName)
     }
-
 }
 
 @MainActor
@@ -1196,43 +1375,158 @@ private struct ControllerPadGeometryScene: View {
     @EnvironmentObject private var client: ControllerClient
     let context: ControllerPadRenderContext
     @Binding var isTopBarVisible: Bool
-    @Binding var isEditingLayout: Bool
     @Binding var isExportingKeypadConfiguration: Bool
     @Binding var isKeypadHapticsEnabled: Bool
+    @Binding var prefersImmersiveKeypad: Bool
+    @ObservedObject var editRuntime: IOSKeypadEditRuntime
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
 
     var body: some View {
         ZStack(alignment: .top) {
-            ControllerPadLayoutRouter(context: context, isEditingLayout: isEditingLayout)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            ControllerTopBarDrawer(
-                isVisible: $isTopBarVisible,
-                safeAreaInsets: context.safeAreaInsets,
-                isLandscape: context.isLandscape,
-                activationFrame: context.customization.topBarActivationFrame(in: context.size),
-                collapsedTitle: ""
-            ) {
-                ControllerPadTopBar(
-                    context: context,
-                    isEditingLayout: $isEditingLayout,
-                    isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
-                    isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
-                    onShowConnectionPage: onShowConnectionPage,
-                    onShowOnboarding: onShowOnboarding
-                )
-            }
+            ControllerPadRuntimeSurface(context: context, editRuntime: editRuntime)
+            ControllerPadTopChrome(
+                context: context,
+                isTopBarVisible: $isTopBarVisible,
+                isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
+                isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
+                prefersImmersiveKeypad: $prefersImmersiveKeypad,
+                editRuntime: editRuntime,
+                onShowConnectionPage: onShowConnectionPage,
+                onShowOnboarding: onShowOnboarding
+            )
         }
-        .background {
-            ControllerPadBackground(context: context)
+        .overlay(alignment: .bottom) {
+            ControllerPadRuntimeBottomChrome(
+                context: context,
+                editRuntime: editRuntime,
+                onShowConnectionPage: onShowConnectionPage
+            )
         }
+        .background { ControllerPadBackground(context: context) }
         .environment(\.colorScheme, context.colorScheme)
         .frame(width: context.size.width, height: context.size.height)
         .onChange(of: context.orientation) { _, _ in
-            TouchCaptureUIView.deactivateAllRegisteredTouches()
-            client.releaseAll()
+            editRuntime.releaseInputs(client: client)
+            if editRuntime.isEditing {
+                editRuntime.finish(client: client)
+            }
         }
+    }
+}
+
+private struct ControllerPadRuntimeSurface: View {
+    @EnvironmentObject private var client: ControllerClient
+    let context: ControllerPadRenderContext
+    @ObservedObject var editRuntime: IOSKeypadEditRuntime
+
+    var body: some View {
+        ControllerPadLayoutRouter(
+            context: context,
+            isEditingLayout: editRuntime.isEditing,
+            onCustomizationChanged: applyCustomization
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(client.isConnected || editRuntime.isEditing)
+        .saturation(client.isConnected || editRuntime.isEditing ? 1 : 0.35)
+        .opacity(client.isConnected || editRuntime.isEditing ? 1 : 0.78)
+    }
+
+    private func applyCustomization(_ customization: GamepadCustomization, isFinal: Bool) {
+        editRuntime.apply(
+            customization,
+            orientation: context.orientation,
+            isFinal: isFinal,
+            client: client
+        )
+    }
+}
+
+private struct ControllerPadTopChrome: View {
+    @EnvironmentObject private var client: ControllerClient
+    let context: ControllerPadRenderContext
+    @Binding var isTopBarVisible: Bool
+    @Binding var isExportingKeypadConfiguration: Bool
+    @Binding var isKeypadHapticsEnabled: Bool
+    @Binding var prefersImmersiveKeypad: Bool
+    @ObservedObject var editRuntime: IOSKeypadEditRuntime
+    let onShowConnectionPage: (() -> Void)?
+    let onShowOnboarding: (() -> Void)?
+
+    private var pinsTopBar: Bool {
+        ControllerRuntimeChromePolicy.shouldPinTopBar(
+            isConnected: client.isConnected,
+            isEditingLayout: editRuntime.isEditing
+        )
+    }
+
+    var body: some View {
+        ControllerTopBarDrawer(
+            isVisible: $isTopBarVisible,
+            isPinned: pinsTopBar,
+            safeAreaInsets: context.safeAreaInsets,
+            isLandscape: context.isLandscape,
+            activationFrame: context.customization.topBarActivationFrame(in: context.size),
+            collapsedTitle: client.isConnected ? "Connected" : "Saved keypad"
+        ) {
+            ControllerPadTopBar(
+                context: context,
+                isEditingLayout: editRuntime.isEditing,
+                isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
+                isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
+                prefersImmersiveKeypad: $prefersImmersiveKeypad,
+                onToggleEditing: toggleEditing,
+                onShowConnectionPage: onShowConnectionPage,
+                onShowOnboarding: onShowOnboarding
+            )
+        }
+        .onChange(of: pinsTopBar) { _, isPinned in
+            if isPinned { isTopBarVisible = true }
+        }
+    }
+
+    private func toggleEditing() {
+        if editRuntime.isEditing {
+            editRuntime.finish(client: client)
+        } else {
+            editRuntime.begin(with: context.customization, client: client)
+        }
+    }
+}
+
+private struct ControllerPadRuntimeBottomChrome: View {
+    @EnvironmentObject private var client: ControllerClient
+    let context: ControllerPadRenderContext
+    @ObservedObject var editRuntime: IOSKeypadEditRuntime
+    let onShowConnectionPage: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: Geist.Spacing.s2) {
+            if editRuntime.isEditing {
+                ControllerPadEditingCommandStrip(
+                    canUndo: editRuntime.canUndo,
+                    hasChanges: editRuntime.hasChanges,
+                    feedback: editRuntime.feedback,
+                    onDone: { editRuntime.finish(client: client) },
+                    onUndo: { editRuntime.undo(client: client) },
+                    onCancel: { editRuntime.cancel(client: client) }
+                )
+            }
+
+            if !client.isConnected {
+                ControllerPadOfflineBanner(
+                    onReconnect: reconnect,
+                    onHome: onShowConnectionPage
+                )
+            }
+        }
+        .padding(.horizontal, max(Geist.Spacing.s3, context.safeAreaInsets.leading + Geist.Spacing.s2))
+        .padding(.bottom, max(Geist.Spacing.s2, context.safeAreaInsets.bottom + Geist.Spacing.s1))
+    }
+
+    private func reconnect() {
+        editRuntime.releaseInputs(client: client)
+        client.startSmartConnect()
     }
 }
 
@@ -1252,6 +1546,7 @@ private struct ControllerPadBackground: View {
 private struct ControllerPadLayoutRouter: View {
     let context: ControllerPadRenderContext
     let isEditingLayout: Bool
+    let onCustomizationChanged: (GamepadCustomization, Bool) -> Void
 
     var body: AnyView {
         switch context.layoutRoute {
@@ -1263,7 +1558,8 @@ private struct ControllerPadLayoutRouter: View {
             return AnyView(
                 ControllerPadFreeformLayout(
                     context: context,
-                    isEditingLayout: isEditingLayout
+                    isEditingLayout: isEditingLayout,
+                    onCustomizationChanged: onCustomizationChanged
                 )
             )
         }
@@ -1271,21 +1567,16 @@ private struct ControllerPadLayoutRouter: View {
 }
 
 private struct ControllerPadFreeformLayout: View {
-    @EnvironmentObject private var client: ControllerClient
     let context: ControllerPadRenderContext
     let isEditingLayout: Bool
+    let onCustomizationChanged: (GamepadCustomization, Bool) -> Void
 
     var body: some View {
         GamepadFreeformControllerCanvas(
             context: context,
-            isEditingLayout: isEditingLayout
-        ) { nextCustomization, isFinal in
-            client.updateSelectedKeypadLayout(
-                nextCustomization,
-                orientation: context.orientation,
-                sendsToMac: isFinal
-            )
-        }
+            isEditingLayout: isEditingLayout,
+            onCustomizationChanged: onCustomizationChanged
+        )
         .padding(
             .leading,
             max(
@@ -1514,9 +1805,11 @@ private struct ControllerPadUtilityButtons: View {
 private struct ControllerPadTopBar: View {
     @EnvironmentObject private var client: ControllerClient
     let context: ControllerPadRenderContext
-    @Binding var isEditingLayout: Bool
+    let isEditingLayout: Bool
     @Binding var isExportingKeypadConfiguration: Bool
     @Binding var isKeypadHapticsEnabled: Bool
+    @Binding var prefersImmersiveKeypad: Bool
+    let onToggleEditing: () -> Void
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
 
@@ -1529,9 +1822,11 @@ private struct ControllerPadTopBar: View {
                 context: context,
                 item: item,
                 isCompact: isCompact,
-                isEditingLayout: $isEditingLayout,
+                isEditingLayout: isEditingLayout,
                 isExportingKeypadConfiguration: $isExportingKeypadConfiguration,
                 isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
+                prefersImmersiveKeypad: $prefersImmersiveKeypad,
+                onToggleEditing: onToggleEditing,
                 onShowConnectionPage: onShowConnectionPage,
                 onShowOnboarding: onShowOnboarding
             )
@@ -1557,9 +1852,11 @@ private struct ControllerPadTopBarItemRouter: View {
     let context: ControllerPadRenderContext
     let item: GamepadControlBarItem
     let isCompact: Bool
-    @Binding var isEditingLayout: Bool
+    let isEditingLayout: Bool
     @Binding var isExportingKeypadConfiguration: Bool
     @Binding var isKeypadHapticsEnabled: Bool
+    @Binding var prefersImmersiveKeypad: Bool
+    let onToggleEditing: () -> Void
     let onShowConnectionPage: (() -> Void)?
     let onShowOnboarding: (() -> Void)?
 
@@ -1583,7 +1880,8 @@ private struct ControllerPadTopBarItemRouter: View {
             return AnyView(
                 ControllerPadEditLayoutItem(
                     context: context,
-                    isEditingLayout: $isEditingLayout
+                    isEditingLayout: isEditingLayout,
+                    onToggleEditing: onToggleEditing
                 )
             )
         case .settings:
@@ -1591,6 +1889,7 @@ private struct ControllerPadTopBarItemRouter: View {
                 ControllerPadSettingsItem(
                     context: context,
                     isKeypadHapticsEnabled: $isKeypadHapticsEnabled,
+                    prefersImmersiveKeypad: $prefersImmersiveKeypad,
                     onShowOnboarding: onShowOnboarding
                 )
             )
@@ -1624,6 +1923,7 @@ private struct ControllerPadStatusItem: View {
             systemImage: systemImage,
             tone: tone
         )
+        .accessibilityAddTraits(.updatesFrequently)
     }
 
     private var title: String {
@@ -1874,33 +2174,34 @@ private struct ControllerPadSpacerItem: View {
 }
 
 private struct ControllerPadEditLayoutItem: View {
-    @EnvironmentObject private var client: ControllerClient
     let context: ControllerPadRenderContext
-    @Binding var isEditingLayout: Bool
+    let isEditingLayout: Bool
+    let onToggleEditing: () -> Void
 
     var body: some View {
         Button {
-            TouchCaptureUIView.deactivateAllRegisteredTouches()
-            client.releaseAll()
             withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
-                isEditingLayout.toggle()
+                onToggleEditing()
             }
         } label: {
-            GamepadControlBarItemIcon(
-                customization: context.customization,
-                item: .editLayout,
-                defaultSystemImage: isEditingLayout ? "lock.open.fill" : "lock.fill",
-                fontSize: 13,
-                frameWidth: 28
-            )
+            HStack(spacing: Geist.Spacing.s1) {
+                GamepadControlBarItemIcon(
+                    customization: context.customization,
+                    item: .editLayout,
+                    defaultSystemImage: isEditingLayout ? "checkmark" : "slider.horizontal.3",
+                    fontSize: 13
+                )
+                Text(isEditingLayout ? "Done" : "Edit")
+                    .lineLimit(1)
+            }
         }
         .gamepadControlBarButtonStyle(
             customization: context.customization,
             item: .editLayout,
             variant: isEditingLayout ? .primary : .secondary
         )
-        .accessibilityLabel(isEditingLayout ? "Lock keypad layout" : "Unlock keypad layout")
-        .accessibilityHint(isEditingLayout ? "Stops editing controls and keeps the saved layout." : "Lets you move, resize, rotate, or delete keypad elements.")
+        .accessibilityLabel(isEditingLayout ? "Done editing layout" : "Edit Layout")
+        .accessibilityHint(isEditingLayout ? "Finishes editing and keeps the saved layout." : "Lets you move, resize, rotate, or delete keypad elements.")
     }
 }
 
@@ -1908,11 +2209,13 @@ private struct ControllerPadSettingsItem: View {
     @EnvironmentObject private var client: ControllerClient
     let context: ControllerPadRenderContext
     @Binding var isKeypadHapticsEnabled: Bool
+    @Binding var prefersImmersiveKeypad: Bool
     let onShowOnboarding: (() -> Void)?
 
     var body: some View {
         KeypadSettingsMenu(
             isHapticFeedbackEnabled: $isKeypadHapticsEnabled,
+            prefersImmersiveMode: $prefersImmersiveKeypad,
             colorSchemePreference: colorSchemePreference,
             customization: context.customization,
             onShowGuide: onShowOnboarding
@@ -1937,9 +2240,8 @@ private struct ControllerPadHomeItem: View {
 
     var body: some View {
         Button {
-            if client.isConnected {
-                client.disconnect(sendReleaseAll: true)
-            }
+            TouchCaptureUIView.deactivateAllRegisteredTouches()
+            client.releaseAll()
             onShowConnectionPage?()
         } label: {
             GamepadControlBarItemIcon(
@@ -1953,7 +2255,7 @@ private struct ControllerPadHomeItem: View {
         .gamepadControlBarButtonStyle(customization: context.customization, item: .home)
         .disabled(onShowConnectionPage == nil)
         .accessibilityLabel("Home")
-        .accessibilityHint("Returns to the connection page.")
+        .accessibilityHint("Returns to the connection page without disconnecting from the Mac.")
     }
 }
 
@@ -2109,9 +2411,116 @@ private struct ControllerPadTextConnectionLabel: View {
     }
 }
 
+private struct ControllerPadEditingCommandStrip: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let canUndo: Bool
+    let hasChanges: Bool
+    let feedback: String
+    let onDone: () -> Void
+    let onUndo: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: Geist.Spacing.s2) {
+            Button(action: onCancel) {
+                Label("Cancel", systemImage: "xmark")
+            }
+            .geistButtonStyle(.secondary, size: .small)
+            .disabled(!hasChanges)
+            .accessibilityHint("Restores the layout from when editing began, then exits editing.")
+
+            Button(action: onUndo) {
+                Label("Undo", systemImage: "arrow.uturn.backward")
+            }
+            .geistButtonStyle(.secondary, size: .small)
+            .disabled(!canUndo)
+
+            Spacer(minLength: Geist.Spacing.s1)
+
+            if !feedback.isEmpty {
+                Label(feedback, systemImage: "checkmark.circle.fill")
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+
+            Button(action: onDone) {
+                Label("Done", systemImage: "checkmark")
+            }
+            .geistButtonStyle(.primary, size: .small)
+        }
+        .padding(Geist.Spacing.s2)
+        .frame(maxWidth: 720)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.14), radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Layout editing commands")
+    }
+}
+
+private struct ControllerPadOfflineBanner: View {
+    @EnvironmentObject private var client: ControllerClient
+    @Environment(\.colorScheme) private var colorScheme
+    let onReconnect: () -> Void
+    let onHome: (() -> Void)?
+
+    private var isReconnecting: Bool {
+        client.state == .connecting || client.state == .pairingCodeRequired
+    }
+
+    var body: some View {
+        HStack(spacing: Geist.Spacing.s3) {
+            Image(systemName: isReconnecting ? "arrow.triangle.2.circlepath" : "wifi.slash")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Geist.color(.amber900, scheme: colorScheme))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(isReconnecting ? "Reconnecting to Mac…" : "Saved keypad — offline")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text("Controls are disabled and will not send input.")
+                    .geistTypography(.label12)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            Spacer(minLength: Geist.Spacing.s1)
+
+            Button("Reconnect", action: onReconnect)
+                .geistButtonStyle(.primary, size: .small)
+                .disabled(isReconnecting)
+
+            Button("Home") { onHome?() }
+                .geistButtonStyle(.secondary, size: .small)
+                .disabled(onHome == nil)
+        }
+        .padding(.horizontal, Geist.Spacing.s3)
+        .padding(.vertical, Geist.Spacing.s2)
+        .frame(maxWidth: 720)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
+                .stroke(Geist.color(.amber700, scheme: colorScheme).opacity(0.65), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(isReconnecting ? "Reconnecting to Mac" : "Saved keypad offline. Controls will not send input.")
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
 private struct ControllerTopBarDrawer<Content: View>: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var isVisible: Bool
+    @State private var collapsedChromeOpacity = 1.0
+    let isPinned: Bool
     let safeAreaInsets: EdgeInsets
     let isLandscape: Bool
     let activationFrame: CGRect
@@ -2120,6 +2529,7 @@ private struct ControllerTopBarDrawer<Content: View>: View {
 
     init(
         isVisible: Binding<Bool>,
+        isPinned: Bool = false,
         safeAreaInsets: EdgeInsets,
         isLandscape: Bool,
         activationFrame: CGRect = .null,
@@ -2127,6 +2537,7 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         @ViewBuilder content: () -> Content
     ) {
         self._isVisible = isVisible
+        self.isPinned = isPinned
         self.safeAreaInsets = safeAreaInsets
         self.isLandscape = isLandscape
         self.activationFrame = activationFrame
@@ -2153,46 +2564,79 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         .contentShape(Rectangle())
         .highPriorityGesture(drawerDragGesture)
         .background {
-            ControllerTopBarSwipeBridge(isVisible: $isVisible, animation: drawerAnimation, activationFrame: activationFrame)
+            ControllerTopBarSwipeBridge(
+                isVisible: $isVisible,
+                isPinned: isPinned,
+                animation: drawerAnimation,
+                activationFrame: activationFrame
+            )
         }
         .animation(drawerAnimation, value: isVisible)
         .animation(drawerAnimation, value: activationFrame)
+        .onAppear { enforcePinnedVisibility() }
+        .onChange(of: isPinned) { _, _ in enforcePinnedVisibility() }
+        .task(id: isVisible) {
+            collapsedChromeOpacity = 1
+            guard !isVisible else { return }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, !isVisible else { return }
+            withAnimation(.easeOut(duration: 0.6)) {
+                collapsedChromeOpacity = 0.62
+            }
+        }
         .zIndex(10)
     }
 
     private var revealHandle: some View {
-        let visualOpacity = isVisible ? 1.0 : 0.0
-
-        return VStack(spacing: 3) {
-            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                .fill(Geist.color(.grayAlpha700, scheme: colorScheme).opacity(visualOpacity))
-                .frame(width: isVisible ? 36 : 56, height: 5)
-
-            if !isVisible && !collapsedTitle.isEmpty {
-                Text(collapsedTitle)
-                    .geistTypography(.label12)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme).opacity(visualOpacity))
-                    .transition(.opacity)
-            }
-        }
-        .padding(.horizontal, isVisible ? Geist.Spacing.s3 : Geist.Spacing.s4)
-        .padding(.vertical, Geist.Spacing.s2)
-        .background(
-            Capsule()
-                .fill(Geist.color(.background100, scheme: colorScheme).opacity(isVisible ? 0.74 : 0))
-        )
-        .overlay(
-            Capsule()
-                .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                .opacity(0)
-        )
-        .contentShape(Capsule())
-        .onTapGesture {
+        Button {
             setVisible(!isVisible)
+        } label: {
+            Group {
+                if isVisible {
+                    VStack(spacing: 3) {
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .fill(Geist.color(.grayAlpha700, scheme: colorScheme))
+                            .frame(width: 36, height: 5)
+                        Image(systemName: isPinned ? "pin.fill" : "chevron.up")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    }
+                } else {
+                    HStack(spacing: Geist.Spacing.s2) {
+                        Circle()
+                            .fill(Geist.color(.green700, scheme: colorScheme))
+                            .frame(width: 7, height: 7)
+                        Text(collapsedTitle.isEmpty ? "Connected" : collapsedTitle)
+                            .geistTypography(.label12)
+                            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                        VStack(spacing: 2) {
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .fill(Geist.color(.grayAlpha700, scheme: colorScheme))
+                                .frame(width: 28, height: 4)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, isVisible ? Geist.Spacing.s3 : Geist.Spacing.s4)
+            .frame(minWidth: 44, minHeight: 44)
+            .background(
+                Capsule()
+                    .fill(Geist.color(.background100, scheme: colorScheme).opacity(isVisible ? 0.74 : 0.9))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
+                    .opacity(isVisible ? 0.35 : 0.85)
+            )
         }
+        .buttonStyle(.plain)
+        .opacity(isVisible ? 1 : collapsedChromeOpacity)
         .simultaneousGesture(drawerDragGesture)
-        .accessibilityLabel(isVisible ? "Hide connection bar" : "Show connection bar")
-        .accessibilityHint(isVisible ? "Swipe up or tap to hide the connection controls." : "Swipe down or tap to show the connection controls.")
+        .accessibilityLabel(isPinned ? "Connection bar pinned open" : (isVisible ? "Hide connection bar" : "Show connection bar, \(collapsedTitle)"))
+        .accessibilityHint(isPinned ? "The connection bar stays available while offline or editing." : (isVisible ? "Swipe up or tap to hide the connection controls." : "Swipe down or tap to show the connection controls."))
     }
 
     private var drawerDragGesture: some Gesture {
@@ -2266,7 +2710,14 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         .spring(response: 0.26, dampingFraction: 0.86)
     }
 
+    private func enforcePinnedVisibility() {
+        if isPinned && !isVisible {
+            setVisible(true)
+        }
+    }
+
     private func setVisible(_ visible: Bool) {
+        guard visible || !isPinned else { return }
         withAnimation(drawerAnimation) {
             isVisible = visible
         }
@@ -2275,11 +2726,12 @@ private struct ControllerTopBarDrawer<Content: View>: View {
 
 private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
     @Binding var isVisible: Bool
+    let isPinned: Bool
     let animation: Animation
     let activationFrame: CGRect
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isVisible: $isVisible, animation: animation, activationFrame: activationFrame)
+        Coordinator(isVisible: $isVisible, isPinned: isPinned, animation: animation, activationFrame: activationFrame)
     }
 
     func makeUIView(context: Context) -> ActivationView {
@@ -2290,6 +2742,7 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
 
     func updateUIView(_ uiView: ActivationView, context: Context) {
         context.coordinator.isVisible = $isVisible
+        context.coordinator.isPinned = isPinned
         context.coordinator.animation = animation
         context.coordinator.configuredActivationFrame = activationFrame
         uiView.updateActivationFrame()
@@ -2340,6 +2793,7 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var isVisible: Binding<Bool>
+        var isPinned: Bool
         var animation: Animation
         var configuredActivationFrame: CGRect
         fileprivate var activationFrame = CGRect.null
@@ -2354,8 +2808,9 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
             return recognizer
         }()
 
-        init(isVisible: Binding<Bool>, animation: Animation, activationFrame: CGRect) {
+        init(isVisible: Binding<Bool>, isPinned: Bool, animation: Animation, activationFrame: CGRect) {
             self.isVisible = isVisible
+            self.isPinned = isPinned
             self.animation = animation
             self.configuredActivationFrame = activationFrame
         }
@@ -2447,6 +2902,7 @@ private struct ControllerTopBarSwipeBridge: UIViewRepresentable {
         }
 
         private func setVisible(_ visible: Bool) {
+            guard visible || !isPinned else { return }
             withAnimation(animation) {
                 isVisible.wrappedValue = visible
             }
