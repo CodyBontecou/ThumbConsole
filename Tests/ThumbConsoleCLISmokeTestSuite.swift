@@ -1043,7 +1043,8 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
 
         let report = template.layoutQualityReport(profileName: "Soft White Pro", canvasSize: CGSize(width: 874, height: 402))
         XCTAssertFalse(report.hasErrors)
-        XCTAssertEqual(report.summary.warningCount, 0)
+        XCTAssertTrue(report.issues.contains { $0.code == "expanded-hit-overlap" })
+        XCTAssertFalse(report.issues.contains { $0.code.hasPrefix("primary-control-") })
         XCTAssertTrue(report.controls.contains { $0.kind == "decoration" })
     }
 

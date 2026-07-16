@@ -1305,6 +1305,8 @@ struct ThumbConsoleCLI {
             print("Imported customization.")
         case "validate", "check", "lint":
             try validateLayout(arguments: rest)
+        case "fix", "repair", "autofix", "auto-fix":
+            try fixLayout(arguments: rest)
         case "preview", "render":
             try previewLayout(arguments: rest)
         case "set":
@@ -1443,6 +1445,60 @@ struct ThumbConsoleCLI {
             strict: arguments.contains("--strict"),
             quiet: true
         )
+    }
+
+    private static func fixLayout(arguments: [String]) throws {
+        var store = loadStore()
+        let profileIndex = try resolveProfileIndex(layoutProfileTarget(in: arguments), in: store)
+        let variant = try customizationVariant(in: arguments)
+        var resolvedCustomization = variant.map { store.profiles[profileIndex].customization(for: $0) } ?? store.profiles[profileIndex].customization
+        let canvasSize = try parseLayoutCanvasSize(arguments, fallback: resolvedCustomization.deviceCanvas.editorDeviceFrame.screenRect.size)
+        let report = resolvedCustomization.layoutQualityReport(profileName: store.profiles[profileIndex].name, canvasSize: canvasSize)
+        let repairValue = optionValue("--repair", in: arguments)
+        let requestedKind: GamepadLayoutRepairKind?
+        if let repairValue, normalizedLookup(repairValue) != "all" {
+            requestedKind = try parseLayoutRepairKind(repairValue)
+        } else {
+            requestedKind = nil
+        }
+        let repairs = report.suggestedRepairs.filter { requestedKind == nil || $0.kind == requestedKind }
+        var applied: [GamepadLayoutRepairKind] = []
+        for repair in repairs where resolvedCustomization.applyLayoutRepair(repair, in: canvasSize) {
+            applied.append(repair.kind)
+        }
+
+        if !applied.isEmpty {
+            let normalizedCustomization = resolvedCustomization.normalized
+            if let variant {
+                store.profiles[profileIndex].setCustomization(normalizedCustomization, for: variant)
+            } else {
+                store.profiles[profileIndex].setCustomization(normalizedCustomization, for: normalizedCustomization.deviceCanvas.editorDeviceFrame.orientation)
+            }
+            store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
+            try persistStore(store)
+        }
+
+        let updatedReport = resolvedCustomization.layoutQualityReport(profileName: store.profiles[profileIndex].name, canvasSize: canvasSize)
+        if arguments.contains("--json") {
+            try printJSON(updatedReport)
+        } else if applied.isEmpty {
+            print("No applicable layout repairs found.")
+            printLayoutReport(updatedReport)
+        } else {
+            print("Applied layout repairs: \(applied.map(\.rawValue).joined(separator: ", ")).")
+            printLayoutReport(updatedReport)
+        }
+    }
+
+    private static func parseLayoutRepairKind(_ value: String) throws -> GamepadLayoutRepairKind {
+        switch normalizedLookup(value) {
+        case "hits", "hit-targets", "targets", "separate", "separate-expanded-hit-targets":
+            return .separateExpandedHitTargets
+        case "ergonomic", "ergonomics", "thumb-reach", "arrange", "ergonomic-auto-arrange":
+            return .ergonomicAutoArrange
+        default:
+            throw CLIError.message("Unknown layout repair: \(value). Use hit-targets or ergonomic.")
+        }
     }
 
     private static func previewLayout(arguments: [String]) throws {
@@ -4998,7 +5054,7 @@ struct ThumbConsoleCLI {
             "--highlight", "--highlight-color", "--highlight-radius", "--highlight-x", "--highlight-y", "--highlight-opacity",
             "--bevel", "--bevel-highlight", "--bevel-shadow", "--bevel-width", "--pressed-fill", "--pressed-color", "--press-scale", "--scale-on-press",
             "--material", "--material-preset", "--shadow-layers", "--shadows",
-            "--to", "--before", "--after", "--role", "--items", "--controls", "--offset", "--offset-x", "--offset-y"
+            "--to", "--before", "--after", "--role", "--items", "--controls", "--offset", "--offset-x", "--offset-y", "--repair"
         ]
         for argument in arguments {
             if skipNext {
@@ -5200,6 +5256,7 @@ struct ThumbConsoleCLI {
           thumbconsole orientation copy landscape portrait [--profile PROFILE] [--no-arrange]
           thumbconsole orientation arrange portrait [--from landscape] [--profile PROFILE]
           thumbconsole layout validate [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--json|--strict]
+          thumbconsole layout fix|repair|autofix [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--repair hit-targets|ergonomic] [--json]
           thumbconsole layout preview [PROFILE|--profile PROFILE] -o preview.png [--variant portrait|landscape] [--canvas iphone-17-pro-landscape]
           thumbconsole device list
           thumbconsole device set iphone-17-pro --orientation landscape

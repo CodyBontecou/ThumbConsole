@@ -20,6 +20,20 @@ struct GamepadLayoutIssue: Codable, Equatable {
     var metric: Double?
 }
 
+enum GamepadLayoutRepairKind: String, Codable, CaseIterable {
+    case separateExpandedHitTargets = "separate-expanded-hit-targets"
+    case ergonomicAutoArrange = "ergonomic-auto-arrange"
+}
+
+struct GamepadLayoutSuggestedRepair: Codable, Equatable, Identifiable {
+    var kind: GamepadLayoutRepairKind
+    var title: String
+    var message: String
+    var controls: [String]
+
+    var id: String { kind.rawValue }
+}
+
 struct GamepadLayoutRectSummary: Codable, Equatable {
     var x: Double
     var y: Double
@@ -52,6 +66,8 @@ struct GamepadLayoutControlSummary: Codable, Equatable {
     var shape: GamepadButtonShapeStyle
     var requestedFrame: GamepadLayoutRectSummary
     var resolvedFrame: GamepadLayoutRectSummary
+    /// The runtime touch frame used on iPhone. Button capture adds 10pt on every side.
+    var expandedHitFrame: GamepadLayoutRectSummary?
     var displacement: Double
     var widthRatio: Double
     var heightRatio: Double
@@ -72,6 +88,7 @@ struct GamepadLayoutControlSummary: Codable, Equatable {
         shape = requested.shape
         requestedFrame = GamepadLayoutRectSummary(requested.frame)
         resolvedFrame = GamepadLayoutRectSummary(resolved.frame)
+        expandedHitFrame = GamepadLayoutRectSummary(resolved.frame.insetBy(dx: -GamepadLayoutQualityReport.runtimeHitOutset, dy: -GamepadLayoutQualityReport.runtimeHitOutset))
         displacement = Double(hypot(resolved.center.x - requested.center.x, resolved.center.y - requested.center.y))
         widthRatio = Double(resolved.frame.width / max(canvasSize.width, 1))
         heightRatio = Double(resolved.frame.height / max(canvasSize.height, 1))
@@ -90,12 +107,81 @@ struct GamepadLayoutQualitySummary: Codable, Equatable {
     var bottomUnusedRatio: Double
 }
 
+enum GamepadLayoutErgonomicRole {
+    case movement
+    case action
+    case utility
+    case exempt
+
+    static func role(for control: GamepadResolvedControl) -> GamepadLayoutErgonomicRole {
+        guard !control.isJoystick, !control.isTrackpad, !control.isTrigger else { return .exempt }
+        if control.isCustom, isUtilityLabel(control.label) { return .utility }
+        switch control.mappedButton {
+        case .up, .down, .left, .right:
+            return .movement
+        case .jump, .attack, .dash, .focus, .custom1, .custom2, .custom3, .custom4, .custom5, .custom6, .custom7, .custom8:
+            return .action
+        case .map, .pause:
+            return .utility
+        }
+    }
+
+    private static func isUtilityLabel(_ label: String) -> Bool {
+        let normalized = label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let utilities: Set<String> = [
+            "+", "-", "−", "l", "r", "zl", "zr", "lb", "rb", "lt", "rt",
+            "menu", "start", "select", "back", "home", "options", "share", "coin", "utility"
+        ]
+        return utilities.contains(normalized)
+            || normalized.contains("shoulder")
+            || normalized.contains("bumper")
+    }
+}
+
 struct GamepadLayoutQualityReport: Codable, Equatable {
+    static let runtimeHitOutset: CGFloat = 10
+
     var profileName: String?
     var canvas: GamepadLayoutCanvasSummary
     var controls: [GamepadLayoutControlSummary]
     var issues: [GamepadLayoutIssue]
     var summary: GamepadLayoutQualitySummary
+    var suggestedRepairs: [GamepadLayoutSuggestedRepair]
+
+    init(
+        profileName: String?,
+        canvas: GamepadLayoutCanvasSummary,
+        controls: [GamepadLayoutControlSummary],
+        issues: [GamepadLayoutIssue],
+        summary: GamepadLayoutQualitySummary,
+        suggestedRepairs: [GamepadLayoutSuggestedRepair] = []
+    ) {
+        self.profileName = profileName
+        self.canvas = canvas
+        self.controls = controls
+        self.issues = issues
+        self.summary = summary
+        self.suggestedRepairs = suggestedRepairs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case profileName
+        case canvas
+        case controls
+        case issues
+        case summary
+        case suggestedRepairs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profileName = try container.decodeIfPresent(String.self, forKey: .profileName)
+        canvas = try container.decode(GamepadLayoutCanvasSummary.self, forKey: .canvas)
+        controls = try container.decode([GamepadLayoutControlSummary].self, forKey: .controls)
+        issues = try container.decode([GamepadLayoutIssue].self, forKey: .issues)
+        summary = try container.decode(GamepadLayoutQualitySummary.self, forKey: .summary)
+        suggestedRepairs = try container.decodeIfPresent([GamepadLayoutSuggestedRepair].self, forKey: .suggestedRepairs) ?? []
+    }
 
     var hasErrors: Bool {
         issues.contains { $0.severity == .error }
@@ -165,8 +251,13 @@ private extension GamepadLayoutQualityReport {
             issues.append(contentsOf: sizeIssues(interactiveSummaries, canvasSize: canvasSize))
             issues.append(contentsOf: edgeIssues(interactiveSummaries, canvasSize: canvasSize))
             issues.append(contentsOf: utilizationIssues(interactiveSummaries, canvasSize: canvasSize))
+            issues.append(contentsOf: ergonomicIssues(controls: interactiveResolvedControls, canvasSize: canvasSize))
+            if canvasSize.height > canvasSize.width {
+                issues.append(contentsOf: portraitIssues(controls: interactiveResolvedControls, canvasSize: canvasSize))
+            }
         }
 
+        issues.sort(by: issueSort)
         let usedFrame = usedLayoutFrame(interactiveSummaries.isEmpty ? controlSummaries : interactiveSummaries)
         let summary = GamepadLayoutQualitySummary(
             controlCount: controlSummaries.count,
@@ -185,35 +276,104 @@ private extension GamepadLayoutQualityReport {
             canvas: GamepadLayoutCanvasSummary(canvasSize),
             controls: controlSummaries,
             issues: issues,
-            summary: summary
+            summary: summary,
+            suggestedRepairs: suggestedRepairs(for: issues, controls: interactiveResolvedControls)
         )
     }
 
     static func overlapIssues(controls: [GamepadResolvedControl]) -> [GamepadLayoutIssue] {
         var issues: [GamepadLayoutIssue] = []
-        for leftIndex in controls.indices {
-            for rightIndex in controls.indices where rightIndex > leftIndex {
-                let left = controls[leftIndex]
-                let right = controls[rightIndex]
-                let intersection = left.frame.intersection(right.frame)
-                guard !intersection.isNull, intersection.width > 0.5, intersection.height > 0.5 else { continue }
-                let minArea = max(1, min(left.frame.width * left.frame.height, right.frame.width * right.frame.height))
-                let ratio = (intersection.width * intersection.height) / minArea
-                guard ratio > 0.015 else { continue }
+        for backIndex in controls.indices {
+            for frontIndex in controls.indices where frontIndex > backIndex {
+                let back = controls[backIndex]
+                let front = controls[frontIndex]
+                let visualIntersection = positiveIntersection(back.frame, front.frame)
+                let backHitFrame = expandedHitFrame(for: back)
+                let frontHitFrame = expandedHitFrame(for: front)
+                guard let hitIntersection = positiveIntersection(backHitFrame, frontHitFrame) else { continue }
 
-                let percent = Int((ratio * 100).rounded())
-                issues.append(
-                    GamepadLayoutIssue(
-                        severity: .warning,
-                        code: "control-overlap",
-                        message: "\(left.label) and \(right.label) overlap by about \(percent)% of the smaller control.",
-                        controls: [left.id.id, right.id.id],
-                        metric: Double(ratio)
+                let hitRatio = overlapRatio(hitIntersection, backHitFrame, frontHitFrame)
+                let controlIDs = [back.id.id, front.id.id]
+                if let visualIntersection {
+                    let visualRatio = overlapRatio(visualIntersection, back.frame, front.frame)
+                    if visualRatio > 0.015 {
+                        let percent = Int((visualRatio * 100).rounded())
+                        issues.append(
+                            GamepadLayoutIssue(
+                                severity: .warning,
+                                code: "control-overlap",
+                                message: "\(back.label) and \(front.label) visually overlap by about \(percent)% of the smaller control.",
+                                controls: controlIDs,
+                                metric: Double(visualRatio)
+                            )
+                        )
+                    }
+                } else {
+                    let overlapPoints = min(hitIntersection.width, hitIntersection.height)
+                    issues.append(
+                        GamepadLayoutIssue(
+                            severity: .warning,
+                            code: "expanded-hit-overlap",
+                            message: "\(back.label) and \(front.label) look separate, but their iPhone hit regions overlap by \(Int(overlapPoints.rounded()))pt after the 10pt touch expansion.",
+                            controls: controlIDs,
+                            metric: Double(hitRatio)
+                        )
                     )
-                )
+                }
+
+                let frontWinsRuntime = runtimeTouchPriority(front) < runtimeTouchPriority(back)
+                    || (runtimeTouchPriority(front) == runtimeTouchPriority(back) && rectArea(frontHitFrame) < rectArea(backHitFrame) - 0.5)
+                let equalRuntimePriority = runtimeTouchPriority(front) == runtimeTouchPriority(back)
+                    && abs(rectArea(frontHitFrame) - rectArea(backHitFrame)) <= 0.5
+                if equalRuntimePriority {
+                    issues.append(
+                        GamepadLayoutIssue(
+                            severity: .warning,
+                            code: "hit-region-z-order-ambiguous",
+                            message: "\(front.label) is visually above \(back.label), but equal-priority overlapping hit regions do not have a deterministic frontmost touch target.",
+                            controls: controlIDs,
+                            metric: Double(hitRatio)
+                        )
+                    )
+                } else if !frontWinsRuntime {
+                    issues.append(
+                        GamepadLayoutIssue(
+                            severity: .warning,
+                            code: "hit-region-z-order-mismatch",
+                            message: "\(front.label) is visually above \(back.label), but iPhone touch routing would choose \(back.label) in their overlapping hit region.",
+                            controls: controlIDs,
+                            metric: Double(hitRatio)
+                        )
+                    )
+                }
             }
         }
         return issues
+    }
+
+    static func expandedHitFrame(for control: GamepadResolvedControl) -> CGRect {
+        control.frame.insetBy(dx: -runtimeHitOutset, dy: -runtimeHitOutset)
+    }
+
+    static func positiveIntersection(_ lhs: CGRect, _ rhs: CGRect) -> CGRect? {
+        let intersection = lhs.intersection(rhs)
+        guard !intersection.isNull, intersection.width > 0.5, intersection.height > 0.5 else { return nil }
+        return intersection
+    }
+
+    static func overlapRatio(_ intersection: CGRect, _ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        rectArea(intersection) / max(1, min(rectArea(lhs), rectArea(rhs)))
+    }
+
+    static func rectArea(_ rect: CGRect) -> CGFloat {
+        rect.width * rect.height
+    }
+
+    static func runtimeTouchPriority(_ control: GamepadResolvedControl) -> Int {
+        if control.isTrigger { return 0 }
+        if control.isJoystick { return 1 }
+        if control.isTrackpad { return 3 }
+        return 2
     }
 
     static func displacementIssues(
@@ -360,6 +520,175 @@ private extension GamepadLayoutQualityReport {
         }
 
         return issues
+    }
+
+    static func ergonomicIssues(
+        controls: [GamepadResolvedControl],
+        canvasSize: CGSize
+    ) -> [GamepadLayoutIssue] {
+        let portrait = canvasSize.height > canvasSize.width
+        return controls.compactMap { control in
+            let role = GamepadLayoutErgonomicRole.role(for: control)
+            guard role == .movement || role == .action else { return nil }
+            let x = control.center.x / max(canvasSize.width, 1)
+            let y = control.center.y / max(canvasSize.height, 1)
+            let sideAnchorX: CGFloat = role == .movement
+                ? (portrait ? 0.27 : 0.18)
+                : (portrait ? 0.73 : 0.82)
+            let anchorY: CGFloat = portrait ? 0.76 : 0.68
+            let horizontalReach: CGFloat = portrait ? 0.36 : 0.34
+            let verticalReach: CGFloat = portrait ? 0.38 : 0.43
+            let reach = hypot((x - sideAnchorX) / horizontalReach, (y - anchorY) / verticalReach)
+            let orientationName = portrait ? "portrait" : "landscape"
+
+            if y < (portrait ? 0.24 : 0.20) {
+                return GamepadLayoutIssue(
+                    severity: .warning,
+                    code: "primary-control-too-high",
+                    message: "\(control.label) is in the extreme top of the \(orientationName) keypad, outside the comfortable lower thumb arc.",
+                    controls: [control.id.id],
+                    metric: Double(y)
+                )
+            }
+
+            if x >= 0.40, x <= 0.60, y < (portrait ? 0.78 : 0.74) {
+                let centrality = 0.5 - abs(x - 0.5)
+                return GamepadLayoutIssue(
+                    severity: .warning,
+                    code: "primary-control-too-central",
+                    message: "\(control.label) is too central for reliable one-thumb use in \(orientationName); place primary controls toward a lower side thumb arc.",
+                    controls: [control.id.id],
+                    metric: Double(centrality)
+                )
+            }
+
+            guard reach > 1.25 else { return nil }
+            return GamepadLayoutIssue(
+                severity: .warning,
+                code: "primary-control-out-of-reach",
+                message: "\(control.label) is outside the expected \(role == .movement ? "left" : "right") lower-thumb reach zone in \(orientationName).",
+                controls: [control.id.id],
+                metric: Double(reach)
+            )
+        }
+    }
+
+    static func portraitIssues(
+        controls: [GamepadResolvedControl],
+        canvasSize: CGSize
+    ) -> [GamepadLayoutIssue] {
+        var issues: [GamepadLayoutIssue] = []
+        let primary = controls.filter {
+            let role = GamepadLayoutErgonomicRole.role(for: $0)
+            return role == .movement || role == .action
+        }
+
+        if primary.count >= 4 {
+            let lowerLeft = primary.filter { $0.center.x < canvasSize.width * 0.48 && $0.center.y > canvasSize.height * 0.52 }.count
+            let lowerRight = primary.filter { $0.center.x > canvasSize.width * 0.52 && $0.center.y > canvasSize.height * 0.52 }.count
+            if lowerLeft == 0 || lowerRight == 0 {
+                let imbalance = CGFloat(abs(lowerLeft - lowerRight)) / CGFloat(max(primary.count, 1))
+                issues.append(
+                    GamepadLayoutIssue(
+                        severity: .warning,
+                        code: "portrait-primary-action-distribution",
+                        message: "Portrait primary controls are not distributed across both lower thumb zones (\(lowerLeft) left, \(lowerRight) right).",
+                        controls: primary.map { $0.id.id }.sorted(),
+                        metric: Double(imbalance)
+                    )
+                )
+            }
+        }
+
+        if controls.count >= 6, let largestGap = largestInternalVerticalGap(controls: controls, canvasHeight: canvasSize.height), largestGap > 0.30 {
+            let percent = Int((largestGap * 100).rounded())
+            issues.append(
+                GamepadLayoutIssue(
+                    severity: .warning,
+                    code: "portrait-dead-space",
+                    message: "A \(percent)% tall band of the portrait keypad has no controls; use that space or consolidate controls around the lower thumb zones.",
+                    controls: controls.map { $0.id.id }.sorted(),
+                    metric: Double(largestGap)
+                )
+            )
+        }
+        return issues
+    }
+
+    static func largestInternalVerticalGap(controls: [GamepadResolvedControl], canvasHeight: CGFloat) -> CGFloat? {
+        var intervals: [(start: CGFloat, end: CGFloat)] = []
+        for control in controls {
+            let start = max(CGFloat.zero, control.frame.minY)
+            let end = min(canvasHeight, control.frame.maxY)
+            if end > start { intervals.append((start: start, end: end)) }
+        }
+        intervals.sort { lhs, rhs in
+            lhs.start == rhs.start ? lhs.end < rhs.end : lhs.start < rhs.start
+        }
+        guard var active = intervals.first else { return nil }
+        var largest: CGFloat = 0
+        for interval in intervals.dropFirst() {
+            if interval.start > active.end {
+                largest = max(largest, interval.start - active.end)
+                active = interval
+            } else {
+                active.end = max(active.end, interval.end)
+            }
+        }
+        return largest / max(canvasHeight, 1)
+    }
+
+    static func suggestedRepairs(
+        for issues: [GamepadLayoutIssue],
+        controls: [GamepadResolvedControl]
+    ) -> [GamepadLayoutSuggestedRepair] {
+        let unlockedIDs = Set(controls.filter { !$0.isLocationLocked }.map { $0.id.id })
+        let collisionCodes: Set<String> = [
+            "expanded-hit-overlap",
+            "hit-region-z-order-ambiguous",
+            "hit-region-z-order-mismatch"
+        ]
+        let ergonomicCodes: Set<String> = [
+            "primary-control-too-high",
+            "primary-control-too-central",
+            "primary-control-out-of-reach",
+            "portrait-primary-action-distribution",
+            "portrait-dead-space"
+        ]
+        var repairs: [GamepadLayoutSuggestedRepair] = []
+        let collisionControls = Set(issues.filter { collisionCodes.contains($0.code) }.flatMap(\.controls)).intersection(unlockedIDs).sorted()
+        if !collisionControls.isEmpty {
+            repairs.append(
+                GamepadLayoutSuggestedRepair(
+                    kind: .separateExpandedHitTargets,
+                    title: "Separate Touch Targets",
+                    message: "Move unlocked controls just enough to separate their 10pt-expanded iPhone hit regions.",
+                    controls: collisionControls
+                )
+            )
+        }
+        let ergonomicControls = Set(issues.filter { ergonomicCodes.contains($0.code) }.flatMap(\.controls)).intersection(unlockedIDs).sorted()
+        if !ergonomicControls.isEmpty {
+            repairs.append(
+                GamepadLayoutSuggestedRepair(
+                    kind: .ergonomicAutoArrange,
+                    title: "Arrange for Thumb Reach",
+                    message: "Place unlocked movement and action buttons into orientation-aware lower thumb arcs, then separate touch targets.",
+                    controls: ergonomicControls
+                )
+            )
+        }
+        return repairs
+    }
+
+    static func issueSort(_ lhs: GamepadLayoutIssue, _ rhs: GamepadLayoutIssue) -> Bool {
+        let severityRank: [GamepadLayoutIssueSeverity: Int] = [.error: 0, .warning: 1, .info: 2]
+        if severityRank[lhs.severity] != severityRank[rhs.severity] {
+            return (severityRank[lhs.severity] ?? 3) < (severityRank[rhs.severity] ?? 3)
+        }
+        if lhs.code != rhs.code { return lhs.code < rhs.code }
+        if lhs.controls != rhs.controls { return lhs.controls.lexicographicallyPrecedes(rhs.controls) }
+        return lhs.message < rhs.message
     }
 
     static func usedLayoutFrame(_ controls: [GamepadLayoutControlSummary]) -> CGRect {

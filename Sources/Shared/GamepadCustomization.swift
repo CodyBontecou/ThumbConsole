@@ -8515,6 +8515,18 @@ struct GamepadCustomizationEditor: View {
                         }
                     }
                 }
+                if !report.suggestedRepairs.isEmpty {
+                    Section("Automatic Repairs") {
+                        ForEach(report.suggestedRepairs) { repair in
+                            Button {
+                                applyLayoutQualityRepair(repair)
+                            } label: {
+                                Label(repair.title, systemImage: repair.kind == .separateExpandedHitTargets ? "arrow.left.and.right" : "hand.point.up.left")
+                            }
+                            .help(repair.message)
+                        }
+                    }
+                }
             }
         } label: {
             Label(layoutQualityBadgeText(report), systemImage: layoutQualityBadgeImage(report))
@@ -16856,6 +16868,13 @@ struct GamepadCustomizationEditor: View {
             return true
         }
         return false
+    }
+
+    private func applyLayoutQualityRepair(_ repair: GamepadLayoutSuggestedRepair) {
+        var next = customization
+        guard next.applyLayoutRepair(repair, in: activeDesignCanvasSize) else { return }
+        applyCustomization(next, undoActionName: repair.title)
+        highlightedQualityControlIDs.removeAll()
     }
 
     private func selectLayoutQualityIssue(_ issue: GamepadLayoutIssue) {
