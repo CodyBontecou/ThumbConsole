@@ -115,7 +115,6 @@ struct IOSContentView: View {
 }
 
 private enum IOSKeypadSettings {
-    static let hasOpenedKeypadDefaultsKey = "PocketPad.iOS.hasOpenedKeypad.v1"
     static let immersiveModeDefaultsKey = "PocketPad.iOS.immersiveKeypad.v1"
 }
 
@@ -1308,9 +1307,7 @@ private struct ControllerPadView: View {
     @AppStorage(IOSKeypadPreferenceKeys.hapticIntensity) private var keypadHapticIntensity = IOSKeypadPreferenceKeys.defaultHapticIntensity
     @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
     @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
-    @AppStorage(IOSKeypadSettings.hasOpenedKeypadDefaultsKey) private var hasOpenedKeypad = false
-    @State private var isTopBarVisible = true
-    @State private var isShowingFirstOpenTopBar = false
+    @State private var isTopBarVisible = false
     @State private var isExportingKeypadConfiguration = false
     @State private var isShowingKeypadSettings = false
     @State private var practiceModeBeforeCalibration: Bool?
@@ -1382,26 +1379,15 @@ private struct ControllerPadView: View {
         }
         .onChange(of: client.state) { _, newState in
             releaseActiveInputs()
-            if ControllerRuntimeChromePolicy.shouldPinTopBar(
+            isTopBarVisible = ControllerRuntimeChromePolicy.shouldPinTopBar(
                 isConnected: newState == .connected,
                 isEditingLayout: editRuntime.isEditing
-            ) {
-                isTopBarVisible = true
-            } else if !isShowingFirstOpenTopBar {
-                isTopBarVisible = false
-            }
+            )
             announce("Connection status: \(newState.label)")
         }
         .onChange(of: editRuntime.isEditing) { _, isEditing in
             releaseActiveInputs()
-            if isEditing {
-                isTopBarVisible = true
-            }
-        }
-        .onChange(of: isTopBarVisible) { _, isVisible in
-            if !isVisible {
-                isShowingFirstOpenTopBar = false
-            }
+            isTopBarVisible = isEditing || !client.isConnected
         }
         .onChange(of: client.selectedGamepadProfileID) { _, _ in
             calibrationRuntime.cancel()
@@ -1456,20 +1442,13 @@ private struct ControllerPadView: View {
     }
 
     private func applyInitialTopBarVisibility() {
-        // Reveal the slide-down controls on a user's first keypad session so
-        // profile switching, settings, and Home are discoverable.
-        if hasOpenedKeypad {
-            isShowingFirstOpenTopBar = false
-            isTopBarVisible = ControllerRuntimeChromePolicy.resolvedTopBarVisibility(
-                requestedVisibility: false,
-                isConnected: client.isConnected,
-                isEditingLayout: editRuntime.isEditing
-            )
-        } else {
-            hasOpenedKeypad = true
-            isShowingFirstOpenTopBar = true
-            isTopBarVisible = true
-        }
+        // Keep a live keypad visually clean. Offline and editing states still pin
+        // the controls open because their status and recovery actions are critical.
+        isTopBarVisible = ControllerRuntimeChromePolicy.resolvedTopBarVisibility(
+            requestedVisibility: false,
+            isConnected: client.isConnected,
+            isEditingLayout: editRuntime.isEditing
+        )
     }
 
     private func showKeypadSettings() {
@@ -2851,6 +2830,7 @@ private struct ControllerPadOfflineBanner: View {
 
 private struct ControllerTopBarDrawer<Content: View>: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Binding var isVisible: Bool
     @State private var collapsedChromeOpacity = 1.0
     let isPinned: Bool
@@ -2908,13 +2888,13 @@ private struct ControllerTopBarDrawer<Content: View>: View {
         .animation(drawerAnimation, value: activationFrame)
         .onAppear { enforcePinnedVisibility() }
         .onChange(of: isPinned) { _, _ in enforcePinnedVisibility() }
-        .task(id: isVisible) {
+        .task(id: collapsedChromeTaskID) {
             collapsedChromeOpacity = 1
-            guard !isVisible else { return }
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled, !isVisible else { return }
-            withAnimation(.easeOut(duration: 0.6)) {
-                collapsedChromeOpacity = 0.62
+            guard !isVisible, !isPinned else { return }
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, !isVisible, !isPinned else { return }
+            withAnimation(accessibilityReduceMotion ? nil : .easeOut(duration: 0.6)) {
+                collapsedChromeOpacity = 0
             }
         }
         .zIndex(10)
@@ -2935,35 +2915,18 @@ private struct ControllerTopBarDrawer<Content: View>: View {
                             .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     }
                 } else {
-                    HStack(spacing: Geist.Spacing.s2) {
-                        Circle()
-                            .fill(Geist.color(.green700, scheme: colorScheme))
-                            .frame(width: 7, height: 7)
-                        Text(collapsedTitle.isEmpty ? "Connected" : collapsedTitle)
-                            .geistTypography(.label12)
-                            .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                        VStack(spacing: 2) {
-                            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(Geist.color(.grayAlpha700, scheme: colorScheme))
-                                .frame(width: 28, height: 4)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                        }
+                    VStack(spacing: 3) {
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .fill(Geist.color(.grayAlpha700, scheme: colorScheme))
+                            .frame(width: 36, height: 5)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     }
                 }
             }
-            .padding(.horizontal, isVisible ? Geist.Spacing.s3 : Geist.Spacing.s4)
+            .padding(.horizontal, Geist.Spacing.s3)
             .frame(minWidth: 44, minHeight: 44)
-            .background(
-                Capsule()
-                    .fill(Geist.color(.background100, scheme: colorScheme).opacity(isVisible ? 0.74 : 0.9))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                    .opacity(isVisible ? 0.35 : 0.85)
-            )
         }
         .buttonStyle(.plain)
         .opacity(isVisible ? 1 : collapsedChromeOpacity)
@@ -3038,6 +3001,10 @@ private struct ControllerTopBarDrawer<Content: View>: View {
             .safeAreaInsets ?? .zero
     }
     #endif
+
+    private var collapsedChromeTaskID: String {
+        "\(isVisible)|\(isPinned)|\(collapsedTitle)"
+    }
 
     private var drawerAnimation: Animation {
         .spring(response: 0.26, dampingFraction: 0.86)

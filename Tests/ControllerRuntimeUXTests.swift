@@ -53,6 +53,13 @@ final class ControllerRuntimeUXTests: XCTestCase {
                 isEditingLayout: false
             )
         )
+        XCTAssertFalse(
+            ControllerRuntimeChromePolicy.resolvedTopBarVisibility(
+                requestedVisibility: false,
+                isConnected: true,
+                isEditingLayout: false
+            )
+        )
     }
 
     func testImmersiveSystemUIRequiresVisibleControllerAndPreference() {
