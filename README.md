@@ -115,6 +115,9 @@ thumbconsole style apply soul focus
 thumbconsole layer front focus
 thumbconsole group create Actions jump attack dash focus
 thumbconsole asset import ./orb.png --role icon --name SoulOrb
+thumbconsole skin list
+thumbconsole skin pack docs/skins/starter -o Aurora.pocketpad
+thumbconsole skin apply Aurora.pocketpad --profile "SNES Browser Controls"
 ```
 
 When ThumbConsole Mac is running, CLI profile/customization/binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone. Runtime commands are also available:
@@ -135,6 +138,23 @@ thumbconsole release-all
 
 See [Input Latency and Reliability Optimization](docs/development-logs/2026-07-10-input-latency-and-reliability-optimization.md) for the protocol, queueing, recovery, and physical-device test work behind these measurements.
 
+## Shareable PocketPad skins
+
+PocketPad’s **Skins** library separates portable appearance from keypad layout and executable Mac/controller bindings. A validated `.pocketpad` ZIP can include base styling, semantic control-role rules, light/dark and portrait/landscape variants, external assets, preview images, creator metadata, and a license. Applying one preserves native SwiftUI controls, accessibility, dynamic labels, geometry, bindings, and user overrides. Installed packages and assets sync between the Mac and paired iPhone and remain available offline.
+
+Browse reviewed packages in the static [website skin directory](Website/skins.html), or import from the Mac Skins page, iPhone Files/Share Sheet, or CLI. Handcrafted authors can scaffold editable JSON/SVG against canonical artboards, compile deterministic packages, render all native states, and run strict quality gates with `thumbconsole skin artboard|scaffold|compile|preview|quality`. The project `pocketpad-skin-author` skill adds separate art-direction, design, visual-critique, QA, and human-approval stages. See the [skin format, source schema, Indigo Pocket reference, security rules, and command workflow](docs/skins/README.md). The directory catalog, immutable packages, previews, submission guide, and reproducible build/verification scripts live under `Website/skins/` and `scripts/build-skin-directory.sh`.
+
+```bash
+thumbconsole skin validate docs/skins/starter
+thumbconsole skin pack docs/skins/starter -o Aurora.pocketpad
+thumbconsole skin inspect Aurora.pocketpad
+thumbconsole skin render Aurora.pocketpad --clean -o Aurora-preview.png
+thumbconsole skin import Aurora.pocketpad
+thumbconsole skin apply com.example.pocketpad.skin.aurora --profile "My Keypad"
+```
+
+Full keypad JSON export remains the backup/interchange format for layouts and bindings. Use `.pocketpad` skin packages for community appearance sharing.
+
 ## Virtual gamepad output
 
 ThumbConsole can map keypad controls to system-visible virtual gamepad buttons, analog sticks, and triggers while keeping keyboard and pointer output available. Each keypad setup has an output mode: `keyboard` keeps the virtual controller off, `controller` applies the default Xbox-style virtual controller map, and `custom` uses per-button mixed bindings. Configure the mode and mappings in the macOS Keypad editor or with the CLI:
@@ -154,7 +174,7 @@ On macOS, the virtual controller is created with `IOHIDUserDevice` and requires 
 
 Customize keypad setups from the macOS helper's **Keypad** section or with the CLI. The iOS app receives the Mac's saved setups during pairing, can switch between them from the in-controller **Keypad setup** menu, and can mark the current setup as the default. The macOS helper can also mark any setup as default from the Keypad editor. To create a JSON backup on Mac, use the **Export** menu above the setup list and choose **Export Current Setup…** or **Export All Setups…**. Restore a full backup, individual profile, generated profile, or raw customization from the adjacent **Import** menu; imports can replace matching setups or create new copies. On iPhone, open the in-controller **Keypad setup** menu and choose **Export Keypads as JSON** to save the synced setups locally with Files.
 
-ThumbConsole uses its own versioned JSON envelope because there is no broadly adopted interchange format for these multitouch keypad layouts. The current schema is `com.codybontecou.pocketpad.keypad-configuration` version `3`; it stores `profiles`, `activeProfileID`, and `defaultProfileID`. Mac app and CLI exports use the same envelope and may include macOS-only `profileKeyBindings` and `profileOutputBindings` so backups preserve shortcut and controller mappings too.
+ThumbConsole uses its own versioned JSON envelope because there is no broadly adopted interchange format for these multitouch keypad layouts. The current schema is `com.codybontecou.pocketpad.keypad-configuration` version `4`; it stores `profiles`, `activeProfileID`, and `defaultProfileID`. Mac app and CLI exports use the same envelope and may include macOS-only `profileKeyBindings` and `profileOutputBindings` so backups preserve shortcut and controller mappings too.
 
 Each setup stores its own keypad-level preferences. Select a setup in the Keypad editor to show the right-side keypad inspector, where you can choose the device canvas, set **iPhone Rotation** to Follow Device, Lock Portrait, or Lock Landscape, attach a Mac application with the native file browser, set custom device dimensions, change the iPhone background fill, and toggle System/Light/Dark view modes while editing. Attached applications sync with the setup, including the selected app icon; when the iPhone is connected, the top bar shows that app icon as a button that asks the Mac helper to launch or refocus the pre-approved app. Use **Saved Mode** to choose whether that setup follows the device, always uses light mode, or always uses dark mode; per-button light and dark fills and keypad background fills are saved separately with the setup. The same settings are scriptable with `thumbconsole orientation get|set`, `thumbconsole customization set --appearance light|dark|system --device iphone-17-pro --background '#101014'`, `thumbconsole customization set --background-gradient '#101014,#4338CA'`, `thumbconsole element set BUTTON --light-fill '#RRGGBB' --dark-fill '#RRGGBB'`, and `thumbconsole profile attach-app PROFILE --path /Applications/App.app`.
 

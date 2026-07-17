@@ -926,6 +926,9 @@ public struct GamepadDesignMetadata: Codable, Equatable, Sendable {
     public var guides: [GamepadEditorGuide]
     public var notes: String?
     public var tags: [String]
+    /// Stable origin used by skin compatibility. Display names and tags are intentionally not contracts.
+    public var sourceTemplateID: String?
+    public var sourceTemplateRevision: Int?
 
     public init(
         schemaVersion: Int = 1,
@@ -934,7 +937,9 @@ public struct GamepadDesignMetadata: Codable, Equatable, Sendable {
         grid: GamepadEditorGridSettings = .defaultValue,
         guides: [GamepadEditorGuide] = [],
         notes: String? = nil,
-        tags: [String] = []
+        tags: [String] = [],
+        sourceTemplateID: String? = nil,
+        sourceTemplateRevision: Int? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.layerOrder = layerOrder
@@ -943,6 +948,8 @@ public struct GamepadDesignMetadata: Codable, Equatable, Sendable {
         self.guides = guides
         self.notes = notes
         self.tags = tags
+        self.sourceTemplateID = sourceTemplateID
+        self.sourceTemplateRevision = sourceTemplateRevision
     }
 
     public static let empty = GamepadDesignMetadata()
@@ -959,6 +966,9 @@ public struct GamepadDesignMetadata: Codable, Equatable, Sendable {
         let normalizedGuides = guides.map(\.normalized)
         let normalizedTags = Array(Set(tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
         let normalizedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedTemplateID = sourceTemplateID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
         let copy = GamepadDesignMetadata(
             schemaVersion: max(1, schemaVersion),
             layerOrder: normalizedLayerOrder,
@@ -966,7 +976,9 @@ public struct GamepadDesignMetadata: Codable, Equatable, Sendable {
             grid: grid.normalized,
             guides: normalizedGuides,
             notes: normalizedNotes?.isEmpty == false ? String(normalizedNotes!.prefix(500)) : nil,
-            tags: normalizedTags.map { String($0.prefix(32)) }
+            tags: normalizedTags.map { String($0.prefix(32)) },
+            sourceTemplateID: normalizedTemplateID?.isEmpty == false ? String(normalizedTemplateID!.prefix(80)) : nil,
+            sourceTemplateRevision: sourceTemplateRevision.map { max(1, $0) }
         )
         return copy.isDefault(availableControls: availableControls) ? nil : copy
     }
@@ -981,6 +993,8 @@ public struct GamepadDesignMetadata: Codable, Equatable, Sendable {
             && guides.isEmpty
             && (notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             && tags.isEmpty
+            && (sourceTemplateID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            && sourceTemplateRevision == nil
     }
 }
 
@@ -1867,6 +1881,7 @@ extension GamepadCustomization {
             presentation.hapticStyle = hapticStyle
         }
 
+        presentation.fillStyle = presentation.fillStyle.resolvingAssets(in: assetLibrary)
         return presentation
     }
 

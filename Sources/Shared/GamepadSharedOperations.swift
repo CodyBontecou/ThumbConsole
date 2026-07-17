@@ -961,9 +961,13 @@ public extension GamepadConfigurationProfile {
                 }
                 destination.designMetadata = metadata.normalized(availableControls: destination.allControlIdentitiesForDesign)
             }
-            // The control bar hotspot remains at the top in both orientations.
+            // Prefer the source top inset, but move the passive control-bar toggle into the
+            // nearest quiet center lane when a portrait face cluster would overlap it.
             destination.topBarActivationRegion.centerX = 0.5
             destination.topBarActivationRegion.centerY = source.topBarActivationRegion.centerY
+            if destinationOrientation == .portrait {
+                Self.resolvePortraitSystemControlCollision(in: &destination)
+            }
         }
 
         destination = destination.normalized
@@ -979,6 +983,24 @@ public extension GamepadConfigurationProfile {
         }
         customization = destination
         updatedAt = Date.currentMilliseconds
+    }
+
+    private static func resolvePortraitSystemControlCollision(in customization: inout GamepadCustomization) {
+        let canvasSize = customization.deviceCanvas.editorDeviceFrame.screenRect.size
+        func hasCollision() -> Bool {
+            let controls = customization.resolvedControls(in: canvasSize)
+            guard let system = controls.first(where: { $0.id == .system(.topBarActivation) }) else { return false }
+            return controls.contains { control in
+                control.id != system.id
+                    && !control.isDecoration
+                    && system.frame.insetBy(dx: -6, dy: -6).intersects(control.frame)
+            }
+        }
+        guard hasCollision() else { return }
+        for candidateY in [CGFloat(0.32), 0.50, 0.68] {
+            customization.topBarActivationRegion.centerY = candidateY
+            if !hasCollision() { return }
+        }
     }
 
     private static func transformedPosition(

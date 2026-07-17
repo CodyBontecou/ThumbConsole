@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-07-17",
+  "skins": [
+    {
+      "slug": "indigo-pocket",
+      "identifier": "com.codybontecou.pocketpad.indigo-pocket",
+      "featured": true,
+      "featuredOrder": 1,
+      "description": "An original compact calibration instrument: softened-octagonal indigo fieldwork, orientation-specific control harbors, warm ivory legends, and a restrained violet seam around native controls.",
+      "palette": [
+        "#E9E2D3",
+        "#292752",
+        "#191832",
+        "#702653",
+        "#A77CFF"
+      ],
+      "modes": [
+        "light",
+        "dark",
+        "landscape",
+        "portrait"
+      ],
+      "publishedAt": "2026-07-17",
+      "name": "Indigo Pocket",
+      "version": "1.0.0",
+      "author": {
+        "name": "Cody Bontecou"
+      },
+      "summary": "A compact calibration instrument with an original softened-octagonal indigo shell, orientation-specific semantic harbors, warm ivory legends, and a restrained violet seam.",
+      "license": "MIT",
+      "homepage": null,
+      "minimumAppVersion": "1.0.0",
+      "tags": [
+        "agent-source",
+        "handcrafted",
+        "showcase-controller-v1"
+      ],
+      "downloadPath": "/skins/packages/indigo-pocket-1.0.0-72fdbb32d789.pocketpad",
+      "previewPath": "/skins/previews/indigo-pocket-1.0.0.png",
+      "packageByteCount": 260965,
+      "packageSHA256": "72fdbb32d789cd3c13d32b79cc83d9a373eb9b7d4d663d9e1cab1c80ba3bb3d3",
+      "preview": {
+        "width": 1748,
+        "height": 804
+      }
+    }
+  ]
+}

@@ -536,9 +536,49 @@ public enum GamepadImageContentMode: String, Codable, CaseIterable, Identifiable
     }
 }
 
+public enum GamepadImageResizingMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case scale
+    case tile
+    case nineSliceStretch = "nine_slice_stretch"
+    case nineSliceTile = "nine_slice_tile"
+
+    public var id: String { rawValue }
+}
+
+public struct GamepadImageCapInsets: Codable, Equatable, Sendable {
+    public var top: CGFloat
+    public var leading: CGFloat
+    public var bottom: CGFloat
+    public var trailing: CGFloat
+
+    public init(top: CGFloat, leading: CGFloat, bottom: CGFloat, trailing: CGFloat) {
+        self.top = top
+        self.leading = leading
+        self.bottom = bottom
+        self.trailing = trailing
+    }
+
+    public var normalized: GamepadImageCapInsets? {
+        let top = Self.clamp(self.top)
+        let leading = Self.clamp(self.leading)
+        let bottom = Self.clamp(self.bottom)
+        let trailing = Self.clamp(self.trailing)
+        guard top + bottom < 0.98, leading + trailing < 0.98 else { return nil }
+        return GamepadImageCapInsets(top: top, leading: leading, bottom: bottom, trailing: trailing)
+    }
+
+    private static func clamp(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return 0 }
+        return min(max(value, 0), 0.49)
+    }
+}
+
 public struct GamepadImageFill: Codable, Equatable, Sendable {
     public static let maximumStoredBytes = 2_500_000
 
+    /// Optional ID in the owning customization or installed skin asset library.
+    /// Packages use this instead of embedding base64 image data in JSON.
+    public var assetID: String?
     public var data: Data?
     public var fileName: String?
     public var contentMode: GamepadImageContentMode
@@ -550,8 +590,12 @@ public struct GamepadImageFill: Codable, Equatable, Sendable {
     public var tint: CGFloat
     public var highlights: CGFloat
     public var shadows: CGFloat
+    /// Optional for backward-compatible decoding. `effectiveResizingMode` preserves legacy behavior.
+    public var resizingMode: GamepadImageResizingMode?
+    public var nineSliceInsets: GamepadImageCapInsets?
 
     public init(
+        assetID: String? = nil,
         data: Data? = nil,
         fileName: String? = nil,
         contentMode: GamepadImageContentMode = .fill,
@@ -562,8 +606,11 @@ public struct GamepadImageFill: Codable, Equatable, Sendable {
         temperature: CGFloat = 0,
         tint: CGFloat = 0,
         highlights: CGFloat = 0,
-        shadows: CGFloat = 0
+        shadows: CGFloat = 0,
+        resizingMode: GamepadImageResizingMode? = nil,
+        nineSliceInsets: GamepadImageCapInsets? = nil
     ) {
+        self.assetID = assetID
         self.data = data
         self.fileName = fileName
         self.contentMode = contentMode
@@ -575,10 +622,18 @@ public struct GamepadImageFill: Codable, Equatable, Sendable {
         self.tint = tint
         self.highlights = highlights
         self.shadows = shadows
+        self.resizingMode = resizingMode
+        self.nineSliceInsets = nineSliceInsets
+    }
+
+    public var effectiveResizingMode: GamepadImageResizingMode {
+        resizingMode ?? (contentMode == .tile ? .tile : .scale)
     }
 
     var normalized: GamepadImageFill {
         var copy = self
+        let normalizedAssetID = assetID.map(GamepadStyleToken.normalizedIdentifier) ?? ""
+        copy.assetID = normalizedAssetID.isEmpty ? nil : normalizedAssetID
         if let data, data.count > Self.maximumStoredBytes {
             copy.data = nil
         }
@@ -590,6 +645,10 @@ public struct GamepadImageFill: Codable, Equatable, Sendable {
         copy.tint = Self.clamp(tint, lower: -1, upper: 1)
         copy.highlights = Self.clamp(highlights, lower: -1, upper: 1)
         copy.shadows = Self.clamp(shadows, lower: -1, upper: 1)
+        copy.nineSliceInsets = nineSliceInsets?.normalized
+        if [.nineSliceStretch, .nineSliceTile].contains(copy.effectiveResizingMode), copy.nineSliceInsets == nil {
+            copy.resizingMode = .scale
+        }
         return copy
     }
 
@@ -726,7 +785,7 @@ extension GamepadFillStyle: Codable {
     }
 }
 
-private extension GamepadRGBAColor {
+extension GamepadRGBAColor {
     func mixed(with other: GamepadRGBAColor, amount: CGFloat) -> GamepadRGBAColor {
         let amount = min(max(amount, 0), 1)
         let lhs = normalized
@@ -1118,6 +1177,64 @@ struct GamepadStarButtonShape: Shape {
     }
 }
 
+public struct GamepadHitInsets: Codable, Equatable, Sendable {
+    public static let maximumInset: CGFloat = 96
+    public static let runtimeDefault = GamepadHitInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
+
+    public var top: CGFloat
+    public var leading: CGFloat
+    public var bottom: CGFloat
+    public var trailing: CGFloat
+
+    public init(top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0) {
+        self.top = top
+        self.leading = leading
+        self.bottom = bottom
+        self.trailing = trailing
+    }
+
+    public static func all(_ value: CGFloat) -> GamepadHitInsets {
+        GamepadHitInsets(top: value, leading: value, bottom: value, trailing: value)
+    }
+
+    public var normalized: GamepadHitInsets {
+        GamepadHitInsets(
+            top: Self.clamp(top),
+            leading: Self.clamp(leading),
+            bottom: Self.clamp(bottom),
+            trailing: Self.clamp(trailing)
+        )
+    }
+
+    public func hitSize(for visualSize: CGSize) -> CGSize {
+        let value = normalized
+        return CGSize(
+            width: visualSize.width + value.leading + value.trailing,
+            height: visualSize.height + value.top + value.bottom
+        )
+    }
+
+    /// The visual center relative to the expanded hit-region center.
+    public var visualOffset: CGSize {
+        let value = normalized
+        return CGSize(
+            width: (value.leading - value.trailing) / 2,
+            height: (value.top - value.bottom) / 2
+        )
+    }
+
+    /// The expanded hit-region center relative to the visual center.
+    public var hitCenterOffset: CGSize {
+        let offset = visualOffset
+        return CGSize(width: -offset.width, height: -offset.height)
+    }
+
+    private static func clamp(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return 0 }
+        return min(max(value, 0), maximumInset)
+    }
+}
+
 public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public static let minimumDimension: CGFloat = 1
     public static let minimumScale: CGFloat = 0.001
@@ -1140,6 +1257,8 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public var heightScale: CGFloat
     public var rotationDegrees: CGFloat
     public var zIndex: Int
+    /// Interaction padding is independent of the visible control frame.
+    public var hitInsets: GamepadHitInsets?
     public var shape: GamepadButtonShapeStyle?
     public var accentStyle: GamepadAccentStyle?
     /// Legacy/global fill color used by keypads saved before light/dark-specific colors existed.
@@ -1174,6 +1293,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         heightScale: CGFloat = 1.0,
         rotationDegrees: CGFloat = 0,
         zIndex: Int = 0,
+        hitInsets: GamepadHitInsets? = nil,
         shape: GamepadButtonShapeStyle? = nil,
         accentStyle: GamepadAccentStyle? = nil,
         fillColor: GamepadRGBAColor? = nil,
@@ -1203,6 +1323,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         self.heightScale = heightScale
         self.rotationDegrees = rotationDegrees
         self.zIndex = Self.normalizedZIndex(zIndex)
+        self.hitInsets = hitInsets
         self.shape = shape
         self.accentStyle = accentStyle
         self.fillColor = fillColor
@@ -1235,6 +1356,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         heightScale = try container.decodeIfPresent(CGFloat.self, forKey: .heightScale) ?? 1.0
         rotationDegrees = try container.decodeIfPresent(CGFloat.self, forKey: .rotationDegrees) ?? 0
         zIndex = Self.normalizedZIndex(try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0)
+        hitInsets = try container.decodeIfPresent(GamepadHitInsets.self, forKey: .hitInsets)
         shape = try container.decodeIfPresent(GamepadButtonShapeStyle.self, forKey: .shape)
         accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle)
         fillColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .fillColor)
@@ -1267,6 +1389,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         try container.encode(heightScale, forKey: .heightScale)
         try container.encode(rotationDegrees, forKey: .rotationDegrees)
         try container.encode(zIndex, forKey: .zIndex)
+        try container.encodeIfPresent(hitInsets?.normalized, forKey: .hitInsets)
         try container.encodeIfPresent(shape, forKey: .shape)
         try container.encodeIfPresent(accentStyle, forKey: .accentStyle)
         try container.encodeIfPresent(fillColor, forKey: .fillColor)
@@ -1299,6 +1422,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         copy.heightScale = Self.clamp(copy.heightScale, lower: Self.minimumScale, upper: Self.maximumScale)
         copy.rotationDegrees = Self.normalizedRotationDegrees(copy.rotationDegrees)
         copy.zIndex = Self.normalizedZIndex(copy.zIndex)
+        copy.hitInsets = copy.hitInsets?.normalized
         copy.fillColor = copy.fillColor?.normalized
         copy.lightFillColor = copy.lightFillColor?.normalized
         copy.darkFillColor = copy.darkFillColor?.normalized
@@ -1340,6 +1464,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         if !(abs(heightScale - 1.0) < 0.001) { return false }
         if !(abs(rotationDegrees) < 0.001) { return false }
         if zIndex != 0 { return false }
+        if hitInsets != nil { return false }
         if shape != nil { return false }
         if accentStyle != nil { return false }
         if fillColor != nil { return false }
@@ -1375,6 +1500,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
             || abs(heightScale - 1.0) >= 0.001
             || abs(rotationDegrees) >= 0.001
             || zIndex != 0
+            || hitInsets != nil
             || shape != nil
             || isHidden
     }
@@ -1481,6 +1607,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         case heightScale
         case rotationDegrees
         case zIndex
+        case hitInsets
         case shape
         case accentStyle
         case fillColor
@@ -1548,6 +1675,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
     public var label: String
     public var layout: GamepadButtonCustomization
     public var controlKind: GamepadCustomControlKind
+    public var visualRole: GamepadVisualRole?
     public var joystickMapping: GamepadJoystickMapping?
     public var joystickOutputSettings: GamepadJoystickOutputSettings?
     public var triggerSettings: GamepadTriggerSettings?
@@ -1565,6 +1693,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
             shape: .roundedRectangle
         ),
         controlKind: GamepadCustomControlKind = .button,
+        visualRole: GamepadVisualRole? = nil,
         joystickMapping: GamepadJoystickMapping? = nil,
         joystickOutputSettings: GamepadJoystickOutputSettings? = nil,
         triggerSettings: GamepadTriggerSettings? = nil,
@@ -1575,6 +1704,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         self.label = label
         self.layout = layout
         self.controlKind = controlKind
+        self.visualRole = visualRole
         self.joystickMapping = joystickMapping
         self.joystickOutputSettings = joystickOutputSettings
         self.triggerSettings = triggerSettings
@@ -1594,6 +1724,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
             shape: .roundedRectangle
         )
         controlKind = try container.decodeIfPresent(GamepadCustomControlKind.self, forKey: .controlKind) ?? .button
+        visualRole = try container.decodeIfPresent(GamepadVisualRole.self, forKey: .visualRole)
         joystickMapping = try container.decodeIfPresent(GamepadJoystickMapping.self, forKey: .joystickMapping)
         joystickOutputSettings = try container.decodeIfPresent(GamepadJoystickOutputSettings.self, forKey: .joystickOutputSettings)
         triggerSettings = try container.decodeIfPresent(GamepadTriggerSettings.self, forKey: .triggerSettings)
@@ -1607,6 +1738,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         try container.encode(label, forKey: .label)
         try container.encode(layout, forKey: .layout)
         try container.encode(controlKind, forKey: .controlKind)
+        try container.encodeIfPresent(visualRole, forKey: .visualRole)
         try container.encodeIfPresent(joystickMapping, forKey: .joystickMapping)
         try container.encodeIfPresent(joystickOutputSettings?.normalized, forKey: .joystickOutputSettings)
         try container.encodeIfPresent(triggerSettings?.normalized, forKey: .triggerSettings)
@@ -1685,6 +1817,7 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         case label
         case layout
         case controlKind
+        case visualRole
         case joystickMapping
         case joystickOutputSettings
         case triggerSettings
@@ -1699,6 +1832,7 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
     public var layout: GamepadButtonCustomization
     public var builtInButton: GameButton?
     public var legacySlot: GameButton?
+    public var visualRole: GamepadVisualRole?
     public var output: KeypadElementOutputBinding?
     public var partOutputs: [KeypadElementInputPart: KeypadElementOutputBinding]
     public var joystickMapping: GamepadJoystickMapping?
@@ -1719,6 +1853,7 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
         ),
         builtInButton: GameButton? = nil,
         legacySlot: GameButton? = nil,
+        visualRole: GamepadVisualRole? = nil,
         output: KeypadElementOutputBinding? = nil,
         partOutputs: [KeypadElementInputPart: KeypadElementOutputBinding] = [:],
         joystickMapping: GamepadJoystickMapping? = nil,
@@ -1732,6 +1867,7 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
         self.layout = layout
         self.builtInButton = builtInButton
         self.legacySlot = legacySlot
+        self.visualRole = visualRole
         self.output = output
         self.partOutputs = partOutputs
         self.joystickMapping = joystickMapping
@@ -1804,6 +1940,7 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
             layout: .defaultValue,
             builtInButton: builtInButton,
             legacySlot: legacySlot,
+            visualRole: visualRole,
             output: output?.isEmpty == true ? nil : output,
             partOutputs: partOutputs.compactMapValues { $0.isEmpty ? nil : $0 },
             joystickMapping: joystickMapping,
@@ -2360,6 +2497,8 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     public var backgroundFillStyle: GamepadFillStyle?
     public var backgroundLightFillStyle: GamepadFillStyle?
     public var backgroundDarkFillStyle: GamepadFillStyle?
+    /// Passive skin artwork; never participates in input, outputs, or accessibility.
+    public var artworkLayers: [PocketPadSkinArtworkLayer]
     public var accentStyle: GamepadAccentStyle
     public var showsButtonLabels: Bool
     public var labelOverrides: [GameButton: String]
@@ -2384,6 +2523,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         backgroundFillStyle: GamepadFillStyle? = nil,
         backgroundLightFillStyle: GamepadFillStyle? = nil,
         backgroundDarkFillStyle: GamepadFillStyle? = nil,
+        artworkLayers: [PocketPadSkinArtworkLayer] = [],
         accentStyle: GamepadAccentStyle = .monochrome,
         showsButtonLabels: Bool = true,
         labelOverrides: [GameButton: String] = [:],
@@ -2407,6 +2547,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         self.backgroundFillStyle = backgroundFillStyle
         self.backgroundLightFillStyle = backgroundLightFillStyle
         self.backgroundDarkFillStyle = backgroundDarkFillStyle
+        self.artworkLayers = artworkLayers
         self.accentStyle = accentStyle
         self.showsButtonLabels = showsButtonLabels
         self.labelOverrides = labelOverrides
@@ -2433,6 +2574,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         backgroundFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundFillStyle)
         backgroundLightFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundLightFillStyle)
         backgroundDarkFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundDarkFillStyle)
+        artworkLayers = try container.decodeIfPresent([PocketPadSkinArtworkLayer].self, forKey: .artworkLayers) ?? []
         accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle) ?? .monochrome
         showsButtonLabels = try container.decodeIfPresent(Bool.self, forKey: .showsButtonLabels) ?? true
         labelOverrides = try container.decodeIfPresent([GameButton: String].self, forKey: .labelOverrides) ?? [:]
@@ -2459,10 +2601,22 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         try container.encodeIfPresent(backgroundFillStyle?.normalized, forKey: .backgroundFillStyle)
         try container.encodeIfPresent(backgroundLightFillStyle?.normalized, forKey: .backgroundLightFillStyle)
         try container.encodeIfPresent(backgroundDarkFillStyle?.normalized, forKey: .backgroundDarkFillStyle)
+        if !artworkLayers.isEmpty { try container.encode(artworkLayers, forKey: .artworkLayers) }
         try container.encode(accentStyle, forKey: .accentStyle)
         try container.encode(showsButtonLabels, forKey: .showsButtonLabels)
-        try container.encode(labelOverrides, forKey: .labelOverrides)
-        try container.encode(buttonCustomizations, forKey: .buttonCustomizations)
+        // GameButton-keyed dictionaries otherwise encode as an unkeyed sequence in
+        // hash-table iteration order. Stable ordering keeps package/profile bytes,
+        // catalog fingerprints, and agent artboard exports reproducible.
+        var labelContainer = container.nestedUnkeyedContainer(forKey: .labelOverrides)
+        for button in GameButton.allCases where labelOverrides[button] != nil {
+            try labelContainer.encode(button)
+            try labelContainer.encode(labelOverrides[button]!)
+        }
+        var customizationContainer = container.nestedUnkeyedContainer(forKey: .buttonCustomizations)
+        for button in GameButton.allCases where buttonCustomizations[button] != nil {
+            try customizationContainer.encode(button)
+            try customizationContainer.encode(buttonCustomizations[button]!)
+        }
         try container.encode(customButtons, forKey: .customButtons)
         let normalizedElements = synchronizedElements(migratesLegacySlots: elements.isEmpty, controlsAreNormalized: true)
         if !normalizedElements.isEmpty { try container.encode(normalizedElements, forKey: .elements) }
@@ -2849,6 +3003,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             layout: normalizedButton.layout,
             builtInButton: nil,
             legacySlot: migratesLegacySlot ? normalizedButton.mappedButton : existing?.legacySlot,
+            visualRole: normalizedButton.visualRole ?? existing?.visualRole,
             output: existing?.output,
             partOutputs: existing?.partOutputs ?? [:],
             joystickMapping: normalizedButton.joystickMapping,
@@ -2895,6 +3050,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
                     layout: layout,
                     builtInButton: button,
                     legacySlot: existing?.legacySlot ?? button,
+                    visualRole: existing?.visualRole,
                     output: existing?.output,
                     partOutputs: existing?.partOutputs ?? [:]
                 ).normalized(layoutIsAlreadyNormalized: true)
@@ -2913,6 +3069,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
                     layout: normalizedButton.layout,
                     builtInButton: nil,
                     legacySlot: migratesLegacySlots ? normalizedButton.mappedButton : existing?.legacySlot,
+                    visualRole: normalizedButton.visualRole ?? existing?.visualRole,
                     output: existing?.output,
                     partOutputs: existing?.partOutputs ?? [:],
                     joystickMapping: normalizedButton.joystickMapping,
@@ -2934,6 +3091,17 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         copy.backgroundFillStyle = backgroundFillStyle?.normalized
         copy.backgroundLightFillStyle = backgroundLightFillStyle?.normalized
         copy.backgroundDarkFillStyle = backgroundDarkFillStyle?.normalized
+        var artworkByID: [String: PocketPadSkinArtworkLayer] = [:]
+        for layer in artworkLayers {
+            if let normalized = layer.normalized { artworkByID[normalized.id] = normalized }
+        }
+        copy.artworkLayers = artworkByID.values
+            .filter { !$0.isHidden }
+            .sorted {
+                if $0.plane != $1.plane { return $0.plane.rawValue < $1.plane.rawValue }
+                if $0.zIndex != $1.zIndex { return $0.zIndex < $1.zIndex }
+                return $0.id < $1.id
+            }
         copy.labelOverrides = Dictionary(uniqueKeysWithValues: labelOverrides.compactMap { button, label in
             let normalizedLabel = normalizedGamepadLabel(label)
             guard !normalizedLabel.isEmpty else { return nil }
@@ -2999,6 +3167,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             && backgroundFillStyle?.normalized == other.backgroundFillStyle?.normalized
             && backgroundLightFillStyle?.normalized == other.backgroundLightFillStyle?.normalized
             && backgroundDarkFillStyle?.normalized == other.backgroundDarkFillStyle?.normalized
+            && normalized.artworkLayers == other.normalized.artworkLayers
             && accentStyle == other.accentStyle
             && showsButtonLabels == other.showsButtonLabels
             && normalized.labelOverrides == other.normalized.labelOverrides
@@ -3051,6 +3220,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         case backgroundFillStyle
         case backgroundLightFillStyle
         case backgroundDarkFillStyle
+        case artworkLayers
         case accentStyle
         case showsButtonLabels
         case labelOverrides
@@ -3121,6 +3291,7 @@ struct GamepadResolvedControl: Identifiable, Equatable {
     let isCustom: Bool
     let isLocationLocked: Bool
     let controlKind: GamepadCustomControlKind
+    let visualRole: GamepadVisualRole
     let joystickMapping: GamepadJoystickMapping?
     let joystickOutputSettings: GamepadJoystickOutputSettings?
     let triggerSettings: GamepadTriggerSettings?
@@ -3149,6 +3320,24 @@ struct GamepadResolvedControl: Identifiable, Equatable {
             width: size.width,
             height: size.height
         )
+    }
+
+    var resolvedHitInsets: GamepadHitInsets {
+        layoutCustomization.hitInsets?.normalized ?? .runtimeDefault
+    }
+
+    var hitFrame: CGRect {
+        let insets = resolvedHitInsets
+        return CGRect(
+            x: frame.minX - insets.leading,
+            y: frame.minY - insets.top,
+            width: frame.width + insets.leading + insets.trailing,
+            height: frame.height + insets.top + insets.bottom
+        )
+    }
+
+    var hitCenter: CGPoint {
+        CGPoint(x: hitFrame.midX, y: hitFrame.midY)
     }
 
 }
@@ -3339,6 +3528,8 @@ enum GamepadLayoutResolver {
                 isCustom: false,
                 isLocationLocked: buttonCustomization.isLocationLocked,
                 controlKind: .button,
+                visualRole: customization.elements.first(where: { $0.builtInButton == button })?.visualRole
+                    ?? GamepadVisualRole.inferred(for: button, controlKind: .button),
                 joystickMapping: nil,
                 joystickOutputSettings: nil,
                 triggerSettings: nil,
@@ -3399,6 +3590,8 @@ enum GamepadLayoutResolver {
                 isCustom: true,
                 isLocationLocked: normalizedButton.layout.isLocationLocked,
                 controlKind: normalizedButton.controlKind,
+                visualRole: normalizedButton.visualRole
+                    ?? GamepadVisualRole.inferred(for: normalizedButton.mappedButton, controlKind: normalizedButton.controlKind),
                 joystickMapping: normalizedButton.isJoystick ? (normalizedButton.joystickMapping ?? .movement) : nil,
                 joystickOutputSettings: normalizedButton.isJoystick ? (normalizedButton.joystickOutputSettings ?? .defaultValue).normalized : nil,
                 triggerSettings: normalizedButton.isTrigger ? (normalizedButton.triggerSettings ?? .defaultValue).normalized : nil,
@@ -3448,6 +3641,7 @@ enum GamepadLayoutResolver {
                 isCustom: false,
                 isLocationLocked: layout.isLocationLocked,
                 controlKind: .decoration,
+                visualRole: .system,
                 joystickMapping: nil,
                 joystickOutputSettings: nil,
                 triggerSettings: nil,
@@ -3757,7 +3951,8 @@ extension GamepadCustomization {
     }
 
     func keypadBackgroundFillStyle(scheme: ColorScheme) -> GamepadFillStyle {
-        backgroundFillStyle(for: scheme) ?? .solid(Self.defaultBackgroundColor(for: scheme))
+        (backgroundFillStyle(for: scheme) ?? .solid(Self.defaultBackgroundColor(for: scheme)))
+            .resolvingAssets(in: assetLibrary)
     }
 
     func backgroundFillStyle(for scheme: ColorScheme) -> GamepadFillStyle? {
@@ -4190,6 +4385,13 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     public var customization: GamepadCustomization
     public var landscapeCustomization: GamepadCustomization?
     public var portraitCustomization: GamepadCustomization?
+    /// Installed appearance package. Geometry and executable bindings remain in this profile.
+    public var skinReference: PocketPadSkinReference?
+    /// Rendered baselines captured when the skin was applied. Differences between the current
+    /// customization and these baselines are user overrides layered over future skin updates.
+    public var skinBaselineCustomization: GamepadCustomization?
+    public var landscapeSkinBaselineCustomization: GamepadCustomization?
+    public var portraitSkinBaselineCustomization: GamepadCustomization?
     public var orientationPreference: GamepadProfileOrientationPreference
     public var outputMode: GamepadProfileOutputMode
     public var launchTarget: GamepadProfileLaunchTarget?
@@ -4201,6 +4403,10 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         customization: GamepadCustomization,
         landscapeCustomization: GamepadCustomization? = nil,
         portraitCustomization: GamepadCustomization? = nil,
+        skinReference: PocketPadSkinReference? = nil,
+        skinBaselineCustomization: GamepadCustomization? = nil,
+        landscapeSkinBaselineCustomization: GamepadCustomization? = nil,
+        portraitSkinBaselineCustomization: GamepadCustomization? = nil,
         orientationPreference: GamepadProfileOrientationPreference = .automatic,
         outputMode: GamepadProfileOutputMode = .keyboard,
         launchTarget: GamepadProfileLaunchTarget? = nil,
@@ -4211,6 +4417,10 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         self.customization = customization.normalized
         self.landscapeCustomization = landscapeCustomization?.normalized
         self.portraitCustomization = portraitCustomization?.normalized
+        self.skinReference = skinReference
+        self.skinBaselineCustomization = skinBaselineCustomization?.normalized
+        self.landscapeSkinBaselineCustomization = landscapeSkinBaselineCustomization?.normalized
+        self.portraitSkinBaselineCustomization = portraitSkinBaselineCustomization?.normalized
         self.orientationPreference = orientationPreference
         self.outputMode = outputMode
         self.launchTarget = launchTarget?.normalized
@@ -4224,6 +4434,10 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         customization = (try container.decodeIfPresent(GamepadCustomization.self, forKey: .customization) ?? .defaultValue).normalized
         landscapeCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .landscapeCustomization)?.normalized
         portraitCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .portraitCustomization)?.normalized
+        skinReference = try container.decodeIfPresent(PocketPadSkinReference.self, forKey: .skinReference)
+        skinBaselineCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .skinBaselineCustomization)?.normalized
+        landscapeSkinBaselineCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .landscapeSkinBaselineCustomization)?.normalized
+        portraitSkinBaselineCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .portraitSkinBaselineCustomization)?.normalized
         orientationPreference = try container.decodeIfPresent(GamepadProfileOrientationPreference.self, forKey: .orientationPreference) ?? .automatic
         // Profiles saved before output modes had their Mac output bindings stored next
         // to the profile, not inside it. Treat legacy profiles as custom so any
@@ -4240,6 +4454,10 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         try container.encode(customization, forKey: .customization)
         try container.encodeIfPresent(landscapeCustomization, forKey: .landscapeCustomization)
         try container.encodeIfPresent(portraitCustomization, forKey: .portraitCustomization)
+        try container.encodeIfPresent(skinReference, forKey: .skinReference)
+        try container.encodeIfPresent(skinBaselineCustomization, forKey: .skinBaselineCustomization)
+        try container.encodeIfPresent(landscapeSkinBaselineCustomization, forKey: .landscapeSkinBaselineCustomization)
+        try container.encodeIfPresent(portraitSkinBaselineCustomization, forKey: .portraitSkinBaselineCustomization)
         try container.encode(orientationPreference, forKey: .orientationPreference)
         try container.encode(outputMode, forKey: .outputMode)
         try container.encodeIfPresent(launchTarget?.normalized, forKey: .launchTarget)
@@ -4253,6 +4471,9 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         copy.customization = customization.normalized
         copy.landscapeCustomization = landscapeCustomization?.normalized
         copy.portraitCustomization = portraitCustomization?.normalized
+        copy.skinBaselineCustomization = skinBaselineCustomization?.normalized
+        copy.landscapeSkinBaselineCustomization = landscapeSkinBaselineCustomization?.normalized
+        copy.portraitSkinBaselineCustomization = portraitSkinBaselineCustomization?.normalized
         copy.launchTarget = launchTarget?.normalized
         return copy
     }
@@ -4267,6 +4488,135 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         // Saved Mode is a setup-level preference, not a per-orientation design choice.
         resolved.colorSchemePreference = customization.colorSchemePreference
         return resolved.normalized
+    }
+
+    func skinBaseline(for orientation: GamepadEditorDeviceOrientation) -> GamepadCustomization? {
+        switch orientation {
+        case .landscape: (landscapeSkinBaselineCustomization ?? skinBaselineCustomization)?.normalized
+        case .portrait: (portraitSkinBaselineCustomization ?? skinBaselineCustomization)?.normalized
+        }
+    }
+
+    func resolvedCustomization(
+        for orientation: GamepadEditorDeviceOrientation,
+        colorScheme: PocketPadSkinColorScheme,
+        skinPackage: PocketPadSkinPackage?
+    ) -> GamepadCustomization {
+        let local = customization(for: orientation)
+        guard let skinReference,
+              let skinPackage,
+              skinPackage.manifest.identifier == skinReference.identifier,
+              skinPackage.manifest.version == skinReference.version
+        else { return local }
+        return local.applying(
+            skinPackage: skinPackage,
+            orientation: orientation == .portrait ? .portrait : .landscape,
+            colorScheme: colorScheme,
+            options: .preservingUserOverrides,
+            overrideBaseline: skinBaseline(for: orientation)
+        )
+    }
+
+    mutating func applySkin(
+        _ package: PocketPadSkinPackage,
+        colorScheme: PocketPadSkinColorScheme = .light
+    ) {
+        let reference = PocketPadSkinReference(
+            identifier: package.manifest.identifier,
+            version: package.manifest.version
+        )
+        let fallbackOrientation = customization.deviceCanvas.editorDeviceFrame.orientation
+        let fallbackSkinOrientation: PocketPadSkinOrientation = fallbackOrientation == .portrait ? .portrait : .landscape
+        let previousFallbackBaseline = skinBaselineCustomization
+        let fallbackBaseline = customization.applying(
+            skinPackage: package,
+            orientation: fallbackSkinOrientation,
+            colorScheme: colorScheme,
+            options: .replacingAppearance
+        ).dehydratingAssets(from: package)
+        customization = previousFallbackBaseline.map { previousBaseline in
+            self.customization.applying(
+                skinPackage: package,
+                orientation: fallbackSkinOrientation,
+                colorScheme: colorScheme,
+                options: .preservingUserOverrides,
+                overrideBaseline: previousBaseline
+            ).dehydratingAssets(from: package)
+        } ?? fallbackBaseline
+        skinBaselineCustomization = fallbackBaseline
+
+        if let landscapeCustomization {
+            let previousBaseline = landscapeSkinBaselineCustomization ?? previousFallbackBaseline
+            let baseline = landscapeCustomization.applying(
+                skinPackage: package,
+                orientation: .landscape,
+                colorScheme: colorScheme,
+                options: .replacingAppearance
+            ).dehydratingAssets(from: package)
+            self.landscapeCustomization = previousBaseline.map {
+                landscapeCustomization.applying(
+                    skinPackage: package,
+                    orientation: .landscape,
+                    colorScheme: colorScheme,
+                    options: .preservingUserOverrides,
+                    overrideBaseline: $0
+                ).dehydratingAssets(from: package)
+            } ?? baseline
+            landscapeSkinBaselineCustomization = baseline
+        }
+        if let portraitCustomization {
+            let previousBaseline = portraitSkinBaselineCustomization ?? previousFallbackBaseline
+            let baseline = portraitCustomization.applying(
+                skinPackage: package,
+                orientation: .portrait,
+                colorScheme: colorScheme,
+                options: .replacingAppearance
+            ).dehydratingAssets(from: package)
+            self.portraitCustomization = previousBaseline.map {
+                portraitCustomization.applying(
+                    skinPackage: package,
+                    orientation: .portrait,
+                    colorScheme: colorScheme,
+                    options: .preservingUserOverrides,
+                    overrideBaseline: $0
+                ).dehydratingAssets(from: package)
+            } ?? baseline
+            portraitSkinBaselineCustomization = baseline
+        }
+        skinReference = reference
+        updatedAt = Date.currentMilliseconds
+    }
+
+    /// Materializes the selected variant and package assets before removing the package dependency.
+    mutating func detachSkin(
+        resolving package: PocketPadSkinPackage,
+        colorScheme: PocketPadSkinColorScheme
+    ) {
+        let fallbackOrientation = customization.deviceCanvas.editorDeviceFrame.orientation
+        let fallback = resolvedCustomization(
+            for: fallbackOrientation,
+            colorScheme: colorScheme,
+            skinPackage: package
+        )
+        let landscape = landscapeCustomization.map { _ in
+            resolvedCustomization(for: .landscape, colorScheme: colorScheme, skinPackage: package)
+        }
+        let portrait = portraitCustomization.map { _ in
+            resolvedCustomization(for: .portrait, colorScheme: colorScheme, skinPackage: package)
+        }
+        customization = fallback
+        landscapeCustomization = landscape
+        portraitCustomization = portrait
+        detachSkin()
+    }
+
+    /// Keeps the saved appearance and makes it fully local/editable.
+    mutating func detachSkin() {
+        skinReference = nil
+        skinBaselineCustomization = nil
+        landscapeSkinBaselineCustomization = nil
+        portraitSkinBaselineCustomization = nil
+        updatedAt = Date.currentMilliseconds
     }
 
     func hasCustomizationVariant(for orientation: GamepadEditorDeviceOrientation) -> Bool {
@@ -4311,6 +4661,10 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         case customization
         case landscapeCustomization
         case portraitCustomization
+        case skinReference
+        case skinBaselineCustomization
+        case landscapeSkinBaselineCustomization
+        case portraitSkinBaselineCustomization
         case orientationPreference
         case outputMode
         case launchTarget
@@ -4338,6 +4692,14 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
     case softWhite
 
     var id: String { rawValue }
+
+    /// Increment when canonical geometry or semantics change incompatibly.
+    var templateRevision: Int {
+        switch self {
+        case .snes: 2
+        default: 1
+        }
+    }
 
     var displayName: String {
         switch self {
@@ -4402,11 +4764,12 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
     }
 
     func makeProfile() -> GamepadConfigurationProfile {
+        var profile: GamepadConfigurationProfile
         switch self {
         case .productivityStarter:
             let landscape = Self.productivityStarterCustomization(isPortrait: false)
             let portrait = Self.productivityStarterCustomization(isPortrait: true)
-            return GamepadConfigurationProfile(
+            profile = GamepadConfigurationProfile(
                 name: displayName,
                 customization: landscape,
                 landscapeCustomization: landscape,
@@ -4416,15 +4779,42 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
             let usesLeftHand = self == .productivityOneHandedLeft
             let portrait = Self.oneHandedProductivityCustomization(usesLeftHand: usesLeftHand, isPortrait: true)
             let landscape = Self.oneHandedProductivityCustomization(usesLeftHand: usesLeftHand, isPortrait: false)
-            return GamepadConfigurationProfile(
+            profile = GamepadConfigurationProfile(
                 name: displayName,
                 customization: portrait,
                 landscapeCustomization: landscape,
                 portraitCustomization: portrait
             )
         default:
-            return GamepadConfigurationProfile(name: displayName, customization: makeCustomization())
+            profile = GamepadConfigurationProfile(name: displayName, customization: makeCustomization())
         }
+        profile.customization = Self.taggedWithTemplateMetadata(
+            profile.customization,
+            templateID: rawValue,
+            revision: templateRevision
+        )
+        profile.landscapeCustomization = profile.landscapeCustomization.map {
+            Self.taggedWithTemplateMetadata($0, templateID: rawValue, revision: templateRevision)
+        }
+        profile.portraitCustomization = profile.portraitCustomization.map {
+            Self.taggedWithTemplateMetadata($0, templateID: rawValue, revision: templateRevision)
+        }
+        return profile
+    }
+
+    private static func taggedWithTemplateMetadata(
+        _ source: GamepadCustomization,
+        templateID: String,
+        revision: Int
+    ) -> GamepadCustomization {
+        var customization = source
+        var metadata = customization.designMetadata ?? .empty
+        metadata.sourceTemplateID = templateID
+        metadata.sourceTemplateRevision = max(1, revision)
+        customization.designMetadata = metadata.normalized(
+            availableControls: customization.allControlIdentitiesForDesign
+        )
+        return customization.normalized
     }
 
     private func makeCustomization() -> GamepadCustomization {
@@ -6005,6 +6395,30 @@ private enum GamepadImageDecodeCache {
 #endif
 }
 
+struct GamepadAssetIconImage: View {
+    let data: Data
+    let renderingMode: GamepadControlIconRenderingMode
+
+    @ViewBuilder
+    var body: some View {
+#if os(macOS)
+        if let image = GamepadImageDecodeCache.image(for: data) {
+            Image(nsImage: image)
+                .renderingMode(renderingMode == .template ? .template : .original)
+                .resizable()
+                .scaledToFit()
+        }
+#elseif os(iOS)
+        if let image = GamepadImageDecodeCache.image(for: data) {
+            Image(uiImage: image)
+                .renderingMode(renderingMode == .template ? .template : .original)
+                .resizable()
+                .scaledToFit()
+        }
+#endif
+    }
+}
+
 private struct GamepadImageFillView: View {
     let fill: GamepadImageFill
 
@@ -6037,29 +6451,49 @@ private struct GamepadImageFillView: View {
     private func platformImage(data: Data, contentMode: GamepadImageContentMode) -> some View {
 #if os(macOS)
         if let image = GamepadImageDecodeCache.image(for: data) {
-            resizableImage(Image(nsImage: image), contentMode: contentMode)
+            resizableImage(Image(nsImage: image), imageSize: image.size, contentMode: contentMode)
         }
 #elseif os(iOS)
         if let image = GamepadImageDecodeCache.image(for: data) {
-            resizableImage(Image(uiImage: image), contentMode: contentMode)
+            resizableImage(Image(uiImage: image), imageSize: image.size, contentMode: contentMode)
         }
 #endif
     }
 
     @ViewBuilder
-    private func resizableImage(_ image: Image, contentMode: GamepadImageContentMode) -> some View {
-        switch contentMode {
-        case .fill:
-            image
-                .resizable()
-                .scaledToFill()
-        case .fit:
-            image
-                .resizable()
-                .scaledToFit()
+    private func resizableImage(
+        _ image: Image,
+        imageSize: CGSize,
+        contentMode: GamepadImageContentMode
+    ) -> some View {
+        let mode = fill.normalized.effectiveResizingMode
+        switch mode {
+        case .nineSliceStretch, .nineSliceTile:
+            if let fractions = fill.normalized.nineSliceInsets?.normalized {
+                image
+                    .resizable(
+                        capInsets: EdgeInsets(
+                            top: fractions.top * imageSize.height,
+                            leading: fractions.leading * imageSize.width,
+                            bottom: fractions.bottom * imageSize.height,
+                            trailing: fractions.trailing * imageSize.width
+                        ),
+                        resizingMode: mode == .nineSliceTile ? .tile : .stretch
+                    )
+            } else {
+                image.resizable().scaledToFill()
+            }
         case .tile:
-            image
-                .resizable(resizingMode: .tile)
+            image.resizable(resizingMode: .tile)
+        case .scale:
+            switch contentMode {
+            case .fill:
+                image.resizable().scaledToFill()
+            case .fit:
+                image.resizable().scaledToFit()
+            case .tile:
+                image.resizable(resizingMode: .tile)
+            }
         }
     }
 }
@@ -6277,9 +6711,15 @@ struct GamepadRenderedControlFace: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
             case .asset:
-                Text("▧")
-                    .font(.system(size: baseSize, weight: .semibold))
-                    .foregroundStyle(tint.opacity(0.72))
+                if let data = customization.assetLibrary.asset(id: icon.value)?.data {
+                    GamepadAssetIconImage(data: data, renderingMode: icon.renderingMode)
+                        .frame(width: baseSize, height: baseSize)
+                        .foregroundStyle(tint)
+                } else {
+                    Image(systemName: "photo.badge.exclamationmark")
+                        .font(.system(size: baseSize, weight: .semibold))
+                        .foregroundStyle(tint.opacity(0.72))
+                }
             }
         }
         .offset(iconOffset(for: icon.placement))
@@ -7805,6 +8245,7 @@ struct GamepadCustomizationEditor: View {
     @State private var activeCanvasTool: GamepadCanvasTool = .select
     @State private var interactionMode: GamepadEditorInteractionMode = .edit
     @State private var inspectorMode: GamepadEditorInspectorMode = .basic
+    @State private var showsHitAreaOverlay = false
     @State private var configurationSidebarTab: GamepadConfigurationSidebarTab = .setups
     @State private var isShortcutReferencePresented = false
     @State private var isAddControlPalettePresented = false
@@ -10434,6 +10875,7 @@ struct GamepadCustomizationEditor: View {
                         pressedElementInputs: locallyPressedTestInputs.union(externallyPressedElementInputs),
                         highlightedControlIDs: highlightedQualityControlIDs,
                         highlightedIssueSeverity: highlightedQualitySeverity,
+                        showsHitAreas: showsHitAreaOverlay,
                         onTestInputChanged: handleTestInputChanged,
                         layoutSize: screenRect.size,
                         displayScale: displayScale,
@@ -10833,6 +11275,7 @@ struct GamepadCustomizationEditor: View {
                         ("R", "Draw rectangle"),
                         ("O", "Draw ellipse"),
                         ("↑ ↓ ← →", "Move selection by 1pt"),
+                        ("⌥ + Arrow", "Move selection even when an inspector field has focus"),
                         ("⇧ + Arrow", "Move selection by 10pt")
                     ])
                     shortcutGroup("View", shortcuts: [
@@ -11665,6 +12108,10 @@ struct GamepadCustomizationEditor: View {
                     VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
                         selectedElementPositionControls
                         selectedElementLayoutControls
+                        if selectedControlSupportsHitArea {
+                            Divider()
+                            selectedElementHitAreaControls
+                        }
                     }
                 }
 
@@ -12547,6 +12994,10 @@ struct GamepadCustomizationEditor: View {
                 selectedElementLabelControls
                 selectedElementOutputControls
 
+                if selectedControlSupportsVisualRole {
+                    selectedElementVisualRoleControls
+                }
+
                 componentStateControls
 
                 if case .custom(let id) = selectedControlID,
@@ -12559,6 +13010,107 @@ struct GamepadCustomizationEditor: View {
                     .geistButtonStyle(.error, size: .small)
                 }
             }
+        }
+    }
+
+    private var selectedControlSupportsVisualRole: Bool {
+        switch selectedControlID {
+        case .builtin, .custom: true
+        case .system, .controlBarItem: false
+        }
+    }
+
+    private var selectedControlSupportsHitArea: Bool {
+        switch selectedControlID {
+        case .custom(let id): customButton(id: id)?.normalized.isDecoration != true
+        case .builtin, .system(.topBarActivation): true
+        case .controlBarItem: false
+        }
+    }
+
+    private var selectedElementVisualRoleControls: some View {
+        let inferred = inferredVisualRole(for: selectedControlID)
+        return VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text("Skin Role")
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            Picker("Skin Role", selection: visualRoleBinding(for: selectedControlID)) {
+                Text("Automatic (\(inferred.displayName))")
+                    .tag(Optional<GamepadVisualRole>.none)
+                Divider()
+                ForEach(GamepadVisualRole.allCases) { role in
+                    Text(role.displayName).tag(Optional(role))
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+
+            Text("Semantic roles let one skin style many keypad layouts without relying on labels or internal IDs.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var selectedElementHitAreaControls: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Touch Area")
+                        .geistTypography(.label13)
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    Text("Expand interaction without changing artwork")
+                        .geistTypography(.copy13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                }
+                Spacer(minLength: Geist.Spacing.s2)
+                Toggle("Custom touch area", isOn: customHitAreaBinding(for: selectedControlID))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+
+            if selectedLayoutCustomization(for: selectedControlID).hitInsets != nil {
+                LazyVGrid(
+                    columns: [GridItem(.flexible()), GridItem(.flexible())],
+                    alignment: .leading,
+                    spacing: Geist.Spacing.s2
+                ) {
+                    inspectorMetricField(
+                        title: "Top",
+                        value: hitInsetBinding(for: selectedControlID, keyPath: \.top),
+                        unit: "pt",
+                        maxFractionDigits: 0,
+                        accessibilityLabel: "Touch area top inset"
+                    )
+                    inspectorMetricField(
+                        title: "Bottom",
+                        value: hitInsetBinding(for: selectedControlID, keyPath: \.bottom),
+                        unit: "pt",
+                        maxFractionDigits: 0,
+                        accessibilityLabel: "Touch area bottom inset"
+                    )
+                    inspectorMetricField(
+                        title: "Leading",
+                        value: hitInsetBinding(for: selectedControlID, keyPath: \.leading),
+                        unit: "pt",
+                        maxFractionDigits: 0,
+                        accessibilityLabel: "Touch area leading inset"
+                    )
+                    inspectorMetricField(
+                        title: "Trailing",
+                        value: hitInsetBinding(for: selectedControlID, keyPath: \.trailing),
+                        unit: "pt",
+                        maxFractionDigits: 0,
+                        accessibilityLabel: "Touch area trailing inset"
+                    )
+                }
+            } else {
+                Text("Using PocketPad’s 10 pt runtime expansion on every edge.")
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            }
+
+            GeistCheckboxToggle(title: "Show touch areas on canvas", isOn: $showsHitAreaOverlay)
         }
     }
 
@@ -15417,6 +15969,79 @@ struct GamepadCustomizationEditor: View {
             get: { customButton(id: id)?.label ?? "" },
             set: { label in
                 updateCustomButton(id: id) { $0.label = normalizedGamepadLabel(label) }
+            }
+        )
+    }
+
+    private func inferredVisualRole(for identity: GamepadControlIdentity) -> GamepadVisualRole {
+        switch identity {
+        case .builtin(let button):
+            GamepadVisualRole.inferred(for: button, controlKind: .button)
+        case .custom(let id):
+            if let button = customButton(id: id)?.normalized {
+                GamepadVisualRole.inferred(for: button.mappedButton, controlKind: button.controlKind)
+            } else {
+                .custom
+            }
+        case .system: .system
+        case .controlBarItem: .utility
+        }
+    }
+
+    private func visualRoleBinding(for identity: GamepadControlIdentity) -> Binding<GamepadVisualRole?> {
+        Binding(
+            get: {
+                switch identity {
+                case .builtin(let button):
+                    customization.elements.first(where: { $0.builtInButton == button })?.visualRole
+                case .custom(let id):
+                    customButton(id: id)?.visualRole
+                        ?? customization.elements.first(where: { $0.id == id })?.visualRole
+                case .system, .controlBarItem:
+                    nil
+                }
+            },
+            set: { role in
+                switch identity {
+                case .builtin(let button):
+                    update { next in
+                        guard let index = next.elements.firstIndex(where: { $0.builtInButton == button }) else { return }
+                        next.elements[index].visualRole = role
+                    }
+                case .custom(let id):
+                    updateCustomButton(id: id) { $0.visualRole = role }
+                case .system, .controlBarItem:
+                    break
+                }
+            }
+        )
+    }
+
+    private func customHitAreaBinding(for identity: GamepadControlIdentity) -> Binding<Bool> {
+        Binding(
+            get: { selectedLayoutCustomization(for: identity).hitInsets != nil },
+            set: { isCustom in
+                updateLayoutCustomization(for: identity) { layout in
+                    layout.hitInsets = isCustom ? (layout.hitInsets ?? .runtimeDefault) : nil
+                }
+            }
+        )
+    }
+
+    private func hitInsetBinding(
+        for identity: GamepadControlIdentity,
+        keyPath: WritableKeyPath<GamepadHitInsets, CGFloat>
+    ) -> Binding<Double> {
+        Binding(
+            get: {
+                Double((selectedLayoutCustomization(for: identity).hitInsets ?? .runtimeDefault)[keyPath: keyPath])
+            },
+            set: { value in
+                updateLayoutCustomization(for: identity) { layout in
+                    var insets = layout.hitInsets ?? .runtimeDefault
+                    insets[keyPath: keyPath] = CGFloat(value)
+                    layout.hitInsets = insets.normalized
+                }
             }
         )
     }
@@ -19498,7 +20123,7 @@ private struct GamepadEditorResizeHandle: View {
     }
 }
 
-private enum GamepadEditorNudgeDirection {
+enum GamepadEditorNudgeDirection: Equatable {
     case left
     case right
     case up
@@ -19515,6 +20140,33 @@ private enum GamepadEditorNudgeDirection {
         case .down:
             CGSize(width: 0, height: step)
         }
+    }
+}
+
+enum GamepadEditorKeyboardShortcutRouting {
+    static func nudgeDirection(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> GamepadEditorNudgeDirection? {
+        let flags = modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard !flags.contains(.command), !flags.contains(.control) else { return nil }
+
+        switch keyCode {
+        case 123: return .left
+        case 124: return .right
+        case 125: return .down
+        case 126: return .up
+        default: return nil
+        }
+    }
+
+    static func routesNudgeDuringTextEditing(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        let flags = modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return flags.contains(.option)
+            && nudgeDirection(keyCode: keyCode, modifierFlags: flags) != nil
     }
 }
 
@@ -19644,9 +20296,24 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
                   let window = view.window,
                   let eventWindow = event.window,
                   eventWindow === window,
-                  window.isKeyWindow,
-                  !Self.isTextEditing(in: window)
+                  window.isKeyWindow
             else { return event }
+
+            if Self.isTextEditing(in: window) {
+                // Inspector fields can remain first responder after selecting the canvas.
+                // Preserve normal caret movement, but keep the explicit Option+Arrow nudge global.
+                guard GamepadEditorKeyboardShortcutRouting.routesNudgeDuringTextEditing(
+                    keyCode: event.keyCode,
+                    modifierFlags: event.modifierFlags
+                ),
+                      let nudgeDirection = GamepadEditorKeyboardShortcutRouting.nudgeDirection(
+                        keyCode: event.keyCode,
+                        modifierFlags: event.modifierFlags
+                      )
+                else { return event }
+
+                return onNudge(nudgeDirection, Self.isShiftModifierEvent(event)) ? nil : event
+            }
 
             if Self.isEscapeEvent(event) {
                 return onEscape() ? nil : event
@@ -19692,7 +20359,10 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
                 return onGroup() ? nil : event
             }
 
-            if let nudgeDirection = Self.nudgeDirection(for: event) {
+            if let nudgeDirection = GamepadEditorKeyboardShortcutRouting.nudgeDirection(
+                keyCode: event.keyCode,
+                modifierFlags: event.modifierFlags
+            ) {
                 return onNudge(nudgeDirection, Self.isShiftModifierEvent(event)) ? nil : event
             }
 
@@ -19753,28 +20423,6 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
             guard !event.isARepeat else { return false }
             guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
             return event.keyCode == 51 || event.keyCode == 117
-        }
-
-        private static func nudgeDirection(for event: NSEvent) -> GamepadEditorNudgeDirection? {
-            guard isNudgeModifierEvent(event) else { return nil }
-            switch event.keyCode {
-            case 123:
-                return .left
-            case 124:
-                return .right
-            case 125:
-                return .down
-            case 126:
-                return .up
-            default:
-                return nil
-            }
-        }
-
-        private static func isNudgeModifierEvent(_ event: NSEvent) -> Bool {
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            return !flags.contains(.command)
-                && !flags.contains(.control)
         }
 
         private static func isShiftModifierEvent(_ event: NSEvent) -> Bool {
@@ -20923,6 +21571,7 @@ private struct GamepadLayoutDesigner: View {
     var pressedElementInputs: Set<KeypadElementInputID> = []
     var highlightedControlIDs: Set<GamepadControlIdentity> = []
     var highlightedIssueSeverity: GamepadLayoutIssueSeverity? = nil
+    var showsHitAreas = false
     var onTestInputChanged: (KeypadElementInputID, Bool) -> Void = { _, _ in }
     var layoutSize: CGSize?
     var displayScale: CGFloat = 1
@@ -20979,7 +21628,36 @@ private struct GamepadLayoutDesigner: View {
                     marqueeGesture(controls: controls, canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale),
                     including: interactionMode == .edit && activeTool == .select ? .gesture : .none
                 )
+                GamepadArtworkLayersView(layers: customization.artworkLayers, plane: .underlay)
+                    .frame(
+                        width: resolvedLayoutSize.width * resolvedDisplayScale,
+                        height: resolvedLayoutSize.height * resolvedDisplayScale
+                    )
                 layoutGrid(canvasSize: resolvedLayoutSize, displayScale: resolvedDisplayScale)
+
+                if showsHitAreas {
+                    ForEach(controls.filter { !$0.isDecoration }) { control in
+                        RoundedRectangle(cornerRadius: 8 * resolvedDisplayScale, style: .continuous)
+                            .fill(Geist.color(.blue700, scheme: colorScheme).opacity(0.10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8 * resolvedDisplayScale, style: .continuous)
+                                    .stroke(
+                                        Geist.color(.blue700, scheme: colorScheme).opacity(0.75),
+                                        style: StrokeStyle(lineWidth: 1, dash: [5, 3])
+                                    )
+                            )
+                            .frame(
+                                width: control.hitFrame.width * resolvedDisplayScale,
+                                height: control.hitFrame.height * resolvedDisplayScale
+                            )
+                            .position(
+                                x: control.hitFrame.midX * resolvedDisplayScale,
+                                y: control.hitFrame.midY * resolvedDisplayScale
+                            )
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
 
                 ForEach(controls) { control in
                     let isSelected = interactionMode == .edit && isControlSelectionActive && selectedControlIDs.contains(control.id)
@@ -21133,6 +21811,12 @@ private struct GamepadLayoutDesigner: View {
                     // a neighboring control cannot intercept a corner drag.
                     .zIndex(isSelected && !isMultiSelection ? 1 : 0)
                 }
+
+                GamepadArtworkLayersView(layers: customization.artworkLayers, plane: .overlay)
+                    .frame(
+                        width: resolvedLayoutSize.width * resolvedDisplayScale,
+                        height: resolvedLayoutSize.height * resolvedDisplayScale
+                    )
 
                 if interactionMode == .edit,
                    activeTool == .select,

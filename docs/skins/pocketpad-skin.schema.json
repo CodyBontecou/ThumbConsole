@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pocketpad.app/schemas/pocketpad-skin.schema.json",
+  "title": "PocketPad appearance skin",
+  "type": "object",
+  "required": ["base", "variants"],
+  "properties": {
+    "base": { "$ref": "#/$defs/appearance" },
+    "variants": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": ["id", "appearance"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "orientation": { "enum": ["portrait", "landscape"] },
+          "colorScheme": { "enum": ["light", "dark"] },
+          "appearance": { "$ref": "#/$defs/appearance" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "role": {
+      "enum": [
+        "movement",
+        "primary_action",
+        "secondary_action",
+        "utility",
+        "menu",
+        "custom",
+        "joystick",
+        "trigger",
+        "trackpad",
+        "decoration",
+        "system"
+      ]
+    },
+    "shape": { "enum": ["rectangle", "rounded_rectangle", "capsule", "circle", "ellipse", "polygon", "star"] },
+    "accent": { "enum": ["monochrome", "blue", "green", "purple", "pink", "amber"] },
+    "color": {
+      "type": "object",
+      "required": ["red", "green", "blue", "alpha"],
+      "properties": {
+        "red": { "type": "number", "minimum": 0, "maximum": 1 },
+        "green": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blue": { "type": "number", "minimum": 0, "maximum": 1 },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "fillStyle": {
+      "description": "Native PocketPad fill style (`solid`, `gradient`, `tile`, or `image`). Image fills may use `resizingMode`: `scale`, `tile`, `nine_slice_stretch`, or `nine_slice_tile`; nine-slice modes use normalized `nineSliceInsets`.",
+      "type": "object",
+      "properties": {
+        "kind": { "enum": ["solid", "gradient", "tile", "image"] },
+        "image": {
+          "type": "object",
+          "properties": {
+            "assetID": { "$ref": "#/$defs/id" },
+            "contentMode": { "enum": ["fill", "fit", "tile"] },
+            "resizingMode": { "enum": ["scale", "tile", "nine_slice_stretch", "nine_slice_tile"] },
+            "nineSliceInsets": { "$ref": "#/$defs/capInsets" }
+          }
+        }
+      }
+    },
+    "capInsets": {
+      "type": "object",
+      "required": ["top", "leading", "bottom", "trailing"],
+      "properties": {
+        "top": { "type": "number", "minimum": 0, "maximum": 0.49 },
+        "leading": { "type": "number", "minimum": 0, "maximum": 0.49 },
+        "bottom": { "type": "number", "minimum": 0, "maximum": 0.49 },
+        "trailing": { "type": "number", "minimum": 0, "maximum": 0.49 }
+      },
+      "additionalProperties": false
+    },
+    "normalizedRect": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width": { "type": "number", "minimum": 0, "maximum": 1 },
+        "height": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "artworkLayer": {
+      "description": "Passive artwork only. Layers have no hit target, output, label, or accessibility action.",
+      "type": "object",
+      "required": ["id", "plane", "opacity", "rotationDegrees", "blendMode", "zIndex", "isHidden"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "plane": { "enum": ["underlay", "overlay"] },
+        "frame": { "$ref": "#/$defs/normalizedRect" },
+        "fillStyle": { "$ref": "#/$defs/fillStyle" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rotationDegrees": { "type": "number", "minimum": -360, "maximum": 360 },
+        "blendMode": { "enum": ["normal", "multiply", "screen", "overlay", "soft_light"] },
+        "zIndex": { "type": "integer", "minimum": -10000, "maximum": 10000 },
+        "isHidden": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "icon": {
+      "type": "object",
+      "required": ["source", "value", "placement", "renderingMode", "scale"],
+      "properties": {
+        "source": { "enum": ["sf_symbol", "text", "asset"] },
+        "value": { "type": "string", "minLength": 1 },
+        "placement": { "enum": ["center", "top", "leading"] },
+        "renderingMode": { "enum": ["template", "original"] },
+        "scale": { "type": "number", "minimum": 0.25, "maximum": 3 }
+      },
+      "additionalProperties": false
+    },
+    "haptic": {
+      "type": "object",
+      "required": ["style", "pattern", "intensity", "sharpness", "duration"],
+      "properties": {
+        "style": { "enum": ["none", "light", "medium", "heavy", "soft", "rigid"] },
+        "pattern": { "enum": ["single", "double", "triple", "pulse", "buzz"] },
+        "intensity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sharpness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "duration": { "type": "number", "minimum": 0.01, "maximum": 2 }
+      },
+      "additionalProperties": false
+    },
+    "controlAppearance": {
+      "type": "object",
+      "properties": {
+        "styleID": { "$ref": "#/$defs/id" },
+        "shape": { "$ref": "#/$defs/shape" },
+        "accentStyle": { "$ref": "#/$defs/accent" },
+        "visualStyle": { "type": "object" },
+        "icon": { "$ref": "#/$defs/icon" },
+        "hapticFeedback": { "$ref": "#/$defs/haptic" },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 128 },
+        "cornerRadii": { "type": "object" },
+        "shadowStrength": { "type": "number", "minimum": 0, "maximum": 3 },
+        "joystickKnobColor": { "$ref": "#/$defs/color" },
+        "joystickVisualStyle": { "enum": ["pad", "thumbstick"] }
+      },
+      "additionalProperties": false
+    },
+    "appearance": {
+      "type": "object",
+      "required": ["roleRules", "buttonRules", "styleLibrary"],
+      "properties": {
+        "backgroundFillStyle": { "$ref": "#/$defs/fillStyle" },
+        "artworkLayers": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/artworkLayer" }
+        },
+        "accentStyle": { "$ref": "#/$defs/accent" },
+        "showsButtonLabels": { "type": "boolean" },
+        "defaultControl": { "$ref": "#/$defs/controlAppearance" },
+        "roleRules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["role", "appearance"],
+            "properties": {
+              "role": { "$ref": "#/$defs/role" },
+              "appearance": { "$ref": "#/$defs/controlAppearance" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "buttonRules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["button", "appearance"],
+            "properties": {
+              "button": {
+                "enum": ["up", "down", "left", "right", "jump", "attack", "dash", "focus", "map", "pause", "custom1", "custom2", "custom3", "custom4", "custom5", "custom6", "custom7", "custom8"]
+              },
+              "appearance": { "$ref": "#/$defs/controlAppearance" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "styleLibrary": {
+          "type": "object",
+          "required": ["styles"],
+          "properties": {
+            "styles": {
+              "type": "array",
+              "description": "Reusable native GamepadStyleToken values.",
+              "items": { "type": "object" }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

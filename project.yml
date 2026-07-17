@@ -11,6 +11,10 @@ settings:
     CURRENT_PROJECT_VERSION: 2
     VERSIONING_SYSTEM: apple-generic
     ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    exactVersion: 0.9.20
 targets:
   ThumbConsoleMac:
     type: application
@@ -20,6 +24,8 @@ targets:
       - path: Sources/Shared
       - path: Sources/Mac
       - path: Resources/Mac/Assets.xcassets
+    dependencies:
+      - package: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadMac
@@ -39,6 +45,8 @@ targets:
       - path: Sources/Mac/KeyMap.swift
       - path: Sources/Mac/MacControlOutputBinding.swift
       - path: Sources/CLI
+    dependencies:
+      - package: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPad
@@ -56,6 +64,8 @@ targets:
       - path: Sources/Mac/KeyMap.swift
       - path: Sources/Mac/MacControlOutputBinding.swift
       - path: Sources/CLI
+    dependencies:
+      - package: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadCLI
@@ -74,6 +84,8 @@ targets:
       - path: Sources/Mac/MacControlOutputBinding.swift
       - path: Sources/iOS/IOSLocalKeypadUX.swift
       - path: Tests
+    dependencies:
+      - package: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPadCLITests
@@ -91,6 +103,8 @@ targets:
       - path: Sources/Shared
       - path: Sources/iOS
       - path: Resources/iOS/Assets.xcassets
+    dependencies:
+      - package: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPad.iOS

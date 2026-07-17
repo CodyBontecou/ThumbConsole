@@ -1,6 +1,6 @@
 ---
 name: thumbconsole-keypad-generator
-description: Generate, install, edit, export/import, and runtime-control ThumbConsole keypad profiles using the `thumbconsole` CLI. Use whenever a user asks for a ThumbConsole keypad, iPhone controller layout, game profile, keyboard-to-touch controls, shortcut pad setup, profile/template management, key binding changes, joystick/custom button layout changes, or Mac helper runtime actions such as status, pairing code/payload, accessibility, test tap, server restart, or release-all. For unknown games, research or infer controls, write an agent-provided JSON spec, dry-run it, and install it without asking the user unless they explicitly want custom controls.
+description: Generate, install, skin, edit, export/import, and runtime-control ThumbConsole keypad profiles using the `thumbconsole` CLI. Use whenever a user asks for a ThumbConsole keypad, iPhone controller layout, game profile, keyboard-to-touch controls, shortcut pad setup, profile/template management, key binding changes, joystick/custom button layout changes, or Mac helper runtime actions such as status, pairing code/payload, accessibility, test tap, server restart, or release-all. For unknown games, research or infer controls, write an agent-provided JSON spec, dry-run it, and install it without asking the user unless they explicitly want custom controls.
 ---
 
 # ThumbConsole CLI / Keypad Generator
@@ -210,6 +210,33 @@ Use these for emulator/controller-style layouts rather than game-specific key ge
 ```
 
 Templates include NES, Super Nintendo, Nintendo 64, GameCube, Game Boy, Game Boy Advance, Genesis 6-Button, Sega Saturn, Dreamcast, Arcade Stick, PSP, PlayStation, and Xbox.
+
+## Shareable skins
+
+Use `.pocketpad` skins for appearance-only sharing. They preserve profile geometry, labels, keyboard/controller bindings, launch targets, native controls, and accessibility:
+
+```bash
+"$THUMBCONSOLE_CLI" skin artboard list
+"$THUMBCONSOLE_CLI" skin scaffold "Indigo Pocket" --identifier com.creator.indigo-pocket --artboard showcase-controller-v1 -o ./IndigoPocket
+"$THUMBCONSOLE_CLI" skin compile ./IndigoPocket -o ./IndigoPocket/build/indigo-pocket.pocketpad --clean --strict
+"$THUMBCONSOLE_CLI" skin validate ./IndigoPocket/build/indigo-pocket.pocketpad --strict
+"$THUMBCONSOLE_CLI" skin quality ./IndigoPocket --artboard showcase-controller-v1 --strict
+"$THUMBCONSOLE_CLI" skin preview ./IndigoPocket -o ./IndigoPocket/reviews/contact-sheet.png --all-variants --all-states --native-renderer --contact-sheet
+"$THUMBCONSOLE_CLI" skin list
+"$THUMBCONSOLE_CLI" skin inspect ./IndigoPocket/build/indigo-pocket.pocketpad
+"$THUMBCONSOLE_CLI" skin import ./IndigoPocket/build/indigo-pocket.pocketpad
+"$THUMBCONSOLE_CLI" skin apply com.example.pocketpad.skin.aurora --profile "My Setup"
+"$THUMBCONSOLE_CLI" skin detach --profile "My Setup"
+```
+
+Assign reusable semantic roles and independent touch expansion while creating a keypad:
+
+```bash
+"$THUMBCONSOLE_CLI" element set jump --skin-role primary-action --hit-insets 16
+"$THUMBCONSOLE_CLI" element set pause --skin-role menu --hit-insets 10,18,14,18
+```
+
+For handcrafted skin creation or critique, load the project `pocketpad-skin-author` skill and use its separate art-director, designer, visual-critic, and QA stages. Human approval of the exact final contact sheet and package hash is required before directory publication. See `docs/skins/README.md` for authoring source, canonical artboards, package schemas, layers, nine-slice assets, quality gates, and security rules.
 
 ## Shortcut bindings
 

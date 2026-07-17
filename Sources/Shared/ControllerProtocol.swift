@@ -558,6 +558,10 @@ public enum ControllerCapability: String, Codable, CaseIterable, Sendable {
     /// The Mac accepts authenticated, profile-scoped orientation preference mutations
     /// and responds by broadcasting the complete authoritative profile state.
     case gamepadProfileOrientationPreferenceMutation = "gamepad_profile_orientation_preference_mutation"
+    /// Profile synchronization includes validated appearance-only `.pocketpad` archives.
+    case skinPackages = "skin_packages"
+    /// The peer accepts profile-scoped skin apply/detach mutations.
+    case gamepadProfileSkinSelection = "gamepad_profile_skin_selection"
 }
 
 public enum ControllerMessageType: String, Codable, Sendable {
@@ -575,6 +579,9 @@ public enum ControllerMessageType: String, Codable, Sendable {
     case pong
     case gamepadCustomization = "gamepad_customization"
     case gamepadProfiles = "gamepad_profiles"
+    case skinPackages = "skin_packages"
+    case skinPackageRemoval = "skin_package_removal"
+    case gamepadProfileSkinSelection = "gamepad_profile_skin_selection"
     case gamepadProfileSelection = "gamepad_profile_selection"
     case gamepadDefaultProfile = "gamepad_default_profile"
     /// Sent only after the Mac advertises the matching capability. Older peers never
@@ -600,6 +607,8 @@ public struct ControllerMessage: Codable, Sendable {
     public var serverID: String?
     public var gamepadCustomization: GamepadCustomization?
     public var gamepadProfiles: [GamepadConfigurationProfile]?
+    public var skinPackages: [Data]?
+    public var skinReference: PocketPadSkinReference?
     public var bindingPresentations: [GamepadProfileBindingPresentations]?
     public var gamepadProfileID: UUID?
     public var defaultGamepadProfileID: UUID?
@@ -639,6 +648,8 @@ public struct ControllerMessage: Codable, Sendable {
         serverID: String? = nil,
         gamepadCustomization: GamepadCustomization? = nil,
         gamepadProfiles: [GamepadConfigurationProfile]? = nil,
+        skinPackages: [Data]? = nil,
+        skinReference: PocketPadSkinReference? = nil,
         bindingPresentations: [GamepadProfileBindingPresentations]? = nil,
         gamepadProfileID: UUID? = nil,
         defaultGamepadProfileID: UUID? = nil,
@@ -675,6 +686,8 @@ public struct ControllerMessage: Codable, Sendable {
         self.serverID = serverID
         self.gamepadCustomization = gamepadCustomization
         self.gamepadProfiles = gamepadProfiles
+        self.skinPackages = skinPackages
+        self.skinReference = skinReference
         self.bindingPresentations = bindingPresentations
         self.gamepadProfileID = gamepadProfileID
         self.defaultGamepadProfileID = defaultGamepadProfileID
@@ -921,6 +934,8 @@ public enum ControllerWireCodec {
               message.elementPart == nil,
               message.gamepadCustomization == nil,
               message.gamepadProfiles == nil,
+              message.skinPackages == nil,
+              message.skinReference == nil,
               message.bindingPresentations == nil,
               message.gamepadProfileID == nil,
               message.defaultGamepadProfileID == nil,
@@ -1137,7 +1152,7 @@ private extension ControllerMessageType {
         case .heartbeat: 3
         case .ping: 4
         case .pong: 5
-        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .elementInput, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .gamepadProfileSelection, .gamepadDefaultProfile, .gamepadProfileOrientationPreferenceMutation, .launchProfileTarget, .error: nil
+        case .hello, .pairingRequest, .pairingChallenge, .pairingAccepted, .elementInput, .pointer, .gamepadAnalog, .gamepadCustomization, .gamepadProfiles, .skinPackages, .skinPackageRemoval, .gamepadProfileSkinSelection, .gamepadProfileSelection, .gamepadDefaultProfile, .gamepadProfileOrientationPreferenceMutation, .launchProfileTarget, .error: nil
         }
     }
 

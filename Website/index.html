@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="/assets/app-icon.png">
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
+<body class="landing-page">
   <header class="site-header">
     <a class="brand" href="#top" aria-label="ThumbConsole home">
       <span class="brand-mark">TC</span>
@@ -22,6 +22,7 @@
     </a>
     <nav aria-label="Primary navigation">
       <a href="#screens">Screens</a>
+      <a href="/skins.html">Skins</a>
       <a href="#details">Details</a>
       <a href="#download">Download</a>
       <a href="/docs.html">Docs</a>
@@ -38,6 +39,7 @@
 
         <div class="hero-actions">
           <a class="pixel-button" href="#download">download mac</a>
+          <a class="pixel-button pixel-button-secondary" href="/skins.html">browse skins</a>
           <a class="pixel-button pixel-button-secondary" href="/docs.html">read the docs</a>
           <a class="pixel-button pixel-button-secondary" href="#screens">see screenshots</a>
         </div>
@@ -108,6 +110,22 @@
       </div>
     </section>
 
+    <section class="skin-directory-promo section-shell" aria-labelledby="skin-promo-title">
+      <div class="skin-directory-promo-preview">
+        <img src="/skins/previews/cavern-glow-1.0.0.png" alt="Cavern Glow appearance-only skin on a ThumbConsole keypad" width="1748" height="804" loading="lazy">
+        <span>featured / cavern glow</span>
+      </div>
+      <div class="skin-directory-promo-copy">
+        <p class="eyebrow">new / skin directory</p>
+        <h2 id="skin-promo-title">change the look, never the bindings.</h2>
+        <p>Browse reviewed <code>.pocketpad</code> themes, preview every package, and install from Safari or your Mac. Skins can style controls and backgrounds, but they cannot import shortcuts, launch targets, or executable actions.</p>
+        <div class="hero-actions">
+          <a class="pixel-button" href="/skins.html">browse skins</a>
+          <a class="pixel-button pixel-button-secondary" href="/docs.html#skins">make a skin</a>
+        </div>
+      </div>
+    </section>
+
     <section id="details" class="details section-shell">
       <div class="section-heading">
         <p class="eyebrow">details</p>
@@ -164,6 +182,11 @@
           <span>script</span>
           <strong>CLI parity</strong>
           <p>Everything you can configure in the Mac editor is also scriptable with <code>thumbconsole</code>.</p>
+        </a>
+        <a href="/skins.html">
+          <span>style</span>
+          <strong>Skin directory</strong>
+          <p>Browse, preview, and install appearance-only themes without changing any control binding.</p>
         </a>
       </div>
     </section>
@@ -249,7 +272,7 @@
 
   <footer class="site-footer section-shell">
     <span>© <span id="year">2026</span> ThumbConsole</span>
-    <span class="footer-links"><a href="/docs.html">docs</a><a href="/privacy.html">privacy</a></span>
+    <span class="footer-links"><a href="/skins.html">skins</a><a href="/docs.html">docs</a><a href="/privacy.html">privacy</a></span>
   </footer>
 
   <script src="/config.js"></script>

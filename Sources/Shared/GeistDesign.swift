@@ -1,6 +1,8 @@
 import SwiftUI
 #if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 
 /// Vercel Geist tokens from https://vercel.com/design.md and
@@ -97,8 +99,22 @@ enum Geist {
         let letterSpacing: CGFloat
 
         var font: Font {
-            Font.custom(family.rawValue, size: fontSize, relativeTo: relativeTextStyle)
-                .weight(weight)
+            #if os(macOS)
+            if NSFont(name: family.rawValue, size: fontSize) != nil {
+                return Font.custom(family.rawValue, size: fontSize, relativeTo: relativeTextStyle)
+                    .weight(weight)
+            }
+            #elseif os(iOS)
+            if UIFont(name: family.rawValue, size: fontSize) != nil {
+                return Font.custom(family.rawValue, size: fontSize, relativeTo: relativeTextStyle)
+                    .weight(weight)
+            }
+            #endif
+            return Font.system(
+                size: fontSize,
+                weight: weight,
+                design: family == .mono ? .monospaced : .default
+            )
         }
 
         private var relativeTextStyle: Font.TextStyle {

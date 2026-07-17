@@ -1,7 +1,60 @@
+import AppKit
 import CoreGraphics
 import XCTest
 
 final class GamepadSharedOperationsSmokeTests: XCTestCase {
+    func testOptionArrowNudgeRoutesWhileTextFieldHasFocus() {
+        let expectedDirections: [(UInt16, GamepadEditorNudgeDirection)] = [
+            (123, .left),
+            (124, .right),
+            (125, .down),
+            (126, .up)
+        ]
+
+        for (keyCode, expectedDirection) in expectedDirections {
+            XCTAssertEqual(
+                GamepadEditorKeyboardShortcutRouting.nudgeDirection(
+                    keyCode: keyCode,
+                    modifierFlags: .option
+                ),
+                expectedDirection
+            )
+            XCTAssertTrue(
+                GamepadEditorKeyboardShortcutRouting.routesNudgeDuringTextEditing(
+                    keyCode: keyCode,
+                    modifierFlags: .option
+                )
+            )
+            XCTAssertTrue(
+                GamepadEditorKeyboardShortcutRouting.routesNudgeDuringTextEditing(
+                    keyCode: keyCode,
+                    modifierFlags: [.option, .shift]
+                )
+            )
+        }
+    }
+
+    func testTextEditingOnlyYieldsOptionArrowToElementNudging() {
+        XCTAssertFalse(
+            GamepadEditorKeyboardShortcutRouting.routesNudgeDuringTextEditing(
+                keyCode: 123,
+                modifierFlags: []
+            )
+        )
+        XCTAssertFalse(
+            GamepadEditorKeyboardShortcutRouting.routesNudgeDuringTextEditing(
+                keyCode: 123,
+                modifierFlags: [.option, .command]
+            )
+        )
+        XCTAssertFalse(
+            GamepadEditorKeyboardShortcutRouting.routesNudgeDuringTextEditing(
+                keyCode: 0,
+                modifierFlags: .option
+            )
+        )
+    }
+
     func testStableControlIdentityParsesEveryExistingIDShape() {
         let customID = UUID(uuidString: "00000000-0000-0000-0000-00000000CAFE")!
         let identities: [GamepadControlIdentity] = [

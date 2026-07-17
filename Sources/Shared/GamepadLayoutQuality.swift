@@ -198,6 +198,9 @@ struct GamepadLayoutQualityReport: Codable, Equatable {
     /// Thumbsticks intentionally use only their visible center nub here; their
     /// much larger drag range applies after ownership has already been acquired.
     static func runtimeHitFrame(for control: GamepadResolvedControl) -> CGRect {
+        if control.layoutCustomization.hitInsets != nil {
+            return control.hitFrame
+        }
         if control.isJoystick {
             let visualSide = min(control.size.width, control.size.height)
             let style = control.layoutCustomization.joystickVisualStyle ?? .pad

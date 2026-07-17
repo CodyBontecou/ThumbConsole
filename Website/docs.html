@@ -17,12 +17,13 @@
 <body class="docs-page">
   <header class="site-header">
     <a class="brand" href="/" aria-label="ThumbConsole home">
-      <span class="brand-mark">PP</span>
+      <span class="brand-mark">TC</span>
       <span>ThumbConsole</span>
     </a>
     <nav aria-label="Primary navigation">
       <a href="/">Home</a>
       <a href="/#screens">Screens</a>
+      <a href="/skins.html">Skins</a>
       <a href="/docs.html">Docs</a>
       <a class="nav-cta" href="/#waitlist">Waitlist</a>
     </nav>
@@ -62,6 +63,7 @@
         <a href="#mac-app">Mac app</a>
         <a href="#ios-app">iOS app</a>
         <a href="#keypad-editor">Keypad editor</a>
+        <a href="#skins">Skins</a>
         <a href="#outputs">Outputs</a>
         <a href="#cli">CLI</a>
         <a href="#troubleshooting">Troubleshooting</a>
@@ -208,6 +210,44 @@
           </ol>
         </section>
 
+        <section id="skins" class="doc-section">
+          <p class="eyebrow">skins</p>
+          <h2>Browse, install, and create visual themes</h2>
+          <p>ThumbConsole skins are shareable <code>.pocketpad</code> packages for appearance only. They can style backgrounds, native controls, icons, materials, pressed states, light/dark modes, and portrait/landscape variants. They cannot replace your geometry, labels, keyboard shortcuts, controller bindings, pointer actions, launch targets, or accessibility.</p>
+
+          <div class="doc-card-grid two">
+            <div class="doc-card">
+              <span>browse</span>
+              <h3>Install from the directory</h3>
+              <p>Open the <a href="/skins.html">Skin Directory</a>, preview a theme, and tap Install. On iPhone, choose ThumbConsole in the Share Sheet. On Mac, download the package and choose Import Skin from the Skins library.</p>
+            </div>
+            <div class="doc-card">
+              <span>review</span>
+              <h3>Nothing applies silently</h3>
+              <p>ThumbConsole validates the archive and shows its creator, license, warnings, and visual preview before installation. Install stores it in your library; Install &amp; Apply adds it to the selected keypad.</p>
+            </div>
+            <div class="doc-card">
+              <span>customize</span>
+              <h3>Keep local overrides</h3>
+              <p>Apply a skin as-is, customize its appearance while retaining a package reference, or fork the current result into a fully local look. Detaching never changes bindings.</p>
+            </div>
+            <div class="doc-card">
+              <span>sync</span>
+              <h3>Available on both devices</h3>
+              <p>Installed packages and required assets sync between trusted Mac and iPhone peers. Offline copies remain available for saved keypads and reconnect safely.</p>
+            </div>
+          </div>
+
+          <h3>Create a directory-ready skin</h3>
+          <p>Copy the starter under <code>docs/skins/starter</code>, give it a unique reverse-DNS identifier and semantic version, then use semantic roles such as <code>movement</code>, <code>primary_action</code>, <code>menu</code>, and <code>trackpad</code> instead of profile UUIDs.</p>
+          <pre><code>cp -R docs/skins/starter MySkin
+thumbconsole skin validate MySkin
+thumbconsole skin pack MySkin -o MySkin.pocketpad
+thumbconsole skin validate MySkin.pocketpad --strict
+thumbconsole skin render MySkin.pocketpad --clean -o preview.png</code></pre>
+          <p>Packages submitted to the public directory must pass strict validation, include a preview and license, use declared assets with SHA-256 hashes, and contain no executable files or profile bindings. See the repository’s <a href="https://github.com/CodyBontecou/PocketPad/tree/main/docs/skins" rel="noreferrer">complete format and security guide</a>.</p>
+        </section>
+
         <section id="outputs" class="doc-section">
           <p class="eyebrow">outputs</p>
           <h2>Keyboard, pointer, and controller output</h2>
@@ -240,6 +280,9 @@ thumbconsole template list
 thumbconsole template install snes --name "SNES Browser Controls" --default
 thumbconsole profile export --all -o thumbconsole-profiles.json
 thumbconsole profile import thumbconsole-profiles.json
+thumbconsole skin list
+thumbconsole skin import Aurora.pocketpad
+thumbconsole skin apply com.example.pocketpad.skin.aurora --profile active
 thumbconsole binding set focus --sequence 'Control+B,H'
 thumbconsole output mode keyboard
 thumbconsole element add joystick --label "Right Stick" --up custom1 --down custom2 --left custom3 --right custom4
@@ -314,6 +357,10 @@ thumbconsole release-all</code></pre>
             <summary>Can I make game-specific profiles?</summary>
             <p>Yes. Install templates, generate a profile from a known game, or create an agent-provided JSON spec and import it with the CLI.</p>
           </details>
+          <details>
+            <summary>Can a downloaded skin change what my buttons do?</summary>
+            <p>No. Skin packages are appearance-only. ThumbConsole rejects profile content and executable assets, and applying a skin preserves your local geometry, labels, bindings, launch targets, and accessibility.</p>
+          </details>
         </section>
       </article>
     </section>
@@ -321,7 +368,7 @@ thumbconsole release-all</code></pre>
 
   <footer class="site-footer section-shell">
     <span>© <span id="year">2026</span> ThumbConsole</span>
-    <span class="footer-links"><a href="/">home</a><a href="/privacy.html">privacy</a></span>
+    <span class="footer-links"><a href="/">home</a><a href="/skins.html">skins</a><a href="/privacy.html">privacy</a></span>
   </footer>
 
   <script src="/script.js" defer></script>

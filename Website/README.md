@@ -5,7 +5,10 @@ Pixel-art landing page for ThumbConsole with a Cloudflare Pages Function that sa
 ## Files
 
 - `index.html` / `styles.css` / `script.js` — static landing page, screenshot gallery, and launch-list form.
-- `docs.html` — comprehensive ThumbConsole documentation for setup, pairing, editor workflows, outputs, CLI, troubleshooting, and safety behavior.
+- `docs.html` — comprehensive ThumbConsole documentation for setup, pairing, skins, editor workflows, outputs, CLI, troubleshooting, and safety behavior.
+- `skins.html` / `skins.js` — searchable, filterable skin directory with package verification, Web Share installation, direct downloads, and detail deep links.
+- `skins/catalog.source.json` — editorial catalog data; `skins/catalog.json`, packages, and previews are generated deployable assets.
+- `skins/CONTRIBUTING.md` — reviewed community submission workflow.
 - `functions/api/subscribe.js` — Cloudflare Pages Function for `POST /api/subscribe`.
 - `functions/api/releases/latest-mac.js` — serves the current macOS release manifest from R2.
 - `functions/api/download-mac.js` — streams the latest/versioned macOS release zip from R2.
@@ -81,6 +84,22 @@ wrangler pages dev .
 ```
 
 Then open the local URL shown by Wrangler. The form endpoint is `/api/subscribe`.
+
+## Build and verify the skin directory
+
+Build the current `thumbconsole` CLI first, then generate versioned packages, clean previews, hashes, and the deployable catalog:
+
+```bash
+scripts/build-skin-directory.sh /path/to/thumbconsole
+```
+
+The builder supports bundled and source-backed entries, but production currently publishes the exact human-approved Indigo Pocket package. It verifies the approval record and package hash, runs strict package and quality validation, creates a native-renderer directory preview, and finishes with the dependency-free directory verifier. Run the verifier directly after any hand edit:
+
+```bash
+python3 scripts/verify-skin-directory.py
+```
+
+Approved package filenames include their semantic version and a SHA-256 prefix, preventing stale negative caches while preserving immutable delivery. `catalog.json` has a short cache and is the only runtime data source used by `skins.js`. Install buttons verify the downloaded byte count and SHA-256 before opening the system Share Sheet or downloading a `.pocketpad` file.
 
 ## Export signups
 

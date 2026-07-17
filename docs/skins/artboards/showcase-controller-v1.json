@@ -1,0 +1,384 @@
+{
+  "expectedRoles" : [
+    "custom",
+    "menu",
+    "movement",
+    "primary_action",
+    "secondary_action",
+    "system",
+    "utility"
+  ],
+  "id" : "showcase-controller-v1",
+  "name" : "Showcase Controller",
+  "revision" : 2,
+  "summary" : "Neutral 16-bit-style controller artboard used for deterministic skin previews.",
+  "templateID" : "snes",
+  "variants" : [
+    {
+      "canvasHeight" : 402,
+      "canvasWidth" : 874,
+      "controls" : [
+        {
+          "frame" : {
+            "height" : 0.12407960199004973,
+            "width" : 0.05707093821510297,
+            "x" : 0.14146453089244854,
+            "y" : 0.3079601990049752
+          },
+          "id" : "builtin.up",
+          "kind" : "button",
+          "label" : "↑",
+          "mappedButton" : "up",
+          "visualRole" : "movement"
+        },
+        {
+          "frame" : {
+            "height" : 0.12407960199004973,
+            "width" : 0.05707093821510297,
+            "x" : 0.14146453089244854,
+            "y" : 0.6479601990049751
+          },
+          "id" : "builtin.down",
+          "kind" : "button",
+          "label" : "↓",
+          "mappedButton" : "down",
+          "visualRole" : "movement"
+        },
+        {
+          "frame" : {
+            "height" : 0.12407960199004973,
+            "width" : 0.05707093821510297,
+            "x" : 0.04946453089244853,
+            "y" : 0.47796019900497516
+          },
+          "id" : "builtin.left",
+          "kind" : "button",
+          "label" : "←",
+          "mappedButton" : "left",
+          "visualRole" : "movement"
+        },
+        {
+          "frame" : {
+            "height" : 0.12407960199004973,
+            "width" : 0.05707093821510297,
+            "x" : 0.2334645308924485,
+            "y" : 0.47796019900497516
+          },
+          "id" : "builtin.right",
+          "kind" : "button",
+          "label" : "→",
+          "mappedButton" : "right",
+          "visualRole" : "movement"
+        },
+        {
+          "frame" : {
+            "height" : 0.12407960199004973,
+            "width" : 0.05707093821510297,
+            "x" : 0.8114645308924485,
+            "y" : 0.6779601990049752
+          },
+          "id" : "builtin.jump",
+          "kind" : "button",
+          "label" : "B",
+          "mappedButton" : "jump",
+          "visualRole" : "primary_action"
+        },
+        {
+          "frame" : {
+            "height" : 0.12407960199004973,
+            "width" : 0.05707093821510297,
+            "x" : 0.7214645308924484,
+            "y" : 0.48796019900497517
+          },
+          "id" : "builtin.attack",
+          "kind" : "button",
+          "label" : "Y",
+          "mappedButton" : "attack",
+          "visualRole" : "primary_action"
+        },
+        {
+          "frame" : {
+            "height" : 0.12407960199004973,
+            "width" : 0.05707093821510297,
+            "x" : 0.9014645308924486,
+            "y" : 0.48796019900497517
+          },
+          "id" : "builtin.dash",
+          "kind" : "button",
+          "label" : "A",
+          "mappedButton" : "dash",
+          "visualRole" : "secondary_action"
+        },
+        {
+          "frame" : {
+            "height" : 0.12407960199004973,
+            "width" : 0.05707093821510297,
+            "x" : 0.8114645308924485,
+            "y" : 0.2979601990049751
+          },
+          "id" : "builtin.focus",
+          "kind" : "button",
+          "label" : "X",
+          "mappedButton" : "focus",
+          "visualRole" : "secondary_action"
+        },
+        {
+          "frame" : {
+            "height" : 0.0677731343283582,
+            "width" : 0.06990205949656751,
+            "x" : 0.39504897025171626,
+            "y" : 0.7861134328358209
+          },
+          "id" : "builtin.map",
+          "kind" : "button",
+          "label" : "Select",
+          "mappedButton" : "map",
+          "visualRole" : "utility"
+        },
+        {
+          "frame" : {
+            "height" : 0.0677731343283582,
+            "width" : 0.07187002288329519,
+            "x" : 0.5340649885583524,
+            "y" : 0.7861134328358209
+          },
+          "id" : "builtin.pause",
+          "kind" : "button",
+          "label" : "Start",
+          "mappedButton" : "pause",
+          "visualRole" : "menu"
+        },
+        {
+          "frame" : {
+            "height" : 0.08129353233830845,
+            "width" : 0.11020594965675058,
+            "x" : 0.14489702517162473,
+            "y" : 0.11935323383084578
+          },
+          "id" : "custom.button.10",
+          "kind" : "button",
+          "label" : "L",
+          "mappedButton" : "custom1",
+          "visualRole" : "custom"
+        },
+        {
+          "frame" : {
+            "height" : 0.08129353233830845,
+            "width" : 0.11020594965675058,
+            "x" : 0.7448970251716248,
+            "y" : 0.11935323383084578
+          },
+          "id" : "custom.button.11",
+          "kind" : "button",
+          "label" : "R",
+          "mappedButton" : "custom2",
+          "visualRole" : "custom"
+        },
+        {
+          "frame" : {
+            "height" : 0.10945273631840796,
+            "width" : 0.06864988558352403,
+            "x" : 0.465675057208238,
+            "y" : 0.06027363184079603
+          },
+          "id" : "system.top_bar_activation",
+          "kind" : "decoration",
+          "label" : "Control Bar Toggle",
+          "mappedButton" : "pause",
+          "visualRole" : "system"
+        }
+      ],
+      "id" : "landscape-v1",
+      "orientation" : "landscape",
+      "safeAreaInsets" : {
+        "bottom" : 0.035,
+        "leading" : 0.045,
+        "top" : 0.035,
+        "trailing" : 0.045
+      }
+    },
+    {
+      "canvasHeight" : 874,
+      "canvasWidth" : 402,
+      "controls" : [
+        {
+          "frame" : {
+            "height" : 0.053354691075514875,
+            "width" : 0.11599999999999999,
+            "x" : 0.312,
+            "y" : 0.8033226544622425
+          },
+          "id" : "builtin.up",
+          "kind" : "button",
+          "label" : "↑",
+          "mappedButton" : "up",
+          "visualRole" : "movement"
+        },
+        {
+          "frame" : {
+            "height" : 0.053354691075514875,
+            "width" : 0.11599999999999999,
+            "x" : 0.6520000000000001,
+            "y" : 0.8033226544622425
+          },
+          "id" : "builtin.down",
+          "kind" : "button",
+          "label" : "↓",
+          "mappedButton" : "down",
+          "visualRole" : "movement"
+        },
+        {
+          "frame" : {
+            "height" : 0.053354691075514875,
+            "width" : 0.11599999999999999,
+            "x" : 0.48200000000000004,
+            "y" : 0.8953226544622425
+          },
+          "id" : "builtin.left",
+          "kind" : "button",
+          "label" : "←",
+          "mappedButton" : "left",
+          "visualRole" : "movement"
+        },
+        {
+          "frame" : {
+            "height" : 0.053354691075514875,
+            "width" : 0.11599999999999999,
+            "x" : 0.48200000000000004,
+            "y" : 0.7113226544622424
+          },
+          "id" : "builtin.right",
+          "kind" : "button",
+          "label" : "→",
+          "mappedButton" : "right",
+          "visualRole" : "movement"
+        },
+        {
+          "frame" : {
+            "height" : 0.053354691075514875,
+            "width" : 0.11599999999999999,
+            "x" : 0.6820000000000002,
+            "y" : 0.1333226544622426
+          },
+          "id" : "builtin.jump",
+          "kind" : "button",
+          "label" : "B",
+          "mappedButton" : "jump",
+          "visualRole" : "primary_action"
+        },
+        {
+          "frame" : {
+            "height" : 0.053354691075514875,
+            "width" : 0.11599999999999999,
+            "x" : 0.49200000000000005,
+            "y" : 0.22332265446224256
+          },
+          "id" : "builtin.attack",
+          "kind" : "button",
+          "label" : "Y",
+          "mappedButton" : "attack",
+          "visualRole" : "primary_action"
+        },
+        {
+          "frame" : {
+            "height" : 0.053354691075514875,
+            "width" : 0.11599999999999999,
+            "x" : 0.49200000000000005,
+            "y" : 0.04332265446224252
+          },
+          "id" : "builtin.dash",
+          "kind" : "button",
+          "label" : "A",
+          "mappedButton" : "dash",
+          "visualRole" : "secondary_action"
+        },
+        {
+          "frame" : {
+            "height" : 0.053354691075514875,
+            "width" : 0.11599999999999999,
+            "x" : 0.302,
+            "y" : 0.1333226544622426
+          },
+          "id" : "builtin.focus",
+          "kind" : "button",
+          "label" : "X",
+          "mappedButton" : "focus",
+          "visualRole" : "secondary_action"
+        },
+        {
+          "frame" : {
+            "height" : 0.029142700228832957,
+            "width" : 0.14208,
+            "x" : 0.74896,
+            "y" : 0.5554286498855836
+          },
+          "id" : "builtin.map",
+          "kind" : "button",
+          "label" : "Select",
+          "mappedButton" : "map",
+          "visualRole" : "utility"
+        },
+        {
+          "frame" : {
+            "height" : 0.029142700228832957,
+            "width" : 0.14608,
+            "x" : 0.74696,
+            "y" : 0.4154286498855836
+          },
+          "id" : "builtin.pause",
+          "kind" : "button",
+          "label" : "Start",
+          "mappedButton" : "pause",
+          "visualRole" : "menu"
+        },
+        {
+          "frame" : {
+            "height" : 0.03495652173913044,
+            "width" : 0.22400000000000003,
+            "x" : 0.048,
+            "y" : 0.7825217391304349
+          },
+          "id" : "custom.button.10",
+          "kind" : "button",
+          "label" : "L",
+          "mappedButton" : "custom1",
+          "visualRole" : "custom"
+        },
+        {
+          "frame" : {
+            "height" : 0.03495652173913044,
+            "width" : 0.22400000000000003,
+            "x" : 0.048,
+            "y" : 0.1825217391304347
+          },
+          "id" : "custom.button.11",
+          "kind" : "button",
+          "label" : "R",
+          "mappedButton" : "custom2",
+          "visualRole" : "custom"
+        },
+        {
+          "frame" : {
+            "height" : 0.05034324942791762,
+            "width" : 0.14925373134328357,
+            "x" : 0.4253731343283582,
+            "y" : 0.2948283752860412
+          },
+          "id" : "system.top_bar_activation",
+          "kind" : "decoration",
+          "label" : "Control Bar Toggle",
+          "mappedButton" : "pause",
+          "visualRole" : "system"
+        }
+      ],
+      "id" : "portrait-v1",
+      "orientation" : "portrait",
+      "safeAreaInsets" : {
+        "bottom" : 0.045,
+        "leading" : 0.025,
+        "top" : 0.055,
+        "trailing" : 0.025
+      }
+    }
+  ]
+}

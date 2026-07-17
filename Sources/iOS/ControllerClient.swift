@@ -840,6 +840,12 @@ private enum ControllerConnectionTarget {
     }
 }
 
+private struct PendingSkinSelectionMutation: Codable, Equatable {
+    var profileID: UUID
+    var skinReference: PocketPadSkinReference?
+    var updatedAt: Int64
+}
+
 @MainActor
 final class ControllerClient: ObservableObject {
     enum ConnectionState: Equatable {
@@ -865,6 +871,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var gamepadCustomization: GamepadCustomization
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
+    @Published private(set) var installedSkins: [PocketPadInstalledSkin]
     @Published private(set) var bindingPresentations: [GamepadProfileBindingPresentations]
     @Published private(set) var pendingKeypadLayoutEdits: [PendingKeypadLayoutEdit]
     @Published private(set) var selectedGamepadProfileID: UUID
@@ -875,6 +882,10 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var isPracticeModeEnabled: Bool
 
     private let networkQueue = DispatchQueue(label: "ThumbConsole.iOS.Network", qos: .userInteractive)
+    private let skinStore: PocketPadSkinStore
+    private var skinPackagesByReference: [PocketPadSkinReference: PocketPadSkinPackage]
+    private var pendingSkinSelectionMutations: [PendingSkinSelectionMutation]
+    private var pendingSkinRemovals: [PocketPadSkinReference]
     private let inputTransport: ControllerInputTransport
     private var connection: NWConnection?
     private var controlURL: URL?
@@ -901,6 +912,15 @@ final class ControllerClient: ObservableObject {
     private static let defaultPort: UInt16 = 8765
     private static let trustedMacCredentialDefaultsKey = "PocketPad.iOS.trustedMacCredential.v1"
     private static let hasSavedKeypadSnapshotDefaultsKey = "PocketPad.iOS.hasSavedKeypadSnapshot.v1"
+    private static let pendingSkinSelectionDefaultsKey = "PocketPad.iOS.pendingSkinSelections.v1"
+    private static let pendingSkinRemovalDefaultsKey = "PocketPad.iOS.pendingSkinRemovals.v1"
+
+    private static func makeSkinStore() -> PocketPadSkinStore {
+        if let store = try? PocketPadSkinStore() { return store }
+        let fallback = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PocketPad-iOS-Skins", isDirectory: true)
+        return try! PocketPadSkinStore(rootURL: fallback)
+    }
 
     var isConnected: Bool {
         state == .connected
@@ -967,6 +987,16 @@ final class ControllerClient: ObservableObject {
 
     init() {
         inputTransport = ControllerInputTransport(networkQueue: networkQueue)
+        let loadedSkinStore = Self.makeSkinStore()
+        try? loadedSkinStore.installBundledSkinsIfNeeded()
+        let loadedSkins = (try? loadedSkinStore.installedSkins()) ?? []
+        skinStore = loadedSkinStore
+        installedSkins = loadedSkins
+        skinPackagesByReference = Dictionary(uniqueKeysWithValues: loadedSkins.compactMap { installed in
+            (try? loadedSkinStore.package(for: installed.reference)).map { (installed.reference, $0) }
+        })
+        pendingSkinSelectionMutations = Self.loadPendingSkinSelectionMutations()
+        pendingSkinRemovals = Self.loadPendingSkinRemovals()
         isPracticeModeEnabled = UserDefaults.standard.bool(forKey: IOSKeypadPreferenceKeys.practiceMode)
         let savedCustomization = GamepadCustomizationPersistence.load()
         let loadedProfileState = GamepadConfigurationProfilePersistence.load(activeCustomization: savedCustomization)
@@ -991,6 +1021,163 @@ final class ControllerClient: ObservableObject {
         if hasSavedKeypadSnapshot {
             UserDefaults.standard.set(true, forKey: Self.hasSavedKeypadSnapshotDefaultsKey)
         }
+    }
+
+    func skinPackage(for reference: PocketPadSkinReference?) -> PocketPadSkinPackage? {
+        guard let reference else { return nil }
+        return skinPackagesByReference[reference]
+    }
+
+    @discardableResult
+    func installSkinPackage(
+        data: Data,
+        policy: PocketPadSkinInstallPolicy = .newerOnly
+    ) throws -> PocketPadSkinInstallResult {
+        let result = try skinStore.install(data: data, policy: policy)
+        reloadInstalledSkins()
+        if isConnected, serverCapabilities.contains(.skinPackages) {
+            send(.init(type: .skinPackages, skinPackages: [data]))
+        }
+        return result
+    }
+
+    func skinPackageData(for reference: PocketPadSkinReference) throws -> Data {
+        try skinStore.packageData(for: reference)
+    }
+
+    func applySkinToSelectedProfile(
+        _ reference: PocketPadSkinReference,
+        colorScheme: PocketPadSkinColorScheme
+    ) throws {
+        guard let index = gamepadProfiles.firstIndex(where: { $0.id == selectedGamepadProfileID }),
+              let package = skinPackage(for: reference)
+        else { throw PocketPadSkinStoreError.skinNotInstalled(reference) }
+
+        gamepadProfiles[index].applySkin(package, colorScheme: colorScheme)
+        commitLocalSkinProfileChange(at: index)
+        submitSkinSelectionMutation(
+            profileID: gamepadProfiles[index].id,
+            reference: reference,
+            packageData: try? skinStore.packageData(for: reference)
+        )
+    }
+
+    /// Forks the current visual result into the profile, then removes its package dependency.
+    func detachSkinFromSelectedProfile(colorScheme: PocketPadSkinColorScheme) {
+        guard let index = gamepadProfiles.firstIndex(where: { $0.id == selectedGamepadProfileID }),
+              let reference = gamepadProfiles[index].skinReference
+        else { return }
+        let package = skinPackage(for: reference)
+        var profile = gamepadProfiles[index]
+        let fallbackOrientation = profile.customization.deviceCanvas.editorDeviceFrame.orientation
+        let fallback = profile.resolvedCustomization(
+            for: fallbackOrientation,
+            colorScheme: colorScheme,
+            skinPackage: package
+        )
+        let landscape = profile.landscapeCustomization.map { _ in
+            profile.resolvedCustomization(for: .landscape, colorScheme: colorScheme, skinPackage: package)
+        }
+        let portrait = profile.portraitCustomization.map { _ in
+            profile.resolvedCustomization(for: .portrait, colorScheme: colorScheme, skinPackage: package)
+        }
+        profile.customization = fallback
+        profile.landscapeCustomization = landscape
+        profile.portraitCustomization = portrait
+        profile.detachSkin()
+        gamepadProfiles[index] = profile.normalized
+        commitLocalSkinProfileChange(at: index)
+        submitSkinSelectionMutation(profileID: profile.id, reference: nil, packageData: nil)
+    }
+
+    func removeSkin(_ reference: PocketPadSkinReference) throws {
+        if let profile = gamepadProfiles.first(where: { $0.skinReference == reference }) {
+            throw NSError(
+                domain: "PocketPadSkinStore",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "This skin is still used by \(profile.name)."]
+            )
+        }
+        try skinStore.remove(reference)
+        reloadInstalledSkins()
+        if !pendingSkinRemovals.contains(reference) {
+            pendingSkinRemovals.append(reference)
+            persistPendingSkinRemovals()
+        }
+        flushPendingSkinRemovals()
+    }
+
+    private func commitLocalSkinProfileChange(at index: Int) {
+        let orientation = gamepadCustomization.deviceCanvas.editorDeviceFrame.orientation
+        if gamepadProfiles[index].id == selectedGamepadProfileID {
+            gamepadCustomization = gamepadProfiles[index].customization(for: orientation)
+            GamepadCustomizationPersistence.save(gamepadCustomization)
+        }
+        persistGamepadProfiles()
+        markSavedKeypadSnapshotAvailable()
+    }
+
+    private func submitSkinSelectionMutation(
+        profileID: UUID,
+        reference: PocketPadSkinReference?,
+        packageData: Data?
+    ) {
+        let mutation = PendingSkinSelectionMutation(
+            profileID: profileID,
+            skinReference: reference,
+            updatedAt: Date.currentMilliseconds
+        )
+        if let index = pendingSkinSelectionMutations.firstIndex(where: { $0.profileID == profileID }) {
+            pendingSkinSelectionMutations[index] = mutation
+        } else {
+            pendingSkinSelectionMutations.append(mutation)
+        }
+        persistPendingSkinSelectionMutations()
+
+        guard isConnected, serverCapabilities.contains(.gamepadProfileSkinSelection) else { return }
+        if let packageData, serverCapabilities.contains(.skinPackages) {
+            send(.init(type: .skinPackages, skinPackages: [packageData]))
+        }
+        send(.init(
+            type: .gamepadProfileSkinSelection,
+            skinReference: reference,
+            gamepadProfileID: profileID
+        ))
+    }
+
+    private func flushPendingSkinRemovals() {
+        guard isConnected, serverCapabilities.contains(.skinPackages), !pendingSkinRemovals.isEmpty else { return }
+        let removals = pendingSkinRemovals
+        pendingSkinRemovals.removeAll()
+        persistPendingSkinRemovals()
+        for reference in removals {
+            send(.init(type: .skinPackageRemoval, skinReference: reference))
+            try? skinStore.remove(reference)
+        }
+        reloadInstalledSkins()
+    }
+
+    private func flushPendingSkinSelectionMutations() {
+        guard isConnected, serverCapabilities.contains(.gamepadProfileSkinSelection) else { return }
+        for mutation in pendingSkinSelectionMutations.sorted(by: { $0.updatedAt < $1.updatedAt }) {
+            let packageData = mutation.skinReference.flatMap { try? skinStore.packageData(for: $0) }
+            if let packageData, serverCapabilities.contains(.skinPackages) {
+                send(.init(type: .skinPackages, skinPackages: [packageData]))
+            }
+            send(.init(
+                type: .gamepadProfileSkinSelection,
+                skinReference: mutation.skinReference,
+                gamepadProfileID: mutation.profileID
+            ))
+        }
+    }
+
+    private func reloadInstalledSkins() {
+        let skins = (try? skinStore.installedSkins()) ?? []
+        installedSkins = skins
+        skinPackagesByReference = Dictionary(uniqueKeysWithValues: skins.compactMap { installed in
+            (try? skinStore.package(for: installed.reference)).map { (installed.reference, $0) }
+        })
     }
 
     func startSmartConnect() {
@@ -1384,7 +1571,11 @@ final class ControllerClient: ObservableObject {
         orientation: GamepadEditorDeviceOrientation,
         sendsToMac: Bool
     ) {
-        let stampedCustomization = Self.customization(customization, matching: orientation).stampedForLocalUpdate
+        var stampedCustomization = Self.customization(customization, matching: orientation).stampedForLocalUpdate
+        if let profile = selectedGamepadProfile,
+           let package = skinPackage(for: profile.skinReference) {
+            stampedCustomization = stampedCustomization.dehydratingAssets(from: package)
+        }
         var updatedProfiles = gamepadProfiles
         if let index = updatedProfiles.firstIndex(where: { $0.id == selectedGamepadProfileID }) {
             updatedProfiles[index].setCustomization(stampedCustomization, for: orientation)
@@ -1530,6 +1721,20 @@ final class ControllerClient: ObservableObject {
     }
 
     private func applyGamepadProfileStateFromMac(_ message: ControllerMessage) {
+        if let packageData = message.skinPackages {
+            var installFailure: Error?
+            for data in packageData {
+                do {
+                    _ = try skinStore.install(data: data, policy: .allowDowngrade)
+                } catch {
+                    installFailure = error
+                }
+            }
+            reloadInstalledSkins()
+            if let installFailure {
+                lastError = "A synced skin could not be installed: \(installFailure.localizedDescription)"
+            }
+        }
         if let capabilities = message.capabilities {
             serverCapabilities = Set(capabilities)
         }
@@ -1567,6 +1772,11 @@ final class ControllerClient: ObservableObject {
         pendingKeypadLayoutEdits = reconciliation.remainingEdits
         PendingKeypadLayoutPersistence.save(pendingKeypadLayoutEdits)
         gamepadProfiles = reconciledState.profiles
+        pendingSkinSelectionMutations.removeAll { mutation in
+            guard let profile = reconciledState.profiles.first(where: { $0.id == mutation.profileID }) else { return false }
+            return profile.skinReference == mutation.skinReference
+        }
+        persistPendingSkinSelectionMutations()
         selectedGamepadProfileID = reconciledState.activeProfileID
         defaultGamepadProfileID = reconciledState.defaultProfileID
         markSavedKeypadSnapshotAvailable()
@@ -1861,7 +2071,13 @@ final class ControllerClient: ObservableObject {
             state = .failed(lastError ?? "Unknown error")
             closeConnection(sendReleaseAll: false)
 
-        case .gamepadProfileSelection, .gamepadDefaultProfile, .gamepadProfileOrientationPreferenceMutation:
+        case .skinPackages:
+            applyGamepadProfileStateFromMac(decoded)
+
+        case .skinPackageRemoval:
+            break
+
+        case .gamepadProfileSelection, .gamepadProfileSkinSelection, .gamepadDefaultProfile, .gamepadProfileOrientationPreferenceMutation:
             break
 
         default:
@@ -1888,6 +2104,8 @@ final class ControllerClient: ObservableObject {
         autoReconnectEnabled = trustedMacCredential != nil
         state = .connected
         flushPendingKeypadLayoutEdits()
+        flushPendingSkinRemovals()
+        flushPendingSkinSelectionMutations()
         lastError = nil
         smartConnectStatus = nil
         lastSentEvent = message ?? "Pairing complete"
@@ -2146,6 +2364,26 @@ final class ControllerClient: ObservableObject {
 
     private static func loadHasSavedKeypadSnapshot() -> Bool {
         UserDefaults.standard.bool(forKey: hasSavedKeypadSnapshotDefaultsKey)
+    }
+
+    private static func loadPendingSkinSelectionMutations() -> [PendingSkinSelectionMutation] {
+        guard let data = UserDefaults.standard.data(forKey: pendingSkinSelectionDefaultsKey) else { return [] }
+        return (try? JSONDecoder().decode([PendingSkinSelectionMutation].self, from: data)) ?? []
+    }
+
+    private func persistPendingSkinSelectionMutations() {
+        guard let data = try? JSONEncoder().encode(pendingSkinSelectionMutations) else { return }
+        UserDefaults.standard.set(data, forKey: Self.pendingSkinSelectionDefaultsKey)
+    }
+
+    private static func loadPendingSkinRemovals() -> [PocketPadSkinReference] {
+        guard let data = UserDefaults.standard.data(forKey: pendingSkinRemovalDefaultsKey) else { return [] }
+        return (try? JSONDecoder().decode([PocketPadSkinReference].self, from: data)) ?? []
+    }
+
+    private func persistPendingSkinRemovals() {
+        guard let data = try? JSONEncoder().encode(pendingSkinRemovals) else { return }
+        UserDefaults.standard.set(data, forKey: Self.pendingSkinRemovalDefaultsKey)
     }
 
     private func markSavedKeypadSnapshotAvailable() {

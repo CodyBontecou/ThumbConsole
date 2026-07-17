@@ -97,6 +97,22 @@ struct MacContentView: View {
             homePage
         case .gamepad:
             gamepadEditorPage
+        case .skins:
+            MacSkinLibraryView(
+                onCustomizeProfile: { profileID in
+                    server.selectGamepadProfile(profileID)
+                    selectedSection = .gamepad
+                },
+                onShareProfile: { profileID in
+                    prepareKeypadExport(
+                        profiles: server.gamepadProfiles,
+                        activeProfileID: server.activeGamepadProfileID,
+                        defaultProfileID: server.defaultGamepadProfileID,
+                        exportingProfileID: profileID
+                    )
+                }
+            )
+            .environmentObject(server)
         case .settings:
             contentScroll {
                 pageHeader(
@@ -646,10 +662,20 @@ struct MacContentView: View {
 
     private var activeKeypadPreview: some View {
         MacKeypadMiniPreview(
-            customization: activeGamepadProfile?.customization(for: .landscape) ?? server.gamepadCustomization,
+            customization: activeGamepadProfile.map(resolvedPreviewCustomization(for:)) ?? server.gamepadCustomization,
             defaultLabelProvider: { button in
                 server.recordedShortcutLabel(for: button)
             }
+        )
+    }
+
+    private func resolvedPreviewCustomization(for profile: GamepadConfigurationProfile) -> GamepadCustomization {
+        let local = profile.customization(for: .landscape)
+        let scheme = local.resolvedColorScheme(system: colorScheme)
+        return profile.resolvedCustomization(
+            for: .landscape,
+            colorScheme: scheme == .dark ? .dark : .light,
+            skinPackage: profile.skinReference.flatMap { try? server.skinPackage(for: $0) }
         )
     }
 
@@ -678,8 +704,8 @@ struct MacContentView: View {
                 )
                 homeMetricRow(
                     title: "Appearance",
-                    value: (activeGamepadProfile?.customization ?? server.gamepadCustomization).colorSchemePreference.displayName,
-                    systemImage: "circle.lefthalf.filled"
+                    value: activeProfileSkinName,
+                    systemImage: "paintpalette.fill"
                 )
                 MacLiveActivityMetricRow(
                     activity: server.liveActivity,
@@ -998,6 +1024,12 @@ struct MacContentView: View {
         activeGamepadProfile?.name ?? "Current Setup"
     }
 
+    private var activeProfileSkinName: String {
+        guard let reference = activeGamepadProfile?.skinReference else { return "Local appearance" }
+        return server.installedSkins.first(where: { $0.reference == reference })?.manifest.name
+            ?? "Missing skin"
+    }
+
     private var defaultProfileName: String {
         server.gamepadProfiles.first { $0.id == server.defaultGamepadProfileID }?.name ?? "None"
     }
@@ -1136,10 +1168,10 @@ struct MacContentView: View {
         MacGamepadEditorLiveInputReader(activity: server.liveActivity) { pressedElementInputs in
             GamepadCustomizationEditor(
                 customization: Binding(
-                    get: { server.gamepadCustomization },
-                    set: { server.setGamepadCustomization($0) }
+                    get: { editorGamepadCustomization },
+                    set: { server.setGamepadCustomization(dehydratedEditorCustomization($0)) }
                 ),
-                initialProfiles: server.gamepadProfiles,
+                initialProfiles: editorGamepadProfiles,
                 initialSelectedProfileID: server.activeGamepadProfileID,
                 initialDefaultProfileID: server.defaultGamepadProfileID,
                 onReset: { server.resetGamepadCustomization() },
@@ -1209,6 +1241,48 @@ struct MacContentView: View {
             )
         }
         .geistScreenBackground()
+    }
+
+    private var editorGamepadCustomization: GamepadCustomization {
+        guard let profile = activeGamepadProfile else { return server.gamepadCustomization }
+        let orientation = server.gamepadCustomization.deviceCanvas.editorDeviceFrame.orientation
+        return resolvedEditorCustomization(for: profile, orientation: orientation)
+    }
+
+    private var editorGamepadProfiles: [GamepadConfigurationProfile] {
+        server.gamepadProfiles.map { profile in
+            guard profile.skinReference != nil else { return profile }
+            var resolved = profile
+            let fallbackOrientation = profile.customization.deviceCanvas.editorDeviceFrame.orientation
+            resolved.customization = resolvedEditorCustomization(for: profile, orientation: fallbackOrientation)
+            if profile.landscapeCustomization != nil {
+                resolved.landscapeCustomization = resolvedEditorCustomization(for: profile, orientation: .landscape)
+            }
+            if profile.portraitCustomization != nil {
+                resolved.portraitCustomization = resolvedEditorCustomization(for: profile, orientation: .portrait)
+            }
+            return resolved
+        }
+    }
+
+    private func resolvedEditorCustomization(
+        for profile: GamepadConfigurationProfile,
+        orientation: GamepadEditorDeviceOrientation
+    ) -> GamepadCustomization {
+        let local = profile.customization(for: orientation)
+        let scheme = local.resolvedColorScheme(system: colorScheme)
+        return profile.resolvedCustomization(
+            for: orientation,
+            colorScheme: scheme == .dark ? .dark : .light,
+            skinPackage: profile.skinReference.flatMap { try? server.skinPackage(for: $0) }
+        )
+    }
+
+    private func dehydratedEditorCustomization(_ customization: GamepadCustomization) -> GamepadCustomization {
+        guard let reference = activeGamepadProfile?.skinReference,
+              let package = try? server.skinPackage(for: reference)
+        else { return customization }
+        return customization.dehydratingAssets(from: package)
     }
 
     private var editorDeliveryStatusText: String {
@@ -2500,6 +2574,7 @@ private struct MacOnboardingCallout: View {
 private enum MacSidebarSection: String, CaseIterable, Identifiable, Hashable {
     case home
     case gamepad
+    case skins
     case settings
 
     var id: Self { self }
@@ -2508,6 +2583,7 @@ private enum MacSidebarSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .home: "Home"
         case .gamepad: "Keypad"
+        case .skins: "Skins"
         case .settings: "Settings"
         }
     }
@@ -2516,6 +2592,7 @@ private enum MacSidebarSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .home: "house.fill"
         case .gamepad: "keyboard.fill"
+        case .skins: "paintpalette.fill"
         case .settings: "gearshape.fill"
         }
     }
@@ -2638,7 +2715,7 @@ private struct InfoTile: View {
     }
 }
 
-private struct MacKeypadMiniPreview: View {
+struct MacKeypadMiniPreview: View {
     @Environment(\.colorScheme) private var colorScheme
     let customization: GamepadCustomization
     var defaultLabelProvider: ((GameButton) -> String?)? = nil
@@ -2676,6 +2753,7 @@ private struct MacKeypadMiniPreview: View {
                         shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
                         fillStyle: customization.keypadBackgroundFillStyle(scheme: previewColorScheme)
                     )
+                    GamepadArtworkLayersView(layers: customization.artworkLayers, plane: .underlay)
 
                     ForEach(controls) { control in
                         GamepadRenderedControlFace(
@@ -2688,6 +2766,7 @@ private struct MacKeypadMiniPreview: View {
                         .rotationEffect(.degrees(control.rotationDegrees))
                         .position(control.center)
                     }
+                    GamepadArtworkLayersView(layers: customization.artworkLayers, plane: .overlay)
                 }
                 .frame(width: designSize.width, height: designSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))

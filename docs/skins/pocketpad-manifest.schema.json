@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pocketpad.app/schemas/pocketpad-manifest.schema.json",
+  "title": "PocketPad package manifest",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "identifier",
+    "version",
+    "kind",
+    "name",
+    "author",
+    "summary",
+    "license",
+    "tags",
+    "assets",
+    "previews"
+  ],
+  "properties": {
+    "schema": { "const": "com.codybontecou.pocketpad.skin-package" },
+    "schemaVersion": { "enum": [1, 2] },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z][A-Za-z0-9_-]*){2,}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "kind": { "enum": ["skin", "layout", "pack"] },
+    "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "author": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "url": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+    "summary": { "type": "string", "maxLength": 500 },
+    "license": { "type": "string", "maxLength": 100 },
+    "homepage": { "type": "string", "format": "uri" },
+    "minimumAppVersion": { "type": "string" },
+    "tags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 40 }
+    },
+    "skinPath": { "$ref": "#/$defs/packagePath" },
+    "skinSHA256": { "$ref": "#/$defs/hash" },
+    "profilePath": { "$ref": "#/$defs/packagePath" },
+    "profileSHA256": { "$ref": "#/$defs/hash" },
+    "assets": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/asset" }
+    },
+    "previews": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/preview" }
+    },
+    "compatibility": { "$ref": "#/$defs/compatibility" }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["compatibility"] },
+      "then": { "properties": { "schemaVersion": { "const": 2 } } }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "packagePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "hash": {
+      "description": "May be empty in an unpacked source directory; `skin pack` writes the canonical SHA-256 value.",
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64})?$"
+    },
+    "asset": {
+      "type": "object",
+      "required": ["id", "path", "contentType", "role", "byteCount", "sha256"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^assets/(?!.*(?:^|/)\\.\\.(?:/|$)).+" },
+        "contentType": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "role": { "enum": ["background", "icon", "texture", "reference"] },
+        "byteCount": { "type": "integer", "minimum": 0, "maximum": 10485760 },
+        "sha256": { "$ref": "#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["mode", "templates", "orientations", "requiredRoles", "requiredFeatures"],
+      "properties": {
+        "mode": { "enum": ["universal", "template_aligned"] },
+        "templates": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["templateID", "minimumRevision"],
+            "properties": {
+              "templateID": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "minimumRevision": { "type": "integer", "minimum": 1 },
+              "maximumRevision": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "orientations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["portrait", "landscape"] }
+        },
+        "minimumAspectRatio": { "type": "number", "minimum": 0.25, "maximum": 4 },
+        "maximumAspectRatio": { "type": "number", "minimum": 0.25, "maximum": 4 },
+        "requiredRoles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["movement", "primary_action", "secondary_action", "utility", "menu", "custom", "joystick", "trigger", "trackpad", "decoration", "system"] }
+        },
+        "requiredFeatures": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["artwork_layers", "nine_slice_images", "bitmap_control_states"] }
+        }
+      },
+      "additionalProperties": false
+    },
+    "preview": {
+      "type": "object",
+      "required": ["id", "path", "orientation", "byteCount", "sha256"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^previews/(?!.*(?:^|/)\\.\\.(?:/|$)).+" },
+        "orientation": { "enum": ["portrait", "landscape"] },
+        "colorScheme": { "enum": ["light", "dark"] },
+        "byteCount": { "type": "integer", "minimum": 0, "maximum": 10485760 },
+        "sha256": { "$ref": "#/$defs/hash" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

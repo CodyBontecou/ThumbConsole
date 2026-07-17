@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct IOSContentView: View {
     @EnvironmentObject private var client: ControllerClient
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("macHost") private var macHost = "192.168.0.113"
     @AppStorage("macPort") private var macPort = "8765"
     @AppStorage("pairingCode") private var pairingCode = ""
@@ -12,6 +13,8 @@ struct IOSContentView: View {
     @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
     @State private var prefersConnectionView = true
     @State private var isShowingOnboarding = false
+    @State private var pendingSharedSkinImport: IOSPendingSkinImport?
+    @State private var sharedSkinImportError: String?
 
     private let defaultMacHost = "192.168.0.113"
     private let defaultMacPort = "8765"
@@ -70,6 +73,31 @@ struct IOSContentView: View {
             )
             .interactiveDismissDisabled(!hasCompletedOnboarding)
         }
+        .sheet(item: $pendingSharedSkinImport) { pending in
+            IOSSkinImportReviewSheet(
+                pending: pending,
+                previewCustomization: sharedSkinPreview(for: pending.package),
+                showsHitAreas: false,
+                onCancel: { pendingSharedSkinImport = nil },
+                onInstall: { shouldApply in
+                    installSharedSkin(pending, shouldApply: shouldApply)
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .alert(
+            "Couldn’t Import Skin",
+            isPresented: Binding(
+                get: { sharedSkinImportError != nil },
+                set: { if !$0 { sharedSkinImportError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { sharedSkinImportError = nil }
+        } message: {
+            Text(sharedSkinImportError ?? "The .pocketpad file could not be imported.")
+        }
+        .onOpenURL(perform: openSharedSkinURL)
         .onAppear {
             if macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 macHost = defaultMacHost
@@ -93,6 +121,47 @@ struct IOSContentView: View {
             if isConnected {
                 prefersConnectionView = false
             }
+        }
+    }
+
+    private func openSharedSkinURL(_ url: URL) {
+        guard url.isFileURL,
+              [PocketPadSkinStore.packageExtension, "zip"].contains(url.pathExtension.lowercased())
+        else { return }
+        do {
+            pendingSharedSkinImport = try IOSPendingSkinImport.load(from: url)
+            isShowingOnboarding = false
+        } catch {
+            sharedSkinImportError = error.localizedDescription
+        }
+    }
+
+    private func sharedSkinPreview(for package: PocketPadSkinPackage) -> GamepadCustomization {
+        let source = client.selectedGamepadProfile?.customization ?? client.gamepadCustomization
+        let orientation = source.deviceCanvas.editorDeviceFrame.orientation
+        return source.applying(
+            skinPackage: package,
+            orientation: orientation == .portrait ? .portrait : .landscape,
+            colorScheme: colorSchemeForSharedImport,
+            options: .replacingAppearance
+        )
+    }
+
+    private var colorSchemeForSharedImport: PocketPadSkinColorScheme {
+        colorScheme == .dark ? .dark : .light
+    }
+
+    private func installSharedSkin(_ pending: IOSPendingSkinImport, shouldApply: Bool) {
+        do {
+            let result = try client.installSkinPackage(data: pending.data, policy: .replaceSameVersion)
+            pendingSharedSkinImport = nil
+            if shouldApply {
+                try client.applySkinToSelectedProfile(result.reference, colorScheme: colorSchemeForSharedImport)
+                prefersConnectionView = false
+            }
+        } catch {
+            pendingSharedSkinImport = nil
+            sharedSkinImportError = error.localizedDescription
         }
     }
 
@@ -1089,6 +1158,7 @@ private struct KeypadSettingsSheet: View {
     @Binding var isPracticeModeEnabled: Bool
     let supportsOrientationPreferenceMutation: Bool
     let onShowGuide: (() -> Void)?
+    let onShowSkins: () -> Void
     let onStartCalibration: () -> Void
     let onReleaseAllInputs: () -> Void
 
@@ -1156,6 +1226,14 @@ private struct KeypadSettingsSheet: View {
                     }
                 } header: {
                     Text("Current Keypad")
+                }
+
+                Section("Skins") {
+                    Button {
+                        dismissThenRun(onShowSkins)
+                    } label: {
+                        Label("Browse Installed Skins", systemImage: "paintpalette.fill")
+                    }
                 }
 
                 Section("Ergonomics") {
@@ -1310,6 +1388,7 @@ private struct ControllerPadView: View {
     @State private var isTopBarVisible = false
     @State private var isExportingKeypadConfiguration = false
     @State private var isShowingKeypadSettings = false
+    @State private var isShowingSkinLibrary = false
     @State private var practiceModeBeforeCalibration: Bool?
     @StateObject private var editRuntime = IOSKeypadEditRuntime()
     @StateObject private var calibrationRuntime = ThumbPlacementCalibrationRuntime()
@@ -1362,9 +1441,14 @@ private struct ControllerPadView: View {
                     isPracticeModeEnabled: practiceModeBinding,
                     supportsOrientationPreferenceMutation: client.supportsGamepadProfileOrientationPreferenceMutation,
                     onShowGuide: onShowOnboarding,
+                    onShowSkins: { isShowingSkinLibrary = true },
                     onStartCalibration: { startCalibration(in: context) },
                     onReleaseAllInputs: releaseActiveInputs
                 )
+            }
+            .sheet(isPresented: $isShowingSkinLibrary) {
+                IOSSkinLibraryView()
+                    .environmentObject(client)
             }
         }
         .environment(\.keypadHapticIntensity, keypadHapticIntensity)
@@ -1533,9 +1617,19 @@ private struct ControllerPadView: View {
 private final class ControllerPadCustomizationSnapshot {
     let value: GamepadCustomization
 
-    init(client: ControllerClient, orientation: GamepadEditorDeviceOrientation) {
+    init(
+        client: ControllerClient,
+        orientation: GamepadEditorDeviceOrientation,
+        systemColorScheme: ColorScheme
+    ) {
         if let selectedProfile = client.selectedGamepadProfile {
-            value = selectedProfile.customization(for: orientation)
+            let local = selectedProfile.customization(for: orientation)
+            let resolvedScheme = local.resolvedColorScheme(system: systemColorScheme)
+            value = selectedProfile.resolvedCustomization(
+                for: orientation,
+                colorScheme: resolvedScheme == .dark ? .dark : .light,
+                skinPackage: client.skinPackage(for: selectedProfile.skinReference)
+            )
         } else {
             value = client.gamepadCustomization
         }
@@ -1567,7 +1661,8 @@ private final class ControllerPadRenderContext {
     ) {
         let customizationSnapshot = ControllerPadCustomizationSnapshot(
             client: client,
-            orientation: orientation
+            orientation: orientation,
+            systemColorScheme: systemColorScheme
         )
         self.size = size
         self.safeAreaInsets = safeAreaInsets
@@ -1596,7 +1691,15 @@ private struct ControllerPadGeometryScene: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            GamepadArtworkLayersView(
+                layers: context.customization.artworkLayers,
+                plane: .underlay
+            )
             ControllerPadRuntimeSurface(context: context, editRuntime: editRuntime)
+            GamepadArtworkLayersView(
+                layers: context.customization.artworkLayers,
+                plane: .overlay
+            )
             ControllerPadTopChrome(
                 context: context,
                 isTopBarVisible: $isTopBarVisible,
@@ -3338,11 +3441,19 @@ private struct LandscapeControllerMetrics {
 private enum ControllerLayoutMetrics {
     static let buttonHitOutset: CGFloat = 10
 
-    static func hitSize(for visualSize: CGSize) -> CGSize {
-        CGSize(
-            width: visualSize.width + buttonHitOutset * 2,
-            height: visualSize.height + buttonHitOutset * 2
-        )
+    static func hitInsets(for customization: GamepadButtonCustomization? = nil) -> GamepadHitInsets {
+        customization?.hitInsets?.normalized ?? .runtimeDefault
+    }
+
+    static func hitSize(
+        for visualSize: CGSize,
+        customization: GamepadButtonCustomization? = nil
+    ) -> CGSize {
+        hitInsets(for: customization).hitSize(for: visualSize)
+    }
+
+    static func visualOffset(for customization: GamepadButtonCustomization? = nil) -> CGSize {
+        hitInsets(for: customization).visualOffset
     }
 }
 
@@ -3550,7 +3661,7 @@ private struct GamepadFreeformControllerCanvas: View {
                         .allowsHitTesting(!isEditingLayout && !control.isDecoration)
                         .accessibilityHidden(isEditingLayout)
                         .rotationEffect(.degrees(control.rotationDegrees))
-                        .position(control.center)
+                        .position(control.isDecoration ? control.center : control.hitCenter)
                         .zIndex(0)
                 }
 
@@ -4448,13 +4559,28 @@ private struct GamepadJoystick: View {
         min(size.width, size.height)
     }
 
-    private var hitSide: CGFloat {
+    private var legacyHitSide: CGFloat {
         switch joystickVisualStyle {
         case .pad:
             max(visualSide + ControllerLayoutMetrics.buttonHitOutset * 2, visualSide)
         case .thumbstick:
             max(visualSide + ControllerLayoutMetrics.buttonHitOutset * 2, visualSide * 2.55, 104)
         }
+    }
+
+    private var interactionSize: CGSize {
+        guard elementCustomization.hitInsets != nil else {
+            return CGSize(width: legacyHitSide, height: legacyHitSide)
+        }
+        return ControllerLayoutMetrics.hitSize(for: size, customization: elementCustomization)
+    }
+
+    private var hitSide: CGFloat {
+        max(interactionSize.width, interactionSize.height)
+    }
+
+    private var visualOffset: CGSize {
+        ControllerLayoutMetrics.visualOffset(for: elementCustomization)
     }
 
     private var activationDiameter: CGFloat? {
@@ -4531,7 +4657,8 @@ private struct GamepadJoystick: View {
     var body: some View {
         ZStack {
             joystickBase
-                .frame(width: hitSide, height: hitSide)
+                .frame(width: interactionSize.width, height: interactionSize.height)
+                .offset(visualOffset)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
@@ -4549,10 +4676,10 @@ private struct GamepadJoystick: View {
                     activeDirections = directions
                     handleVectorChanged(vector)
                 }
-                .frame(width: hitSide, height: hitSide)
+                .frame(width: interactionSize.width, height: interactionSize.height)
             }
         }
-        .frame(width: hitSide, height: hitSide)
+        .frame(width: interactionSize.width, height: interactionSize.height)
         .onDisappear {
             activeDirections.removeAll()
             normalizedOffset = .zero
@@ -4759,10 +4886,12 @@ private struct GamepadTrigger: View {
     }
 
     var body: some View {
-        let hitSize = ControllerLayoutMetrics.hitSize(for: size)
+        let hitSize = ControllerLayoutMetrics.hitSize(for: size, customization: elementCustomization)
+        let visualOffset = ControllerLayoutMetrics.visualOffset(for: elementCustomization)
         ZStack {
             triggerFace
                 .frame(width: size.width, height: size.height)
+                .offset(visualOffset)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
@@ -5088,14 +5217,13 @@ private struct GamepadTrackpad: View {
     }
 
     var body: some View {
-        let hitSize = CGSize(
-            width: size.width + ControllerLayoutMetrics.buttonHitOutset * 2,
-            height: size.height + ControllerLayoutMetrics.buttonHitOutset * 2
-        )
+        let hitSize = ControllerLayoutMetrics.hitSize(for: size, customization: elementCustomization)
+        let visualOffset = ControllerLayoutMetrics.visualOffset(for: elementCustomization)
 
         ZStack {
             trackpadSurface
                 .frame(width: size.width, height: size.height)
+                .offset(visualOffset)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
@@ -5301,7 +5429,8 @@ private struct GamepadButton: View {
     }
 
     var body: some View {
-        let hitSize = ControllerLayoutMetrics.hitSize(for: size)
+        let hitSize = ControllerLayoutMetrics.hitSize(for: size, customization: resolvedButtonCustomization)
+        let visualOffset = ControllerLayoutMetrics.visualOffset(for: resolvedButtonCustomization)
         let presentation = adaptivePresentation
 
         ZStack {
@@ -5345,6 +5474,7 @@ private struct GamepadButton: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .frame(width: size.width, height: size.height)
+            .offset(visualOffset)
 
             if client.isConnected || client.isPracticeModeEnabled {
                 TouchCaptureView(
@@ -5488,10 +5618,17 @@ private struct GamepadButton: View {
                 .minimumScaleFactor(0.5)
                 .offset(iconOffset(for: icon.placement))
         case .asset:
-            Text("▧")
-                .font(.system(size: baseSize, weight: .semibold))
-                .foregroundStyle(tint.opacity(0.72))
-                .offset(iconOffset(for: icon.placement))
+            if let data = customization.assetLibrary.asset(id: icon.value)?.data {
+                GamepadAssetIconImage(data: data, renderingMode: icon.renderingMode)
+                    .frame(width: baseSize, height: baseSize)
+                    .foregroundStyle(tint)
+                    .offset(iconOffset(for: icon.placement))
+            } else {
+                Image(systemName: "photo.badge.exclamationmark")
+                    .font(.system(size: baseSize, weight: .semibold))
+                    .foregroundStyle(tint.opacity(0.72))
+                    .offset(iconOffset(for: icon.placement))
+            }
         }
     }
 

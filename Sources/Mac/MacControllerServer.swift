@@ -67,6 +67,7 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var outputBindings: [GameButton: MacControlOutputBinding]
     @Published private(set) var gamepadCustomization: GamepadCustomization
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
+    @Published private(set) var installedSkins: [PocketPadInstalledSkin]
     @Published private(set) var activeGamepadProfileID: UUID
     @Published private(set) var defaultGamepadProfileID: UUID
     @Published private(set) var port: UInt16 = MacControllerServer.preferredPort
@@ -98,6 +99,18 @@ final class MacControllerServer: ObservableObject {
     enum KeypadConfigurationImportMode {
         case replaceMatching
         case appendAsCopies
+    }
+
+    enum SkinLibraryError: LocalizedError {
+        case profileNotFound
+        case skinInUse(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .profileNotFound: "The selected keypad setup no longer exists."
+            case .skinInUse(let profileName): "This skin is still used by \(profileName). Detach it before removing the skin."
+            }
+        }
     }
 
     struct KeypadConfigurationImportSummary {
@@ -181,6 +194,7 @@ final class MacControllerServer: ObservableObject {
     private static let bonjourServiceEndpointType = "_pocketpad._tcp"
     private static let bonjourServiceDomain = "local"
     private static let externalProfileStoreChangedNotificationName = Notification.Name("com.codybontecou.PocketPadMac.profileStoreChanged")
+    private static let externalSkinStoreChangedNotificationName = Notification.Name("com.codybontecou.PocketPadMac.skinStoreChanged")
     private static let notificationProfileStateDataKey = "profileStateData"
     private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
     private static let notificationKeyBindingsDataKey = "keyBindingsData"
@@ -188,7 +202,9 @@ final class MacControllerServer: ObservableObject {
     private static let notificationOutputBindingsDataKey = "outputBindingsData"
     private static let notificationProfileOutputBindingsDataKey = "profileOutputBindingsData"
     private static let advertisedCapabilities: Set<ControllerCapability> = [
-        .gamepadProfileOrientationPreferenceMutation
+        .gamepadProfileOrientationPreferenceMutation,
+        .skinPackages,
+        .gamepadProfileSkinSelection
     ]
     private static let inputEventLoggingEnabled = false
     private static let inputDebugPublishIntervalNanoseconds: UInt64 = 100_000_000
@@ -247,7 +263,9 @@ final class MacControllerServer: ObservableObject {
         var output: MacControlOutputBinding?
     }
     private var resolvedElementInputs: [KeypadElementInputID: ResolvedElementInput] = [:]
+    private let skinStore: PocketPadSkinStore
     private var realtimeGamepadProfiles: [GamepadConfigurationProfile]
+    private var realtimeSkinPackages: [Data]
     private var realtimeBindingPresentations: [GamepadProfileBindingPresentations]
     private var realtimeActiveGamepadProfileID: UUID
     private var realtimeDefaultGamepadProfileID: UUID
@@ -391,6 +409,7 @@ final class MacControllerServer: ObservableObject {
     private var ignoredButtonEdgeCount = 0
     private var recoveredButtonEdgeCount = 0
     private var externalDefaultsObserver: NSObjectProtocol?
+    private var externalSkinStoreObserver: NSObjectProtocol?
     private var cliCommandObserver: NSObjectProtocol?
 
     private struct ExternalStoredProfileState: Codable {
@@ -399,10 +418,23 @@ final class MacControllerServer: ObservableObject {
         var defaultProfileID: UUID?
     }
 
+    private static func makeSkinStore() -> PocketPadSkinStore {
+        if let store = try? PocketPadSkinStore() { return store }
+        let fallback = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PocketPad-Skins", isDirectory: true)
+        // The temporary fallback is reachable only when Application Support is unavailable.
+        return try! PocketPadSkinStore(rootURL: fallback)
+    }
+
     init() {
         serverID = Self.loadOrCreateServerID()
         bonjourServiceName = Self.defaultBonjourServiceName()
         trustedClients = Self.loadTrustedClients()
+        let loadedSkinStore = Self.makeSkinStore()
+        try? loadedSkinStore.installBundledSkinsIfNeeded()
+        let loadedSkins = (try? loadedSkinStore.installedSkins()) ?? []
+        skinStore = loadedSkinStore
+        installedSkins = loadedSkins
 
         let initialPairingCode = Self.generatePairingCode()
         pairingCode = initialPairingCode
@@ -450,6 +482,7 @@ final class MacControllerServer: ObservableObject {
         profileOutputBindings = loadedProfileOutputBindings
         realtimeGamepadCustomization = startupGamepadCustomization
         realtimeGamepadProfiles = loadedProfileState.profiles
+        realtimeSkinPackages = loadedSkins.compactMap { try? loadedSkinStore.packageData(for: $0.reference) }
         realtimeBindingPresentations = Self.bindingPresentationsSnapshot(
             profiles: loadedProfileState.profiles,
             profileKeyBindings: loadedProfileKeyBindings,
@@ -489,6 +522,13 @@ final class MacControllerServer: ObservableObject {
                 self.reloadProfilesFromDefaults(source: "cli")
             }
         }
+        externalSkinStoreObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Self.externalSkinStoreChangedNotificationName,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshInstalledSkinState(sendToClient: true)
+        }
         refreshVirtualGamepadMaterialization(reason: "startup", publish: false)
         publishRuntimeStatus()
     }
@@ -499,6 +539,9 @@ final class MacControllerServer: ObservableObject {
         }
         if let externalDefaultsObserver {
             DistributedNotificationCenter.default().removeObserver(externalDefaultsObserver)
+        }
+        if let externalSkinStoreObserver {
+            DistributedNotificationCenter.default().removeObserver(externalSkinStoreObserver)
         }
         stop()
     }
@@ -1334,6 +1377,9 @@ final class MacControllerServer: ObservableObject {
 
     func setGamepadCustomization(_ customization: GamepadCustomization) {
         var normalizedCustomization = customization.normalized
+        if let profile = gamepadProfiles.first(where: { $0.id == activeGamepadProfileID }) {
+            normalizedCustomization = dehydratingSkinAssets(in: normalizedCustomization, for: profile)
+        }
         guard !normalizedCustomization.hasSamePresentation(as: gamepadCustomization) else {
             asyncOnNetworkQueue { [weak self] in
                 self?.sendGamepadProfileStateOnNetworkQueue()
@@ -1385,6 +1431,10 @@ final class MacControllerServer: ObservableObject {
         if let existingIndex = gamepadProfiles.firstIndex(where: { $0.id == profileID }) {
             profileIndex = existingIndex
             recoveredProfile = false
+            normalizedCustomization = dehydratingSkinAssets(
+                in: normalizedCustomization,
+                for: gamepadProfiles[existingIndex]
+            )
             guard !normalizedCustomization.hasSamePresentation(
                 as: gamepadProfiles[profileIndex].customization(for: orientation)
             ) else {
@@ -1438,6 +1488,114 @@ final class MacControllerServer: ObservableObject {
         setGamepadCustomization(.defaultValue)
     }
 
+    @discardableResult
+    func installSkinPackage(
+        data: Data,
+        policy: PocketPadSkinInstallPolicy = .newerOnly
+    ) throws -> PocketPadSkinInstallResult {
+        let result = try skinStore.install(data: data, policy: policy)
+        refreshInstalledSkinState(sendToClient: true)
+        lastReceivedEvent = "Installed skin \(result.reference.identifier)"
+        return result
+    }
+
+    func skinPackage(for reference: PocketPadSkinReference) throws -> PocketPadSkinPackage {
+        try skinStore.package(for: reference)
+    }
+
+    func skinPackageData(for reference: PocketPadSkinReference) throws -> Data {
+        try skinStore.packageData(for: reference)
+    }
+
+    func removeSkin(_ reference: PocketPadSkinReference) throws {
+        if let profile = gamepadProfiles.first(where: { $0.skinReference == reference }) {
+            throw SkinLibraryError.skinInUse(profile.name)
+        }
+        try skinStore.remove(reference)
+        refreshInstalledSkinState(sendToClient: true)
+        lastReceivedEvent = "Removed skin \(reference.identifier)"
+    }
+
+    func applySkin(
+        _ reference: PocketPadSkinReference,
+        to profileID: UUID,
+        colorScheme: PocketPadSkinColorScheme = .light
+    ) throws {
+        guard let index = gamepadProfiles.firstIndex(where: { $0.id == profileID }) else {
+            throw SkinLibraryError.profileNotFound
+        }
+        let package = try skinStore.package(for: reference)
+        gamepadProfiles[index].applySkin(package, colorScheme: colorScheme)
+        finishSkinProfileMutation(profileIndex: index, event: "Applied \(package.manifest.name)")
+    }
+
+    func detachSkin(from profileID: UUID) throws {
+        guard let index = gamepadProfiles.firstIndex(where: { $0.id == profileID }) else {
+            throw SkinLibraryError.profileNotFound
+        }
+        if let reference = gamepadProfiles[index].skinReference,
+           let package = try? skinStore.package(for: reference) {
+            gamepadProfiles[index].detachSkin(resolving: package, colorScheme: .light)
+        } else {
+            gamepadProfiles[index].detachSkin()
+        }
+        finishSkinProfileMutation(profileIndex: index, event: "Detached skin from \(gamepadProfiles[index].name)")
+    }
+
+    private func finishSkinProfileMutation(profileIndex: Int, event: String) {
+        if gamepadProfiles[profileIndex].id == activeGamepadProfileID {
+            let orientation = gamepadCustomization.deviceCanvas.editorDeviceFrame.orientation
+            gamepadCustomization = gamepadProfiles[profileIndex].customization(for: orientation).stampedForLocalUpdate
+            GamepadCustomizationPersistence.save(gamepadCustomization)
+        }
+        persistGamepadProfileState()
+        let profiles = gamepadProfiles
+        let customization = gamepadCustomization
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            self.realtimeGamepadProfiles = profiles
+            self.realtimeGamepadCustomization = customization
+            self.sendGamepadProfileStateOnNetworkQueue()
+        }
+        lastReceivedEvent = event
+        publishRuntimeStatus()
+    }
+
+    private func dehydratingSkinAssets(
+        in customization: GamepadCustomization,
+        for profile: GamepadConfigurationProfile
+    ) -> GamepadCustomization {
+        guard let reference = profile.skinReference,
+              let package = try? skinStore.package(for: reference)
+        else { return customization.normalized }
+        return customization.dehydratingAssets(from: package)
+    }
+
+    private func dehydratingSkinAssets(in profile: GamepadConfigurationProfile) -> GamepadConfigurationProfile {
+        guard let reference = profile.skinReference,
+              let package = try? skinStore.package(for: reference)
+        else { return profile.normalized }
+        var copy = profile
+        copy.customization = copy.customization.dehydratingAssets(from: package)
+        copy.landscapeCustomization = copy.landscapeCustomization?.dehydratingAssets(from: package)
+        copy.portraitCustomization = copy.portraitCustomization?.dehydratingAssets(from: package)
+        copy.skinBaselineCustomization = copy.skinBaselineCustomization?.dehydratingAssets(from: package)
+        copy.landscapeSkinBaselineCustomization = copy.landscapeSkinBaselineCustomization?.dehydratingAssets(from: package)
+        copy.portraitSkinBaselineCustomization = copy.portraitSkinBaselineCustomization?.dehydratingAssets(from: package)
+        return copy.normalized
+    }
+
+    private func refreshInstalledSkinState(sendToClient: Bool) {
+        let skins = (try? skinStore.installedSkins()) ?? []
+        let packageData = skins.compactMap { try? skinStore.packageData(for: $0.reference) }
+        installedSkins = skins
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            self.realtimeSkinPackages = packageData
+            if sendToClient { self.sendGamepadProfileStateOnNetworkQueue() }
+        }
+    }
+
     func setGamepadProfileState(
         profiles: [GamepadConfigurationProfile],
         activeProfileID: UUID,
@@ -1448,8 +1606,9 @@ final class MacControllerServer: ObservableObject {
             profileOutputBindings[profileID] = bindings
             profileKeyBindings[profileID] = bindings.keyboardBindings
         }
+        let dehydratedProfiles = profiles.map(dehydratingSkinAssets(in:))
         let state = GamepadConfigurationProfilePersistence.normalizedState(
-            profiles: profiles,
+            profiles: dehydratedProfiles,
             activeProfileID: activeProfileID,
             defaultProfileID: defaultProfileID,
             fallbackCustomization: gamepadCustomization
@@ -2576,6 +2735,51 @@ final class MacControllerServer: ObservableObject {
                 self?.launchAttachedApplication(for: profileID, source: "iphone")
             }
 
+        case .skinPackages:
+            guard isPairedConnection, let packages = message.skinPackages else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                for data in packages {
+                    do {
+                        _ = try self.installSkinPackage(data: data, policy: .replaceSameVersion)
+                    } catch {
+                        self.lastReceivedEvent = "Skin import failed: \(error.localizedDescription)"
+                    }
+                }
+                self.publishRuntimeStatus()
+            }
+
+        case .skinPackageRemoval:
+            guard isPairedConnection, let reference = message.skinReference else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                do {
+                    try self.removeSkin(reference)
+                } catch PocketPadSkinStoreError.skinNotInstalled(_) {
+                    // Idempotent replay after a reconnect.
+                } catch {
+                    self.lastReceivedEvent = "Skin removal failed: \(error.localizedDescription)"
+                    self.publishRuntimeStatus()
+                }
+            }
+
+        case .gamepadProfileSkinSelection:
+            guard isPairedConnection, let profileID = message.gamepadProfileID else { return }
+            let reference = message.skinReference
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                do {
+                    if let reference {
+                        try self.applySkin(reference, to: profileID)
+                    } else {
+                        try self.detachSkin(from: profileID)
+                    }
+                } catch {
+                    self.lastReceivedEvent = "Skin selection failed: \(error.localizedDescription)"
+                    self.publishRuntimeStatus()
+                }
+            }
+
         case .gamepadProfiles:
             guard isPairedConnection else { return }
             sendGamepadProfileStateOnNetworkQueue()
@@ -2659,6 +2863,7 @@ final class MacControllerServer: ObservableObject {
                 serverID: serverID,
                 gamepadCustomization: clientGamepadCustomization,
                 gamepadProfiles: clientGamepadProfiles,
+                skinPackages: realtimeSkinPackages,
                 bindingPresentations: realtimeBindingPresentations,
                 gamepadProfileID: realtimeActiveGamepadProfileID,
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID,
@@ -4702,6 +4907,7 @@ final class MacControllerServer: ObservableObject {
                 timestamp: 0,
                 gamepadCustomization: gamepadCustomizationForClient(customization),
                 gamepadProfiles: gamepadProfilesForClient(realtimeGamepadProfiles),
+                skinPackages: realtimeSkinPackages,
                 bindingPresentations: realtimeBindingPresentations,
                 gamepadProfileID: realtimeActiveGamepadProfileID,
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID,
@@ -4750,6 +4956,7 @@ final class MacControllerServer: ObservableObject {
                 timestamp: 0,
                 gamepadCustomization: gamepadCustomizationForClient(realtimeGamepadCustomization),
                 gamepadProfiles: gamepadProfilesForClient(realtimeGamepadProfiles),
+                skinPackages: realtimeSkinPackages,
                 bindingPresentations: realtimeBindingPresentations,
                 gamepadProfileID: realtimeActiveGamepadProfileID,
                 defaultGamepadProfileID: realtimeDefaultGamepadProfileID,

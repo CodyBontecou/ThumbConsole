@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-07-17",
+  "skins": [
+    {
+      "slug": "indigo-pocket",
+      "identifier": "com.codybontecou.pocketpad.indigo-pocket",
+      "origin": {
+        "type": "approved-package",
+        "package": "../../docs/skins/examples/indigo-pocket/dist/indigo-pocket-1.0.0.pocketpad",
+        "approval": "../../docs/skins/examples/indigo-pocket/reviews/human-approval.json"
+      },
+      "featured": true,
+      "featuredOrder": 1,
+      "description": "An original compact calibration instrument: softened-octagonal indigo fieldwork, orientation-specific control harbors, warm ivory legends, and a restrained violet seam around native controls.",
+      "palette": ["#E9E2D3", "#292752", "#191832", "#702653", "#A77CFF"],
+      "modes": ["light", "dark", "landscape", "portrait"],
+      "publishedAt": "2026-07-17"
+    }
+  ]
+}

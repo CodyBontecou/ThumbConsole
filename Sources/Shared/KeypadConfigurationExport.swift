@@ -10,7 +10,8 @@ import UniformTypeIdentifiers
 /// iOS exports include the layout/profile state that the phone can actually use.
 public struct ThumbConsoleKeypadConfigurationExport: Codable, Equatable, Sendable {
     public static let schemaIdentifier = "com.codybontecou.pocketpad.keypad-configuration"
-    public static let currentVersion = 3
+    /// Version 4 adds installed-skin references and per-orientation appearance baselines.
+    public static let currentVersion = 4
 
     public var schema: String
     public var version: Int

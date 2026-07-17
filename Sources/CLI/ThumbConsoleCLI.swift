@@ -10,6 +10,7 @@ struct ThumbConsoleCLI {
     private static let outputBindingsDefaultsKey = "PocketPadMac.outputBindings.v1"
     private static let profileOutputBindingsDefaultsKey = "PocketPadMac.profileOutputBindings.v1"
     private static let profileStoreChangedNotificationName = Notification.Name("com.codybontecou.PocketPadMac.profileStoreChanged")
+    private static let skinStoreChangedNotificationName = Notification.Name("com.codybontecou.PocketPadMac.skinStoreChanged")
     private static let notificationProfileStateDataKey = "profileStateData"
     private static let notificationActiveCustomizationDataKey = "activeCustomizationData"
     private static let notificationKeyBindingsDataKey = "keyBindingsData"
@@ -162,6 +163,25 @@ struct ThumbConsoleCLI {
         var description: String
     }
 
+    private struct SkinListSummary: Codable {
+        var identifier: String
+        var version: String
+        var name: String
+        var author: String
+        var license: String
+        var kind: PocketPadPackageKind
+        var isBundled: Bool
+        var path: String
+    }
+
+    private struct SkinInspectionSummary: Codable {
+        var manifest: PocketPadSkinManifest
+        var validation: PocketPadSkinValidationReport
+        var variantIDs: [String]
+        var assetIDs: [String]
+        var previewIDs: [String]
+    }
+
     private struct OrientationPreferenceSummary: Codable {
         var profileID: UUID
         var profileName: String
@@ -173,6 +193,7 @@ struct ThumbConsoleCLI {
         var kind: String
         var mappedButton: GameButton?
         var label: String
+        var visualRole: GamepadVisualRole?
         var isHidden: Bool
         var isLocationLocked: Bool
         var layout: GamepadButtonCustomization
@@ -219,6 +240,9 @@ struct ThumbConsoleCLI {
             exit(1)
         } catch {
             fputs("thumbconsole: \(error.localizedDescription)\n", stderr)
+            if ProcessInfo.processInfo.environment["THUMBCONSOLE_DEBUG_ERRORS"] == "1" {
+                fputs("Debug: \(String(reflecting: error))\n", stderr)
+            }
             fputs("Run `thumbconsole --help` for usage.\n", stderr)
             exit(1)
         }
@@ -244,6 +268,8 @@ struct ThumbConsoleCLI {
             try template(arguments: rest)
         case "theme", "themes":
             try theme(arguments: rest)
+        case "skin", "skins":
+            try skin(arguments: rest)
         case "binding", "bindings", "shortcut", "shortcuts":
             try binding(arguments: rest)
         case "output", "outputs":
@@ -1032,6 +1058,693 @@ struct ThumbConsoleCLI {
 
     private static func themeSummary(for preset: GamepadThemePreset) -> ThemeSummary {
         ThemeSummary(id: preset.rawValue, name: preset.displayName, description: preset.description)
+    }
+
+    // MARK: - Shareable skins
+
+    private static func skin(arguments: [String]) throws {
+        guard let subcommand = arguments.first else {
+            throw CLIError.message("Missing skin subcommand. Use artboard, scaffold, compile, preview, quality, list, inspect, validate, import, apply, detach, export, pack, or unpack.")
+        }
+        let rest = Array(arguments.dropFirst())
+        switch subcommand {
+        case "artboard", "artboards":
+            guard let action = rest.first else {
+                throw CLIError.message("Usage: thumbconsole skin artboard list|show|export")
+            }
+            let artboardArguments = Array(rest.dropFirst())
+            switch action {
+            case "list", "ls":
+                let artboards = PocketPadSkinArtboardCatalog.all
+                if artboardArguments.contains("--json") {
+                    try printJSON(artboards)
+                } else {
+                    for artboard in artboards {
+                        let orientations = artboard.variants.map(\.orientation.rawValue).joined(separator: ",")
+                        print("\(artboard.id)\t\(artboard.name) [\(orientations)]")
+                    }
+                }
+            case "show", "inspect":
+                guard let value = firstPositional(in: artboardArguments),
+                      let artboard = PocketPadSkinArtboardCatalog.resolve(value)
+                else { throw CLIError.message("Usage: thumbconsole skin artboard show ARTBOARD [--json]") }
+                if artboardArguments.contains("--json") {
+                    try printJSON(artboard)
+                } else {
+                    print("Name: \(artboard.name)")
+                    print("ID: \(artboard.id)")
+                    print("Template: \(artboard.templateID) revision \(artboard.revision)")
+                    print("Summary: \(artboard.summary)")
+                    print("Orientations: \(artboard.variants.map(\.orientation.rawValue).joined(separator: ", "))")
+                    print("Roles: \(artboard.expectedRoles.map(\.rawValue).joined(separator: ", "))")
+                }
+            case "export":
+                guard let value = firstPositional(in: artboardArguments),
+                      let profile = PocketPadSkinArtboardCatalog.profile(for: value)
+                else { throw CLIError.message("Usage: thumbconsole skin artboard export ARTBOARD -o profile.json") }
+                guard let output = optionValue("--output", in: artboardArguments) ?? optionValue("-o", in: artboardArguments) else {
+                    throw CLIError.message("skin artboard export requires -o <profile.json>")
+                }
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                try encoder.encode(profile).write(to: URL(fileURLWithPath: output), options: .atomic)
+                print("Exported canonical \(value) artboard profile to \(output).")
+            default:
+                throw CLIError.message("Unknown skin artboard subcommand: \(action)")
+            }
+
+        case "scaffold", "new":
+            guard let name = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin scaffold NAME --identifier REVERSE.DNS.ID [-o DIRECTORY] [--artboard ARTBOARD] [--force]")
+            }
+            guard let identifier = optionValue("--identifier", in: rest) else {
+                throw CLIError.message("skin scaffold requires --identifier <reverse.dns.id>")
+            }
+            let artboardID = optionValue("--artboard", in: rest) ?? PocketPadSkinArtboardCatalog.defaultID
+            let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest)
+                ?? name.replacingOccurrences(of: " ", with: "-")
+            _ = try PocketPadSkinScaffolder.write(
+                name: name,
+                identifier: identifier,
+                artboardID: artboardID,
+                to: URL(fileURLWithPath: output),
+                force: rest.contains("--force")
+            )
+            print("Created editable skin workspace at \(output).")
+
+        case "compile", "build":
+            guard let input = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin compile SOURCE [-o skin.pocketpad] [--build-directory DIRECTORY] [--clean] [--strict] [--json]")
+            }
+            let buildDirectory = optionValue("--build-directory", in: rest).map { URL(fileURLWithPath: $0) }
+            let output = (optionValue("--output", in: rest) ?? optionValue("-o", in: rest)).map { URL(fileURLWithPath: $0) }
+            let result = try MainActor.assumeIsolated {
+                try PocketPadSkinCompiler.compile(
+                    source: URL(fileURLWithPath: input),
+                    buildDirectory: buildDirectory,
+                    packageOutputURL: output,
+                    clean: rest.contains("--clean"),
+                    strict: rest.contains("--strict")
+                )
+            }
+            if rest.contains("--json") {
+                try printJSON(result.sourceReport)
+            } else {
+                print("Compiled \(result.workspace.name) to \(result.packageURL.path).")
+                if !result.sourceReport.warnings.isEmpty {
+                    for issue in result.sourceReport.warnings {
+                        print("- WARNING \(issue.code): \(issue.message)")
+                    }
+                }
+            }
+
+        case "list", "ls":
+            let store = try PocketPadSkinStore()
+            try store.installBundledSkinsIfNeeded()
+            let rows = try store.installedSkins().map { installed in
+                SkinListSummary(
+                    identifier: installed.reference.identifier,
+                    version: installed.reference.version,
+                    name: installed.manifest.name,
+                    author: installed.manifest.author.name,
+                    license: installed.manifest.license,
+                    kind: installed.manifest.kind,
+                    isBundled: installed.isBundled,
+                    path: installed.fileURL.path
+                )
+            }
+            if rest.contains("--json") {
+                try printJSON(rows)
+            } else if rows.isEmpty {
+                print("No PocketPad skins are installed.")
+            } else {
+                for row in rows {
+                    let badge = row.isBundled ? "built-in" : "installed"
+                    print("\(row.identifier)@\(row.version)\t\(row.name) — \(row.author) [\(badge)]")
+                }
+            }
+
+        case "inspect", "show":
+            guard let target = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin inspect <package-path|identifier[@version]>")
+            }
+            let package = try resolveSkinPackage(target).package
+            let summary = skinInspectionSummary(package)
+            if rest.contains("--json") {
+                try printJSON(summary)
+            } else {
+                printSkinInspection(summary)
+            }
+
+        case "validate", "check":
+            guard let target = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin validate <package-path|directory> [--strict] [--json]")
+            }
+            let package = try resolveSkinPackage(target).package
+            let report = PocketPadSkinPackageValidator.validate(package)
+            if rest.contains("--json") {
+                try printJSON(report)
+            } else {
+                printValidationReport(report)
+            }
+            if !report.isValid {
+                throw CLIError.validationFailed("Skin validation failed with \(report.errors.count) error(s).")
+            }
+            if rest.contains("--strict"), !report.warnings.isEmpty {
+                throw CLIError.validationFailed("Strict skin validation failed with \(report.warnings.count) warning(s).")
+            }
+
+        case "quality", "qa":
+            guard let target = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin quality SOURCE|PACKAGE [--artboard ARTBOARD] [--strict] [--json]")
+            }
+            let targetURL = URL(fileURLWithPath: target)
+            let workspace: PocketPadSkinWorkspace?
+            let package: PocketPadSkinPackage
+            if PocketPadSkinCompiler.containsWorkspace(at: targetURL) {
+                let loaded = try PocketPadSkinCompiler.loadWorkspace(from: targetURL)
+                workspace = loaded.workspace
+                let temporary = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("PocketPadSkinQuality-\(UUID().uuidString)", isDirectory: true)
+                defer { try? FileManager.default.removeItem(at: temporary) }
+                let compiled = try MainActor.assumeIsolated {
+                    try PocketPadSkinCompiler.compile(
+                        source: targetURL,
+                        buildDirectory: temporary.appendingPathComponent("build", isDirectory: true),
+                        packageOutputURL: temporary.appendingPathComponent("quality.pocketpad"),
+                        clean: true,
+                        strict: false
+                    )
+                }
+                package = compiled.package
+            } else {
+                workspace = nil
+                package = try resolveSkinPackage(target).package
+            }
+            let report = PocketPadSkinQualityEvaluator.evaluate(
+                package: package,
+                workspace: workspace,
+                artboardID: optionValue("--artboard", in: rest)
+            )
+            if rest.contains("--json") {
+                try printJSON(report)
+            } else {
+                printSkinQualityReport(report)
+            }
+            if !report.isPassing {
+                throw CLIError.validationFailed("Skin quality failed with \(report.errors.count) error(s).")
+            }
+            if rest.contains("--strict"), !report.warnings.isEmpty {
+                throw CLIError.validationFailed("Strict skin quality failed with \(report.warnings.count) warning(s).")
+            }
+
+        case "import", "install":
+            guard let target = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin import <package-path|directory> [--replace|--allow-downgrade]")
+            }
+            let resolved = try resolveSkinPackage(target, requiresInstalledLookup: false)
+            let packageData = try resolved.data ?? PocketPadSkinPackageCodec.encode(resolved.package)
+            let store = try PocketPadSkinStore()
+            try store.installBundledSkinsIfNeeded()
+            let policy: PocketPadSkinInstallPolicy = rest.contains("--allow-downgrade")
+                ? .allowDowngrade
+                : (rest.contains("--replace") ? .replaceSameVersion : .newerOnly)
+            let result = try store.install(data: packageData, policy: policy)
+            notifySkinStoreChanged()
+            print("Installed \(result.reference.identifier)@\(result.reference.version).")
+
+        case "apply", "set":
+            guard let target = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin apply <package-path|identifier[@version]> [--profile PROFILE] [--appearance light|dark]")
+            }
+            let resolved = try resolveSkinPackage(target)
+            let skinStore = try PocketPadSkinStore()
+            let reference = PocketPadSkinReference(
+                identifier: resolved.package.manifest.identifier,
+                version: resolved.package.manifest.version
+            )
+            let packageData = try resolved.data ?? PocketPadSkinPackageCodec.encode(resolved.package)
+            let installedData = try? skinStore.packageData(for: reference)
+            if installedData != packageData {
+                _ = try skinStore.install(
+                    data: packageData,
+                    policy: rest.contains("--allow-downgrade") ? .allowDowngrade : .replaceSameVersion
+                )
+                notifySkinStoreChanged()
+            }
+            var profileStore = loadStore()
+            let profileIndex = try resolveProfileIndex(optionValue("--profile", in: rest), in: profileStore)
+            let scheme = try parseSkinColorScheme(optionValue("--appearance", in: rest) ?? optionValue("--scheme", in: rest) ?? "light")
+            profileStore.profiles[profileIndex].applySkin(resolved.package, colorScheme: scheme)
+            let profileName = profileStore.profiles[profileIndex].name
+            try persistStore(profileStore)
+            print("Applied \(resolved.package.manifest.name) to \(profileName).")
+
+        case "detach", "fork":
+            var profileStore = loadStore()
+            let profileIndex = try resolveProfileIndex(optionValue("--profile", in: rest) ?? firstPositional(in: rest), in: profileStore)
+            guard let reference = profileStore.profiles[profileIndex].skinReference else {
+                print("\(profileStore.profiles[profileIndex].name) already uses local appearance.")
+                return
+            }
+            let scheme = try parseSkinColorScheme(optionValue("--appearance", in: rest) ?? "light")
+            if let package = try? PocketPadSkinStore().package(for: reference) {
+                profileStore.profiles[profileIndex].detachSkin(resolving: package, colorScheme: scheme)
+            } else {
+                profileStore.profiles[profileIndex].detachSkin()
+            }
+            let profileName = profileStore.profiles[profileIndex].name
+            try persistStore(profileStore)
+            print("Forked the current appearance for \(profileName).")
+
+        case "remove", "delete", "rm":
+            guard let target = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin remove <identifier[@version]>")
+            }
+            let resolved = try resolveSkinPackage(target)
+            let reference = PocketPadSkinReference(
+                identifier: resolved.package.manifest.identifier,
+                version: resolved.package.manifest.version
+            )
+            let store = try PocketPadSkinStore()
+            if (try store.installedSkins().first(where: { $0.reference == reference }))?.isBundled == true {
+                throw CLIError.message("Built-in skins cannot be removed.")
+            }
+            if let profile = loadStore().profiles.first(where: { $0.skinReference == reference }) {
+                throw CLIError.message("Skin is still used by profile \"\(profile.name)\". Run `thumbconsole skin detach --profile \"\(profile.name)\"` first.")
+            }
+            try store.remove(reference)
+            notifySkinStoreChanged()
+            print("Removed \(reference.identifier)@\(reference.version).")
+
+        case "export", "share":
+            guard let target = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin export <identifier[@version]> -o skin.pocketpad")
+            }
+            let resolved = try resolveSkinPackage(target)
+            let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest)
+                ?? suggestedSkinFilename(manifest: resolved.package.manifest)
+            let data = try resolved.data ?? PocketPadSkinPackageCodec.encode(resolved.package)
+            try data.write(to: URL(fileURLWithPath: output), options: [.atomic])
+            print("Exported \(resolved.package.manifest.name) to \(output).")
+
+        case "pack":
+            guard let input = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin pack <directory|manifest.json> -o skin.pocketpad")
+            }
+            guard let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest) else {
+                throw CLIError.message("skin pack requires -o <file.pocketpad>")
+            }
+            let inputURL = URL(fileURLWithPath: input)
+            let sourceCandidate = PocketPadSkinCompiler.sourceURL(for: inputURL)
+            if sourceCandidate.lastPathComponent == PocketPadSkinScaffolder.sourceFileName,
+               FileManager.default.fileExists(atPath: sourceCandidate.path) {
+                throw CLIError.message("Editable skin sources must be compiled first. Run `thumbconsole skin compile \(input) -o \(output)`.")
+            }
+            let package = try loadSkinPackageDirectory(at: inputURL)
+            let data = try PocketPadSkinPackageCodec.encode(package)
+            try data.write(to: URL(fileURLWithPath: output), options: [.atomic])
+            print("Packed \(package.manifest.name) to \(output).")
+
+        case "unpack":
+            guard let input = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumbconsole skin unpack <skin.pocketpad> -o <directory> [--force]")
+            }
+            guard let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest) else {
+                throw CLIError.message("skin unpack requires -o <directory>")
+            }
+            let data = try Data(contentsOf: URL(fileURLWithPath: input), options: [.mappedIfSafe])
+            let package = try PocketPadSkinPackageCodec.decode(data)
+            try writeSkinPackageDirectory(package, to: URL(fileURLWithPath: output), force: rest.contains("--force"))
+            print("Unpacked \(package.manifest.name) to \(output).")
+
+        case "render", "preview":
+            try renderSkinPreview(command: subcommand, arguments: rest)
+
+        default:
+            throw CLIError.message("Unknown skin subcommand: \(subcommand)")
+        }
+    }
+
+    private static func renderSkinPreview(command: String, arguments: [String]) throws {
+        guard let target = firstPositional(in: arguments) else {
+            throw CLIError.message("Usage: thumbconsole skin preview SOURCE|PACKAGE -o OUTPUT [--all-variants] [--all-states] [--contact-sheet]")
+        }
+        guard let output = optionValue("--output", in: arguments) ?? optionValue("-o", in: arguments) else {
+            throw CLIError.message("skin \(command) requires -o <preview.png|frames-directory>")
+        }
+
+        let targetURL = URL(fileURLWithPath: target)
+        let workspace: PocketPadSkinWorkspace?
+        let package: PocketPadSkinPackage
+        if PocketPadSkinCompiler.containsWorkspace(at: targetURL) {
+            let loaded = try PocketPadSkinCompiler.loadWorkspace(from: targetURL)
+            workspace = loaded.workspace
+            let temporary = FileManager.default.temporaryDirectory
+                .appendingPathComponent("PocketPadSkinPreview-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            let result = try MainActor.assumeIsolated {
+                try PocketPadSkinCompiler.compile(
+                    source: targetURL,
+                    buildDirectory: temporary.appendingPathComponent("build", isDirectory: true),
+                    packageOutputURL: temporary.appendingPathComponent("preview.pocketpad"),
+                    clean: true,
+                    strict: arguments.contains("--strict")
+                )
+            }
+            package = result.package
+        } else {
+            workspace = nil
+            package = try resolveSkinPackage(target).package
+        }
+
+        let profileStore = loadStore()
+        let profile: GamepadConfigurationProfile
+        if let requested = optionValue("--profile", in: arguments) {
+            profile = try resolveProfile(requested, in: profileStore)
+        } else if let requestedArtboard = optionValue("--artboard", in: arguments),
+                  let canonical = PocketPadSkinArtboardCatalog.profile(for: requestedArtboard) {
+            profile = canonical
+        } else if let workspace,
+                  let canonical = PocketPadSkinArtboardCatalog.profile(for: workspace.artboardID) {
+            profile = canonical
+        } else if let templateID = package.manifest.compatibility?.templates.first?.templateID,
+                  let canonical = PocketPadSkinArtboardCatalog.profile(for: templateID) {
+            profile = canonical
+        } else if let canonical = PocketPadSkinArtboardCatalog.profile(for: PocketPadSkinArtboardCatalog.defaultID) {
+            profile = canonical
+        } else {
+            profile = try resolveProfile(nil, in: profileStore)
+        }
+
+        let requestsAllVariants = arguments.contains("--all-variants")
+        let requestsAllStates = arguments.contains("--all-states")
+        let orientationValue = optionValue("--orientation", in: arguments)
+            ?? optionValue("--variant", in: arguments)
+        let appearanceValue = optionValue("--appearance", in: arguments)
+            ?? optionValue("--scheme", in: arguments)
+        let stateValue = optionValue("--state", in: arguments)
+        let compatibleOrientations = package.manifest.compatibility?.normalized.orientations ?? []
+        let orientations: [PocketPadSkinOrientation]
+        if requestsAllVariants || orientationValue?.lowercased() == "all" {
+            orientations = compatibleOrientations.isEmpty ? PocketPadSkinOrientation.allCases : compatibleOrientations
+        } else if let orientationValue {
+            let parsed = try parseDeviceOrientation(orientationValue)
+            orientations = [parsed == .portrait ? .portrait : .landscape]
+        } else {
+            orientations = [profile.customization.deviceCanvas.editorDeviceFrame.orientation == .portrait ? .portrait : .landscape]
+        }
+        let schemes: [PocketPadSkinColorScheme]
+        if requestsAllVariants || appearanceValue?.lowercased() == "all" {
+            schemes = PocketPadSkinColorScheme.allCases
+        } else {
+            schemes = [try parseSkinColorScheme(appearanceValue ?? "light")]
+        }
+        let states: [GamepadControlPresentationState]
+        if requestsAllStates || stateValue?.lowercased() == "all" {
+            states = GamepadControlPresentationState.allCases
+        } else if let stateValue,
+                  let state = GamepadControlPresentationState(rawValue: stateValue.lowercased()) {
+            states = [state]
+        } else if stateValue != nil {
+            throw CLIError.message("Invalid skin state. Use normal, pressed, active, disabled, or all.")
+        } else {
+            states = [.normal]
+        }
+        let scaleText = optionValue("--render-scale", in: arguments)
+            ?? optionValue("--image-scale", in: arguments)
+            ?? optionValue("--scale", in: arguments)
+            ?? (arguments.contains("--contact-sheet") ? "1" : "2")
+        guard let scale = Double(scaleText), scale.isFinite else {
+            throw CLIError.message("Preview scale must be a number between 0.5 and 4.")
+        }
+
+        let preserveOverrides = arguments.contains("--preserve-overrides")
+        var items: [PocketPadNativeSkinPreviewItem] = []
+        for orientation in orientations {
+            let deviceOrientation: GamepadEditorDeviceOrientation = orientation == .portrait ? .portrait : .landscape
+            let source = profile.customization(for: deviceOrientation)
+            for scheme in schemes {
+                let rendered = source.applying(
+                    skinPackage: package,
+                    orientation: orientation,
+                    colorScheme: scheme,
+                    options: preserveOverrides ? .preservingUserOverrides : .replacingAppearance,
+                    overrideBaseline: preserveOverrides ? profile.skinBaseline(for: deviceOrientation) : nil
+                )
+                for state in states {
+                    items.append(PocketPadNativeSkinPreviewItem(
+                        title: "\(orientation.rawValue) · \(scheme.rawValue) · \(state.rawValue)",
+                        customization: rendered,
+                        colorScheme: scheme,
+                        state: state
+                    ))
+                }
+            }
+        }
+
+        let outputURL = URL(fileURLWithPath: output)
+        let contactSheet = arguments.contains("--contact-sheet")
+        if contactSheet {
+            let columns = Int(optionValue("--columns", in: arguments) ?? "4") ?? 4
+            try MainActor.assumeIsolated {
+                try PocketPadNativeSkinPreviewRenderer.writeContactSheet(
+                    items: items,
+                    skinName: package.manifest.name,
+                    outputURL: outputURL,
+                    columns: columns,
+                    scale: CGFloat(scale)
+                )
+            }
+            print("Rendered \(items.count)-panel native contact sheet to \(output).")
+        } else if items.count == 1, let item = items.first {
+            try MainActor.assumeIsolated {
+                try PocketPadNativeSkinPreviewRenderer.writePNG(
+                    item: item,
+                    outputURL: outputURL,
+                    scale: CGFloat(scale)
+                )
+            }
+            print("Rendered \(package.manifest.name) with the native renderer to \(output).")
+        } else {
+            let framesDirectory = outputURL.pathExtension.isEmpty
+                ? outputURL
+                : outputURL.deletingPathExtension().appendingPathExtension("frames")
+            try FileManager.default.createDirectory(at: framesDirectory, withIntermediateDirectories: true)
+            for item in items {
+                let filename = item.title
+                    .replacingOccurrences(of: " · ", with: "-")
+                    .replacingOccurrences(of: " ", with: "-")
+                    .lowercased() + ".png"
+                try MainActor.assumeIsolated {
+                    try PocketPadNativeSkinPreviewRenderer.writePNG(
+                        item: item,
+                        outputURL: framesDirectory.appendingPathComponent(filename),
+                        scale: CGFloat(scale)
+                    )
+                }
+            }
+            print("Rendered \(items.count) native preview frames to \(framesDirectory.path).")
+        }
+    }
+
+    private static func skinInspectionSummary(_ package: PocketPadSkinPackage) -> SkinInspectionSummary {
+        SkinInspectionSummary(
+            manifest: package.manifest,
+            validation: PocketPadSkinPackageValidator.validate(package),
+            variantIDs: package.skin?.normalized.variants.map(\.id) ?? [],
+            assetIDs: package.manifest.assets.map(\.id),
+            previewIDs: package.manifest.previews.map(\.id)
+        )
+    }
+
+    private static func printSkinInspection(_ summary: SkinInspectionSummary) {
+        let manifest = summary.manifest
+        print("Name: \(manifest.name)")
+        print("Identifier: \(manifest.identifier)")
+        print("Version: \(manifest.version)")
+        print("Kind: \(manifest.kind.rawValue)")
+        print("Author: \(manifest.author.name)")
+        print("License: \(manifest.license)")
+        if !manifest.summary.isEmpty { print("Summary: \(manifest.summary)") }
+        print("Variants: \(summary.variantIDs.isEmpty ? "base only" : summary.variantIDs.joined(separator: ", "))")
+        print("Assets: \(summary.assetIDs.count)")
+        print("Previews: \(summary.previewIDs.count)")
+        printValidationReport(summary.validation)
+    }
+
+    private static func printSkinQualityReport(_ report: PocketPadSkinQualityReport) {
+        let gate = report.isStrictlyPassing ? "publication-ready" : (report.isPassing ? "review required" : "blocked")
+        print("Quality: \(gate) · score \(report.score)/100 · \(report.errors.count) error(s), \(report.warnings.count) warning(s)")
+        if let artboard = report.checkedArtboardID { print("Artboard: \(artboard)") }
+        for issue in report.issues {
+            let path = issue.path.map { " [\($0)]" } ?? ""
+            print("- \(issue.severity.rawValue.uppercased()) \(issue.code)\(path): \(issue.message)")
+        }
+    }
+
+    private static func printValidationReport(_ report: PocketPadSkinValidationReport) {
+        if report.issues.isEmpty {
+            print("Validation: valid with no warnings")
+            return
+        }
+        print("Validation: \(report.errors.count) error(s), \(report.warnings.count) warning(s)")
+        for issue in report.issues {
+            let path = issue.path.map { " [\($0)]" } ?? ""
+            print("- \(issue.severity.rawValue.uppercased()) \(issue.code)\(path): \(issue.message)")
+        }
+    }
+
+    private static func resolveSkinPackage(
+        _ target: String,
+        requiresInstalledLookup: Bool = true
+    ) throws -> (package: PocketPadSkinPackage, data: Data?) {
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        if fileManager.fileExists(atPath: target, isDirectory: &isDirectory) {
+            let url = URL(fileURLWithPath: target)
+            if isDirectory.boolValue || url.lastPathComponent == "manifest.json" {
+                let package = try loadSkinPackageDirectory(at: url)
+                return (package, try PocketPadSkinPackageCodec.encode(package))
+            }
+            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+            return (try PocketPadSkinPackageCodec.decode(data), data)
+        }
+        guard requiresInstalledLookup else {
+            throw CLIError.message("Skin package not found: \(target)")
+        }
+
+        let (identifierOrName, requestedVersion) = splitSkinReference(target)
+        let store = try PocketPadSkinStore()
+        try store.installBundledSkinsIfNeeded()
+        let candidates = try store.installedSkins().filter { installed in
+            (installed.reference.identifier.caseInsensitiveCompare(identifierOrName) == .orderedSame
+                || installed.manifest.name.caseInsensitiveCompare(identifierOrName) == .orderedSame)
+                && (requestedVersion == nil || installed.reference.version == requestedVersion)
+        }
+        guard !candidates.isEmpty else { throw CLIError.message("Installed skin not found: \(target)") }
+        let selected = candidates.max { lhs, rhs in
+            (PocketPadSemanticVersion(lhs.reference.version) ?? PocketPadSemanticVersion("0.0.0")!)
+                < (PocketPadSemanticVersion(rhs.reference.version) ?? PocketPadSemanticVersion("0.0.0")!)
+        }!
+        let data = try store.packageData(for: selected.reference)
+        return (try PocketPadSkinPackageCodec.decode(data), data)
+    }
+
+    private static func splitSkinReference(_ target: String) -> (String, String?) {
+        guard let separator = target.lastIndex(of: "@"), separator != target.startIndex else { return (target, nil) }
+        let identifier = String(target[..<separator])
+        let version = String(target[target.index(after: separator)...])
+        guard PocketPadSemanticVersion(version) != nil else { return (target, nil) }
+        return (identifier, version)
+    }
+
+    private static func loadSkinPackageDirectory(at inputURL: URL) throws -> PocketPadSkinPackage {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: inputURL.path, isDirectory: &isDirectory)
+        guard exists else { throw CLIError.message("Skin package source not found: \(inputURL.path)") }
+        let root = isDirectory.boolValue ? inputURL : inputURL.deletingLastPathComponent()
+        let manifestURL = inputURL.lastPathComponent == "manifest.json" ? inputURL : root.appendingPathComponent("manifest.json")
+        let manifest = try JSONDecoder().decode(PocketPadSkinManifest.self, from: Data(contentsOf: manifestURL)).normalized
+        let skin = try manifest.skinPath.map { path in
+            try JSONDecoder().decode(PocketPadSkin.self, from: Data(contentsOf: try safePackageFileURL(path, root: root)))
+        }
+        let profile = try manifest.profilePath.map { path in
+            try JSONDecoder().decode(GamepadConfigurationProfile.self, from: Data(contentsOf: try safePackageFileURL(path, root: root)))
+        }
+        var assets: [String: Data] = [:]
+        for descriptor in manifest.assets {
+            guard assets[descriptor.id] == nil else { throw CLIError.message("Duplicate asset ID: \(descriptor.id)") }
+            assets[descriptor.id] = try Data(
+                contentsOf: safePackageFileURL(descriptor.path, root: root),
+                options: [.mappedIfSafe]
+            )
+        }
+        var previews: [String: Data] = [:]
+        for descriptor in manifest.previews {
+            guard previews[descriptor.id] == nil else { throw CLIError.message("Duplicate preview ID: \(descriptor.id)") }
+            previews[descriptor.id] = try Data(
+                contentsOf: safePackageFileURL(descriptor.path, root: root),
+                options: [.mappedIfSafe]
+            )
+        }
+        return PocketPadSkinPackage(
+            manifest: manifest,
+            skin: skin,
+            profile: profile,
+            assets: assets,
+            previews: previews
+        )
+    }
+
+    private static func safePackageFileURL(_ path: String, root: URL) throws -> URL {
+        guard PocketPadSkinPackageCodec.isSafePackagePath(path) else {
+            throw CLIError.message("Unsafe package path: \(path)")
+        }
+        let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let candidate = root.appendingPathComponent(path).standardizedFileURL.resolvingSymlinksInPath()
+        guard candidate.path.hasPrefix(resolvedRoot.path + "/") else {
+            throw CLIError.message("Package path escapes the source directory: \(path)")
+        }
+        return candidate
+    }
+
+    private static func writeSkinPackageDirectory(
+        _ package: PocketPadSkinPackage,
+        to root: URL,
+        force: Bool
+    ) throws {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: root.path) {
+            let contents = (try? fileManager.contentsOfDirectory(atPath: root.path)) ?? []
+            guard contents.isEmpty || force else {
+                throw CLIError.message("Output directory is not empty. Pass --force to replace it.")
+            }
+            if force { try fileManager.removeItem(at: root) }
+        }
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(package.manifest).write(to: root.appendingPathComponent("manifest.json"), options: [.atomic])
+        if let skin = package.skin, let path = package.manifest.skinPath {
+            try writePackageDirectoryFile(try encoder.encode(skin), path: path, root: root)
+        }
+        if let profile = package.profile, let path = package.manifest.profilePath {
+            try writePackageDirectoryFile(try encoder.encode(profile), path: path, root: root)
+        }
+        for descriptor in package.manifest.assets {
+            guard let data = package.assets[descriptor.id] else { continue }
+            try writePackageDirectoryFile(data, path: descriptor.path, root: root)
+        }
+        for descriptor in package.manifest.previews {
+            guard let data = package.previews[descriptor.id] else { continue }
+            try writePackageDirectoryFile(data, path: descriptor.path, root: root)
+        }
+    }
+
+    private static func writePackageDirectoryFile(_ data: Data, path: String, root: URL) throws {
+        let url = try safePackageFileURL(path, root: root)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: [.atomic])
+    }
+
+    private static func parseSkinColorScheme(_ value: String) throws -> PocketPadSkinColorScheme {
+        switch value.lowercased() {
+        case "light": .light
+        case "dark": .dark
+        default: throw CLIError.message("Unknown skin appearance: \(value). Use light or dark.")
+        }
+    }
+
+    private static func suggestedSkinFilename(manifest: PocketPadSkinManifest) -> String {
+        let base = manifest.name.lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return "\(base.isEmpty ? "pocketpad-skin" : base)-\(manifest.version).pocketpad"
+    }
+
+    private static func notifySkinStoreChanged() {
+        DistributedNotificationCenter.default().post(name: skinStoreChangedNotificationName, object: nil)
     }
 
     // MARK: - Bindings
@@ -2890,6 +3603,7 @@ struct ThumbConsoleCLI {
                 mappedButton: mapped,
                 label: optionValue("--label", in: arguments) ?? (kind == .trigger ? defaultTriggerTarget.shortName : defaultLabel(for: kind)),
                 controlKind: kind,
+                visualRole: try (optionValue("--visual-role", in: arguments) ?? optionValue("--skin-role", in: arguments)).map(parseVisualRole),
                 joystickMapping: kind == .joystick ? try joystickMapping(from: arguments) : nil,
                 joystickOutputSettings: kind == .joystick ? try joystickOutputSettings(from: arguments) : nil,
                 triggerSettings: kind == .trigger ? try triggerSettings(from: arguments, fallback: GamepadTriggerSettings(target: defaultTriggerTarget, orientation: .horizontal)) : nil,
@@ -2962,6 +3676,14 @@ struct ThumbConsoleCLI {
                 } else if let label = optionValue("--label", in: arguments) {
                     customization.setLabel(label, for: button)
                 }
+                if arguments.contains("--clear-visual-role") || arguments.contains("--clear-skin-role") {
+                    if let index = customization.elements.firstIndex(where: { $0.builtInButton == button }) {
+                        customization.elements[index].visualRole = nil
+                    }
+                } else if let role = try (optionValue("--visual-role", in: arguments) ?? optionValue("--skin-role", in: arguments)).map(parseVisualRole),
+                          let index = customization.elements.firstIndex(where: { $0.builtInButton == button }) {
+                    customization.elements[index].visualRole = role
+                }
                 var layout = customization.buttonCustomization(for: button)
                 try applyLayoutOptions(arguments, to: &layout)
                 customization.setButtonCustomization(layout, for: button)
@@ -2974,6 +3696,11 @@ struct ThumbConsoleCLI {
                 }
                 if let mapped = optionValue("--maps-to", in: arguments) { customization.customButtons[index].mappedButton = try parseButton(mapped) }
                 if let kind = optionValue("--kind", in: arguments) { customization.customButtons[index].controlKind = try parseCustomControlKind(kind) }
+                if arguments.contains("--clear-visual-role") || arguments.contains("--clear-skin-role") {
+                    customization.customButtons[index].visualRole = nil
+                } else if let role = try (optionValue("--visual-role", in: arguments) ?? optionValue("--skin-role", in: arguments)).map(parseVisualRole) {
+                    customization.customButtons[index].visualRole = role
+                }
                 let currentKind = customization.customButtons[index].controlKind
                 let hasJoystickOptions = hasAnyOption(joystickOptionNames, in: arguments)
                     || (currentKind == .joystick && hasAnyOption(["--target", "--dead-zone", "--deadzone", "--sensitivity"], in: arguments))
@@ -3248,6 +3975,18 @@ struct ThumbConsoleCLI {
     }
 
     private static func applyLayoutOptions(_ arguments: [String], to layout: inout GamepadButtonCustomization) throws {
+        if arguments.contains("--clear-hit-insets") || arguments.contains("--default-hit-insets") {
+            layout.hitInsets = nil
+        } else if let value = optionValue("--hit-insets", in: arguments) {
+            layout.hitInsets = try parseHitInsets(value)
+        } else if hasAnyOption(["--hit-top", "--hit-leading", "--hit-bottom", "--hit-trailing"], in: arguments) {
+            var insets = layout.hitInsets ?? .runtimeDefault
+            if let value = optionValue("--hit-top", in: arguments) { insets.top = try parsePixels(value) }
+            if let value = optionValue("--hit-leading", in: arguments) { insets.leading = try parsePixels(value) }
+            if let value = optionValue("--hit-bottom", in: arguments) { insets.bottom = try parsePixels(value) }
+            if let value = optionValue("--hit-trailing", in: arguments) { insets.trailing = try parsePixels(value) }
+            layout.hitInsets = insets.normalized
+        }
         if let value = optionValue("--x", in: arguments) ?? optionValue("--center-x", in: arguments), let number = Double(value) { layout.centerX = CGFloat(number) }
         if let value = optionValue("--y", in: arguments) ?? optionValue("--center-y", in: arguments), let number = Double(value) { layout.centerY = CGFloat(number) }
         if let value = optionValue("--width", in: arguments) ?? optionValue("--width-scale", in: arguments), let number = Double(value) { layout.widthScale = CGFloat(number) }
@@ -4771,6 +5510,51 @@ struct ThumbConsoleCLI {
         throw CLIError.message("Unknown element kind: \(text)")
     }
 
+    private static func parseVisualRole(_ text: String) throws -> GamepadVisualRole {
+        if let role = GamepadVisualRole(rawValue: text) { return role }
+        switch normalizedLookup(text) {
+        case "movement", "move", "dpad", "direction": return .movement
+        case "primary", "primaryaction", "action": return .primaryAction
+        case "secondary", "secondaryaction": return .secondaryAction
+        case "utility", "tool": return .utility
+        case "menu", "pause": return .menu
+        case "custom", "customaction": return .custom
+        case "joystick", "stick": return .joystick
+        case "trigger", "shoulder": return .trigger
+        case "trackpad", "touchpad", "pointer": return .trackpad
+        case "decoration", "decor", "art": return .decoration
+        case "system", "chrome": return .system
+        default:
+            throw CLIError.message("Unknown visual role: \(text). Use movement, primary-action, secondary-action, utility, menu, custom, joystick, trigger, trackpad, decoration, or system.")
+        }
+    }
+
+    private static func parseHitInsets(_ text: String) throws -> GamepadHitInsets {
+        let values = try text
+            .split { $0 == "," || $0 == ";" || $0.isWhitespace }
+            .map { try parsePixels(String($0)) }
+        switch values.count {
+        case 1:
+            return .all(values[0]).normalized
+        case 2:
+            return GamepadHitInsets(
+                top: values[0],
+                leading: values[1],
+                bottom: values[0],
+                trailing: values[1]
+            ).normalized
+        case 4:
+            return GamepadHitInsets(
+                top: values[0],
+                leading: values[1],
+                bottom: values[2],
+                trailing: values[3]
+            ).normalized
+        default:
+            throw CLIError.message("Invalid hit insets: \(text). Use ALL, VERTICAL,HORIZONTAL, or TOP,LEADING,BOTTOM,TRAILING.")
+        }
+    }
+
     private static func parseMaterialVisualStyle(_ text: String) throws -> GamepadControlVisualStyle {
         switch normalizedLookup(text) {
         case "softwhite", "softwhiteraised", "raised", "neumorphic", "neumorphicraised":
@@ -5092,6 +5876,7 @@ struct ThumbConsoleCLI {
                 kind: "builtin",
                 mappedButton: button,
                 label: customization.visualLabel(for: button, defaultLabel: button.displayName),
+                visualRole: customization.elements.first(where: { $0.builtInButton == button })?.visualRole,
                 isHidden: layout.isHidden,
                 isLocationLocked: layout.isLocationLocked,
                 layout: layout,
@@ -5110,6 +5895,7 @@ struct ThumbConsoleCLI {
                 kind: kind,
                 mappedButton: normalized.mappedButton,
                 label: normalized.visualLabel(fallback: fallbackLabel),
+                visualRole: normalized.visualRole,
                 isHidden: normalized.layout.isHidden,
                 isLocationLocked: normalized.layout.isLocationLocked,
                 layout: normalized.layout,
@@ -5126,6 +5912,7 @@ struct ThumbConsoleCLI {
                 kind: "system",
                 mappedButton: nil,
                 label: GamepadSystemControl.topBarActivation.displayName,
+                visualRole: .system,
                 isHidden: topBarLayout.isHidden,
                 isLocationLocked: topBarLayout.isLocationLocked,
                 layout: topBarLayout,
@@ -5186,7 +5973,7 @@ struct ThumbConsoleCLI {
         var values: [String] = []
         var skipNext = false
         let optionsWithValues: Set<String> = [
-            "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from",
+            "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from", "--identifier", "--artboard", "--build-directory", "--state", "--columns",
             "--layout-preview", "--preview-output", "--path", "--app", "--application", "--bundle-id", "--bundle", "--image-scale", "--render-scale",
             "--sequence", "--keyboard", "--key", "--gamepad-button", "--gamepad", "--part", "--input", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
             "--appearance", "--color-scheme", "--scheme", "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
@@ -5216,7 +6003,8 @@ struct ThumbConsoleCLI {
             "--highlight", "--highlight-color", "--highlight-radius", "--highlight-x", "--highlight-y", "--highlight-opacity",
             "--bevel", "--bevel-highlight", "--bevel-shadow", "--bevel-width", "--pressed-fill", "--pressed-color", "--press-scale", "--scale-on-press",
             "--material", "--material-preset", "--shadow-layers", "--shadows",
-            "--to", "--before", "--after", "--role", "--items", "--controls", "--offset", "--offset-x", "--offset-y", "--repair"
+            "--to", "--before", "--after", "--role", "--visual-role", "--skin-role", "--hit-insets", "--hit-top", "--hit-leading", "--hit-bottom", "--hit-trailing",
+            "--items", "--controls", "--offset", "--offset-x", "--offset-y", "--repair"
         ]
         for argument in arguments {
             if skipNext {
@@ -5399,6 +6187,26 @@ struct ThumbConsoleCLI {
           thumbconsole theme apply cavern-glow [--profile PROFILE]
           thumbconsole theme apply soft-white-controller [--profile PROFILE]
 
+        Shareable skins and authoring (.pocketpad):
+          thumbconsole skin artboard list [--json]
+          thumbconsole skin artboard show ARTBOARD [--json]
+          thumbconsole skin artboard export ARTBOARD -o profile.json
+          thumbconsole skin scaffold NAME --identifier REVERSE.DNS.ID [--artboard ARTBOARD] [-o DIRECTORY] [--force]
+          thumbconsole skin compile SOURCE [-o skin.pocketpad] [--build-directory DIRECTORY] [--clean] [--strict] [--json]
+          thumbconsole skin preview SOURCE|PACKAGE -o OUTPUT [--artboard ARTBOARD] [--all-variants] [--all-states] [--orientation all|portrait|landscape] [--appearance all|light|dark] [--state all|normal|pressed|active|disabled] [--native-renderer] [--contact-sheet] [--columns N] [--render-scale 0.5...4]
+          thumbconsole skin quality SOURCE|PACKAGE [--artboard ARTBOARD] [--strict] [--json]
+          thumbconsole skin list [--json]
+          thumbconsole skin inspect PACKAGE|IDENTIFIER[@VERSION] [--json]
+          thumbconsole skin validate PACKAGE|DIRECTORY [--strict] [--json]
+          thumbconsole skin import PACKAGE|DIRECTORY [--replace|--allow-downgrade]
+          thumbconsole skin apply PACKAGE|IDENTIFIER[@VERSION] [--profile PROFILE] [--appearance light|dark]
+          thumbconsole skin detach [PROFILE|--profile PROFILE]
+          thumbconsole skin remove IDENTIFIER[@VERSION]
+          thumbconsole skin export IDENTIFIER[@VERSION] -o skin.pocketpad
+          thumbconsole skin pack DIRECTORY -o skin.pocketpad
+          thumbconsole skin unpack skin.pocketpad -o DIRECTORY [--force]
+          thumbconsole skin render SOURCE|PACKAGE -o OUTPUT [same options as skin preview]
+
         Bindings:
           thumbconsole binding list [--profile PROFILE]
           thumbconsole binding display [--profile PROFILE] [--json]
@@ -5442,6 +6250,9 @@ struct ThumbConsoleCLI {
           thumbconsole element add decoration --label Shell --material soft-white-plate --x 0.5 --y 0.5 --width 3.2 --height 1.5 --shape rounded_rectangle
           thumbconsole element set jump --keyboard Space --gamepad south
           thumbconsole element set jump --clear-label
+          thumbconsole element set jump --skin-role primary-action --hit-insets 16
+          thumbconsole element set "Menu" --visual-role menu --hit-insets 10,18,14,18
+          thumbconsole element set jump --clear-visual-role --clear-hit-insets
           thumbconsole element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
           thumbconsole element set "Right Stick" --thumb-fill '#22C55E'
           thumbconsole element set jump --fill-gradient '#000000,#666666' --gradient-angle 0

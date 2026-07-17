@@ -1,0 +1,386 @@
+{
+  "schema": "com.codybontecou.pocketpad.skin-source",
+  "schemaVersion": 1,
+  "identifier": "com.codybontecou.pocketpad.indigo-pocket",
+  "version": "1.0.0",
+  "name": "Indigo Pocket",
+  "author": {
+    "name": "Cody Bontecou"
+  },
+  "summary": "A compact calibration instrument with an original softened-octagonal indigo shell, orientation-specific semantic harbors, warm ivory legends, and a restrained violet seam.",
+  "license": "MIT",
+  "artboardID": "showcase-controller-v1",
+  "orientations": [
+    "landscape",
+    "portrait"
+  ],
+  "colorSchemes": [
+    "light",
+    "dark"
+  ],
+  "palette": [
+    {
+      "id": "canvas",
+      "light": "#E9E2D3",
+      "dark": "#090A13"
+    },
+    {
+      "id": "shell",
+      "light": "#292752",
+      "dark": "#1A1937"
+    },
+    {
+      "id": "shell-rim",
+      "light": "#5D5988",
+      "dark": "#48466F"
+    },
+    {
+      "id": "well",
+      "light": "#191832",
+      "dark": "#0F0F23"
+    },
+    {
+      "id": "movement-charcoal",
+      "light": "#2B2B33",
+      "dark": "#25252E"
+    },
+    {
+      "id": "action-plum",
+      "light": "#702653",
+      "dark": "#5A1E45"
+    },
+    {
+      "id": "legend-ivory",
+      "light": "#FFF1D0",
+      "dark": "#FFEFC7"
+    },
+    {
+      "id": "electric-violet",
+      "light": "#A77CFF",
+      "dark": "#B08EFF"
+    }
+  ],
+  "materials": [
+    {
+      "id": "shell-satin",
+      "name": "Satin Indigo Shell",
+      "kind": "opaque_plastic",
+      "baseColor": "#292752",
+      "darkBaseColor": "#1A1937",
+      "foregroundColor": "#FFF1D0",
+      "darkForegroundColor": "#FFEFC7",
+      "strokeColor": "#5D5988",
+      "highlightColor": "#77739A",
+      "activeColor": "#A77CFF",
+      "shadowColor": "#111027",
+      "depth": 0.48,
+      "gloss": 0.14,
+      "cornerRadius": 24,
+      "pressedScale": 0.97
+    },
+    {
+      "id": "harbor-inset",
+      "name": "Midnight Inset Harbor",
+      "kind": "inset",
+      "baseColor": "#191832",
+      "darkBaseColor": "#0F0F23",
+      "foregroundColor": "#FFF1D0",
+      "darkForegroundColor": "#FFEFC7",
+      "strokeColor": "#3E3B62",
+      "highlightColor": "#5D5988",
+      "activeColor": "#A77CFF",
+      "shadowColor": "#070711",
+      "depth": 0.36,
+      "gloss": 0.02,
+      "cornerRadius": 22,
+      "pressedScale": 0.97
+    },
+    {
+      "id": "movement-elastomer",
+      "name": "Fine-Grain Charcoal Movement Elastomer",
+      "kind": "matte_rubber",
+      "baseColor": "#2B2B33",
+      "darkBaseColor": "#25252E",
+      "foregroundColor": "#FFF1D0",
+      "darkForegroundColor": "#FFEFC7",
+      "strokeColor": "#575660",
+      "highlightColor": "#74737D",
+      "activeColor": "#A77CFF",
+      "shadowColor": "#101017",
+      "depth": 0.62,
+      "gloss": 0.08,
+      "cornerRadius": 12,
+      "pressedScale": 0.97,
+      "hapticFeedback": {
+        "style": "rigid",
+        "pattern": "single",
+        "intensity": 0.55,
+        "sharpness": 0.78,
+        "duration": 0.06
+      }
+    },
+    {
+      "id": "action-lacquer",
+      "name": "Lacquered Plum Action",
+      "kind": "glossy_plastic",
+      "baseColor": "#702653",
+      "darkBaseColor": "#5A1E45",
+      "foregroundColor": "#FFF1D0",
+      "darkForegroundColor": "#FFEFC7",
+      "strokeColor": "#9A4A78",
+      "highlightColor": "#C06A9B",
+      "activeColor": "#A77CFF",
+      "shadowColor": "#351025",
+      "depth": 0.76,
+      "gloss": 0.34,
+      "cornerRadius": 18,
+      "pressedScale": 0.97,
+      "hapticFeedback": {
+        "style": "medium",
+        "pattern": "single",
+        "intensity": 0.62,
+        "sharpness": 0.52,
+        "duration": 0.06
+      }
+    },
+    {
+      "id": "utility-indigo",
+      "name": "Low-Profile Indigo Utility Key",
+      "kind": "raised",
+      "baseColor": "#34315D",
+      "darkBaseColor": "#25234A",
+      "foregroundColor": "#FFF1D0",
+      "darkForegroundColor": "#FFEFC7",
+      "strokeColor": "#5D5988",
+      "highlightColor": "#77739A",
+      "activeColor": "#A77CFF",
+      "shadowColor": "#111027",
+      "depth": 0.42,
+      "gloss": 0.06,
+      "cornerRadius": 16,
+      "pressedScale": 0.97,
+      "hapticFeedback": {
+        "style": "light",
+        "pattern": "single",
+        "intensity": 0.42,
+        "sharpness": 0.62,
+        "duration": 0.05
+      }
+    },
+    {
+      "id": "shoulder-rail-key",
+      "name": "Charcoal Shoulder Rail Key",
+      "kind": "matte_rubber",
+      "baseColor": "#2B2B33",
+      "darkBaseColor": "#25252E",
+      "foregroundColor": "#FFF1D0",
+      "darkForegroundColor": "#FFEFC7",
+      "strokeColor": "#575660",
+      "highlightColor": "#74737D",
+      "activeColor": "#A77CFF",
+      "shadowColor": "#101017",
+      "depth": 0.48,
+      "gloss": 0.04,
+      "cornerRadius": 10,
+      "pressedScale": 0.97,
+      "hapticFeedback": {
+        "style": "rigid",
+        "pattern": "single",
+        "intensity": 0.48,
+        "sharpness": 0.74,
+        "duration": 0.05
+      }
+    },
+    {
+      "id": "system-index-key",
+      "name": "Indigo System Index Key",
+      "kind": "raised",
+      "baseColor": "#302D58",
+      "darkBaseColor": "#222043",
+      "foregroundColor": "#FFF1D0",
+      "darkForegroundColor": "#FFEFC7",
+      "strokeColor": "#5D5988",
+      "highlightColor": "#77739A",
+      "activeColor": "#A77CFF",
+      "shadowColor": "#111027",
+      "depth": 0.34,
+      "gloss": 0.05,
+      "cornerRadius": 14,
+      "pressedScale": 0.97
+    }
+  ],
+  "components": [
+    {
+      "id": "shell-plate",
+      "kind": "controller_shell",
+      "materialID": "shell-satin",
+      "frame": {
+        "x": 0.025,
+        "y": 0.04,
+        "width": 0.95,
+        "height": 0.92
+      },
+      "shape": "polygon",
+      "zIndex": -100
+    },
+    {
+      "id": "movement-harbor-landscape-reference",
+      "kind": "control_well",
+      "materialID": "harbor-inset",
+      "role": "movement",
+      "frame": {
+        "x": 0.032,
+        "y": 0.265,
+        "width": 0.275,
+        "height": 0.55
+      },
+      "shape": "rounded_rectangle",
+      "zIndex": -80
+    },
+    {
+      "id": "action-harbor-landscape-reference",
+      "kind": "control_well",
+      "materialID": "harbor-inset",
+      "role": "primary_action",
+      "frame": {
+        "x": 0.705,
+        "y": 0.265,
+        "width": 0.27,
+        "height": 0.57
+      },
+      "shape": "rounded_rectangle",
+      "zIndex": -80
+    },
+    {
+      "id": "utility-bridge-reference",
+      "kind": "control_well",
+      "materialID": "harbor-inset",
+      "role": "utility",
+      "frame": {
+        "x": 0.35,
+        "y": 0.735,
+        "width": 0.3,
+        "height": 0.18
+      },
+      "shape": "rounded_rectangle",
+      "zIndex": -75
+    },
+    {
+      "id": "shoulder-rail-reference",
+      "kind": "control_well",
+      "materialID": "harbor-inset",
+      "role": "custom",
+      "frame": {
+        "x": 0.12,
+        "y": 0.09,
+        "width": 0.76,
+        "height": 0.14
+      },
+      "shape": "rounded_rectangle",
+      "zIndex": -75
+    },
+    {
+      "id": "calibration-seam-reference",
+      "kind": "decorative_artwork",
+      "materialID": "system-index-key",
+      "frame": {
+        "x": 0.31,
+        "y": 0.805,
+        "width": 0.39,
+        "height": 0.008
+      },
+      "shape": "rectangle",
+      "zIndex": -60
+    }
+  ],
+  "assignments": [
+    {
+      "role": "movement",
+      "materialID": "movement-elastomer"
+    },
+    {
+      "role": "primary_action",
+      "materialID": "action-lacquer"
+    },
+    {
+      "role": "secondary_action",
+      "materialID": "action-lacquer"
+    },
+    {
+      "role": "utility",
+      "materialID": "utility-indigo"
+    },
+    {
+      "role": "menu",
+      "materialID": "utility-indigo"
+    },
+    {
+      "role": "custom",
+      "materialID": "shoulder-rail-key"
+    },
+    {
+      "role": "system",
+      "materialID": "system-index-key"
+    }
+  ],
+  "sourceAssets": [
+    {
+      "id": "landscape-light-field-case",
+      "path": "sources/artwork/landscape-light.svg",
+      "purpose": "canvas_artwork",
+      "outputWidth": 1748,
+      "outputHeight": 804,
+      "format": "png",
+      "orientation": "landscape",
+      "colorScheme": "light"
+    },
+    {
+      "id": "landscape-dark-field-case",
+      "path": "sources/artwork/landscape-dark.svg",
+      "purpose": "canvas_artwork",
+      "outputWidth": 1748,
+      "outputHeight": 804,
+      "format": "png",
+      "orientation": "landscape",
+      "colorScheme": "dark"
+    },
+    {
+      "id": "portrait-light-field-case",
+      "path": "sources/artwork/portrait-light.svg",
+      "purpose": "canvas_artwork",
+      "outputWidth": 804,
+      "outputHeight": 1748,
+      "format": "png",
+      "orientation": "portrait",
+      "colorScheme": "light"
+    },
+    {
+      "id": "portrait-dark-field-case",
+      "path": "sources/artwork/portrait-dark.svg",
+      "purpose": "canvas_artwork",
+      "outputWidth": 804,
+      "outputHeight": 1748,
+      "format": "png",
+      "orientation": "portrait",
+      "colorScheme": "dark"
+    }
+  ],
+  "previews": [
+    { "id": "landscape-light-normal", "artboardID": "showcase-controller-v1", "orientation": "landscape", "colorScheme": "light", "state": "normal", "scale": 2 },
+    { "id": "landscape-light-pressed", "artboardID": "showcase-controller-v1", "orientation": "landscape", "colorScheme": "light", "state": "pressed", "scale": 2 },
+    { "id": "landscape-light-active", "artboardID": "showcase-controller-v1", "orientation": "landscape", "colorScheme": "light", "state": "active", "scale": 2 },
+    { "id": "landscape-light-disabled", "artboardID": "showcase-controller-v1", "orientation": "landscape", "colorScheme": "light", "state": "disabled", "scale": 2 },
+    { "id": "landscape-dark-normal", "artboardID": "showcase-controller-v1", "orientation": "landscape", "colorScheme": "dark", "state": "normal", "scale": 2 },
+    { "id": "landscape-dark-pressed", "artboardID": "showcase-controller-v1", "orientation": "landscape", "colorScheme": "dark", "state": "pressed", "scale": 2 },
+    { "id": "landscape-dark-active", "artboardID": "showcase-controller-v1", "orientation": "landscape", "colorScheme": "dark", "state": "active", "scale": 2 },
+    { "id": "landscape-dark-disabled", "artboardID": "showcase-controller-v1", "orientation": "landscape", "colorScheme": "dark", "state": "disabled", "scale": 2 },
+    { "id": "portrait-light-normal", "artboardID": "showcase-controller-v1", "orientation": "portrait", "colorScheme": "light", "state": "normal", "scale": 2 },
+    { "id": "portrait-light-pressed", "artboardID": "showcase-controller-v1", "orientation": "portrait", "colorScheme": "light", "state": "pressed", "scale": 2 },
+    { "id": "portrait-light-active", "artboardID": "showcase-controller-v1", "orientation": "portrait", "colorScheme": "light", "state": "active", "scale": 2 },
+    { "id": "portrait-light-disabled", "artboardID": "showcase-controller-v1", "orientation": "portrait", "colorScheme": "light", "state": "disabled", "scale": 2 },
+    { "id": "portrait-dark-normal", "artboardID": "showcase-controller-v1", "orientation": "portrait", "colorScheme": "dark", "state": "normal", "scale": 2 },
+    { "id": "portrait-dark-pressed", "artboardID": "showcase-controller-v1", "orientation": "portrait", "colorScheme": "dark", "state": "pressed", "scale": 2 },
+    { "id": "portrait-dark-active", "artboardID": "showcase-controller-v1", "orientation": "portrait", "colorScheme": "dark", "state": "active", "scale": 2 },
+    { "id": "portrait-dark-disabled", "artboardID": "showcase-controller-v1", "orientation": "portrait", "colorScheme": "dark", "state": "disabled", "scale": 2 }
+  ]
+}

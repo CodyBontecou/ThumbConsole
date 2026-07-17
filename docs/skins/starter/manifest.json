@@ -1,0 +1,25 @@
+{
+  "schema": "com.codybontecou.pocketpad.skin-package",
+  "schemaVersion": 1,
+  "identifier": "com.example.pocketpad.skin.aurora",
+  "version": "1.0.0",
+  "kind": "skin",
+  "name": "Aurora Starter",
+  "author": {
+    "name": "Your Name",
+    "url": "https://example.com"
+  },
+  "summary": "A small role-based starter with independent light and dark backgrounds.",
+  "license": "MIT",
+  "homepage": "https://example.com/aurora",
+  "minimumAppVersion": "1.0.0",
+  "tags": [
+    "starter",
+    "role-based",
+    "aurora"
+  ],
+  "skinPath": "skin.json",
+  "skinSHA256": "",
+  "assets": [],
+  "previews": []
+}

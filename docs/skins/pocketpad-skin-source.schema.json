@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pocketpad.app/schemas/pocketpad-skin-source.schema.json",
+  "title": "PocketPad editable handcrafted skin source",
+  "type": "object",
+  "required": [
+    "schema", "schemaVersion", "identifier", "version", "name", "author", "summary", "license",
+    "artboardID", "orientations", "colorSchemes", "palette", "materials", "components", "assignments",
+    "sourceAssets", "previews"
+  ],
+  "properties": {
+    "schema": { "const": "com.codybontecou.pocketpad.skin-source" },
+    "schemaVersion": { "const": 1 },
+    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z][A-Za-z0-9_-]*){2,}$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "author": { "$ref": "#/$defs/author" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "license": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "artboardID": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "orientations": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/orientation" } },
+    "colorSchemes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/colorScheme" } },
+    "palette": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/palette" } },
+    "materials": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/material" } },
+    "components": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/component" } },
+    "assignments": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/assignment" } },
+    "sourceAssets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/sourceAsset" } },
+    "previews": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/preview" } }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "hex": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$" },
+    "orientation": { "enum": ["portrait", "landscape"] },
+    "colorScheme": { "enum": ["light", "dark"] },
+    "role": { "enum": ["movement", "primary_action", "secondary_action", "utility", "menu", "custom", "joystick", "trigger", "trackpad", "decoration", "system"] },
+    "button": { "enum": ["up", "down", "left", "right", "jump", "attack", "dash", "focus", "map", "pause", "custom1", "custom2", "custom3", "custom4", "custom5", "custom6", "custom7", "custom8"] },
+    "shape": { "enum": ["rounded_rectangle", "rectangle", "capsule", "circle", "ellipse", "polygon", "star"] },
+    "author": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "url": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+    "rect": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "insets": {
+      "type": "object",
+      "required": ["top", "leading", "bottom", "trailing"],
+      "properties": {
+        "top": { "type": "number", "minimum": 0, "maximum": 0.45 },
+        "leading": { "type": "number", "minimum": 0, "maximum": 0.45 },
+        "bottom": { "type": "number", "minimum": 0, "maximum": 0.45 },
+        "trailing": { "type": "number", "minimum": 0, "maximum": 0.45 }
+      },
+      "additionalProperties": false
+    },
+    "palette": {
+      "type": "object",
+      "required": ["id", "light"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "light": { "$ref": "#/$defs/hex" },
+        "dark": { "$ref": "#/$defs/hex" }
+      },
+      "additionalProperties": false
+    },
+    "material": {
+      "type": "object",
+      "required": ["id", "name", "kind", "baseColor", "foregroundColor", "depth", "gloss", "pressedScale"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "kind": { "enum": ["translucent_plastic", "opaque_plastic", "matte_rubber", "glossy_plastic", "glass", "metal", "raised", "inset"] },
+        "baseColor": { "$ref": "#/$defs/hex" },
+        "darkBaseColor": { "$ref": "#/$defs/hex" },
+        "foregroundColor": { "$ref": "#/$defs/hex" },
+        "darkForegroundColor": { "$ref": "#/$defs/hex" },
+        "strokeColor": { "$ref": "#/$defs/hex" },
+        "highlightColor": { "$ref": "#/$defs/hex" },
+        "activeColor": { "$ref": "#/$defs/hex" },
+        "shadowColor": { "$ref": "#/$defs/hex" },
+        "depth": { "type": "number", "minimum": 0, "maximum": 1 },
+        "gloss": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 128 },
+        "pressedScale": { "type": "number", "minimum": 0.8, "maximum": 1 },
+        "hapticFeedback": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "component": {
+      "type": "object",
+      "required": ["id", "kind", "materialID", "zIndex"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["canvas_background", "controller_shell", "control_well", "button_face", "dpad", "joystick", "utility_button", "decorative_artwork"] },
+        "materialID": { "$ref": "#/$defs/id" },
+        "role": { "$ref": "#/$defs/role" },
+        "button": { "$ref": "#/$defs/button" },
+        "frame": { "$ref": "#/$defs/rect" },
+        "shape": { "$ref": "#/$defs/shape" },
+        "zIndex": { "type": "integer", "minimum": -10000, "maximum": 10000 },
+        "sourceAssetID": { "$ref": "#/$defs/id" },
+        "label": { "type": "string", "maxLength": 100 }
+      },
+      "additionalProperties": false
+    },
+    "assignment": {
+      "type": "object",
+      "required": ["materialID"],
+      "properties": {
+        "role": { "$ref": "#/$defs/role" },
+        "button": { "$ref": "#/$defs/button" },
+        "materialID": { "$ref": "#/$defs/id" },
+        "componentID": { "$ref": "#/$defs/id" }
+      },
+      "anyOf": [{ "required": ["role"] }, { "required": ["button"] }],
+      "additionalProperties": false
+    },
+    "sourceAsset": {
+      "type": "object",
+      "required": ["id", "path", "purpose", "outputWidth", "outputHeight", "format"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "path": { "type": "string", "pattern": "^sources/(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.svg$" },
+        "purpose": { "enum": ["canvas_artwork", "control_face", "icon", "texture", "preview"] },
+        "outputWidth": { "type": "integer", "minimum": 16, "maximum": 8192 },
+        "outputHeight": { "type": "integer", "minimum": 16, "maximum": 8192 },
+        "format": { "enum": ["png", "webp"] },
+        "nineSliceInsets": { "$ref": "#/$defs/insets" },
+        "orientation": { "$ref": "#/$defs/orientation" },
+        "colorScheme": { "$ref": "#/$defs/colorScheme" }
+      },
+      "additionalProperties": false
+    },
+    "preview": {
+      "type": "object",
+      "required": ["id", "artboardID", "orientation", "colorScheme", "state", "scale"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "artboardID": { "type": "string", "minLength": 1 },
+        "orientation": { "$ref": "#/$defs/orientation" },
+        "colorScheme": { "$ref": "#/$defs/colorScheme" },
+        "state": { "enum": ["normal", "pressed", "active", "disabled"] },
+        "scale": { "type": "number", "minimum": 0.5, "maximum": 4 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
