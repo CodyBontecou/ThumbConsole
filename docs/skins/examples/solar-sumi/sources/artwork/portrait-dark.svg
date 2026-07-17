@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 402 874" width="402" height="874" role="img" aria-label="Solar Sumi portrait dark artwork">
+  <g id="canvas">
+    <rect width="402" height="874" fill="#0C0B09"/>
+    <path d="M14 0 V874" fill="none" stroke="#242019" stroke-width="1" opacity="0.42"/>
+  </g>
+  <g id="deck-shadow" transform="translate(3 5)">
+    <path d="M36 14 H350 Q382 17 390 49 V361 Q389 390 365 408 L337 429 Q319 443 326 473 L389 584 V800 Q387 835 355 852 H91 L29 828 L12 805 V572 L34 547 V432 L15 405 V85 Q15 47 36 14 Z" fill="#000000" opacity="0.78"/>
+  </g>
+  <g id="offset-fiber-deck">
+    <path d="M36 14 H350 Q382 17 390 49 V361 Q389 390 365 408 L337 429 Q319 443 326 473 L389 584 V800 Q387 835 355 852 H91 L29 828 L12 805 V572 L34 547 V432 L15 405 V85 Q15 47 36 14 Z" fill="#393329"/>
+    <path d="M37 15 H349 Q376 18 384 43 M17 86 Q17 49 38 20" fill="none" stroke="#756B55" stroke-width="1.5" stroke-linecap="round" opacity="0.82"/>
+    <path d="M388 51 V360 Q387 387 363 406 L335 427 M388 586 V798 Q385 831 353 850 H92 L31 826" fill="none" stroke="#171611" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <g id="directional-fiber-texture" fill="none" stroke="#655B48" stroke-linecap="round" opacity="0.22">
+    <path d="M42 50 l13 -2 M79 79 l9 -1 M116 42 l16 -2 M157 72 l11 -1 M202 38 l14 -2 M246 76 l10 -1 M286 44 l17 -2 M333 78 l12 -1" stroke-width="0.8"/>
+    <path d="M40 126 l17 -2 M84 158 l10 -1 M126 119 l13 -1 M168 153 l16 -2 M213 120 l9 -1 M254 157 l14 -2 M296 122 l12 -1 M341 151 l16 -2" stroke-width="0.75"/>
+    <path d="M38 210 l12 -1 M79 240 l18 -2 M125 205 l9 -1 M165 238 l15 -2 M210 207 l11 -1 M251 244 l16 -2 M296 208 l10 -1 M338 237 l14 -2" stroke-width="0.9"/>
+    <path d="M39 292 l16 -2 M82 326 l11 -1 M124 287 l14 -2 M168 320 l18 -2 M214 291 l9 -1 M254 326 l15 -2 M299 286 l12 -1 M341 319 l16 -2" stroke-width="0.8"/>
+    <path d="M42 375 l10 -1 M83 398 l17 -2 M129 370 l12 -1 M170 399 l15 -2 M215 371 l9 -1 M257 400 l18 -2 M302 373 l11 -1 M343 397 l14 -2" stroke-width="0.75"/>
+    <path d="M44 466 l14 -2 M82 500 l10 -1 M121 458 l17 -2 M162 493 l12 -1 M206 462 l16 -2 M250 499 l9 -1 M291 460 l14 -2 M337 490 l11 -1" stroke-width="0.85"/>
+    <path d="M42 561 l17 -2 M83 592 l11 -1 M125 552 l14 -2 M167 586 l18 -2 M212 555 l9 -1 M254 590 l15 -2 M300 554 l12 -1 M345 584 l14 -2" stroke-width="0.8"/>
+    <path d="M38 646 l12 -1 M79 677 l18 -2 M125 640 l9 -1 M166 672 l15 -2 M210 641 l11 -1 M251 678 l16 -2 M296 642 l10 -1 M340 671 l14 -2" stroke-width="0.75"/>
+    <path d="M39 735 l16 -2 M82 766 l11 -1 M124 728 l14 -2 M168 761 l18 -2 M214 731 l9 -1 M254 766 l15 -2 M299 727 l12 -1 M343 759 l16 -2" stroke-width="0.9"/>
+    <path d="M58 823 l13 -2 M103 800 l9 -1 M146 832 l17 -2 M192 804 l11 -1 M238 831 l15 -2 M286 803 l10 -1 M329 829 l14 -2" stroke-width="0.8"/>
+  </g>
+  <g id="upward-carbon-current">
+    <path d="M88 61 C102 40 124 37 154 44 C171 48 187 56 198 67 C212 49 239 38 266 40 C294 42 310 61 307 89 C303 124 313 157 305 193 C298 228 310 264 303 301 C296 338 311 374 300 407 C292 431 279 449 271 468 C259 495 265 523 278 550 C292 580 302 607 309 642 L309 691 L301 730 L285 750 L248 756 L205 751 L175 737 L159 711 L160 669 L172 637 L196 615 L228 608 L252 621 L247 590 C244 574 245 560 250 546 C262 517 269 488 253 465 C238 444 210 439 181 432 C151 425 111 424 98 399 C84 372 98 337 91 301 C84 266 98 231 91 197 C84 162 99 127 90 92 C87 80 86 69 88 61 Z" fill="#0E100D"/>
+    <path d="M90 73 C91 55 103 43 120 39 M266 40 C292 42 308 61 307 85 M304 301 C297 338 310 374 299 404 M308 645 L308 687 L300 726 M284 749 L249 755 L207 750 M176 737 L160 710 L161 674" fill="none" stroke="#292C25" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+  </g>
+  <g id="continuous-fiber-channels" fill="#393329">
+    <path d="M109 18 C114 73 106 118 111 162 C116 204 108 249 112 291 C116 334 110 374 121 393 C139 406 169 407 192 393 C198 355 191 316 194 278 C197 238 190 199 194 159 C198 118 191 76 194 18 Z"/>
+    <path d="M203 18 C207 68 200 110 204 151 C208 194 201 235 205 276 C209 318 203 363 214 405 C232 417 264 418 284 402 C291 363 284 322 288 281 C292 239 285 197 289 156 C293 113 286 70 290 18 Z"/>
+    <path d="M82 396 C124 400 157 402 178 397 C205 392 236 396 251 409 C260 427 258 451 248 468 C218 478 181 478 151 468 C126 460 102 449 82 433 Z"/>
+  </g>
+  <g id="dry-brush-gaps" fill="none" stroke="#393329" stroke-linecap="round">
+    <path d="M96 68 l11 -4 M91 332 l12 3 M297 454 l-7 11" stroke-width="1.9"/>
+    <path d="M270 551 l-4 13 M305 652 l3 11 M278 748 l-14 4" stroke-width="1.6"/>
+  </g>
+  <g id="solar-register" fill="none" stroke-linecap="round">
+    <g stroke="#72551F" stroke-width="2.4" opacity="0.9">
+      <path d="M197 113 h10 M202 108 v10 M197 209 h10 M202 204 v10 M197 305 h10 M202 300 v10 M197 401 h10 M202 396 v10"/>
+    </g>
+    <g stroke="#D0A64C" stroke-width="1.6">
+      <path d="M197 112 h10 M202 107 v10 M197 208 h10 M202 203 v10 M197 304 h10 M202 299 v10 M197 400 h10 M202 395 v10"/>
+    </g>
+    <g stroke="#F2D688" stroke-width="0.6" opacity="0.85">
+      <path d="M198 111 h8 M198 207 h8 M198 303 h8 M198 399 h8"/>
+    </g>
+  </g>
+  <g id="quiet-left-waist" fill="none" stroke-linecap="round">
+    <path d="M39 452 H147" stroke="#5B5241" stroke-width="1" opacity="0.5"/>
+    <path d="M39 554 H129" stroke="#5B5241" stroke-width="1" opacity="0.46"/>
+    <path d="M158 478 H244" stroke="#D0A64C" stroke-width="1.2" opacity="0.76"/>
+  </g>
+</svg>

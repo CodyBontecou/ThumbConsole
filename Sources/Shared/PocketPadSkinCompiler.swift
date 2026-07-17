@@ -78,7 +78,30 @@ public enum PocketPadSkinSourceValidator {
         let materialIDs = Set(workspace.materials.map(\.id))
         for (index, material) in workspace.materials.enumerated() {
             let values = [material.baseColor, material.foregroundColor]
-                + [material.darkBaseColor, material.darkForegroundColor, material.strokeColor, material.highlightColor, material.activeColor, material.shadowColor].compactMap { $0 }
+                + [
+                    material.darkBaseColor,
+                    material.darkForegroundColor,
+                    material.strokeColor,
+                    material.darkStrokeColor,
+                    material.highlightColor,
+                    material.activeColor,
+                    material.darkActiveColor,
+                    material.activeIndexColor,
+                    material.darkActiveIndexColor,
+                    material.shadowColor,
+                    material.joystickKnobColor,
+                    material.darkJoystickKnobColor,
+                    material.pressedFillColor,
+                    material.darkPressedFillColor,
+                    material.activeFillColor,
+                    material.darkActiveFillColor,
+                    material.disabledFillColor,
+                    material.darkDisabledFillColor,
+                    material.disabledForegroundColor,
+                    material.darkDisabledForegroundColor,
+                    material.disabledStrokeColor,
+                    material.darkDisabledStrokeColor
+                ].compactMap { $0 }
             for value in values where GamepadRGBAColor(hexString: value) == nil {
                 issue(.error, "invalid-color", "Invalid material color \(value).", "materials[\(index)]")
             }
@@ -87,6 +110,25 @@ public enum PocketPadSkinSourceValidator {
             }
             if !(0.5...1).contains(material.pressedScale) {
                 issue(.error, "invalid-pressed-scale", "Pressed scale must be between 0.5 and 1.", "materials[\(index)].pressedScale")
+            }
+            for (field, value) in [
+                ("pressedShadowScale", material.pressedShadowScale),
+                ("pressedInnerShadowScale", material.pressedInnerShadowScale),
+                ("disabledOpacity", material.disabledOpacity)
+            ] where value.map({ !(0...1).contains($0) }) == true {
+                issue(.error, "invalid-material-range", "\(field) must be between 0 and 1.", "materials[\(index)].\(field)")
+            }
+            if material.shadowScale.map({ !(0...2).contains($0) }) == true {
+                issue(.error, "invalid-material-range", "shadowScale must be between 0 and 2.", "materials[\(index)].shadowScale")
+            }
+            for (field, value) in [
+                ("activeStrokeWidth", material.activeStrokeWidth),
+                ("portraitActiveStrokeWidth", material.portraitActiveStrokeWidth),
+                ("landscapeActiveStrokeWidth", material.landscapeActiveStrokeWidth),
+                ("activeIndexWidth", material.activeIndexWidth),
+                ("disabledStrokeWidth", material.disabledStrokeWidth)
+            ] where value.map({ !(0...12).contains($0) }) == true {
+                issue(.error, "invalid-material-range", "\(field) must be between 0 and 12.", "materials[\(index)].\(field)")
             }
         }
         for (index, component) in workspace.components.enumerated() where !materialIDs.contains(component.materialID) {
@@ -317,13 +359,61 @@ public enum PocketPadSkinCompiler {
         )
         var variants: [PocketPadSkinVariant] = []
         for scheme in workspace.colorSchemes {
+            let joystickRules = workspace.assignments.compactMap { assignment -> PocketPadSkinRoleRule? in
+                guard assignment.role == .joystick,
+                      let material = materialByID[assignment.materialID]
+                else { return nil }
+                let colorString: String?
+                switch scheme {
+                case .light:
+                    colorString = material.joystickKnobColor
+                case .dark:
+                    colorString = material.darkJoystickKnobColor ?? material.joystickKnobColor
+                }
+                guard let colorString, let color = GamepadRGBAColor(hexString: colorString) else { return nil }
+                return PocketPadSkinRoleRule(
+                    role: .joystick,
+                    appearance: PocketPadSkinControlAppearance(joystickKnobColor: color)
+                )
+            }
             variants.append(PocketPadSkinVariant(
                 id: "styles-\(scheme.rawValue)",
                 colorScheme: scheme,
                 appearance: PocketPadSkinAppearance(
+                    roleRules: joystickRules,
                     styleLibrary: GamepadStyleLibrary(styles: scheme == .dark ? darkStyles : lightStyles)
                 )
             ))
+        }
+        for orientation in workspace.orientations {
+            let hasOrientationOverride = workspace.materials.contains { material in
+                switch orientation {
+                case .portrait: material.portraitActiveStrokeWidth != nil
+                case .landscape: material.landscapeActiveStrokeWidth != nil
+                }
+            }
+            guard hasOrientationOverride else { continue }
+            for scheme in workspace.colorSchemes {
+                let styles = workspace.materials.compactMap { material -> GamepadStyleToken? in
+                    let width: CGFloat? = switch orientation {
+                    case .portrait: material.portraitActiveStrokeWidth
+                    case .landscape: material.landscapeActiveStrokeWidth
+                    }
+                    return materialStyle(
+                        material,
+                        scheme: scheme,
+                        activeStrokeWidthOverride: width
+                    )
+                }
+                variants.append(PocketPadSkinVariant(
+                    id: "styles-\(orientation.rawValue)-\(scheme.rawValue)",
+                    orientation: orientation,
+                    colorScheme: scheme,
+                    appearance: PocketPadSkinAppearance(
+                        styleLibrary: GamepadStyleLibrary(styles: styles)
+                    )
+                ))
+            }
         }
         for canvas in canvases {
             let image = GamepadImageFill(
@@ -394,17 +484,50 @@ public enum PocketPadSkinCompiler {
 
     private static func materialStyle(
         _ material: PocketPadSkinMaterialSpec,
-        scheme: PocketPadSkinColorScheme
+        scheme: PocketPadSkinColorScheme,
+        activeStrokeWidthOverride: CGFloat? = nil
     ) -> GamepadStyleToken? {
         guard let base = GamepadRGBAColor(hexString: scheme == .dark ? (material.darkBaseColor ?? material.baseColor) : material.baseColor),
               let foreground = GamepadRGBAColor(hexString: scheme == .dark ? (material.darkForegroundColor ?? material.foregroundColor) : material.foregroundColor)
         else { return nil }
         let highlight = GamepadRGBAColor(hexString: material.highlightColor ?? "#FFFFFF") ?? foreground
-        let activeAccent = GamepadRGBAColor(hexString: material.activeColor ?? material.highlightColor ?? material.foregroundColor) ?? foreground
+        let activeColorString = scheme == .dark
+            ? (material.darkActiveColor ?? material.activeColor)
+            : material.activeColor
+        let activeAccent = GamepadRGBAColor(
+            hexString: activeColorString ?? material.highlightColor ?? material.foregroundColor
+        ) ?? foreground
+        let activeIndexColorString = scheme == .dark
+            ? (material.darkActiveIndexColor ?? material.activeIndexColor)
+            : material.activeIndexColor
+        let activeIndexColor = activeIndexColorString.flatMap { GamepadRGBAColor(hexString: $0) }
         let shadow = GamepadRGBAColor(hexString: material.shadowColor ?? "#000000") ?? .defaultValue
-        let stroke = GamepadRGBAColor(hexString: material.strokeColor ?? material.highlightColor ?? material.foregroundColor) ?? foreground
+        let strokeColorString = scheme == .dark
+            ? (material.darkStrokeColor ?? material.strokeColor)
+            : material.strokeColor
+        let stroke = GamepadRGBAColor(
+            hexString: strokeColorString ?? material.highlightColor ?? material.foregroundColor
+        ) ?? foreground
+        func stateColor(light: String?, dark: String?) -> GamepadRGBAColor? {
+            let value = scheme == .dark ? (dark ?? light) : light
+            return value.flatMap { GamepadRGBAColor(hexString: $0) }
+        }
+        let pressedFill = stateColor(light: material.pressedFillColor, dark: material.darkPressedFillColor)
+        let activeFill = stateColor(light: material.activeFillColor, dark: material.darkActiveFillColor)
+        let disabledFill = stateColor(light: material.disabledFillColor, dark: material.darkDisabledFillColor)
+        let disabledForeground = stateColor(
+            light: material.disabledForegroundColor,
+            dark: material.darkDisabledForegroundColor
+        )
+        let disabledStroke = stateColor(
+            light: material.disabledStrokeColor,
+            dark: material.darkDisabledStrokeColor
+        )
         let depth = min(max(material.depth, 0), 1)
         let gloss = min(max(material.gloss, 0), 1)
+        let shadowScale = min(max(material.shadowScale ?? 1, 0), 2)
+        let pressedShadowScale = min(max(material.pressedShadowScale ?? 1, 0), 1) * shadowScale
+        let pressedInnerShadowScale = min(max(material.pressedInnerShadowScale ?? 1, 0), 1) * shadowScale
         let isMatte = material.kind == .matteRubber || material.kind == .inset
         let isLacquer = material.kind == .glossyPlastic
         let surfaceHighlightRadius: CGFloat = isMatte ? 2.4 : (isLacquer ? 0.6 : 1 + gloss * 1.4)
@@ -425,23 +548,24 @@ public enum PocketPadSkinCompiler {
                 ]
             ))
         }
+        let normalShadows: [GamepadControlShadowStyle] = shadowScale <= 0 ? [] : [
+            GamepadControlShadowStyle(
+                color: shadow.withAlpha((0.28 + depth * 0.22) * shadowScale),
+                radius: (2 + depth * 3) * shadowScale,
+                x: (1.5 + depth * 2) * shadowScale,
+                y: (2 + depth * 2.5) * shadowScale
+            )
+        ]
         let normal = GamepadControlStateStyle(
             fillStyle: fill,
             foregroundColor: foreground,
             strokeColor: stroke.withAlpha(0.34 + gloss * 0.38),
             strokeWidth: 0.8 + gloss * 1.2,
-            shadows: [
-                GamepadControlShadowStyle(
-                    color: shadow.withAlpha(0.28 + depth * 0.22),
-                    radius: 2 + depth * 3,
-                    x: 1.5 + depth * 2,
-                    y: 2 + depth * 2.5
-                )
-            ],
-            innerShadowColor: material.kind == .inset ? shadow.withAlpha(0.42) : nil,
-            innerShadowRadius: material.kind == .inset ? 7 : nil,
-            innerShadowX: material.kind == .inset ? 3 : nil,
-            innerShadowY: material.kind == .inset ? 4 : nil,
+            shadows: normalShadows,
+            innerShadowColor: material.kind == .inset ? shadow.withAlpha(0.42 * shadowScale) : nil,
+            innerShadowRadius: material.kind == .inset ? 7 * shadowScale : nil,
+            innerShadowX: material.kind == .inset ? 3 * shadowScale : nil,
+            innerShadowY: material.kind == .inset ? 4 * shadowScale : nil,
             highlightColor: highlight,
             highlightRadius: surfaceHighlightRadius,
             highlightX: -1 - gloss,
@@ -451,37 +575,48 @@ public enum PocketPadSkinCompiler {
             bevelShadowColor: shadow.withAlpha(0.25 + depth * 0.30),
             bevelWidth: surfaceBevelWidth
         )
+        let pressedShadows: [GamepadControlShadowStyle] = pressedShadowScale <= 0 ? [] : [
+            GamepadControlShadowStyle(
+                color: shadow.withAlpha(0.20 * pressedShadowScale),
+                radius: 5 * pressedShadowScale,
+                x: 2 * pressedShadowScale,
+                y: 3 * pressedShadowScale
+            )
+        ]
         let pressed = GamepadControlStateStyle(
-            fillStyle: .solid(base.mixed(with: shadow, amount: 0.10 + depth * 0.12)),
-            shadows: [GamepadControlShadowStyle(color: shadow.withAlpha(0.20), radius: 5, x: 2, y: 3)],
-            innerShadowColor: shadow.withAlpha(0.42 + depth * 0.22),
-            innerShadowRadius: 5 + depth * 6,
-            innerShadowX: 2 + depth * 2,
-            innerShadowY: 3 + depth * 2,
+            fillStyle: .solid(pressedFill ?? base.mixed(with: shadow, amount: 0.10 + depth * 0.12)),
+            shadows: pressedShadows,
+            innerShadowColor: shadow.withAlpha((0.42 + depth * 0.22) * pressedInnerShadowScale),
+            innerShadowRadius: (5 + depth * 6) * pressedInnerShadowScale,
+            innerShadowX: (2 + depth * 2) * pressedInnerShadowScale,
+            innerShadowY: (3 + depth * 2) * pressedInnerShadowScale,
             highlightOpacity: 0.04,
             scale: material.pressedScale
         )
         let active = GamepadControlStateStyle(
+            fillStyle: activeFill.map(GamepadFillStyle.solid),
             strokeColor: activeAccent.withAlpha(0.96),
-            strokeWidth: 1.5 + gloss * 0.5,
+            strokeWidth: activeStrokeWidthOverride ?? material.activeStrokeWidth ?? (1.5 + gloss * 0.5),
             highlightColor: highlight,
             highlightRadius: surfaceHighlightRadius,
             highlightX: -1 - gloss,
             highlightY: -1 - gloss,
             highlightOpacity: surfaceHighlightOpacity,
+            indexColor: activeIndexColor,
+            indexWidth: material.activeIndexWidth,
             scale: 1
         )
         let disabled = GamepadControlStateStyle(
-            fillStyle: .solid(base.mixed(with: shadow, amount: 0.14)),
-            foregroundColor: foreground,
-            strokeColor: stroke.mixed(with: base, amount: 0.36),
-            strokeWidth: 0.8,
+            fillStyle: .solid(disabledFill ?? base.mixed(with: shadow, amount: 0.14)),
+            foregroundColor: disabledForeground ?? foreground,
+            strokeColor: disabledStroke ?? stroke.mixed(with: base, amount: 0.36),
+            strokeWidth: material.disabledStrokeWidth ?? 0.8,
             shadows: [],
             highlightOpacity: 0,
             bevelHighlightColor: highlight.withAlpha(0.12),
             bevelShadowColor: shadow.withAlpha(0.20),
             bevelWidth: 0.6,
-            opacity: 0.90,
+            opacity: material.disabledOpacity ?? 0.90,
             scale: 1
         )
         let style = GamepadControlVisualStyle(

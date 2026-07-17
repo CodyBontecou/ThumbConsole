@@ -120,6 +120,82 @@ final class PocketPadSkinResolverTests: XCTestCase {
         XCTAssertEqual(GamepadLayoutQualityReport.runtimeHitFrame(for: control), control.hitFrame)
     }
 
+    func testSchemeVariantJoystickKnobColorAppliesToCustomJoystick() throws {
+        var customization = GamepadCustomization.blankCanvas
+        customization.addCustomButton(mappedTo: .up)
+        let index = try XCTUnwrap(customization.customButtons.indices.last)
+        customization.customButtons[index].controlKind = .joystick
+        customization.customButtons[index].visualRole = .joystick
+        let id = customization.customButtons[index].id
+        let style = GamepadStyleToken(
+            id: "joystick-material",
+            name: "Joystick",
+            visualStyle: GamepadControlVisualStyle(
+                normal: GamepadControlStateStyle(fillStyle: .solid(color("#111111")))
+            )
+        )
+        let skin = PocketPadSkin(
+            base: PocketPadSkinAppearance(
+                roleRules: [
+                    PocketPadSkinRoleRule(
+                        role: .joystick,
+                        appearance: PocketPadSkinControlAppearance(styleID: style.id)
+                    )
+                ],
+                styleLibrary: GamepadStyleLibrary(styles: [style])
+            ),
+            variants: [
+                PocketPadSkinVariant(
+                    id: "light-knob",
+                    colorScheme: .light,
+                    appearance: PocketPadSkinAppearance(roleRules: [
+                        PocketPadSkinRoleRule(
+                            role: .joystick,
+                            appearance: PocketPadSkinControlAppearance(joystickKnobColor: color("#224466"))
+                        )
+                    ])
+                ),
+                PocketPadSkinVariant(
+                    id: "dark-knob",
+                    colorScheme: .dark,
+                    appearance: PocketPadSkinAppearance(roleRules: [
+                        PocketPadSkinRoleRule(
+                            role: .joystick,
+                            appearance: PocketPadSkinControlAppearance(joystickKnobColor: color("#88AACC"))
+                        )
+                    ])
+                )
+            ]
+        )
+        let package = PocketPadSkinPackage(
+            manifest: PocketPadSkinManifest(
+                identifier: "com.example.joystick-skin",
+                version: "1.0.0",
+                name: "Joystick Skin",
+                author: PocketPadSkinAuthor(name: "Tests")
+            ),
+            skin: skin
+        )
+
+        let light = customization.applying(
+            skinPackage: package,
+            orientation: .landscape,
+            colorScheme: .light,
+            options: .replacingAppearance
+        )
+        let dark = customization.applying(
+            skinPackage: package,
+            orientation: .landscape,
+            colorScheme: .dark,
+            options: .replacingAppearance
+        )
+
+        XCTAssertEqual(light.customButtons.first { $0.id == id }?.layout.joystickKnobColor?.hexString, "#224466")
+        XCTAssertEqual(dark.customButtons.first { $0.id == id }?.layout.joystickKnobColor?.hexString, "#88AACC")
+        XCTAssertEqual(light.customButtons.first { $0.id == id }?.layout.styleID, style.id)
+        XCTAssertEqual(dark.customButtons.first { $0.id == id }?.layout.styleID, style.id)
+    }
+
     func testVisualRoleAndHitInsetsRoundTripBackwardCompatibly() throws {
         let button = GamepadCustomButton(
             mappedButton: .custom1,

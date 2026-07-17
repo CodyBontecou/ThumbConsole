@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 874 402" width="874" height="402" role="img" aria-label="Foldline Relay landscape light stepped dispatch folio artwork">
+  <defs>
+    <pattern id="canvas-fiber" width="23" height="17" patternUnits="userSpaceOnUse">
+      <path d="M3 5h1.1 M16 12h0.9" stroke="#6D665B" stroke-width="0.55" stroke-linecap="round" opacity="0.07"/>
+      <circle cx="9" cy="2.5" r="0.42" fill="#FFF5DA" opacity="0.16"/>
+    </pattern>
+    <pattern id="folio-fiber" width="19" height="21" patternUnits="userSpaceOnUse">
+      <path d="M2 8h1 M12 17h1.2" stroke="#A99A73" stroke-width="0.55" stroke-linecap="round" opacity="0.10"/>
+    </pattern>
+  </defs>
+  <g id="canvas">
+    <rect width="874" height="402" fill="#F3E7C9"/>
+    <rect width="874" height="402" fill="url(#canvas-fiber)"/>
+  </g>
+  <g id="shell">
+    <path id="outer-contact-shadow" d="M41 153H186L200 167H284L298 181H366L380 195H454V221H440L454 235V273H438L454 289V333H368V321H288V333H200V321H116V333H41Z" fill="#8E805F" opacity="0.24"/>
+    <path id="outer-fold-plane" d="M39 150H184L198 164H282L296 178H364L378 192H452V218H438L452 232V270H436L452 286V330H366V318H286V330H198V318H114V330H39Z" fill="#FFF5DA"/>
+    <path d="M39 150H184L198 164H282L296 178H364L378 192H452" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-linejoin="miter" opacity="0.82"/>
+    <path d="M452 192V218H438L452 232V270H436L452 286V330H366V318H286V330H198V318H114V330H39" fill="none" stroke="#9A8A65" stroke-width="2.5" stroke-linejoin="miter"/>
+    <path d="M39 150H184L198 164H282L296 178H364L378 192H452V218H438L452 232V270H436L452 286V330H366V318H286V330H198V318H114V330H39Z" fill="url(#folio-fiber)"/>
+  </g>
+  <g id="control-wells">
+    <g id="movement-score-field">
+      <path d="M39 166H184L198 180H282L296 194H364L378 208H438V220H424L438 234V268H422L438 282H350V270H286V282H200V270H126V282H39Z" fill="#E5D6B3"/>
+      <path d="M39 166H184L198 180H282L296 194H364L378 208H438" fill="none" stroke="#FFF9E8" stroke-width="1" stroke-linejoin="miter"/>
+      <path d="M438 208V220H424L438 234V268H422L438 282H350V270H286V282H200V270H126V282H39" fill="none" stroke="#A99A73" stroke-width="2.5" stroke-linejoin="miter"/>
+      <path d="M39 166H184L198 180H282L296 194H364L378 208H438V220H424L438 234V268H422L438 282H350V270H286V282H200V270H126V282H39Z" fill="url(#folio-fiber)" opacity="0.62"/>
+    </g>
+    <g id="command-score-field">
+      <path d="M39 286H124L138 276H286L300 286H338V330H286V318H200V330H114V318H39Z" fill="#E5D6B3"/>
+      <path d="M39 286H124L138 276H286L300 286H338" fill="none" stroke="#FFF9E8" stroke-width="1" stroke-linejoin="miter"/>
+      <path d="M338 286V330H286V318H200V330H114V318H39" fill="none" stroke="#A99A73" stroke-width="2.5" stroke-linejoin="miter"/>
+    </g>
+    <g id="terminal-score-field">
+      <path d="M350 278H436L452 294V330H424V318H350Z" fill="#E5D6B3"/>
+      <path d="M350 278H436L452 294" fill="none" stroke="#FFF9E8" stroke-width="1" stroke-linejoin="miter"/>
+      <path d="M452 294V330H424V318H350" fill="none" stroke="#756B52" stroke-width="2.5" stroke-linejoin="miter"/>
+    </g>
+  </g>
+  <g id="relay-fold" fill="none" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M441 314H690" stroke="#2446C7" stroke-width="2"/>
+    <path d="M690 314L710 294" stroke="#F26432" stroke-width="3"/>
+    <path d="M710 294L437 80" stroke="#2446C7" stroke-width="2"/>
+    <path d="M694 310L706 298" stroke="#FFF5DA" stroke-width="1"/>
+  </g>
+  <g id="utility-controls">
+    <g id="open-registration-brackets" fill="none" stroke="#4D473E" stroke-width="2.5" stroke-linecap="square">
+      <path d="M756 196H766V206"/>
+      <path d="M816 248H806V238"/>
+    </g>
+    <rect id="registration-accent" x="778" y="195" width="10" height="2" fill="#C7EF4A"/>
+  </g>
+</svg>

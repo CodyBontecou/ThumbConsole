@@ -53,6 +53,112 @@ final class PocketPadSkinCompilerTests: XCTestCase {
         XCTAssertEqual(readBigEndianUInt32(png, at: 20), 804)
     }
 
+    func testLegacyWorkspaceStillCompilesToCommittedGoldenPackage() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = repository.appendingPathComponent("docs/skins/examples/indigo-pocket", isDirectory: true)
+        let golden = source.appendingPathComponent("dist/indigo-pocket-1.0.0.pocketpad")
+        let build = temporaryDirectory.appendingPathComponent("golden-build", isDirectory: true)
+        let output = temporaryDirectory.appendingPathComponent("indigo-pocket-1.0.0.pocketpad")
+
+        let result = try PocketPadSkinCompiler.compile(
+            source: source,
+            buildDirectory: build,
+            packageOutputURL: output,
+            clean: true,
+            strict: true
+        )
+
+        XCTAssertEqual(result.packageData, try Data(contentsOf: golden))
+        XCTAssertEqual(result.packageData.pocketPadSHA256, "72fdbb32d789cd3c13d32b79cc83d9a373eb9b7d4d663d9e1cab1c80ba3bb3d3")
+    }
+
+    func testCompilerMapsOptionalMaterialStateControlsAndJoystickColors() throws {
+        let source = try makePublishableWorkspace()
+        let sourceURL = source.appendingPathComponent("skin-source.json")
+        var workspace = try JSONDecoder().decode(PocketPadSkinWorkspace.self, from: Data(contentsOf: sourceURL))
+        let materialID = workspace.materials[0].id
+        workspace.materials[0].darkStrokeColor = "#8899AA"
+        workspace.materials[0].joystickKnobColor = "#224466"
+        workspace.materials[0].darkJoystickKnobColor = "#88AACC"
+        workspace.materials[0].pressedFillColor = "#102030"
+        workspace.materials[0].darkPressedFillColor = "#203040"
+        workspace.materials[0].activeFillColor = "#304050"
+        workspace.materials[0].darkActiveFillColor = "#405060"
+        workspace.materials[0].activeColor = "#FFD060"
+        workspace.materials[0].darkActiveColor = "#FFF080"
+        workspace.materials[0].disabledFillColor = "#505050"
+        workspace.materials[0].darkDisabledFillColor = "#606060"
+        workspace.materials[0].disabledForegroundColor = "#F0F0F0"
+        workspace.materials[0].darkDisabledForegroundColor = "#E0E0E0"
+        workspace.materials[0].disabledStrokeColor = "#A0A0A0"
+        workspace.materials[0].darkDisabledStrokeColor = "#B0B0B0"
+        workspace.materials[0].shadowScale = 0.25
+        workspace.materials[0].pressedShadowScale = 0.2
+        workspace.materials[0].pressedInnerShadowScale = 0.1
+        workspace.materials[0].activeStrokeWidth = 3.5
+        workspace.materials[0].portraitActiveStrokeWidth = 4.5
+        workspace.materials[0].landscapeActiveStrokeWidth = 2.5
+        workspace.materials[0].activeIndexColor = "#AABBCC"
+        workspace.materials[0].darkActiveIndexColor = "#CCDDEE"
+        workspace.materials[0].activeIndexWidth = 2
+        workspace.materials[0].disabledStrokeWidth = 2.5
+        workspace.materials[0].disabledOpacity = 0.94
+        workspace.assignments.append(PocketPadSemanticStyleAssignment(role: .joystick, materialID: materialID))
+        try write(workspace, to: sourceURL)
+
+        let result = try PocketPadSkinCompiler.compile(source: source, clean: true, strict: true)
+        let skin = try XCTUnwrap(result.package.skin)
+        let light = skin.appearance(orientation: .landscape, colorScheme: .light)
+        let dark = skin.appearance(orientation: .landscape, colorScheme: .dark)
+        let lightStyle = try XCTUnwrap(light.styleLibrary.style(id: materialID)?.visualStyle)
+        let darkStyle = try XCTUnwrap(dark.styleLibrary.style(id: materialID)?.visualStyle)
+
+        XCTAssertEqual(lightStyle.pressed?.fillStyle?.representativeColor.hexString, "#102030")
+        XCTAssertEqual(darkStyle.pressed?.fillStyle?.representativeColor.hexString, "#203040")
+        XCTAssertEqual(lightStyle.active?.fillStyle?.representativeColor.hexString, "#304050")
+        XCTAssertEqual(darkStyle.active?.fillStyle?.representativeColor.hexString, "#405060")
+        XCTAssertEqual(lightStyle.active?.strokeWidth, 2.5)
+        XCTAssertEqual(darkStyle.active?.strokeWidth, 2.5)
+        let portraitLight = skin.appearance(orientation: .portrait, colorScheme: .light)
+        let portraitStyle = try XCTUnwrap(portraitLight.styleLibrary.style(id: materialID)?.visualStyle)
+        XCTAssertEqual(portraitStyle.active?.strokeWidth, 4.5)
+        XCTAssertEqual(lightStyle.active?.indexColor?.hexString, "#AABBCC")
+        XCTAssertEqual(darkStyle.active?.indexColor?.hexString, "#CCDDEE")
+        XCTAssertEqual(lightStyle.active?.indexWidth, 2)
+        XCTAssertEqual(lightStyle.disabled?.fillStyle?.representativeColor.hexString, "#505050")
+        XCTAssertEqual(darkStyle.disabled?.fillStyle?.representativeColor.hexString, "#606060")
+        XCTAssertEqual(lightStyle.disabled?.strokeColor?.hexString, "#A0A0A0")
+        XCTAssertEqual(darkStyle.disabled?.strokeColor?.hexString, "#B0B0B0")
+        XCTAssertEqual(lightStyle.disabled?.strokeWidth, 2.5)
+        XCTAssertEqual(lightStyle.disabled?.opacity, 0.94)
+        XCTAssertEqual(light.controlAppearance(for: .joystick).joystickKnobColor?.hexString, "#224466")
+        XCTAssertEqual(dark.controlAppearance(for: .joystick).joystickKnobColor?.hexString, "#88AACC")
+        XCTAssertLessThan(lightStyle.normal.shadows?.first?.radius ?? 10, 2)
+        XCTAssertLessThan(lightStyle.pressed?.innerShadowRadius ?? 10, 1)
+    }
+
+    func testSourceValidatorRejectsInvalidOptionalMaterialColorsAndRanges() {
+        var workspace = PocketPadSkinWorkspace.starter(
+            name: "Invalid States",
+            identifier: "com.example.invalid-states",
+            artboardID: "classic-16-bit-v1"
+        )
+        workspace.materials[0].disabledFillColor = "not-a-color"
+        workspace.materials[0].shadowScale = 3
+        workspace.materials[0].pressedShadowScale = -0.1
+        workspace.materials[0].activeStrokeWidth = 13
+        workspace.materials[0].portraitActiveStrokeWidth = 13
+        workspace.materials[0].landscapeActiveStrokeWidth = 13
+        workspace.materials[0].activeIndexWidth = 13
+        workspace.materials[0].disabledOpacity = 1.1
+
+        let report = PocketPadSkinSourceValidator.validate(workspace)
+        XCTAssertTrue(report.errors.contains { $0.code == "invalid-color" })
+        XCTAssertGreaterThanOrEqual(report.errors.filter { $0.code == "invalid-material-range" }.count, 7)
+    }
+
     func testWorkspaceDetectionDoesNotTreatExistingPackageAsJSONSource() throws {
         let workspace = temporaryDirectory.appendingPathComponent("Workspace", isDirectory: true)
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)

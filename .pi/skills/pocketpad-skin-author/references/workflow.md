@@ -62,7 +62,7 @@ A complete composition normally includes:
 - restrained texture at the correct physical scale;
 - orientation-aware spacing and negative space.
 
-Artwork remains passive. Native controls render state and preserve accessibility.
+Artwork remains passive. Native controls render state and preserve accessibility. When derived states are not visually distinct enough, use the source schema's optional pressed/active/disabled fills, boundaries, shadow scales, and light/dark joystick puck colors; never paint state feedback into SVG.
 
 ## 5. Compile and inspect
 

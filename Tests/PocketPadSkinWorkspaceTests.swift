@@ -30,6 +30,83 @@ final class PocketPadSkinWorkspaceTests: XCTestCase {
         XCTAssertTrue(workspace.sourceAssets.isEmpty)
     }
 
+    func testLegacyMaterialDecodesWithNilOptionalStateControls() throws {
+        let json = ##"{"id":"paper","name":"Paper","kind":"matte_rubber","baseColor":"#112233","foregroundColor":"#FFFFFF","depth":0.4,"gloss":0.1,"pressedScale":0.97}"##
+        let material = try JSONDecoder().decode(PocketPadSkinMaterialSpec.self, from: Data(json.utf8))
+
+        XCTAssertNil(material.joystickKnobColor)
+        XCTAssertNil(material.darkJoystickKnobColor)
+        XCTAssertNil(material.pressedFillColor)
+        XCTAssertNil(material.activeFillColor)
+        XCTAssertNil(material.disabledFillColor)
+        XCTAssertNil(material.shadowScale)
+        XCTAssertNil(material.activeStrokeWidth)
+        XCTAssertNil(material.disabledOpacity)
+    }
+
+    func testOptionalMaterialStateControlsRoundTrip() throws {
+        var material = PocketPadSkinMaterialSpec(
+            id: "paper",
+            name: "Paper",
+            kind: .matteRubber,
+            baseColor: "#112233",
+            foregroundColor: "#FFFFFF"
+        )
+        material.darkStrokeColor = "#778899"
+        material.joystickKnobColor = "#223344"
+        material.darkJoystickKnobColor = "#334455"
+        material.pressedFillColor = "#101820"
+        material.darkPressedFillColor = "#080C10"
+        material.activeFillColor = "#203040"
+        material.darkActiveFillColor = "#304050"
+        material.darkActiveColor = "#FFEEDD"
+        material.activeIndexColor = "#AABBCC"
+        material.darkActiveIndexColor = "#CCDDEE"
+        material.activeIndexWidth = 2
+        material.disabledFillColor = "#555555"
+        material.darkDisabledFillColor = "#333333"
+        material.disabledForegroundColor = "#F0F0F0"
+        material.darkDisabledForegroundColor = "#E0E0E0"
+        material.disabledStrokeColor = "#999999"
+        material.darkDisabledStrokeColor = "#BBBBBB"
+        material.shadowScale = 0.25
+        material.pressedShadowScale = 0.2
+        material.pressedInnerShadowScale = 0.1
+        material.activeStrokeWidth = 3
+        material.portraitActiveStrokeWidth = 4
+        material.landscapeActiveStrokeWidth = 2
+        material.disabledStrokeWidth = 2
+        material.disabledOpacity = 0.92
+
+        let data = try JSONEncoder().encode(material)
+        let decoded = try JSONDecoder().decode(PocketPadSkinMaterialSpec.self, from: data)
+        XCTAssertEqual(decoded, material)
+    }
+
+    func testSourceSchemaDeclaresStateControlsAsOptionalMaterialProperties() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let schemaURL = repository.appendingPathComponent("docs/skins/pocketpad-skin-source.schema.json")
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: schemaURL)) as? [String: Any]
+        )
+        let definitions = try XCTUnwrap(root["$defs"] as? [String: Any])
+        let material = try XCTUnwrap(definitions["material"] as? [String: Any])
+        let properties = try XCTUnwrap(material["properties"] as? [String: Any])
+        let required = Set((material["required"] as? [String]) ?? [])
+
+        for key in [
+            "joystickKnobColor", "darkJoystickKnobColor", "pressedFillColor",
+            "activeFillColor", "activeStrokeWidth", "portraitActiveStrokeWidth",
+            "landscapeActiveStrokeWidth", "activeIndexColor", "activeIndexWidth", "disabledFillColor",
+            "disabledStrokeColor", "disabledStrokeWidth", "disabledOpacity", "shadowScale"
+        ] {
+            XCTAssertNotNil(properties[key], key)
+            XCTAssertFalse(required.contains(key), key)
+        }
+    }
+
     func testCanonicalArtboardsHaveStableFramesRolesAndProfiles() throws {
         let artboards = PocketPadSkinArtboardCatalog.all
         XCTAssertGreaterThan(artboards.count, 10)

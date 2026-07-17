@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 874 402" width="874" height="402" role="img" aria-label="Tideglass Field landscape dark three-shelf lateral transect">
+  <defs>
+    <pattern id="mineral-grain-dark" width="19" height="19" patternUnits="userSpaceOnUse">
+      <circle cx="4" cy="5" r="0.5" fill="#74AAA4" fill-opacity="0.022"/>
+      <circle cx="14" cy="13" r="0.45" fill="#06181D" fill-opacity="0.024"/>
+    </pattern>
+  </defs>
+  <g id="canvas">
+    <rect width="874" height="402" fill="#06181D"/>
+  </g>
+
+  <g id="sampling-bridge-shadow" transform="translate(2 4)" fill="#020D10" opacity="0.50">
+    <path d="M292 88 H386 L397 76 V15 H475 L486 26 V76 L498 88 H627 L641 107 L626 334 L605 356 H326 L309 339 L294 317 Z"/>
+  </g>
+  <g id="sampling-bridge-mass">
+    <path d="M292 88 H386 L397 76 V15 H475 L486 26 V76 L498 88 H627 L641 107 L626 334 L605 356 H326 L309 339 L294 317 Z" fill="#2D6869"/>
+    <path d="M292 88 H386 L398 76 V16 H474" fill="none" stroke="#74AAA4" stroke-width="1.35" stroke-linecap="round"/>
+    <path d="M486 27 V77 L499 90 H625 L639 108 L624 333 L604 354 H327" fill="none" stroke="#031D22" stroke-width="1.9" stroke-linecap="round"/>
+  </g>
+
+  <g id="movement-shelf-shadow" transform="translate(2 4)" fill="#020D10" opacity="0.50">
+    <path d="M10 74 H327 L362 102 L355 307 L325 337 L286 347 H42 L18 335 L7 315 L12 96 Z"/>
+  </g>
+  <g id="movement-shelf-mass">
+    <path d="M10 74 H327 L362 102 L355 307 L325 337 L286 347 H42 L18 335 L7 315 L12 96 Z" fill="#245F61"/>
+    <path d="M11 74 H326 L360 102" fill="none" stroke="#74AAA4" stroke-width="1.35" stroke-linecap="round"/>
+    <path d="M360 105 L353 306 L324 335 L285 345 H43 L20 333 L9 314" fill="none" stroke="#031D22" stroke-width="1.9" stroke-linecap="round"/>
+    <path d="M10 74 H327 L362 102 L355 307 L325 337 L286 347 H42 L18 335 L7 315 L12 96 Z" fill="url(#mineral-grain-dark)"/>
+  </g>
+
+  <g id="action-shelf-shadow" transform="translate(2 4)" fill="#020D10" opacity="0.50">
+    <path d="M578 74 H846 L866 91 L858 278 L835 302 L792 325 H614 L584 304 L568 274 L573 105 Z"/>
+  </g>
+  <g id="action-shelf-mass">
+    <path d="M578 74 H846 L866 91 L858 278 L835 302 L792 325 H614 L584 304 L568 274 L573 105 Z" fill="#1D5155"/>
+    <path d="M579 74 H845 L864 92" fill="none" stroke="#74AAA4" stroke-width="1.35" stroke-linecap="round"/>
+    <path d="M864 95 L856 277 L834 300 L791 323 H615 L586 302" fill="none" stroke="#031D22" stroke-width="1.9" stroke-linecap="round"/>
+    <path d="M578 74 H846 L866 91 L858 278 L835 302 L792 325 H614 L584 304 L568 274 L573 105 Z" fill="url(#mineral-grain-dark)"/>
+  </g>
+
+  <g id="movement-well">
+    <path d="M24 119 L42 106 H253 L291 135 L287 310 L267 343 L42 344 L23 324 Z" fill="#052F35"/>
+    <path d="M25 120 L43 108 H252 L288 136" fill="none" stroke="#457A78" stroke-width="1.3" stroke-linecap="round"/>
+    <path d="M289 139 L285 309 L266 341 H43" fill="none" stroke="#020D10" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <g id="sampling-bridge-well">
+    <path d="M331 288 L548 289 L561 303 L551 347 L327 346 L319 330 Z" fill="#052F35"/>
+    <path d="M332 290 L547 291 L558 303" fill="none" stroke="#457A78" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M559 305 L549 345 L329 344" fill="none" stroke="#020D10" stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+  <g id="action-well">
+    <path d="M630 153 L798 154 L820 174 L814 272 L793 296 L638 294 L608 270 L611 180 Z" fill="#052F35"/>
+    <path d="M631 155 L797 156 L817 175" fill="none" stroke="#457A78" stroke-width="1.3" stroke-linecap="round"/>
+    <path d="M818 178 L812 271 L792 294 L639 292" fill="none" stroke="#020D10" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <g id="system-aperture">
+    <path d="M395 12 H478 L489 23 L487 70 L477 81 H397 L387 69 L388 23 Z" fill="#052F35"/>
+    <path d="M396 14 H477 L486 24" fill="none" stroke="#457A78" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M487 27 L485 69 L476 79 H398" fill="none" stroke="#020D10" stroke-width="1.7" stroke-linecap="round"/>
+  </g>
+
+  <g id="contour-etching" fill="none" stroke="#457A78" stroke-width="1.15" stroke-linecap="round" opacity="0.90">
+    <path d="M42 94 C121 84 206 97 284 91"/>
+    <path d="M332 118 C378 110 430 126 480 118 S548 112 579 120"/>
+    <path d="M331 148 C380 139 430 157 482 147 S548 141 576 149"/>
+    <path d="M330 178 C382 168 433 186 484 176 S548 170 574 178"/>
+    <path d="M329 208 C381 198 435 215 486 205 S548 199 572 207"/>
+    <path d="M328 238 C380 228 435 245 487 235 S547 229 570 237"/>
+    <path d="M327 267 C378 257 434 274 487 264 S546 258 569 266"/>
+  </g>
+  <g id="coral-datums" fill="none" stroke="#FF725E" stroke-width="2" stroke-linecap="round">
+    <path d="M829 174 V186"/>
+    <path d="M565 246 V258"/>
+    <path d="M315 307 H325"/>
+    <path d="M555 313 H566"/>
+  </g>
+  <g id="brass-soundings" fill="#D5AC5C">
+    <circle cx="349" cy="120" r="1.8"/>
+    <circle cx="552" cy="233" r="1.7"/>
+    <circle cx="327" cy="263" r="1.6"/>
+  </g>
+</svg>

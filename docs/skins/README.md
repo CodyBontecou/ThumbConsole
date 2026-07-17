@@ -27,7 +27,7 @@ Schemas:
 - [`pocketpad-skin.schema.json`](pocketpad-skin.schema.json)
 - [`pocketpad-skin-source.schema.json`](pocketpad-skin-source.schema.json)
 
-A minimal package source is in [`starter/`](starter/). The QA-passed handcrafted reference is [`examples/indigo-pocket/`](examples/indigo-pocket/).
+A minimal package source is in [`starter/`](starter/). The published handcrafted reference is [`examples/indigo-pocket/`](examples/indigo-pocket/). Additional QA-passed, human-approval-pending examples cover distinct structures: [`Solar Sumi`](examples/solar-sumi/) for arcade stick, [`Tideglass Field`](examples/tideglass-field/) for compact handheld, and [`Foldline Relay`](examples/foldline-relay/) for a one-handed productivity surface.
 
 ## Appearance cascade
 
@@ -69,6 +69,8 @@ thumbconsole skin preview ./IndigoPocket \
 ```
 
 `skin preview` uses the same SwiftUI control faces, fills, effects, labels, artwork layers, and state resolver as the app. Without `--contact-sheet`, a single request writes one PNG and a multi-request render writes a frame directory.
+
+Material tokens may opt into exact native state output while older schema-v1 sources retain their existing derived behavior. Optional fields include light/dark joystick puck colors; pressed, active, and disabled fills; active/disabled stroke widths; short non-enclosing active registration indices; disabled foreground and boundary colors; and compact shadow scales. Use these controls to make states materially distinct without drawing fake controls in SVG. Omitted fields preserve legacy deterministic package bytes; see the source schema for the complete contract.
 
 The strict quality gate checks source depth, role coverage, contrast, canonical alignment, safe areas, variant/state completeness, actual image dimensions, compatibility, and package budgets. It complements—rather than replaces—independent visual critique.
 

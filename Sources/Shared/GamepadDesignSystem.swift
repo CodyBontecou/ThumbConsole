@@ -325,6 +325,9 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
     public var bevelHighlightColor: GamepadRGBAColor?
     public var bevelShadowColor: GamepadRGBAColor?
     public var bevelWidth: CGFloat?
+    /// Optional short, non-enclosing state index rendered at the control's top edge.
+    public var indexColor: GamepadRGBAColor?
+    public var indexWidth: CGFloat?
     public var opacity: CGFloat?
     public var scale: CGFloat?
     public var blurRadius: CGFloat?
@@ -353,6 +356,8 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
         bevelHighlightColor: GamepadRGBAColor? = nil,
         bevelShadowColor: GamepadRGBAColor? = nil,
         bevelWidth: CGFloat? = nil,
+        indexColor: GamepadRGBAColor? = nil,
+        indexWidth: CGFloat? = nil,
         opacity: CGFloat? = nil,
         scale: CGFloat? = nil,
         blurRadius: CGFloat? = nil
@@ -380,6 +385,8 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
         self.bevelHighlightColor = bevelHighlightColor
         self.bevelShadowColor = bevelShadowColor
         self.bevelWidth = bevelWidth
+        self.indexColor = indexColor
+        self.indexWidth = indexWidth
         self.opacity = opacity
         self.scale = scale
         self.blurRadius = blurRadius
@@ -412,6 +419,8 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
             bevelHighlightColor: bevelHighlightColor?.normalized,
             bevelShadowColor: bevelShadowColor?.normalized,
             bevelWidth: bevelWidth.map { Self.clamp($0, lower: 0, upper: 24) },
+            indexColor: indexColor?.normalized,
+            indexWidth: indexWidth.map { Self.clamp($0, lower: 0, upper: 12) },
             opacity: opacity.map { Self.clamp($0, lower: 0, upper: 1) },
             scale: scale.map { Self.clamp($0, lower: 0.5, upper: 1.5) },
             blurRadius: blurRadius.map { Self.clamp($0, lower: 0, upper: 24) }
@@ -442,6 +451,8 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
             && bevelHighlightColor == nil
             && bevelShadowColor == nil
             && bevelWidth == nil
+            && indexColor == nil
+            && indexWidth == nil
             && opacity == nil
             && scale == nil
             && blurRadius == nil
@@ -472,6 +483,8 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
             bevelHighlightColor: bevelHighlightColor ?? base.bevelHighlightColor,
             bevelShadowColor: bevelShadowColor ?? base.bevelShadowColor,
             bevelWidth: bevelWidth ?? base.bevelWidth,
+            indexColor: indexColor ?? base.indexColor,
+            indexWidth: indexWidth ?? base.indexWidth,
             opacity: opacity ?? base.opacity,
             scale: scale ?? base.scale,
             blurRadius: blurRadius ?? base.blurRadius
@@ -1113,6 +1126,8 @@ public struct GamepadResolvedControlPresentation: Equatable, Sendable {
     public var bevelHighlightColor: GamepadRGBAColor?
     public var bevelShadowColor: GamepadRGBAColor?
     public var bevelWidth: CGFloat
+    public var indexColor: GamepadRGBAColor?
+    public var indexWidth: CGFloat
     public var opacity: CGFloat
     public var scale: CGFloat
     public var blurRadius: CGFloat
@@ -1144,6 +1159,8 @@ public struct GamepadResolvedControlPresentation: Equatable, Sendable {
         bevelHighlightColor: GamepadRGBAColor? = nil,
         bevelShadowColor: GamepadRGBAColor? = nil,
         bevelWidth: CGFloat = 0,
+        indexColor: GamepadRGBAColor? = nil,
+        indexWidth: CGFloat = 0,
         opacity: CGFloat = 1,
         scale: CGFloat = 1,
         blurRadius: CGFloat = 0,
@@ -1174,6 +1191,8 @@ public struct GamepadResolvedControlPresentation: Equatable, Sendable {
         self.bevelHighlightColor = bevelHighlightColor?.normalized
         self.bevelShadowColor = bevelShadowColor?.normalized
         self.bevelWidth = Self.clamp(bevelWidth, lower: 0, upper: 24)
+        self.indexColor = indexColor?.normalized
+        self.indexWidth = Self.clamp(indexWidth, lower: 0, upper: 12)
         self.opacity = Self.clamp(opacity, lower: 0, upper: 1)
         self.scale = Self.clamp(scale, lower: 0.5, upper: 1.5)
         self.blurRadius = Self.clamp(blurRadius, lower: 0, upper: 24)
@@ -1191,6 +1210,7 @@ public struct GamepadResolvedControlPresentation: Equatable, Sendable {
     public var highlightSwiftUIColor: Color? { highlightColor?.swiftUIColor }
     public var bevelHighlightSwiftUIColor: Color? { bevelHighlightColor?.swiftUIColor }
     public var bevelShadowSwiftUIColor: Color? { bevelShadowColor?.swiftUIColor }
+    public var indexSwiftUIColor: Color? { indexColor?.swiftUIColor }
 
     private static func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
         guard value.isFinite else { return lower }
@@ -2030,6 +2050,8 @@ private extension GamepadResolvedControlPresentation {
             if self.bevelWidth <= 0 { self.bevelWidth = 1 }
         }
         if let bevelWidth = stateStyle.bevelWidth { self.bevelWidth = bevelWidth }
+        if let indexColor = stateStyle.indexColor { self.indexColor = indexColor.normalized }
+        if let indexWidth = stateStyle.indexWidth { self.indexWidth = indexWidth }
         if let opacity = stateStyle.opacity { self.opacity = opacity }
         if let scale = stateStyle.scale { self.scale = scale }
         if let blurRadius = stateStyle.blurRadius { self.blurRadius = blurRadius }

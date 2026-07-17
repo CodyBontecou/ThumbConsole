@@ -1,0 +1,500 @@
+{
+  "schema": "com.codybontecou.pocketpad.skin-source",
+  "schemaVersion": 1,
+  "identifier": "com.codybontecou.pocketpad.tideglass-field",
+  "version": "1.0.0",
+  "name": "Tideglass Field",
+  "author": {
+    "name": "Cody Bontecou"
+  },
+  "summary": "An original hydrographic survey plate of connected frosted tideglass shelves, etched depth contours, coral datum notches, and sparse oxidized-brass soundings, separately composed as a landscape lateral transect and portrait vertical sounding.",
+  "license": "MIT",
+  "artboardID": "game-boy-v1",
+  "orientations": [
+    "landscape",
+    "portrait"
+  ],
+  "colorSchemes": [
+    "light",
+    "dark"
+  ],
+  "palette": [
+    {
+      "id": "canvas",
+      "light": "#E8F2EC",
+      "dark": "#06181D"
+    },
+    {
+      "id": "shell_glass",
+      "light": "#4B9691",
+      "dark": "#245F61"
+    },
+    {
+      "id": "shell_milk_edge",
+      "light": "#BDE0D4",
+      "dark": "#74AAA4"
+    },
+    {
+      "id": "well_abyss",
+      "light": "#083D43",
+      "dark": "#052F35"
+    },
+    {
+      "id": "movement_fill",
+      "light": "#0B4A50",
+      "dark": "#08393F"
+    },
+    {
+      "id": "action_fill",
+      "light": "#49363A",
+      "dark": "#403034"
+    },
+    {
+      "id": "utility_fill",
+      "light": "#164348",
+      "dark": "#0D3237"
+    },
+    {
+      "id": "legend_foam",
+      "light": "#F7F4E7",
+      "dark": "#F3F1DF"
+    },
+    {
+      "id": "signal_coral",
+      "light": "#FF725E",
+      "dark": "#FF725E"
+    },
+    {
+      "id": "control_boundary",
+      "light": "#A7D6CA",
+      "dark": "#A7D6CA"
+    },
+    {
+      "id": "oxidized_brass",
+      "light": "#A57A36",
+      "dark": "#D5AC5C"
+    },
+    {
+      "id": "contour_etch",
+      "light": "#9FC8BC",
+      "dark": "#457A78"
+    }
+  ],
+  "materials": [
+    {
+      "id": "frosted-shell",
+      "name": "Opaque Frosted Tideglass Shelf",
+      "kind": "opaque_plastic",
+      "baseColor": "#4B9691",
+      "darkBaseColor": "#245F61",
+      "foregroundColor": "#06181D",
+      "darkForegroundColor": "#F3F1DF",
+      "strokeColor": "#BDE0D4",
+      "highlightColor": "#BDE0D4",
+      "activeColor": "#FF8A76",
+      "shadowColor": "#052F35",
+      "depth": 0.44,
+      "gloss": 0.08,
+      "cornerRadius": 18,
+      "pressedScale": 0.97
+    },
+    {
+      "id": "abyss-inset",
+      "name": "Hard-Edged Abyss Survey Well",
+      "kind": "inset",
+      "baseColor": "#083D43",
+      "darkBaseColor": "#052F35",
+      "foregroundColor": "#F7F4E7",
+      "darkForegroundColor": "#F3F1DF",
+      "strokeColor": "#9FC8BC",
+      "highlightColor": "#74AAA4",
+      "activeColor": "#FF8A76",
+      "shadowColor": "#031D22",
+      "depth": 0.38,
+      "gloss": 0.02,
+      "cornerRadius": 16,
+      "pressedScale": 0.97
+    },
+    {
+      "id": "movement-elastomer",
+      "name": "Finely Abraded Teal Movement Elastomer with Continuous Survey Edge",
+      "kind": "matte_rubber",
+      "baseColor": "#0B4A50",
+      "darkBaseColor": "#08393F",
+      "foregroundColor": "#F7F4E7",
+      "darkForegroundColor": "#F3F1DF",
+      "strokeColor": "#A7D6CA",
+      "highlightColor": "#215D62",
+      "activeColor": "#FF725E",
+      "shadowColor": "#031D22",
+      "disabledFillColor": "#3D5A5B",
+      "darkDisabledFillColor": "#304B4D",
+      "disabledForegroundColor": "#F7F4E7",
+      "darkDisabledForegroundColor": "#F3F1DF",
+      "disabledStrokeColor": "#789B94",
+      "darkDisabledStrokeColor": "#8CAEA6",
+      "disabledStrokeWidth": 3.0,
+      "disabledOpacity": 0.98,
+      "depth": 0.64,
+      "gloss": 1.0,
+      "cornerRadius": 12,
+      "pressedScale": 0.97,
+      "hapticFeedback": {
+        "style": "rigid",
+        "pattern": "single",
+        "intensity": 0.52,
+        "sharpness": 0.76,
+        "duration": 0.06
+      }
+    },
+    {
+      "id": "action-resin",
+      "name": "Low-Sheen Tide-Polished Coral Action Resin",
+      "kind": "opaque_plastic",
+      "baseColor": "#49363A",
+      "darkBaseColor": "#403034",
+      "foregroundColor": "#F7F4E7",
+      "darkForegroundColor": "#F3F1DF",
+      "strokeColor": "#A7D6CA",
+      "highlightColor": "#6C2832",
+      "activeColor": "#FFB7A8",
+      "darkActiveColor": "#FFC2B5",
+      "shadowColor": "#24282A",
+      "activeFillColor": "#4B383C",
+      "darkActiveFillColor": "#423236",
+      "disabledFillColor": "#796466",
+      "darkDisabledFillColor": "#6C595B",
+      "disabledForegroundColor": "#F7F4E7",
+      "darkDisabledForegroundColor": "#F3F1DF",
+      "disabledStrokeColor": "#789B94",
+      "darkDisabledStrokeColor": "#8CAEA6",
+      "portraitActiveStrokeWidth": 7.0,
+      "landscapeActiveStrokeWidth": 4.5,
+      "disabledStrokeWidth": 3.0,
+      "disabledOpacity": 0.98,
+      "depth": 0.58,
+      "gloss": 1.0,
+      "cornerRadius": 18,
+      "pressedScale": 0.97,
+      "hapticFeedback": {
+        "style": "medium",
+        "pattern": "single",
+        "intensity": 0.62,
+        "sharpness": 0.50,
+        "duration": 0.06
+      }
+    },
+    {
+      "id": "utility-key",
+      "name": "Shallow Matte Tide-Gauge Utility Key",
+      "kind": "matte_rubber",
+      "baseColor": "#164348",
+      "darkBaseColor": "#0D3237",
+      "foregroundColor": "#F7F4E7",
+      "darkForegroundColor": "#F3F1DF",
+      "strokeColor": "#A7D6CA",
+      "highlightColor": "#2A6267",
+      "activeColor": "#FF725E",
+      "shadowColor": "#052F35",
+      "disabledFillColor": "#3D5A5B",
+      "darkDisabledFillColor": "#304B4D",
+      "disabledForegroundColor": "#F7F4E7",
+      "darkDisabledForegroundColor": "#F3F1DF",
+      "disabledStrokeColor": "#789B94",
+      "darkDisabledStrokeColor": "#8CAEA6",
+      "disabledStrokeWidth": 3.0,
+      "disabledOpacity": 0.98,
+      "depth": 0.34,
+      "gloss": 1.0,
+      "cornerRadius": 13,
+      "pressedScale": 0.97,
+      "hapticFeedback": {
+        "style": "light",
+        "pattern": "single",
+        "intensity": 0.40,
+        "sharpness": 0.60,
+        "duration": 0.05
+      }
+    },
+    {
+      "id": "menu-key",
+      "name": "Shallow Matte Sampling-Bridge Menu Key",
+      "kind": "matte_rubber",
+      "baseColor": "#164348",
+      "darkBaseColor": "#0D3237",
+      "foregroundColor": "#F7F4E7",
+      "darkForegroundColor": "#F3F1DF",
+      "strokeColor": "#A7D6CA",
+      "highlightColor": "#2A6267",
+      "activeColor": "#FF725E",
+      "shadowColor": "#052F35",
+      "disabledFillColor": "#3D5A5B",
+      "darkDisabledFillColor": "#304B4D",
+      "disabledForegroundColor": "#F7F4E7",
+      "darkDisabledForegroundColor": "#F3F1DF",
+      "disabledStrokeColor": "#789B94",
+      "darkDisabledStrokeColor": "#8CAEA6",
+      "disabledStrokeWidth": 3.0,
+      "disabledOpacity": 0.98,
+      "depth": 0.36,
+      "gloss": 1.0,
+      "cornerRadius": 12,
+      "pressedScale": 0.97,
+      "hapticFeedback": {
+        "style": "light",
+        "pattern": "single",
+        "intensity": 0.44,
+        "sharpness": 0.62,
+        "duration": 0.05
+      }
+    },
+    {
+      "id": "system-junction",
+      "name": "Isolated Matte Sounding Junction Key",
+      "kind": "matte_rubber",
+      "baseColor": "#164348",
+      "darkBaseColor": "#0D3237",
+      "foregroundColor": "#F7F4E7",
+      "darkForegroundColor": "#F3F1DF",
+      "strokeColor": "#A7D6CA",
+      "highlightColor": "#2A6267",
+      "activeColor": "#FF725E",
+      "shadowColor": "#052F35",
+      "disabledFillColor": "#3D5A5B",
+      "darkDisabledFillColor": "#304B4D",
+      "disabledForegroundColor": "#F7F4E7",
+      "darkDisabledForegroundColor": "#F3F1DF",
+      "disabledStrokeColor": "#789B94",
+      "darkDisabledStrokeColor": "#8CAEA6",
+      "disabledStrokeWidth": 3.0,
+      "disabledOpacity": 0.98,
+      "depth": 0.30,
+      "gloss": 1.0,
+      "cornerRadius": 11,
+      "pressedScale": 0.97
+    }
+  ],
+  "components": [
+    {
+      "id": "connected-tideglass-field",
+      "kind": "controller_shell",
+      "materialID": "frosted-shell",
+      "frame": {
+        "x": 0.005,
+        "y": 0.025,
+        "width": 0.99,
+        "height": 0.95
+      },
+      "shape": "polygon",
+      "zIndex": -100
+    },
+    {
+      "id": "landscape-movement-shelf",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "movement",
+      "frame": {
+        "x": 0.025,
+        "y": 0.255,
+        "width": 0.31,
+        "height": 0.61
+      },
+      "shape": "polygon",
+      "zIndex": -80
+    },
+    {
+      "id": "landscape-action-shelf",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "primary_action",
+      "frame": {
+        "x": 0.695,
+        "y": 0.375,
+        "width": 0.25,
+        "height": 0.37
+      },
+      "shape": "polygon",
+      "zIndex": -80
+    },
+    {
+      "id": "landscape-sampling-bridge",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "utility",
+      "frame": {
+        "x": 0.37,
+        "y": 0.71,
+        "width": 0.27,
+        "height": 0.18
+      },
+      "shape": "polygon",
+      "zIndex": -78
+    },
+    {
+      "id": "landscape-menu-bridge",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "menu",
+      "frame": {
+        "x": 0.50,
+        "y": 0.71,
+        "width": 0.16,
+        "height": 0.18
+      },
+      "shape": "polygon",
+      "zIndex": -77
+    },
+    {
+      "id": "portrait-action-shard",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "primary_action",
+      "frame": {
+        "x": 0.39,
+        "y": 0.065,
+        "width": 0.35,
+        "height": 0.24
+      },
+      "shape": "polygon",
+      "zIndex": -80
+    },
+    {
+      "id": "portrait-tide-gauge-rail",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "utility",
+      "frame": {
+        "x": 0.68,
+        "y": 0.39,
+        "width": 0.22,
+        "height": 0.23
+      },
+      "shape": "polygon",
+      "zIndex": -78
+    },
+    {
+      "id": "portrait-menu-rail",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "menu",
+      "frame": {
+        "x": 0.68,
+        "y": 0.39,
+        "width": 0.22,
+        "height": 0.11
+      },
+      "shape": "polygon",
+      "zIndex": -77
+    },
+    {
+      "id": "portrait-movement-delta",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "movement",
+      "frame": {
+        "x": 0.267,
+        "y": 0.667,
+        "width": 0.59,
+        "height": 0.31
+      },
+      "shape": "polygon",
+      "zIndex": -80
+    },
+    {
+      "id": "system-datum-aperture",
+      "kind": "control_well",
+      "materialID": "abyss-inset",
+      "role": "system",
+      "frame": {
+        "x": 0.39,
+        "y": 0.045,
+        "width": 0.22,
+        "height": 0.33
+      },
+      "shape": "polygon",
+      "zIndex": -76
+    }
+  ],
+  "assignments": [
+    {
+      "role": "movement",
+      "materialID": "movement-elastomer"
+    },
+    {
+      "role": "primary_action",
+      "materialID": "action-resin"
+    },
+    {
+      "role": "utility",
+      "materialID": "utility-key"
+    },
+    {
+      "role": "menu",
+      "materialID": "menu-key"
+    },
+    {
+      "role": "system",
+      "materialID": "system-junction"
+    }
+  ],
+  "sourceAssets": [
+    {
+      "id": "landscape-light-tideglass-field",
+      "path": "sources/artwork/landscape-light.svg",
+      "purpose": "canvas_artwork",
+      "outputWidth": 1748,
+      "outputHeight": 804,
+      "format": "png",
+      "orientation": "landscape",
+      "colorScheme": "light"
+    },
+    {
+      "id": "landscape-dark-tideglass-field",
+      "path": "sources/artwork/landscape-dark.svg",
+      "purpose": "canvas_artwork",
+      "outputWidth": 1748,
+      "outputHeight": 804,
+      "format": "png",
+      "orientation": "landscape",
+      "colorScheme": "dark"
+    },
+    {
+      "id": "portrait-light-tideglass-field",
+      "path": "sources/artwork/portrait-light.svg",
+      "purpose": "canvas_artwork",
+      "outputWidth": 804,
+      "outputHeight": 1748,
+      "format": "png",
+      "orientation": "portrait",
+      "colorScheme": "light"
+    },
+    {
+      "id": "portrait-dark-tideglass-field",
+      "path": "sources/artwork/portrait-dark.svg",
+      "purpose": "canvas_artwork",
+      "outputWidth": 804,
+      "outputHeight": 1748,
+      "format": "png",
+      "orientation": "portrait",
+      "colorScheme": "dark"
+    }
+  ],
+  "previews": [
+    { "id": "landscape-light-normal", "artboardID": "game-boy-v1", "orientation": "landscape", "colorScheme": "light", "state": "normal", "scale": 2 },
+    { "id": "landscape-light-pressed", "artboardID": "game-boy-v1", "orientation": "landscape", "colorScheme": "light", "state": "pressed", "scale": 2 },
+    { "id": "landscape-light-active", "artboardID": "game-boy-v1", "orientation": "landscape", "colorScheme": "light", "state": "active", "scale": 2 },
+    { "id": "landscape-light-disabled", "artboardID": "game-boy-v1", "orientation": "landscape", "colorScheme": "light", "state": "disabled", "scale": 2 },
+    { "id": "landscape-dark-normal", "artboardID": "game-boy-v1", "orientation": "landscape", "colorScheme": "dark", "state": "normal", "scale": 2 },
+    { "id": "landscape-dark-pressed", "artboardID": "game-boy-v1", "orientation": "landscape", "colorScheme": "dark", "state": "pressed", "scale": 2 },
+    { "id": "landscape-dark-active", "artboardID": "game-boy-v1", "orientation": "landscape", "colorScheme": "dark", "state": "active", "scale": 2 },
+    { "id": "landscape-dark-disabled", "artboardID": "game-boy-v1", "orientation": "landscape", "colorScheme": "dark", "state": "disabled", "scale": 2 },
+    { "id": "portrait-light-normal", "artboardID": "game-boy-v1", "orientation": "portrait", "colorScheme": "light", "state": "normal", "scale": 2 },
+    { "id": "portrait-light-pressed", "artboardID": "game-boy-v1", "orientation": "portrait", "colorScheme": "light", "state": "pressed", "scale": 2 },
+    { "id": "portrait-light-active", "artboardID": "game-boy-v1", "orientation": "portrait", "colorScheme": "light", "state": "active", "scale": 2 },
+    { "id": "portrait-light-disabled", "artboardID": "game-boy-v1", "orientation": "portrait", "colorScheme": "light", "state": "disabled", "scale": 2 },
+    { "id": "portrait-dark-normal", "artboardID": "game-boy-v1", "orientation": "portrait", "colorScheme": "dark", "state": "normal", "scale": 2 },
+    { "id": "portrait-dark-pressed", "artboardID": "game-boy-v1", "orientation": "portrait", "colorScheme": "dark", "state": "pressed", "scale": 2 },
+    { "id": "portrait-dark-active", "artboardID": "game-boy-v1", "orientation": "portrait", "colorScheme": "dark", "state": "active", "scale": 2 },
+    { "id": "portrait-dark-disabled", "artboardID": "game-boy-v1", "orientation": "portrait", "colorScheme": "dark", "state": "disabled", "scale": 2 }
+  ]
+}

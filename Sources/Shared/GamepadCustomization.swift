@@ -6161,6 +6161,7 @@ struct GamepadControlEffectOverlay<S: Shape>: View {
             highlightLayer
             bevelLayer
             innerShadowLayer
+            stateIndexLayer
         }
         .allowsHitTesting(false)
     }
@@ -6198,6 +6199,24 @@ struct GamepadControlEffectOverlay<S: Shape>: View {
                 .blur(radius: presentation.innerShadowRadius)
                 .offset(x: presentation.innerShadowX, y: presentation.innerShadowY)
                 .mask(shape)
+        }
+    }
+
+    @ViewBuilder
+    private var stateIndexLayer: some View {
+        if let color = presentation.indexSwiftUIColor, presentation.indexWidth > 0 {
+            GeometryReader { proxy in
+                Capsule(style: .continuous)
+                    .fill(color)
+                    .frame(
+                        width: max(8, min(proxy.size.width * 0.34, 18)),
+                        height: presentation.indexWidth
+                    )
+                    .position(
+                        x: proxy.size.width * 0.5,
+                        y: max(2, presentation.indexWidth)
+                    )
+            }
         }
     }
 
@@ -6679,10 +6698,7 @@ struct GamepadRenderedControlFace: View {
 
         if customization.showsButtonLabels && (presentation.icon?.placement != .center || control.label.count <= 2) {
             VStack(spacing: 1) {
-                Text(control.label)
-                    .geistTypography(control.label.count <= 2 ? .heading32 : .button16)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
+                nativeButtonLabel
                 if let visibleSecondaryBindingText {
                     secondaryBindingLabel(visibleSecondaryBindingText, color: presentation.foregroundSwiftUIColor)
                 }
@@ -6690,6 +6706,32 @@ struct GamepadRenderedControlFace: View {
             .foregroundStyle(presentation.foregroundSwiftUIColor)
             .padding(.horizontal, 4)
             .offset(labelOffset(for: presentation.icon?.placement))
+        }
+    }
+
+    @ViewBuilder
+    private var nativeButtonLabel: some View {
+        if control.label.count <= 2 {
+            Text(control.label)
+                .geistTypography(.heading32)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                Text(control.label)
+                    .geistTypography(.button16)
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(control.label)
+                    .geistTypography(.button14)
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(control.label)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .fontWidth(.condensed)
+                    .tracking(-0.35)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .lineLimit(1)
         }
     }
 

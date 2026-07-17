@@ -98,11 +98,39 @@ public struct PocketPadSkinMaterialSpec: Codable, Equatable, Identifiable, Senda
     public var foregroundColor: String
     public var darkForegroundColor: String?
     public var strokeColor: String?
+    public var darkStrokeColor: String?
     /// Surface highlight used for bevel and upper-left light response.
     public var highlightColor: String?
     /// Optional interaction accent used for the active state's crisp index stroke.
     public var activeColor: String?
+    public var darkActiveColor: String?
+    public var activeIndexColor: String?
+    public var darkActiveIndexColor: String?
+    public var activeIndexWidth: CGFloat?
     public var shadowColor: String?
+    /// Optional native joystick puck colors. These remain passive appearance values.
+    public var joystickKnobColor: String?
+    public var darkJoystickKnobColor: String?
+    /// Exact state colors opt a material into authored state output instead of derived color mixing.
+    public var pressedFillColor: String?
+    public var darkPressedFillColor: String?
+    public var activeFillColor: String?
+    public var darkActiveFillColor: String?
+    public var disabledFillColor: String?
+    public var darkDisabledFillColor: String?
+    public var disabledForegroundColor: String?
+    public var darkDisabledForegroundColor: String?
+    public var disabledStrokeColor: String?
+    public var darkDisabledStrokeColor: String?
+    /// Optional state geometry and depth controls. Missing values preserve legacy compilation.
+    public var shadowScale: CGFloat?
+    public var pressedShadowScale: CGFloat?
+    public var pressedInnerShadowScale: CGFloat?
+    public var activeStrokeWidth: CGFloat?
+    public var portraitActiveStrokeWidth: CGFloat?
+    public var landscapeActiveStrokeWidth: CGFloat?
+    public var disabledStrokeWidth: CGFloat?
+    public var disabledOpacity: CGFloat?
     public var depth: CGFloat
     public var gloss: CGFloat
     public var cornerRadius: CGFloat?
@@ -118,9 +146,34 @@ public struct PocketPadSkinMaterialSpec: Codable, Equatable, Identifiable, Senda
         foregroundColor: String,
         darkForegroundColor: String? = nil,
         strokeColor: String? = nil,
+        darkStrokeColor: String? = nil,
         highlightColor: String? = nil,
         activeColor: String? = nil,
+        darkActiveColor: String? = nil,
+        activeIndexColor: String? = nil,
+        darkActiveIndexColor: String? = nil,
+        activeIndexWidth: CGFloat? = nil,
         shadowColor: String? = nil,
+        joystickKnobColor: String? = nil,
+        darkJoystickKnobColor: String? = nil,
+        pressedFillColor: String? = nil,
+        darkPressedFillColor: String? = nil,
+        activeFillColor: String? = nil,
+        darkActiveFillColor: String? = nil,
+        disabledFillColor: String? = nil,
+        darkDisabledFillColor: String? = nil,
+        disabledForegroundColor: String? = nil,
+        darkDisabledForegroundColor: String? = nil,
+        disabledStrokeColor: String? = nil,
+        darkDisabledStrokeColor: String? = nil,
+        shadowScale: CGFloat? = nil,
+        pressedShadowScale: CGFloat? = nil,
+        pressedInnerShadowScale: CGFloat? = nil,
+        activeStrokeWidth: CGFloat? = nil,
+        portraitActiveStrokeWidth: CGFloat? = nil,
+        landscapeActiveStrokeWidth: CGFloat? = nil,
+        disabledStrokeWidth: CGFloat? = nil,
+        disabledOpacity: CGFloat? = nil,
         depth: CGFloat = 0.6,
         gloss: CGFloat = 0.35,
         cornerRadius: CGFloat? = nil,
@@ -135,9 +188,34 @@ public struct PocketPadSkinMaterialSpec: Codable, Equatable, Identifiable, Senda
         self.foregroundColor = foregroundColor
         self.darkForegroundColor = darkForegroundColor
         self.strokeColor = strokeColor
+        self.darkStrokeColor = darkStrokeColor
         self.highlightColor = highlightColor
         self.activeColor = activeColor
+        self.darkActiveColor = darkActiveColor
+        self.activeIndexColor = activeIndexColor
+        self.darkActiveIndexColor = darkActiveIndexColor
+        self.activeIndexWidth = activeIndexWidth
         self.shadowColor = shadowColor
+        self.joystickKnobColor = joystickKnobColor
+        self.darkJoystickKnobColor = darkJoystickKnobColor
+        self.pressedFillColor = pressedFillColor
+        self.darkPressedFillColor = darkPressedFillColor
+        self.activeFillColor = activeFillColor
+        self.darkActiveFillColor = darkActiveFillColor
+        self.disabledFillColor = disabledFillColor
+        self.darkDisabledFillColor = darkDisabledFillColor
+        self.disabledForegroundColor = disabledForegroundColor
+        self.darkDisabledForegroundColor = darkDisabledForegroundColor
+        self.disabledStrokeColor = disabledStrokeColor
+        self.darkDisabledStrokeColor = darkDisabledStrokeColor
+        self.shadowScale = shadowScale
+        self.pressedShadowScale = pressedShadowScale
+        self.pressedInnerShadowScale = pressedInnerShadowScale
+        self.activeStrokeWidth = activeStrokeWidth
+        self.portraitActiveStrokeWidth = portraitActiveStrokeWidth
+        self.landscapeActiveStrokeWidth = landscapeActiveStrokeWidth
+        self.disabledStrokeWidth = disabledStrokeWidth
+        self.disabledOpacity = disabledOpacity
         self.depth = depth
         self.gloss = gloss
         self.cornerRadius = cornerRadius
