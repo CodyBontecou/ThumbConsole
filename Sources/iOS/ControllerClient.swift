@@ -1721,20 +1721,39 @@ final class ControllerClient: ObservableObject {
     }
 
     private func applyGamepadProfileStateFromMac(_ message: ControllerMessage) {
-        if let packageData = message.skinPackages {
-            var installFailure: Error?
-            for data in packageData {
-                do {
-                    _ = try skinStore.install(data: data, policy: .allowDowngrade)
-                } catch {
-                    installFailure = error
-                }
+        installSyncedSkinPackages(message.skinPackages)
+        applyServerProfileMetadata(message)
+
+        let workspace = IncomingProfileReconciliationWorkspace(
+            message: message,
+            currentCustomization: gamepadCustomization,
+            pendingEdits: pendingKeypadLayoutEdits,
+            currentServerID: currentKeypadSyncServerID
+        )
+        guard workspace.hasProfiles else {
+            if let customization = workspace.incomingCustomization {
+                applyGamepadCustomizationFromMac(customization)
             }
-            reloadInstalledSkins()
-            if let installFailure {
-                lastError = "A synced skin could not be installed: \(installFailure.localizedDescription)"
-            }
+            return
         }
+        workspace.reconcile()
+        commitIncomingProfileState(workspace)
+    }
+
+    private func installSyncedSkinPackages(_ packageData: [Data]?) {
+        guard let packageData else { return }
+        var installFailure: Error?
+        for data in packageData {
+            do { _ = try skinStore.install(data: data, policy: .allowDowngrade) }
+            catch { installFailure = error }
+        }
+        reloadInstalledSkins()
+        if let installFailure {
+            lastError = "A synced skin could not be installed: \(installFailure.localizedDescription)"
+        }
+    }
+
+    private func applyServerProfileMetadata(_ message: ControllerMessage) {
         if let capabilities = message.capabilities {
             serverCapabilities = Set(capabilities)
         }
@@ -1743,53 +1762,112 @@ final class ControllerClient: ObservableObject {
             bindingPresentations = incomingPresentations
             KeypadBindingPresentationPersistence.save(incomingPresentations)
         }
+    }
 
-        guard let incomingProfiles = message.gamepadProfiles, !incomingProfiles.isEmpty else {
-            if let customization = message.gamepadCustomization {
-                applyGamepadCustomizationFromMac(customization)
-            }
-            return
+    private final class IncomingProfileReconciliationWorkspace {
+        private let incomingProfiles: [GamepadConfigurationProfile]
+        private let activeProfileID: UUID?
+        private let defaultProfileID: UUID?
+        private let fallbackCustomization: GamepadCustomization
+        private let pendingEdits: [PendingKeypadLayoutEdit]
+        private let authoritativeServerID: String?
+        let incomingCustomization: GamepadCustomization?
+        private(set) var normalizedState: GamepadConfigurationProfilePersistence.LoadedState?
+        private(set) var reconciliation: PendingKeypadLayoutReconciliation?
+        private(set) var reconciledState: GamepadConfigurationProfilePersistence.LoadedState?
+
+        var hasProfiles: Bool { !incomingProfiles.isEmpty }
+
+        init(
+            message: ControllerMessage,
+            currentCustomization: GamepadCustomization,
+            pendingEdits: [PendingKeypadLayoutEdit],
+            currentServerID: String?
+        ) {
+            incomingProfiles = message.gamepadProfiles ?? []
+            activeProfileID = message.gamepadProfileID
+            defaultProfileID = message.defaultGamepadProfileID
+            incomingCustomization = message.gamepadCustomization
+            fallbackCustomization = message.gamepadCustomization ?? currentCustomization
+            self.pendingEdits = pendingEdits
+            authoritativeServerID = message.serverID?.nilIfBlank ?? currentServerID
         }
 
-        let state = GamepadConfigurationProfilePersistence.normalizedState(
-            profiles: incomingProfiles,
-            activeProfileID: message.gamepadProfileID,
-            defaultProfileID: message.defaultGamepadProfileID,
-            fallbackCustomization: message.gamepadCustomization ?? gamepadCustomization
-        )
-        let authoritativeServerID = message.serverID?.nilIfBlank ?? currentKeypadSyncServerID
-        let reconciliation = PendingKeypadLayoutReconciler.reconcile(
-            incomingProfiles: state.profiles,
-            pendingEdits: pendingKeypadLayoutEdits,
-            authoritativeServerID: authoritativeServerID
-        )
-        let reconciledState = GamepadConfigurationProfilePersistence.normalizedState(
-            profiles: reconciliation.profiles,
-            activeProfileID: state.activeProfileID,
-            defaultProfileID: state.defaultProfileID,
-            fallbackCustomization: message.gamepadCustomization ?? gamepadCustomization
-        )
-        pendingKeypadLayoutEdits = reconciliation.remainingEdits
-        PendingKeypadLayoutPersistence.save(pendingKeypadLayoutEdits)
+        func reconcile() {
+            normalizeIncomingProfiles()
+            reconcilePendingEdits()
+            normalizeReconciledProfiles()
+        }
+
+        private func normalizeIncomingProfiles() {
+            normalizedState = GamepadConfigurationProfilePersistence.normalizedState(
+                profiles: incomingProfiles,
+                activeProfileID: activeProfileID,
+                defaultProfileID: defaultProfileID,
+                fallbackCustomization: fallbackCustomization
+            )
+        }
+
+        private func reconcilePendingEdits() {
+            guard let normalizedState else { return }
+            reconciliation = PendingKeypadLayoutReconciler.reconcile(
+                incomingProfiles: normalizedState.profiles,
+                pendingEdits: pendingEdits,
+                authoritativeServerID: authoritativeServerID
+            )
+        }
+
+        private func normalizeReconciledProfiles() {
+            guard let normalizedState, let reconciliation else { return }
+            reconciledState = GamepadConfigurationProfilePersistence.normalizedState(
+                profiles: reconciliation.profiles,
+                activeProfileID: normalizedState.activeProfileID,
+                defaultProfileID: normalizedState.defaultProfileID,
+                fallbackCustomization: fallbackCustomization
+            )
+        }
+    }
+
+    private func commitIncomingProfileState(
+        _ workspace: IncomingProfileReconciliationWorkspace
+    ) {
+        guard let reconciliation = workspace.reconciliation,
+              let reconciledState = workspace.reconciledState
+        else { return }
+        commitPendingKeypadEdits(reconciliation)
         gamepadProfiles = reconciledState.profiles
-        pendingSkinSelectionMutations.removeAll { mutation in
-            guard let profile = reconciledState.profiles.first(where: { $0.id == mutation.profileID }) else { return false }
-            return profile.skinReference == mutation.skinReference
-        }
-        persistPendingSkinSelectionMutations()
+        acknowledgeSyncedSkinSelections(in: reconciledState.profiles)
         selectedGamepadProfileID = reconciledState.activeProfileID
         defaultGamepadProfileID = reconciledState.defaultProfileID
         markSavedKeypadSnapshotAvailable()
-
-        if let activeProfile = reconciledState.activeProfile {
-            applyGamepadCustomizationFromMac(activeProfile.customization)
-        } else if let customization = message.gamepadCustomization {
-            applyGamepadCustomizationFromMac(customization)
-        }
-
+        applyActiveCustomization(from: reconciledState, fallback: workspace.incomingCustomization)
         persistGamepadProfiles()
         if isConnected, !reconciliation.editsToUpload.isEmpty {
             flushPendingKeypadLayoutEdits()
+        }
+    }
+
+    private func commitPendingKeypadEdits(_ reconciliation: PendingKeypadLayoutReconciliation) {
+        pendingKeypadLayoutEdits = reconciliation.remainingEdits
+        PendingKeypadLayoutPersistence.save(pendingKeypadLayoutEdits)
+    }
+
+    private func acknowledgeSyncedSkinSelections(in profiles: [GamepadConfigurationProfile]) {
+        pendingSkinSelectionMutations.removeAll { mutation in
+            guard let profile = profiles.first(where: { $0.id == mutation.profileID }) else { return false }
+            return profile.skinReference == mutation.skinReference
+        }
+        persistPendingSkinSelectionMutations()
+    }
+
+    private func applyActiveCustomization(
+        from state: GamepadConfigurationProfilePersistence.LoadedState,
+        fallback: GamepadCustomization?
+    ) {
+        if let activeProfile = state.activeProfile {
+            applyGamepadCustomizationFromMac(activeProfile.customization)
+        } else if let fallback {
+            applyGamepadCustomizationFromMac(fallback)
         }
     }
 
@@ -2025,64 +2103,80 @@ final class ControllerClient: ObservableObject {
     private func handleIncoming(_ data: Data, from messageConnection: NWConnection) {
         guard connection === messageConnection else { return }
         guard let decoded = try? ControllerWireCodec.decode(data, using: decoder) else { return }
+        if handlePairingMessage(decoded, from: messageConnection) { return }
+        if handleProfileStateMessage(decoded) { return }
+        _ = handleRuntimeMessage(decoded)
+    }
 
-        switch decoded.type {
+    @discardableResult
+    private func handlePairingMessage(
+        _ message: ControllerMessage,
+        from messageConnection: NWConnection
+    ) -> Bool {
+        switch message.type {
         case .pairingChallenge:
             lastError = nil
             state = .pairingCodeRequired
-            updateLastSentEvent(decoded.message ?? "pairing request accepted", immediately: true)
-
+            updateLastSentEvent(message.message ?? "pairing request accepted", immediately: true)
         case .pairingAccepted, .hello:
-            applyGamepadProfileStateFromMac(decoded)
+            applyGamepadProfileStateFromMac(message)
             finishPairing(
                 on: messageConnection,
-                message: decoded.message,
-                realtimeToken: decoded.realtimeToken,
-                authToken: decoded.authToken,
-                serverID: decoded.serverID,
-                inputProtocolVersion: decoded.inputProtocolVersion ?? 1
+                message: message.message,
+                realtimeToken: message.realtimeToken,
+                authToken: message.authToken,
+                serverID: message.serverID,
+                inputProtocolVersion: message.inputProtocolVersion ?? 1
             )
-
-        case .gamepadCustomization:
-            applyGamepadProfileStateFromMac(decoded)
-            if decoded.gamepadCustomization != nil {
-                updateLastSentEvent("keypad customization updated", immediately: true)
-            }
-
-        case .gamepadProfiles:
-            applyGamepadProfileStateFromMac(decoded)
-            updateLastSentEvent("keypad setups updated", immediately: true)
-
-        case .releaseAll:
-            _ = inputTransport.releaseAll(adoptingGeneration: decoded.inputGeneration)
-            updateLastSentEvent("release_all from Mac", immediately: true)
-
-        case .ping:
-            send(.init(type: .pong, timestamp: decoded.timestamp))
-
-        case .pong:
-            break
-
         case .error:
-            lastError = decoded.message ?? "Mac helper returned an error"
-            if decoded.message?.localizedCaseInsensitiveContains("Trusted pairing expired") == true {
+            lastError = message.message ?? "Mac helper returned an error"
+            if message.message?.localizedCaseInsensitiveContains("Trusted pairing expired") == true {
                 clearTrustedMacCredential()
             }
             state = .failed(lastError ?? "Unknown error")
             closeConnection(sendReleaseAll: false)
-
-        case .skinPackages:
-            applyGamepadProfileStateFromMac(decoded)
-
-        case .skinPackageRemoval:
-            break
-
-        case .gamepadProfileSelection, .gamepadProfileSkinSelection, .gamepadDefaultProfile, .gamepadProfileOrientationPreferenceMutation:
-            break
-
         default:
-            break
+            return false
         }
+        return true
+    }
+
+    @discardableResult
+    private func handleProfileStateMessage(_ message: ControllerMessage) -> Bool {
+        switch message.type {
+        case .gamepadCustomization:
+            applyGamepadProfileStateFromMac(message)
+            if message.gamepadCustomization != nil {
+                updateLastSentEvent("keypad customization updated", immediately: true)
+            }
+        case .gamepadProfiles:
+            applyGamepadProfileStateFromMac(message)
+            updateLastSentEvent("keypad setups updated", immediately: true)
+        case .skinPackages:
+            applyGamepadProfileStateFromMac(message)
+        case .skinPackageRemoval, .gamepadProfileSelection, .gamepadProfileSkinSelection,
+             .gamepadDefaultProfile, .gamepadProfileOrientationPreferenceMutation:
+            break
+        default:
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    private func handleRuntimeMessage(_ message: ControllerMessage) -> Bool {
+        switch message.type {
+        case .releaseAll:
+            _ = inputTransport.releaseAll(adoptingGeneration: message.inputGeneration)
+            updateLastSentEvent("release_all from Mac", immediately: true)
+        case .ping:
+            send(.init(type: .pong, timestamp: message.timestamp))
+        case .pong:
+            break
+        default:
+            return false
+        }
+        return true
     }
 
     private func finishPairing(

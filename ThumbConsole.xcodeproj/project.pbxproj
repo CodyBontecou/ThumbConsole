@@ -161,6 +161,7 @@
 		B8086A8878791C86C6B96B07 /* GamepadLayoutQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20DEA14A7D4521777C3CD5B /* GamepadLayoutQuality.swift */; };
 		B818E7427A429E5C4AE06BCA /* GeistDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = E741D6068E1FA93702F6CFB5 /* GeistDesign.swift */; };
 		BBDDD3C0131BDE0488722FB9 /* PocketPadSkinQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BD0B354257BECCDDCE6F16 /* PocketPadSkinQuality.swift */; };
+		BCFCF199B857FE74DC38441B /* StackSafetyRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40EB70D602DAE44E6592B45F /* StackSafetyRegressionTests.swift */; };
 		BDE1E56F0CD46B57A970442B /* GamepadOutputTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962587D02BDBA3EF4956E2D2 /* GamepadOutputTypes.swift */; };
 		C1C900D4F76C7B4F9CB631D2 /* KeypadBindingPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7BCDFDB0FA9841E273F88C /* KeypadBindingPresentation.swift */; };
 		C73A9547AF1D8363B7645700 /* GamepadLayoutQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20DEA14A7D4521777C3CD5B /* GamepadLayoutQuality.swift */; };
@@ -248,6 +249,7 @@
 		363BC8130F54CE2361941597 /* PocketPadNativeSkinPreviewRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadNativeSkinPreviewRendererTests.swift; sourceTree = "<group>"; };
 		38A67F82F9E44E453E0F527F /* GamepadSharedOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamepadSharedOperations.swift; sourceTree = "<group>"; };
 		40296AF12F57B261D7AE5766 /* PocketPadSkinCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadSkinCompatibility.swift; sourceTree = "<group>"; };
+		40EB70D602DAE44E6592B45F /* StackSafetyRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackSafetyRegressionTests.swift; sourceTree = "<group>"; };
 		422B84A7E525126E458BB71E /* ThumbPlacementCalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbPlacementCalibrationView.swift; sourceTree = "<group>"; };
 		4371E8F57E3EEB0223AB6104 /* PocketPadSkinStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketPadSkinStore.swift; sourceTree = "<group>"; };
 		43ACCA9BA9875BEDFDE5AB69 /* PairingPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPayload.swift; sourceTree = "<group>"; };
@@ -366,6 +368,7 @@
 				B9527A0DC9FCFCC5477381FF /* PocketPadSkinResolverTests.swift */,
 				45DB9D2B248158AA0B61059A /* PocketPadSkinStoreTests.swift */,
 				02B11AC0E70B340D3F4B11FE /* PocketPadSkinWorkspaceTests.swift */,
+				40EB70D602DAE44E6592B45F /* StackSafetyRegressionTests.swift */,
 				44597CCB55B17A782B892464 /* ThumbConsoleCLISmokeTestSuite.swift */,
 				5767860F14CAA192A4888C15 /* TopBarActivationRegionTests.swift */,
 			);
@@ -509,6 +512,7 @@
 				52354456F0290BFF4A0F0542 /* Resources */,
 				A9503F2A5D4215FF0FD9DD90 /* Frameworks */,
 				B84D2347087E6C44C55B7B5F /* Enforce Controller Stack Budget */,
+				26A0F8DC3175D1F44D1A9528 /* Enforce iOS Runtime Stack Budget */,
 			);
 			buildRules = (
 			);
@@ -567,6 +571,7 @@
 				C68FBA3443B930174F4DD1A6 /* Sources */,
 				9865589AF470D734EB449FEB /* Resources */,
 				ED927D5A80B185F86B34E123 /* Frameworks */,
+				1E41B63931D466160A8676B0 /* Enforce Pairing Stack Budget */,
 			);
 			buildRules = (
 			);
@@ -676,6 +681,44 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		1E41B63931D466160A8676B0 /* Enforce Pairing Stack Budget */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Enforce Pairing Stack Budget";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  python3 \"$SRCROOT/scripts/check-controller-stack-frames.py\" \\\n    --scope mac-network \\\n    --object-root \"${OBJECT_FILE_DIR_normal:-$OBJECT_FILE_DIR}\"\nfi\n";
+		};
+		26A0F8DC3175D1F44D1A9528 /* Enforce iOS Runtime Stack Budget */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Enforce iOS Runtime Stack Budget";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  python3 \"$SRCROOT/scripts/check-controller-stack-frames.py\" \\\n    --scope ios-runtime \\\n    --object-root \"${OBJECT_FILE_DIR_normal:-$OBJECT_FILE_DIR}\"\nfi\n";
+		};
 		B84D2347087E6C44C55B7B5F /* Enforce Controller Stack Budget */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -693,7 +736,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  python3 \"$SRCROOT/scripts/check-controller-stack-frames.py\" \\\n    --object-root \"${OBJECT_FILE_DIR_normal:-$OBJECT_FILE_DIR}\"\nfi\n";
+			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  python3 \"$SRCROOT/scripts/check-controller-stack-frames.py\" \\\n    --scope controller \\\n    --object-root \"${OBJECT_FILE_DIR_normal:-$OBJECT_FILE_DIR}\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -795,6 +838,7 @@
 				5CC6E1C94C0299244547D90A /* PocketPadSkinWorkspaceTests.swift in Sources */,
 				CF7C5B603E456720F6F643BC /* PocketPadVectorCompiler.swift in Sources */,
 				CEA45BD1F7E2AF870BB0D3F2 /* ProfileOrientationSupport.swift in Sources */,
+				BCFCF199B857FE74DC38441B /* StackSafetyRegressionTests.swift in Sources */,
 				8A44E603A7EF0FC1769224F8 /* ThumbConsoleCLISmokeTestSuite.swift in Sources */,
 				40924B405E2F830CC6D676E2 /* ThumbConsoleInputLatencySimulation.swift in Sources */,
 				7BF8245DA91DA068B769D578 /* TopBarActivationRegionTests.swift in Sources */,
@@ -1064,6 +1108,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 67KC823C9A;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Resources/Mac/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1183,6 +1228,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 67KC823C9A;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Resources/Mac/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

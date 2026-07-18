@@ -27,7 +27,7 @@ Schemas:
 - [`pocketpad-skin.schema.json`](pocketpad-skin.schema.json)
 - [`pocketpad-skin-source.schema.json`](pocketpad-skin-source.schema.json)
 
-A minimal package source is in [`starter/`](starter/). The published handcrafted reference is [`examples/indigo-pocket/`](examples/indigo-pocket/). Additional QA-passed, human-approval-pending examples cover distinct structures: [`Solar Sumi`](examples/solar-sumi/) for arcade stick, [`Tideglass Field`](examples/tideglass-field/) for compact handheld, and [`Foldline Relay`](examples/foldline-relay/) for a one-handed productivity surface.
+A minimal package source is in [`starter/`](starter/). Published handcrafted examples cover distinct structures: [`Indigo Pocket`](examples/indigo-pocket/) for a showcase controller, [`Solar Sumi`](examples/solar-sumi/) for arcade stick, [`Tideglass Field`](examples/tideglass-field/) for compact handheld, and [`Foldline Relay`](examples/foldline-relay/) for a one-handed productivity surface.
 
 ## Appearance cascade
 

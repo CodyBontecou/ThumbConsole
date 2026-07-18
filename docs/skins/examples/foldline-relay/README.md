@@ -9,9 +9,9 @@ Foldline Relay treats the canvas as an editorial dispatch sheet. Its asymmetric 
 - `skin-source.json` — identity, palette/material/component tokens, role assignments, and all 16 preview requests.
 - `sources/artwork/landscape-*.svg` — light/dark low dispatch packet compositions.
 - `sources/artwork/portrait-*.svg` — light/dark tall docket compositions.
-- `reviews/` — art direction, versioned native contact sheets, and the pending human gate.
+- `reviews/` — art direction, versioned native contact sheets, QA, and human approval.
 - `build/` — generated working output; do not edit by hand.
-- `dist/foldline-relay-1.0.0.pocketpad` — exact QA-passed package awaiting human approval.
+- `dist/foldline-relay-1.0.0.pocketpad` — exact human-approved package.
 
 ```bash
 thumbconsole skin compile . -o build/foldline-relay-1.0.0.pocketpad --clean --strict
@@ -23,4 +23,4 @@ thumbconsole skin preview . -o reviews/contact-sheet-4.png \
 
 Final independent evidence is `reviews/contact-sheet-4.png`; `reviews/critique-4.md` is `visual-pass` and `reviews/qa-report.md` is `qa-pass`. Package SHA-256: `d04c121e9b0a4ac9a7f99ff61e13b9e6eb0798373b290b672c49bff877c7deaf`.
 
-Human approval remains pending until a person reviews that exact contact sheet and package SHA-256.
+Cody Bontecou approved the exact contact sheet and package SHA-256 in `reviews/human-approval.json` on 2026-07-17; the package is published through the reviewed website directory.

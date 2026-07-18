@@ -2245,34 +2245,49 @@ final class MacControllerServer: ObservableObject {
     private func receivePotentialReplacementHelloOnNetworkQueue(from candidateConnection: NWConnection) {
         candidateConnection.receiveMessage { [weak self, weak candidateConnection] data, _, _, error in
             guard let self, let candidateConnection else { return }
-            self.asyncOnNetworkQueue {
-                if let error {
-                    self.logDebug("candidate_connection_receive_failed error=\(error.localizedDescription)")
-                    candidateConnection.cancel()
-                    return
-                }
-                guard let data,
-                      !data.isEmpty,
-                      let message = try? ControllerWireCodec.decode(data, using: self.decoder)
-                else {
-                    self.rejectAdditionalClientOnNetworkQueue(candidateConnection)
-                    return
-                }
-
-                let mayReplace = ControllerConnectionAdmissionPolicy.permitsActiveClientReplacement(
-                    activeAuthToken: self.pairedAuthToken,
-                    incomingAuthToken: self.normalizedAuthToken(message.authToken)
+            // Force parsing onto a fresh serial-queue turn so no Network.framework
+            // callback frames remain beneath the Debug Codable path.
+            self.networkQueue.async { [weak self, candidateConnection] in
+                guard let self else { return }
+                self.handlePotentialReplacementHelloOnNetworkQueue(
+                    data: data,
+                    error: error,
+                    from: candidateConnection
                 )
-                if self.pairedConnection == nil || mayReplace {
-                    self.activateConnectionOnNetworkQueue(
-                        candidateConnection,
-                        startConnection: false,
-                        initialMessage: message
-                    )
-                } else {
-                    self.rejectAdditionalClientOnNetworkQueue(candidateConnection)
-                }
             }
+        }
+    }
+
+    private func handlePotentialReplacementHelloOnNetworkQueue(
+        data: Data?,
+        error: NWError?,
+        from candidateConnection: NWConnection
+    ) {
+        if let error {
+            logDebug("candidate_connection_receive_failed error=\(error.localizedDescription)")
+            candidateConnection.cancel()
+            return
+        }
+        guard let data,
+              !data.isEmpty,
+              let message = try? ControllerWireCodec.decode(data, using: decoder)
+        else {
+            rejectAdditionalClientOnNetworkQueue(candidateConnection)
+            return
+        }
+
+        let mayReplace = ControllerConnectionAdmissionPolicy.permitsActiveClientReplacement(
+            activeAuthToken: pairedAuthToken,
+            incomingAuthToken: normalizedAuthToken(message.authToken)
+        )
+        if pairedConnection == nil || mayReplace {
+            activateConnectionOnNetworkQueue(
+                candidateConnection,
+                startConnection: false,
+                initialMessage: message
+            )
+        } else {
+            rejectAdditionalClientOnNetworkQueue(candidateConnection)
         }
     }
 
@@ -2358,12 +2373,18 @@ final class MacControllerServer: ObservableObject {
                 return
             }
 
-            if let data, !data.isEmpty {
-                self.handleReceivedDataOnNetworkQueue(data, from: connection)
-            }
-
-            if self.realtimeConnection === connection {
-                self.receiveNext(on: connection)
+            // The connection itself is scheduled on networkQueue, so this callback
+            // normally runs there. Always enqueue the decode explicitly: the fresh
+            // turn sheds Network.framework callback frames while retaining FIFO by
+            // registering the next receive only after this message is processed.
+            self.networkQueue.async { [weak self, weak connection] in
+                guard let self, let connection else { return }
+                if let data, !data.isEmpty {
+                    self.handleReceivedDataOnNetworkQueue(data, from: connection)
+                }
+                if self.realtimeConnection === connection {
+                    self.receiveNext(on: connection)
+                }
             }
         }
     }
@@ -2597,199 +2618,216 @@ final class MacControllerServer: ObservableObject {
             publishClientActivity(from: connection, force: message.type != .button && message.type != .elementInput && message.type != .pointer)
         }
 
+        if handleConnectionMessageOnNetworkQueue(message, from: connection, isPaired: isPairedConnection) { return }
+        if handleRealtimeInputMessageOnNetworkQueue(message, isPaired: isPairedConnection) { return }
+        if handleProfileMessageOnNetworkQueue(message, from: connection, isPaired: isPairedConnection) { return }
+        _ = handleSkinMessageOnNetworkQueue(message, isPaired: isPairedConnection)
+    }
+
+    @discardableResult
+    private func handleConnectionMessageOnNetworkQueue(
+        _ message: ControllerMessage,
+        from connection: NWConnection,
+        isPaired: Bool
+    ) -> Bool {
         switch message.type {
         case .pairingRequest:
             handlePairingRequestOnNetworkQueue(message, from: connection)
-
         case .hello:
-            if let authToken = normalizedAuthToken(message.authToken) {
-                guard message.serverID == nil || message.serverID == serverID else {
-                    rejectPairingOnNetworkQueue(connection, reason: "This iPhone is trusted for a different Mac")
-                    return
-                }
-                guard trustedClients[authToken] != nil else {
-                    rejectPairingOnNetworkQueue(connection, reason: "Trusted pairing expired. Scan the Mac QR code once to reconnect.")
-                    return
-                }
-                acceptPairedClientOnNetworkQueue(
-                    message.clientName,
-                    from: connection,
-                    authToken: authToken,
-                    isTrustedReconnect: true,
-                    clientDeviceInfo: message.clientDeviceInfo
-                )
-                return
-            }
-
-            guard let submittedCode = normalizedPairingCode(message.pairingCode) else {
-                handlePairingRequestOnNetworkQueue(message, from: connection)
-                return
-            }
-            guard submittedCode == activePairingCode else {
-                rejectPairingOnNetworkQueue(connection, reason: "Wrong pairing code")
-                return
-            }
-            acceptPairedClientOnNetworkQueue(message.clientName, from: connection, clientDeviceInfo: message.clientDeviceInfo)
-
-        case .button:
-            guard isPairedConnection else {
-                logDebug("ignored_unpaired_message type=button")
-                return
-            }
-            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
-            handleButtonMessageOnNetworkQueue(message, source: "iPhone")
-
-        case .elementInput:
-            guard isPairedConnection else {
-                logDebug("ignored_unpaired_message type=element_input")
-                return
-            }
-            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
-            handleElementInputMessageOnNetworkQueue(message, source: "iPhone")
-
-        case .pointer:
-            guard isPairedConnection else {
-                logDebug("ignored_unpaired_message type=pointer")
-                return
-            }
-            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
-            handlePointerMessageOnNetworkQueue(message, source: "iPhone")
-
-        case .gamepadAnalog:
-            guard isPairedConnection else {
-                logDebug("ignored_unpaired_message type=gamepad_analog")
-                return
-            }
-            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
-            handleGamepadAnalogMessageOnNetworkQueue(message, source: "iPhone")
-
-        case .releaseAll:
-            guard isPairedConnection else { return }
-            handleRemoteReleaseAllOnNetworkQueue(message, source: "iPhone")
-
-        case .heartbeat:
-            guard isPairedConnection else { return }
-            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return }
-
+            handleHelloOnNetworkQueue(message, from: connection)
         case .ping:
-            guard isPairedConnection else { return }
-            send(.init(type: .pong, timestamp: message.timestamp), on: connection)
-
+            if isPaired { send(.init(type: .pong, timestamp: message.timestamp), on: connection) }
         case .pong:
-            guard isPairedConnection else { return }
-            if let latency = roundTripLatencyMilliseconds(from: message.timestamp) {
+            if isPaired, let latency = roundTripLatencyMilliseconds(from: message.timestamp) {
                 publishEstimatedLatency(latency, from: connection)
             }
+        case .error:
+            publishControllerDebug(event: message.message ?? "Client error", immediately: true)
+        case .pairingChallenge, .pairingAccepted:
+            break
+        default:
+            return false
+        }
+        return true
+    }
 
-        case .gamepadCustomization:
-            guard isPairedConnection else { return }
-            guard let clientCustomization = message.gamepadCustomization else {
-                sendGamepadCustomizationOnNetworkQueue(realtimeGamepadCustomization)
+    private func handleHelloOnNetworkQueue(_ message: ControllerMessage, from connection: NWConnection) {
+        if let authToken = normalizedAuthToken(message.authToken) {
+            guard message.serverID == nil || message.serverID == serverID else {
+                rejectPairingOnNetworkQueue(connection, reason: "This iPhone is trusted for a different Mac")
                 return
             }
-            let profileID = message.gamepadProfileID
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if let profileID {
-                    self.setGamepadCustomization(clientCustomization, forProfileID: profileID)
-                } else {
-                    self.setGamepadCustomization(clientCustomization)
-                }
-                self.lastReceivedEvent = "Updated keypad layout from iPhone"
-                self.publishRuntimeStatus()
+            guard trustedClients[authToken] != nil else {
+                rejectPairingOnNetworkQueue(connection, reason: "Trusted pairing expired. Scan the Mac QR code once to reconnect.")
+                return
             }
-            logDebug("gamepad_customization_updated source=iphone profile=\(profileID?.uuidString ?? "active")")
+            acceptPairedClientOnNetworkQueue(
+                message.clientName,
+                from: connection,
+                authToken: authToken,
+                isTrustedReconnect: true,
+                clientDeviceInfo: message.clientDeviceInfo
+            )
+            return
+        }
 
+        guard let submittedCode = normalizedPairingCode(message.pairingCode) else {
+            handlePairingRequestOnNetworkQueue(message, from: connection)
+            return
+        }
+        guard submittedCode == activePairingCode else {
+            rejectPairingOnNetworkQueue(connection, reason: "Wrong pairing code")
+            return
+        }
+        acceptPairedClientOnNetworkQueue(message.clientName, from: connection, clientDeviceInfo: message.clientDeviceInfo)
+    }
+
+    @discardableResult
+    private func handleRealtimeInputMessageOnNetworkQueue(
+        _ message: ControllerMessage,
+        isPaired: Bool
+    ) -> Bool {
+        switch message.type {
+        case .button:
+            guard isPaired else { logDebug("ignored_unpaired_message type=button"); return true }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return true }
+            handleButtonMessageOnNetworkQueue(message, source: "iPhone")
+        case .elementInput:
+            guard isPaired else { logDebug("ignored_unpaired_message type=element_input"); return true }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return true }
+            handleElementInputMessageOnNetworkQueue(message, source: "iPhone")
+        case .pointer:
+            guard isPaired else { logDebug("ignored_unpaired_message type=pointer"); return true }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return true }
+            handlePointerMessageOnNetworkQueue(message, source: "iPhone")
+        case .gamepadAnalog:
+            guard isPaired else { logDebug("ignored_unpaired_message type=gamepad_analog"); return true }
+            guard acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") != .rejected else { return true }
+            handleGamepadAnalogMessageOnNetworkQueue(message, source: "iPhone")
+        case .releaseAll:
+            if isPaired { handleRemoteReleaseAllOnNetworkQueue(message, source: "iPhone") }
+        case .heartbeat:
+            if isPaired { _ = acceptInputGenerationOnNetworkQueue(for: message, source: "iPhone") }
+        default:
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    private func handleProfileMessageOnNetworkQueue(
+        _ message: ControllerMessage,
+        from connection: NWConnection,
+        isPaired: Bool
+    ) -> Bool {
+        switch message.type {
+        case .gamepadCustomization:
+            guard isPaired else { return true }
+            handleClientCustomizationOnNetworkQueue(message)
         case .gamepadProfileSelection:
-            guard isPairedConnection, let profileID = message.gamepadProfileID else { return }
-            DispatchQueue.main.async { [weak self] in
-                self?.selectGamepadProfile(profileID, source: "iphone")
-            }
-
+            guard isPaired, let profileID = message.gamepadProfileID else { return true }
+            DispatchQueue.main.async { [weak self] in self?.selectGamepadProfile(profileID, source: "iphone") }
         case .gamepadDefaultProfile:
-            guard isPairedConnection, let profileID = message.defaultGamepadProfileID ?? message.gamepadProfileID else { return }
-            DispatchQueue.main.async { [weak self] in
-                self?.setDefaultGamepadProfile(profileID, source: "iphone")
-            }
-
+            guard isPaired, let profileID = message.defaultGamepadProfileID ?? message.gamepadProfileID else { return true }
+            DispatchQueue.main.async { [weak self] in self?.setDefaultGamepadProfile(profileID, source: "iphone") }
         case .gamepadProfileOrientationPreferenceMutation:
-            switch ControllerProfileOrientationMutationRouter.route(
-                message: message,
-                isAuthenticated: isPairedConnection,
-                advertisedCapabilities: Self.advertisedCapabilities
-            ) {
-            case .accept(let profileID, let preference):
-                DispatchQueue.main.async { [weak self] in
-                    self?.setGamepadProfileOrientationPreference(preference, profileID: profileID, source: "iphone")
-                }
-            case .rejectMalformed:
-                send(.init(type: .error, message: "Invalid profile orientation preference mutation"), on: connection)
-            case .rejectUnauthenticated, .rejectUnsupportedCapability:
-                logDebug("ignored_profile_orientation_mutation reason=unauthorized_or_unsupported")
-            }
-
+            handleProfileOrientationMutationOnNetworkQueue(message, from: connection, isPaired: isPaired)
         case .launchProfileTarget:
-            guard isPairedConnection else { return }
+            guard isPaired else { return true }
             let profileID = message.gamepadProfileID
-            DispatchQueue.main.async { [weak self] in
-                self?.launchAttachedApplication(for: profileID, source: "iphone")
-            }
+            DispatchQueue.main.async { [weak self] in self?.launchAttachedApplication(for: profileID, source: "iphone") }
+        case .gamepadProfiles:
+            if isPaired { sendGamepadProfileStateOnNetworkQueue() }
+        default:
+            return false
+        }
+        return true
+    }
 
+    private func handleClientCustomizationOnNetworkQueue(_ message: ControllerMessage) {
+        guard let clientCustomization = message.gamepadCustomization else {
+            sendGamepadCustomizationOnNetworkQueue(realtimeGamepadCustomization)
+            return
+        }
+        let profileID = message.gamepadProfileID
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let profileID {
+                self.setGamepadCustomization(clientCustomization, forProfileID: profileID)
+            } else {
+                self.setGamepadCustomization(clientCustomization)
+            }
+            self.lastReceivedEvent = "Updated keypad layout from iPhone"
+            self.publishRuntimeStatus()
+        }
+        logDebug("gamepad_customization_updated source=iphone profile=\(profileID?.uuidString ?? "active")")
+    }
+
+    private func handleProfileOrientationMutationOnNetworkQueue(
+        _ message: ControllerMessage,
+        from connection: NWConnection,
+        isPaired: Bool
+    ) {
+        switch ControllerProfileOrientationMutationRouter.route(
+            message: message,
+            isAuthenticated: isPaired,
+            advertisedCapabilities: Self.advertisedCapabilities
+        ) {
+        case .accept(let profileID, let preference):
+            DispatchQueue.main.async { [weak self] in
+                self?.setGamepadProfileOrientationPreference(preference, profileID: profileID, source: "iphone")
+            }
+        case .rejectMalformed:
+            send(.init(type: .error, message: "Invalid profile orientation preference mutation"), on: connection)
+        case .rejectUnauthenticated, .rejectUnsupportedCapability:
+            logDebug("ignored_profile_orientation_mutation reason=unauthorized_or_unsupported")
+        }
+    }
+
+    @discardableResult
+    private func handleSkinMessageOnNetworkQueue(
+        _ message: ControllerMessage,
+        isPaired: Bool
+    ) -> Bool {
+        switch message.type {
         case .skinPackages:
-            guard isPairedConnection, let packages = message.skinPackages else { return }
+            guard isPaired, let packages = message.skinPackages else { return true }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 for data in packages {
-                    do {
-                        _ = try self.installSkinPackage(data: data, policy: .replaceSameVersion)
-                    } catch {
-                        self.lastReceivedEvent = "Skin import failed: \(error.localizedDescription)"
-                    }
+                    do { _ = try self.installSkinPackage(data: data, policy: .replaceSameVersion) }
+                    catch { self.lastReceivedEvent = "Skin import failed: \(error.localizedDescription)" }
                 }
                 self.publishRuntimeStatus()
             }
-
         case .skinPackageRemoval:
-            guard isPairedConnection, let reference = message.skinReference else { return }
+            guard isPaired, let reference = message.skinReference else { return true }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                do {
-                    try self.removeSkin(reference)
-                } catch PocketPadSkinStoreError.skinNotInstalled(_) {
-                    // Idempotent replay after a reconnect.
-                } catch {
+                do { try self.removeSkin(reference) }
+                catch PocketPadSkinStoreError.skinNotInstalled(_) { }
+                catch {
                     self.lastReceivedEvent = "Skin removal failed: \(error.localizedDescription)"
                     self.publishRuntimeStatus()
                 }
             }
-
         case .gamepadProfileSkinSelection:
-            guard isPairedConnection, let profileID = message.gamepadProfileID else { return }
+            guard isPaired, let profileID = message.gamepadProfileID else { return true }
             let reference = message.skinReference
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 do {
-                    if let reference {
-                        try self.applySkin(reference, to: profileID)
-                    } else {
-                        try self.detachSkin(from: profileID)
-                    }
+                    if let reference { try self.applySkin(reference, to: profileID) }
+                    else { try self.detachSkin(from: profileID) }
                 } catch {
                     self.lastReceivedEvent = "Skin selection failed: \(error.localizedDescription)"
                     self.publishRuntimeStatus()
                 }
             }
-
-        case .gamepadProfiles:
-            guard isPairedConnection else { return }
-            sendGamepadProfileStateOnNetworkQueue()
-
-        case .pairingChallenge, .pairingAccepted:
-            break
-
-        case .error:
-            publishControllerDebug(event: message.message ?? "Client error", immediately: true)
+        default:
+            return false
         }
+        return true
     }
 
     private func handlePairingRequestOnNetworkQueue(_ message: ControllerMessage, from connection: NWConnection) {
@@ -2893,8 +2931,9 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func rejectPairingOnNetworkQueue(_ connection: NWConnection, reason: String) {
-        send(.init(type: .error, message: reason), on: connection)
-        connection.cancel()
+        send(.init(type: .error, message: reason), on: connection) { [weak connection] _ in
+            connection?.cancel()
+        }
         releaseAllOnNetworkQueue(reason: "Rejected pairing: \(reason)")
         clearPairingStateOnNetworkQueue(for: connection)
         logDebug("pairing_rejected reason=\(reason)")
@@ -2902,8 +2941,9 @@ final class MacControllerServer: ObservableObject {
 
     private func cancelPendingPairingOnNetworkQueue(reason: String) {
         guard let pendingPairingConnection else { return }
-        send(.init(type: .error, message: reason), on: pendingPairingConnection)
-        pendingPairingConnection.cancel()
+        send(.init(type: .error, message: reason), on: pendingPairingConnection) { [weak pendingPairingConnection] _ in
+            pendingPairingConnection?.cancel()
+        }
         clearPairingStateOnNetworkQueue(for: pendingPairingConnection)
         logDebug("pairing_cancelled reason=\(reason)")
     }
@@ -4846,6 +4886,21 @@ final class MacControllerServer: ObservableObject {
         on connection: NWConnection,
         completion: ((Error?) -> Void)? = nil
     ) {
+        // Always defer to a fresh turn of the serial network queue. Pairing messages
+        // arrive through several large Debug-only Swift frames; encoding inline keeps
+        // those frames alive and can exhaust Network.framework's 512 KB worker stack.
+        // FIFO ordering is preserved because every connection callback uses this queue.
+        networkQueue.async { [self] in
+            sendNowOnNetworkQueue(message, on: connection, completion: completion)
+        }
+    }
+
+    private func sendNowOnNetworkQueue(
+        _ message: ControllerMessage,
+        on connection: NWConnection,
+        completion: ((Error?) -> Void)?
+    ) {
+        dispatchPrecondition(condition: .onQueue(networkQueue))
         let data: Data
         do {
             data = try ControllerWireCodec.encode(message, using: encoder)

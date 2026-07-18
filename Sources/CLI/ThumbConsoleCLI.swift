@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import SwiftUI
 
@@ -79,6 +80,21 @@ struct ThumbConsoleCLI {
         var pathOverride: String?
         var printPath = false
         var pollInterval: TimeInterval = 0.05
+    }
+
+    private struct AppWindowDescriptor {
+        var id: CGWindowID
+        var title: String?
+        var frame: CGRect
+    }
+
+    private struct AppScreenshotResult: Encodable {
+        var bundleIdentifier: String
+        var path: String
+        var pixelWidth: Int
+        var pixelHeight: Int
+        var windowID: CGWindowID
+        var windowTitle: String?
     }
 
     private struct ProfileExportEnvelope: Codable {
@@ -4666,6 +4682,7 @@ struct ThumbConsoleCLI {
 
     private static func app(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing app subcommand") }
+        let rest = Array(arguments.dropFirst())
         switch subcommand {
         case "open", "launch":
             try openApp()
@@ -4673,11 +4690,112 @@ struct ThumbConsoleCLI {
         case "quit":
             try quitApp()
             print("Requested ThumbConsole Mac quit.")
+        case "screenshot", "capture-window":
+            try captureAppScreenshot(arguments: rest)
         case "replay-onboarding", "onboarding", "reset-onboarding":
             try replayOnboarding()
             print("Reset onboarding and opened ThumbConsole Mac.")
         default:
             throw CLIError.message("Unknown app subcommand: \(subcommand)")
+        }
+    }
+
+    private static func captureAppScreenshot(arguments: [String]) throws {
+        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: appDefaultsDomain)
+            .filter { !$0.isTerminated }
+        guard !runningApps.isEmpty else {
+            throw CLIError.message("ThumbConsole Mac is not running. Ask the user to open it, or run `thumbconsole app open` only with their permission, then retry.")
+        }
+        guard CGPreflightScreenCaptureAccess() else {
+            throw CLIError.message(
+                "Screen Recording access is not available. Grant it to the terminal or agent host in System Settings > Privacy & Security > Screen & System Audio Recording, then retry. This command does not activate ThumbConsole or send input events."
+            )
+        }
+
+        let requestedTitle = optionValue("--window-title", in: arguments)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let processIDs = Set(runningApps.map(\.processIdentifier))
+        guard let windowInfo = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            throw CLIError.message("Could not enumerate ThumbConsole Mac windows.")
+        }
+
+        let windows = windowInfo.compactMap { info -> AppWindowDescriptor? in
+            guard
+                let ownerPID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                processIDs.contains(ownerPID),
+                (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                ((info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0,
+                let windowNumber = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                let boundsDictionary = info[kCGWindowBounds as String] as? NSDictionary,
+                let frame = CGRect(dictionaryRepresentation: boundsDictionary)
+            else { return nil }
+            guard frame.width >= 160, frame.height >= 120 else { return nil }
+            let title = (info[kCGWindowName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return AppWindowDescriptor(
+                id: windowNumber,
+                title: title?.isEmpty == false ? title : nil,
+                frame: frame
+            )
+        }
+
+        let matchingWindows: [AppWindowDescriptor]
+        if let requestedTitle, !requestedTitle.isEmpty {
+            matchingWindows = windows.filter {
+                $0.title?.range(of: requestedTitle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
+        } else {
+            matchingWindows = windows
+        }
+        guard let target = matchingWindows.max(by: { lhs, rhs in
+            lhs.frame.width * lhs.frame.height < rhs.frame.width * rhs.frame.height
+        }) else {
+            if let requestedTitle, !requestedTitle.isEmpty {
+                let availableTitles = windows.compactMap(\.title).sorted().joined(separator: ", ")
+                let suffix = availableTitles.isEmpty ? "" : " Available window titles: \(availableTitles)."
+                throw CLIError.message("No visible ThumbConsole Mac window matched \"\(requestedTitle)\".\(suffix)")
+            }
+            throw CLIError.message("No visible ThumbConsole Mac window was found. Restore its window and retry.")
+        }
+
+        let rawOutputPath = optionValue("--output", in: arguments)
+            ?? optionValue("-o", in: arguments)
+            ?? "thumbconsole-app-screenshot.png"
+        let expandedOutputPath = (rawOutputPath as NSString).expandingTildeInPath
+        let outputURL = URL(fileURLWithPath: expandedOutputPath).standardizedFileURL
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try runProcess(
+            "/usr/sbin/screencapture",
+            arguments: ["-x", "-o", "-t", "png", "-l", String(target.id), outputURL.path]
+        )
+
+        guard
+            let imageData = try? Data(contentsOf: outputURL),
+            !imageData.isEmpty,
+            let representation = NSBitmapImageRep(data: imageData)
+        else {
+            throw CLIError.message("ThumbConsole window capture did not produce a readable PNG at \(outputURL.path).")
+        }
+
+        let result = AppScreenshotResult(
+            bundleIdentifier: appDefaultsDomain,
+            path: outputURL.path,
+            pixelWidth: representation.pixelsWide,
+            pixelHeight: representation.pixelsHigh,
+            windowID: target.id,
+            windowTitle: target.title
+        )
+        if arguments.contains("--json") {
+            try printJSON(result)
+        } else {
+            let title = target.title.map { " \"\($0)\"" } ?? ""
+            print("Captured ThumbConsole Mac\(title) to \(outputURL.path) (\(result.pixelWidth)x\(result.pixelHeight)).")
         }
     }
 
@@ -5973,7 +6091,7 @@ struct ThumbConsoleCLI {
         var values: [String] = []
         var skipNext = false
         let optionsWithValues: Set<String> = [
-            "--spec", "--from-spec", "--output", "-o", "--profile", "--name", "--template", "--from", "--identifier", "--artboard", "--build-directory", "--state", "--columns",
+            "--spec", "--from-spec", "--output", "-o", "--window-title", "--profile", "--name", "--template", "--from", "--identifier", "--artboard", "--build-directory", "--state", "--columns",
             "--layout-preview", "--preview-output", "--path", "--app", "--application", "--bundle-id", "--bundle", "--image-scale", "--render-scale",
             "--sequence", "--keyboard", "--key", "--gamepad-button", "--gamepad", "--part", "--input", "--modifiers", "--mods", "--layout", "--scale", "--control-scale",
             "--appearance", "--color-scheme", "--scheme", "--accent", "--color", "--labels", "--label", "--maps-to", "--x", "--center-x", "--y", "--center-y",
@@ -6137,7 +6255,11 @@ struct ThumbConsoleCLI {
     }
 
     private static func quitApp() throws {
-        try runProcess("/usr/bin/osascript", arguments: ["-e", "tell application id \"\(appDefaultsDomain)\" to quit"])
+        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: appDefaultsDomain)
+            .filter { !$0.isTerminated }
+        for runningApp in runningApps where !runningApp.terminate() {
+            throw CLIError.message("Could not request ThumbConsole Mac to quit.")
+        }
     }
 
     private static func runProcess(_ executable: String, arguments: [String]) throws {
@@ -6285,6 +6407,7 @@ struct ThumbConsoleCLI {
 
         Runtime:
           thumbconsole app open|quit|replay-onboarding
+          thumbconsole app screenshot [-o thumbconsole.png] [--window-title TITLE] [--json]
           thumbconsole status [--json]
           thumbconsole monitor [--jsonl] [--clear] [--from-start] [--duration seconds]
           thumbconsole latency simulate [--pattern hollow-knight] [--mode compare] [--log report.json]

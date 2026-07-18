@@ -168,6 +168,27 @@ build_approved_package \
   "showcase-controller-v1" \
   "$repo_root/docs/skins/examples/indigo-pocket/reviews/human-approval.json"
 
+build_approved_package \
+  "solar-sumi" \
+  "$repo_root/docs/skins/examples/solar-sumi/dist/solar-sumi-1.0.0.pocketpad" \
+  "dark" \
+  "arcade-stick-v1" \
+  "$repo_root/docs/skins/examples/solar-sumi/reviews/human-approval.json"
+
+build_approved_package \
+  "tideglass-field" \
+  "$repo_root/docs/skins/examples/tideglass-field/dist/tideglass-field-1.0.0.pocketpad" \
+  "dark" \
+  "game-boy-v1" \
+  "$repo_root/docs/skins/examples/tideglass-field/reviews/human-approval.json"
+
+build_approved_package \
+  "foldline-relay" \
+  "$repo_root/docs/skins/examples/foldline-relay/dist/foldline-relay-1.0.0.pocketpad" \
+  "dark" \
+  "productivity-one-handed-left-v1" \
+  "$repo_root/docs/skins/examples/foldline-relay/reviews/human-approval.json"
+
 python3 - "$output_root/catalog.source.json" "$output_root/catalog.json" "$packages_root" "$previews_root" <<'PY'
 import hashlib, json, struct, sys, zipfile
 from pathlib import Path

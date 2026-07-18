@@ -48,32 +48,110 @@ public enum PocketPadSkinResolver {
         overrideBaseline: GamepadCustomization? = nil
     ) -> GamepadCustomization {
         guard let skin = package.skin else { return customization.normalized }
-        let original = customization.normalized
-        let baseline = overrideBaseline?.normalized
-        let appearance = skin.appearance(orientation: orientation, colorScheme: colorScheme)
-        let compatibility = PocketPadSkinCompatibilityEvaluator.evaluate(
-            package.manifest.compatibility,
-            customization: original,
-            orientation: orientation
-        )
-        var result = original
-
-        result.assetLibrary = mergedAssetLibrary(
+        return SkinApplicationWorkspace(
             package: package,
-            local: original.assetLibrary,
-            baseline: baseline?.assetLibrary
-        )
-        result.styleLibrary = mergedStyleLibrary(
-            skin: appearance.styleLibrary,
-            local: original.styleLibrary,
-            baseline: baseline?.styleLibrary
-        )
-        result.artworkLayers = compatibility.allowsTemplateArtwork
-            ? (appearance.artworkLayers ?? [])
-            : []
+            skin: skin,
+            customization: customization,
+            orientation: orientation,
+            colorScheme: colorScheme,
+            options: options,
+            overrideBaseline: overrideBaseline
+        ).resolve()
+    }
 
-        if let background = appearance.backgroundFillStyle,
-           package.manifest.compatibility?.mode != .templateAligned || compatibility.allowsTemplateArtwork {
+    private final class SkinApplicationWorkspace {
+        private let package: PocketPadSkinPackage
+        private let skin: PocketPadSkin
+        private let orientation: PocketPadSkinOrientation
+        private let colorScheme: PocketPadSkinColorScheme
+        private let options: PocketPadSkinApplicationOptions
+        private var original: GamepadCustomization
+        private var baseline: GamepadCustomization?
+        private var result: GamepadCustomization
+        private var appearance: PocketPadSkinAppearance?
+        private var compatibility: PocketPadSkinCompatibilityEvaluation?
+
+        init(
+            package: PocketPadSkinPackage,
+            skin: PocketPadSkin,
+            customization: GamepadCustomization,
+            orientation: PocketPadSkinOrientation,
+            colorScheme: PocketPadSkinColorScheme,
+            options: PocketPadSkinApplicationOptions,
+            overrideBaseline: GamepadCustomization?
+        ) {
+            self.package = package
+            self.skin = skin
+            self.orientation = orientation
+            self.colorScheme = colorScheme
+            self.options = options
+            self.original = customization
+            self.baseline = overrideBaseline
+            self.result = customization
+        }
+
+        func resolve() -> GamepadCustomization {
+            normalizeInputs()
+            prepareAppearance()
+            mergeLibrariesAndArtwork()
+            applyKeypadAppearance()
+            applyBuiltInControls()
+            applyCustomControls()
+            applyTopBar()
+            applyControlBarItems()
+            finalizeResult()
+            return result
+        }
+
+        private func normalizeInputs() {
+            original.normalizeInPlace()
+            if var normalizedBaseline = baseline {
+                normalizedBaseline.normalizeInPlace()
+                baseline = normalizedBaseline
+            }
+            result = original
+        }
+
+        private func prepareAppearance() {
+            appearance = skin.appearance(orientation: orientation, colorScheme: colorScheme)
+            compatibility = PocketPadSkinCompatibilityEvaluator.evaluate(
+                package.manifest.compatibility,
+                customization: original,
+                orientation: orientation
+            )
+        }
+
+        private func mergeLibrariesAndArtwork() {
+            guard let appearance, let compatibility else { return }
+            result.assetLibrary = PocketPadSkinResolver.mergedAssetLibrary(
+                package: package,
+                local: original.assetLibrary,
+                baseline: baseline?.assetLibrary
+            )
+            result.styleLibrary = PocketPadSkinResolver.mergedStyleLibrary(
+                skin: appearance.styleLibrary,
+                local: original.styleLibrary,
+                baseline: baseline?.styleLibrary
+            )
+            result.artworkLayers = compatibility.allowsTemplateArtwork
+                ? (appearance.artworkLayers ?? [])
+                : []
+        }
+
+        private func applyKeypadAppearance() {
+            guard let appearance, let compatibility else { return }
+            applyBackground(appearance, compatibility: compatibility)
+            applyAccent(appearance)
+            applyLabelVisibility(appearance)
+        }
+
+        private func applyBackground(
+            _ appearance: PocketPadSkinAppearance,
+            compatibility: PocketPadSkinCompatibilityEvaluation
+        ) {
+            guard let background = appearance.backgroundFillStyle,
+                  package.manifest.compatibility?.mode != .templateAligned || compatibility.allowsTemplateArtwork
+            else { return }
             let shouldPreserve: Bool
             if options.preservesLocalKeypadAppearance, let baseline {
                 shouldPreserve = original.hasBackgroundAppearanceDifferent(from: baseline)
@@ -81,92 +159,109 @@ public enum PocketPadSkinResolver {
                 shouldPreserve = options.preservesLocalKeypadAppearance
                     && original.hasCustomBackgroundFill(for: colorScheme.swiftUIColorScheme)
             }
-            if !shouldPreserve {
-                result.backgroundFillStyle = background
-                result.backgroundLightFillStyle = nil
-                result.backgroundDarkFillStyle = nil
-                result.backgroundLightColor = nil
-                result.backgroundDarkColor = nil
-            }
+            guard !shouldPreserve else { return }
+            result.backgroundFillStyle = background
+            result.backgroundLightFillStyle = nil
+            result.backgroundDarkFillStyle = nil
+            result.backgroundLightColor = nil
+            result.backgroundDarkColor = nil
         }
-        if let accent = appearance.accentStyle {
-            let hasLocalAccentOverride = baseline.map { original.accentStyle != $0.accentStyle }
+
+        private func applyAccent(_ appearance: PocketPadSkinAppearance) {
+            guard let accent = appearance.accentStyle else { return }
+            let hasLocalOverride = baseline.map { original.accentStyle != $0.accentStyle }
                 ?? (original.accentStyle != .monochrome)
-            if !options.preservesLocalKeypadAppearance || !hasLocalAccentOverride {
+            if !options.preservesLocalKeypadAppearance || !hasLocalOverride {
                 result.accentStyle = accent
             }
         }
-        if let showsLabels = appearance.showsButtonLabels {
-            let hasLocalLabelOverride = baseline.map { original.showsButtonLabels != $0.showsButtonLabels }
+
+        private func applyLabelVisibility(_ appearance: PocketPadSkinAppearance) {
+            guard let showsLabels = appearance.showsButtonLabels else { return }
+            let hasLocalOverride = baseline.map { original.showsButtonLabels != $0.showsButtonLabels }
                 ?? (original.showsButtonLabels != true)
-            if !options.preservesLocalKeypadAppearance || !hasLocalLabelOverride {
+            if !options.preservesLocalKeypadAppearance || !hasLocalOverride {
                 result.showsButtonLabels = showsLabels
             }
         }
 
-        for button in GameButton.builtInControls {
-            let role = original.elements.first(where: { $0.builtInButton == button })?.visualRole
-                ?? GamepadVisualRole.inferred(for: button, controlKind: .button)
-            let skinControl = appearance.controlAppearance(for: button, controlKind: .button, visualRole: role)
-            let local = original.buttonCustomization(for: button)
-            result.setButtonCustomization(
-                applying(
-                    skinControl,
-                    to: local,
-                    preserveLocal: options.preservesLocalControlAppearance,
-                    baseline: baseline?.buttonCustomization(for: button)
-                ),
-                for: button
-            )
-        }
-
-        for index in result.customButtons.indices {
-            let local = original.customButtons.first(where: { $0.id == result.customButtons[index].id })?.layout
-                ?? result.customButtons[index].layout
-            let baselineLayout = baseline?.customButtons.first(where: { $0.id == result.customButtons[index].id })?.layout
-            let control = result.customButtons[index]
-            let role = control.visualRole
-                ?? GamepadVisualRole.inferred(for: control.mappedButton, controlKind: control.controlKind)
-            let skinControl = appearance.controlAppearance(
-                for: control.mappedButton,
-                controlKind: control.controlKind,
-                visualRole: role
-            )
-            result.customButtons[index].layout = applying(
-                skinControl,
-                to: local,
-                preserveLocal: options.preservesLocalControlAppearance,
-                baseline: baselineLayout
-            )
-        }
-
-        let topBarSkin = appearance.controlAppearance(for: .system)
-        result.topBarActivationRegion = applying(
-            topBarSkin,
-            to: original.topBarActivationRegion,
-            preserveLocal: options.preservesLocalControlAppearance,
-            baseline: baseline?.topBarActivationRegion
-        )
-
-        for item in result.controlBarItems {
-            let role: GamepadVisualRole = switch item {
-            case .profileMenu, .launchTarget, .editLayout, .settings, .home: .utility
-            case .connectionStatus, .connectionAction, .spacer: .system
+        private func applyBuiltInControls() {
+            guard let appearance else { return }
+            for button in GameButton.builtInControls {
+                let role = original.elements.first(where: { $0.builtInButton == button })?.visualRole
+                    ?? GamepadVisualRole.inferred(for: button, controlKind: .button)
+                let skinControl = appearance.controlAppearance(for: button, controlKind: .button, visualRole: role)
+                let local = original.buttonCustomization(for: button)
+                result.setButtonCustomization(
+                    PocketPadSkinResolver.applying(
+                        skinControl,
+                        to: local,
+                        preserveLocal: options.preservesLocalControlAppearance,
+                        baseline: baseline?.buttonCustomization(for: button)
+                    ),
+                    for: button
+                )
             }
-            let skinControl = appearance.controlAppearance(for: role)
-            let local = original.controlBarItemCustomization(for: item)
-            result.setControlBarItemCustomization(
-                applying(
+        }
+
+        private func applyCustomControls() {
+            guard let appearance else { return }
+            for index in result.customButtons.indices {
+                let local = original.customButtons.first(where: { $0.id == result.customButtons[index].id })?.layout
+                    ?? result.customButtons[index].layout
+                let baselineLayout = baseline?.customButtons.first(where: { $0.id == result.customButtons[index].id })?.layout
+                let control = result.customButtons[index]
+                let role = control.visualRole
+                    ?? GamepadVisualRole.inferred(for: control.mappedButton, controlKind: control.controlKind)
+                let skinControl = appearance.controlAppearance(
+                    for: control.mappedButton,
+                    controlKind: control.controlKind,
+                    visualRole: role
+                )
+                result.customButtons[index].layout = PocketPadSkinResolver.applying(
                     skinControl,
                     to: local,
                     preserveLocal: options.preservesLocalControlAppearance,
-                    baseline: baseline?.controlBarItemCustomization(for: item)
-                ),
-                for: item
+                    baseline: baselineLayout
+                )
+            }
+        }
+
+        private func applyTopBar() {
+            guard let appearance else { return }
+            result.topBarActivationRegion = PocketPadSkinResolver.applying(
+                appearance.controlAppearance(for: .system),
+                to: original.topBarActivationRegion,
+                preserveLocal: options.preservesLocalControlAppearance,
+                baseline: baseline?.topBarActivationRegion
             )
         }
 
-        return result.normalized.resolvingAssetReferences()
+        private func applyControlBarItems() {
+            guard let appearance else { return }
+            for item in result.controlBarItems {
+                let role: GamepadVisualRole = switch item {
+                case .profileMenu, .launchTarget, .editLayout, .settings, .home: .utility
+                case .connectionStatus, .connectionAction, .spacer: .system
+                }
+                let skinControl = appearance.controlAppearance(for: role)
+                let local = original.controlBarItemCustomization(for: item)
+                result.setControlBarItemCustomization(
+                    PocketPadSkinResolver.applying(
+                        skinControl,
+                        to: local,
+                        preserveLocal: options.preservesLocalControlAppearance,
+                        baseline: baseline?.controlBarItemCustomization(for: item)
+                    ),
+                    for: item
+                )
+            }
+        }
+
+        private func finalizeResult() {
+            result.normalizeInPlace()
+            result.resolveAssetReferencesInPlace()
+        }
     }
 
     private static func applying(
@@ -283,61 +378,72 @@ public extension GamepadCustomization {
     /// Saved profiles therefore reference archive assets instead of duplicating Base64 data.
     func dehydratingAssets(from package: PocketPadSkinPackage) -> GamepadCustomization {
         var copy = self
+        copy.dehydrateAssetReferencesInPlace(from: package)
+        return copy
+    }
+
+    mutating func dehydrateAssetReferencesInPlace(from package: PocketPadSkinPackage) {
         let packageAssets = package.assets
-        copy.backgroundFillStyle = copy.backgroundFillStyle?.dehydrating(packageAssets: packageAssets)
-        copy.backgroundLightFillStyle = copy.backgroundLightFillStyle?.dehydrating(packageAssets: packageAssets)
-        copy.backgroundDarkFillStyle = copy.backgroundDarkFillStyle?.dehydrating(packageAssets: packageAssets)
-        copy.artworkLayers = copy.artworkLayers.map { layer in
+        backgroundFillStyle = backgroundFillStyle?.dehydrating(packageAssets: packageAssets)
+        backgroundLightFillStyle = backgroundLightFillStyle?.dehydrating(packageAssets: packageAssets)
+        backgroundDarkFillStyle = backgroundDarkFillStyle?.dehydrating(packageAssets: packageAssets)
+        artworkLayers = artworkLayers.map { layer in
             var layer = layer
             layer.fillStyle = layer.fillStyle?.dehydrating(packageAssets: packageAssets)
             return layer
         }
-        copy.styleLibrary = copy.styleLibrary.dehydrating(packageAssets: packageAssets)
+        styleLibrary = styleLibrary.dehydrating(packageAssets: packageAssets)
         for button in GameButton.allCases {
-            guard var layout = copy.buttonCustomizations[button] else { continue }
+            guard var layout = buttonCustomizations[button] else { continue }
             layout.dehydrateAssetReferences(packageAssets: packageAssets)
-            copy.buttonCustomizations[button] = layout
+            buttonCustomizations[button] = layout
         }
-        for index in copy.customButtons.indices {
-            copy.customButtons[index].layout.dehydrateAssetReferences(packageAssets: packageAssets)
+        for index in customButtons.indices {
+            customButtons[index].layout.dehydrateAssetReferences(packageAssets: packageAssets)
         }
-        copy.topBarActivationRegion.dehydrateAssetReferences(packageAssets: packageAssets)
-        for index in copy.controlBarItemCustomizations.indices {
-            copy.controlBarItemCustomizations[index].appearance.dehydrateAssetReferences(packageAssets: packageAssets)
+        topBarActivationRegion.dehydrateAssetReferences(packageAssets: packageAssets)
+        for index in controlBarItemCustomizations.indices {
+            controlBarItemCustomizations[index].appearance.dehydrateAssetReferences(packageAssets: packageAssets)
         }
-        for index in copy.assetLibrary.assets.indices {
-            let id = copy.assetLibrary.assets[index].id
-            if let packageData = packageAssets[id], copy.assetLibrary.assets[index].data == packageData {
-                copy.assetLibrary.assets[index].data = nil
+        for index in assetLibrary.assets.indices {
+            let id = assetLibrary.assets[index].id
+            if let packageData = packageAssets[id], assetLibrary.assets[index].data == packageData {
+                assetLibrary.assets[index].data = nil
             }
         }
-        return copy.normalized
+        normalizeInPlace()
     }
 
     func resolvingAssetReferences() -> GamepadCustomization {
         var copy = self
-        copy.backgroundFillStyle = copy.backgroundFillStyle?.resolvingAssets(in: copy.assetLibrary)
-        copy.backgroundLightFillStyle = copy.backgroundLightFillStyle?.resolvingAssets(in: copy.assetLibrary)
-        copy.backgroundDarkFillStyle = copy.backgroundDarkFillStyle?.resolvingAssets(in: copy.assetLibrary)
-        copy.artworkLayers = copy.artworkLayers.map { layer in
+        copy.resolveAssetReferencesInPlace()
+        return copy
+    }
+
+    mutating func resolveAssetReferencesInPlace() {
+        let library = assetLibrary
+        backgroundFillStyle = backgroundFillStyle?.resolvingAssets(in: library)
+        backgroundLightFillStyle = backgroundLightFillStyle?.resolvingAssets(in: library)
+        backgroundDarkFillStyle = backgroundDarkFillStyle?.resolvingAssets(in: library)
+        artworkLayers = artworkLayers.map { layer in
             var layer = layer
-            layer.fillStyle = layer.fillStyle?.resolvingAssets(in: copy.assetLibrary)
+            layer.fillStyle = layer.fillStyle?.resolvingAssets(in: library)
             return layer
         }
-        copy.styleLibrary = copy.styleLibrary.resolvingAssets(in: copy.assetLibrary)
+        styleLibrary = styleLibrary.resolvingAssets(in: library)
         for button in GameButton.allCases {
-            guard var layout = copy.buttonCustomizations[button] else { continue }
-            layout.resolveAssetReferences(in: copy.assetLibrary)
-            copy.buttonCustomizations[button] = layout
+            guard var layout = buttonCustomizations[button] else { continue }
+            layout.resolveAssetReferences(in: library)
+            buttonCustomizations[button] = layout
         }
-        for index in copy.customButtons.indices {
-            copy.customButtons[index].layout.resolveAssetReferences(in: copy.assetLibrary)
+        for index in customButtons.indices {
+            customButtons[index].layout.resolveAssetReferences(in: library)
         }
-        copy.topBarActivationRegion.resolveAssetReferences(in: copy.assetLibrary)
-        for index in copy.controlBarItemCustomizations.indices {
-            copy.controlBarItemCustomizations[index].appearance.resolveAssetReferences(in: copy.assetLibrary)
+        topBarActivationRegion.resolveAssetReferences(in: library)
+        for index in controlBarItemCustomizations.indices {
+            controlBarItemCustomizations[index].appearance.resolveAssetReferences(in: library)
         }
-        return copy.normalized
+        normalizeInPlace()
     }
 }
 

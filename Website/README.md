@@ -93,7 +93,7 @@ Build the current `thumbconsole` CLI first, then generate versioned packages, cl
 scripts/build-skin-directory.sh /path/to/thumbconsole
 ```
 
-The builder supports bundled and source-backed entries, but production currently publishes the exact human-approved Indigo Pocket package. It verifies the approval record and package hash, runs strict package and quality validation, creates a native-renderer directory preview, and finishes with the dependency-free directory verifier. Run the verifier directly after any hand edit:
+Production publishes exact human-approved package bytes for Indigo Pocket, Solar Sumi, Tideglass Field, and Foldline Relay. The builder verifies every approval record and package hash, runs strict package and quality validation, creates native-renderer directory previews, and finishes with the dependency-free directory verifier. Run the verifier directly after any hand edit:
 
 ```bash
 python3 scripts/verify-skin-directory.py

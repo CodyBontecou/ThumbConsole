@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 402 874" width="402" height="874" role="img" aria-label="Pale Cavern portrait dark mineral artwork">
+  <g id="canvas">
+    <rect width="402" height="874" fill="#070C14"/>
+  </g>
+  <g id="chamber-shadows" fill="#02050A">
+    <path d="M92 15 C119 9 152 13 179 17 C215 22 246 13 277 15 C309 17 335 27 349 45 C356 54 358 67 357 83 L353 291 C353 317 341 335 321 343 C268 351 207 342 153 346 C120 348 96 334 91 310 L77 72 C75 46 79 23 92 15 Z" opacity="0.66"/>
+    <path d="M111 598 C151 588 191 595 226 592 C265 588 307 596 327 612 C338 621 343 636 342 653 L338 816 C337 840 321 858 299 863 C249 870 191 863 142 867 C116 869 98 853 96 831 L91 650 C90 625 96 604 111 598 Z" opacity="0.72"/>
+    <path d="M206 331 C226 324 254 324 268 335 C276 342 278 353 275 369 C270 399 268 427 272 454 C277 488 281 522 271 552 C263 577 246 598 226 613 L175 613 C186 588 194 565 193 540 C192 508 186 474 187 439 C189 401 196 363 206 331 Z" opacity="0.58"/>
+  </g>
+  <g id="mineral-bridge">
+    <path d="M204 327 C223 320 252 320 266 331 C274 338 276 349 273 365 C268 395 266 423 270 450 C275 484 279 518 269 548 C261 573 244 594 224 609 L173 609 C184 584 192 561 191 536 C190 504 184 470 185 435 C187 397 194 359 204 327 Z" fill="#111B27"/>
+    <path d="M206 329 C225 323 250 323 264 333 C270 338 273 346 272 354" fill="none" stroke="#344654" stroke-width="1.2" opacity="0.82"/>
+    <path d="M271 367 C267 396 266 423 270 450 C275 484 277 517 267 547 C260 570 244 591 224 606" fill="none" stroke="#07101A" stroke-width="2" opacity="0.96"/>
+  </g>
+  <g id="upper-chamber">
+    <path d="M90 10 C117 4 150 8 177 12 C213 17 244 8 275 10 C307 12 333 22 347 40 C354 49 356 62 355 78 L351 286 C351 312 339 330 319 338 C266 346 205 337 151 341 C118 343 94 329 89 305 L75 67 C73 41 77 18 90 10 Z" fill="#111B27"/>
+    <g id="upper-chamber-contact-shadow" fill="none" stroke="#02050A" stroke-width="4" stroke-linecap="round" opacity="0.92" transform="translate(2 4)">
+      <path d="M342 77 L339 276 C339 295 330 308 315 314 C265 321 209 313 158 317"/>
+    </g>
+    <path d="M103 17 C130 12 158 16 183 19 C216 23 244 16 273 17 C301 18 323 27 335 43 C341 51 343 63 342 77 L339 276 C339 295 330 308 315 314 C265 321 209 313 158 317 C133 319 114 308 110 289 L96 71 C94 48 97 25 103 17 Z" fill="#182736"/>
+    <path d="M104 19 C131 14 158 18 183 21 C216 25 244 18 273 19 C300 20 322 29 333 44" fill="none" stroke="#405666" stroke-width="1.2" stroke-linecap="round" opacity="0.82"/>
+    <path d="M340 78 L337 275 C337 293 328 305 314 311 C265 318 209 310 158 314" fill="none" stroke="#07101A" stroke-width="2" stroke-linecap="round" opacity="1"/>
+  </g>
+  <g id="action-well">
+    <path d="M129 26 H313 A20 20 0 0 1 333 46 V234 A20 20 0 0 1 313 254 H255 V231.816 H254.416 A10 10 0 0 1 244.416 241.816 H197.784 A10 10 0 0 1 187.784 231.816 H158 V254 H129 A20 20 0 0 1 109 234 V46 A20 20 0 0 1 129 26 Z" fill="#0C141E"/>
+    <path d="M129 28 H313 C323 28 331 36 331 46" fill="none" stroke="#263845" stroke-width="1" opacity="0.72"/>
+    <path d="M331 46 V234 C331 244 323 252 313 252 H255" fill="none" stroke="#02050A" stroke-width="2.5" opacity="0.96"/>
+  </g>
+  <g id="upper-custom-ledge">
+    <rect x="10" y="151" width="114" height="56" rx="18" fill="#02050A" opacity="0.82"/>
+    <rect x="7" y="147" width="114" height="56" rx="18" fill="#20313E" stroke="#344A57" stroke-width="1"/>
+    <path d="M25 149 H103" fill="none" stroke="#506575" stroke-width="1" opacity="0.48"/>
+    <path d="M119 165 V185 C119 194 112 201 103 201 H25" fill="none" stroke="#07101A" stroke-width="2" opacity="0.72"/>
+  </g>
+  <g id="system-landing">
+    <path d="M159 257.68 V296 C159 305.941 167.059 314 177 314 H225 C234.941 314 243 305.941 243 296 V257.68" fill="none" stroke="#314653" stroke-width="1" stroke-linecap="round" opacity="0.72"/>
+  </g>
+  <g id="right-utility-shelf">
+    <rect x="288" y="351" width="83" height="172" rx="18" fill="#0C141E"/>
+    <path d="M306 353 H353 C362 353 369 360 369 369" fill="none" stroke="#263845" stroke-width="1" opacity="0.68"/>
+    <path d="M369 369 V505 C369 514 362 521 353 521 H306" fill="none" stroke="#02050A" stroke-width="2" opacity="0.96"/>
+    <path d="M297 437 H362" fill="none" stroke="#243541" stroke-width="1" opacity="0.64"/>
+  </g>
+  <g id="lower-chamber">
+    <path d="M109 593 C149 583 189 590 224 587 C263 583 305 591 325 607 C336 616 341 631 340 648 L336 811 C335 835 319 853 297 858 C247 865 189 858 140 862 C114 864 96 848 94 826 L89 645 C88 620 94 599 109 593 Z" fill="#111B27"/>
+    <path d="M118 602 C153 594 190 600 223 597 C258 593 294 600 311 614 C320 622 324 634 323 649 L320 801 C319 819 307 833 290 837 C246 843 194 837 151 840 C132 842 119 830 117 814 L112 653 C111 631 113 611 118 602 Z" fill="#182736"/>
+    <path d="M119 604 C153 596 190 602 223 599 C258 595 294 602 309 615" fill="none" stroke="#405666" stroke-width="1.2" stroke-linecap="round" opacity="0.82"/>
+    <path d="M321 650 L318 800 C317 817 305 830 289 834 C246 840 194 834 151 837" fill="none" stroke="#09121D" stroke-width="2" stroke-linecap="round" opacity="0.94"/>
+  </g>
+  <g id="movement-well">
+    <rect x="113" y="609" width="208" height="233" rx="20" fill="#0C141E"/>
+    <path d="M133 611 H301 C311 611 319 619 319 629" fill="none" stroke="#263845" stroke-width="1" opacity="0.72"/>
+    <path d="M319 629 V822 C319 832 311 840 301 840 H133" fill="none" stroke="#02050A" stroke-width="2.5" opacity="0.96"/>
+  </g>
+  <g id="lower-custom-ledge">
+    <rect x="10" y="676" width="114" height="56" rx="18" fill="#02050A" opacity="0.82"/>
+    <rect x="7" y="672" width="114" height="56" rx="18" fill="#20313E" stroke="#344A57" stroke-width="1"/>
+    <path d="M25 674 H103" fill="none" stroke="#506575" stroke-width="1" opacity="0.48"/>
+    <path d="M119 690 V710 C119 719 112 726 103 726 H25" fill="none" stroke="#07101A" stroke-width="2" opacity="0.72"/>
+  </g>
+  <g id="cold-spring-seam" fill="none" stroke="#72D4CF" stroke-width="1.5" stroke-linecap="round">
+    <path d="M151 559 C185 548 219 566 261 552"/>
+  </g>
+  <g id="surface-flecks" fill="#8CAAA5">
+    <circle cx="91" cy="280" r="1.2" opacity="0.08"/>
+    <circle cx="316" cy="323" r="1.4" opacity="0.07"/>
+    <circle cx="105" cy="618" r="1.1" opacity="0.08"/>
+    <path d="M295 827 l2 -1 l1 2 l-2 1 Z" opacity="0.07"/>
+  </g>
+</svg>

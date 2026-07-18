@@ -1,10 +1,10 @@
 {
   "schema": "com.codybontecou.pocketpad.skin-human-approval",
   "version": 1,
-  "status": "pending",
-  "approvedBy": null,
-  "approvedAt": null,
-  "reviewedContactSheet": null,
-  "packageSHA256": null,
-  "notes": null
+  "status": "approved",
+  "approvedBy": "Cody Bontecou",
+  "approvedAt": "2026-07-17T19:58:53Z",
+  "reviewedContactSheet": "reviews/contact-sheet-4.png",
+  "packageSHA256": "edbecde5b7085aff6c99d3ce671f61daba1a3db1b04bc3f0ef83b72301501947",
+  "notes": "Explicitly approved the exact listed contact sheet and package artifact for publication."
 }

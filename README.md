@@ -124,6 +124,7 @@ When ThumbConsole Mac is running, CLI profile/customization/binding changes are 
 
 ```bash
 thumbconsole app open
+thumbconsole app screenshot -o /tmp/thumbconsole-window.png --json
 thumbconsole status --json
 thumbconsole server restart
 thumbconsole pairing payload
@@ -133,6 +134,8 @@ thumbconsole latency verify --max-ms 4 --p95-ms 4 --log /tmp/thumbconsole-latenc
 thumbconsole test tap jump
 thumbconsole release-all
 ```
+
+`thumbconsole app screenshot` captures only the largest visible ThumbConsole Mac window without activating the app, moving focus, or sending keyboard/mouse events. Use `--window-title TEXT` when the app has multiple windows; Screen Recording access must already be granted to the terminal or agent host.
 
 `thumbconsole latency simulate` is a synthetic replay model for agent debugging, not an end-to-end device benchmark. It runs Hollow-Knight-style bursts, same-button mash bursts, and UDP recovery cases through the wire codec and sequence-buffer assumptions, then writes modeled per-edge timing. `thumbconsole latency verify` validates those model assumptions. For production measurements, use `thumbconsole monitor`: `input_pipeline` events report same-clock Mac decode, reorder wait, input processing, binding lookup, output injection, post-injection, deferred-output, and receive-to-processed timing. `thumbconsole status` reports rolling pipeline and output-stage percentiles plus round-trip latency.
 

@@ -2564,34 +2564,83 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     }
 
     public init(from decoder: Decoder) throws {
+        self.init()
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        layoutMode = try container.decodeIfPresent(GamepadLayoutMode.self, forKey: .layoutMode) ?? .standard
-        controlScale = try container.decodeIfPresent(GamepadControlScale.self, forKey: .controlScale) ?? .standard
-        colorSchemePreference = try container.decodeIfPresent(GamepadColorSchemePreference.self, forKey: .colorSchemePreference) ?? .system
-        deviceCanvas = try container.decodeIfPresent(GamepadDeviceCanvas.self, forKey: .deviceCanvas) ?? .defaultValue
-        backgroundLightColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .backgroundLightColor)
-        backgroundDarkColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .backgroundDarkColor)
-        backgroundFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundFillStyle)
-        backgroundLightFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundLightFillStyle)
-        backgroundDarkFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundDarkFillStyle)
-        artworkLayers = try container.decodeIfPresent([PocketPadSkinArtworkLayer].self, forKey: .artworkLayers) ?? []
-        accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle) ?? .monochrome
-        showsButtonLabels = try container.decodeIfPresent(Bool.self, forKey: .showsButtonLabels) ?? true
-        labelOverrides = try container.decodeIfPresent([GameButton: String].self, forKey: .labelOverrides) ?? [:]
-        buttonCustomizations = try container.decodeIfPresent([GameButton: GamepadButtonCustomization].self, forKey: .buttonCustomizations) ?? [:]
-        customButtons = try container.decodeIfPresent([GamepadCustomButton].self, forKey: .customButtons) ?? []
-        elements = try container.decodeIfPresent([KeypadElement].self, forKey: .elements) ?? []
-        topBarActivationRegion = try container.decodeIfPresent(GamepadButtonCustomization.self, forKey: .topBarActivationRegion) ?? Self.defaultTopBarActivationRegion
-        controlBarItems = try container.decodeIfPresent([GamepadControlBarItem].self, forKey: .controlBarItems) ?? Self.defaultControlBarItems
-        controlBarItemCustomizations = try container.decodeIfPresent([GamepadControlBarItemCustomization].self, forKey: .controlBarItemCustomizations) ?? []
-        designMetadata = try container.decodeIfPresent(GamepadDesignMetadata.self, forKey: .designMetadata)
-        styleLibrary = try container.decodeIfPresent(GamepadStyleLibrary.self, forKey: .styleLibrary) ?? .empty
-        assetLibrary = try container.decodeIfPresent(GamepadAssetLibrary.self, forKey: .assetLibrary) ?? .empty
-        updatedAt = try container.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? 0
+        try Self.decodeLayoutFields(from: container, into: &self)
+        try Self.decodeBackgroundFields(from: container, into: &self)
+        try Self.decodeControlFields(from: container, into: &self)
+        try Self.decodeControlBarFields(from: container, into: &self)
+        try Self.decodeDesignFields(from: container, into: &self)
+    }
+
+    private static func decodeLayoutFields(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into customization: inout GamepadCustomization
+    ) throws {
+        customization.layoutMode = try container.decodeIfPresent(GamepadLayoutMode.self, forKey: .layoutMode) ?? .standard
+        customization.controlScale = try container.decodeIfPresent(GamepadControlScale.self, forKey: .controlScale) ?? .standard
+        customization.colorSchemePreference = try container.decodeIfPresent(GamepadColorSchemePreference.self, forKey: .colorSchemePreference) ?? .system
+        customization.deviceCanvas = try container.decodeIfPresent(GamepadDeviceCanvas.self, forKey: .deviceCanvas) ?? .defaultValue
+        customization.accentStyle = try container.decodeIfPresent(GamepadAccentStyle.self, forKey: .accentStyle) ?? .monochrome
+        customization.showsButtonLabels = try container.decodeIfPresent(Bool.self, forKey: .showsButtonLabels) ?? true
+    }
+
+    private static func decodeBackgroundFields(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into customization: inout GamepadCustomization
+    ) throws {
+        customization.backgroundLightColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .backgroundLightColor)
+        customization.backgroundDarkColor = try container.decodeIfPresent(GamepadRGBAColor.self, forKey: .backgroundDarkColor)
+        customization.backgroundFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundFillStyle)
+        customization.backgroundLightFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundLightFillStyle)
+        customization.backgroundDarkFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundDarkFillStyle)
+        customization.artworkLayers = try container.decodeIfPresent([PocketPadSkinArtworkLayer].self, forKey: .artworkLayers) ?? []
+    }
+
+    private static func decodeControlFields(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into customization: inout GamepadCustomization
+    ) throws {
+        customization.labelOverrides = try container.decodeIfPresent([GameButton: String].self, forKey: .labelOverrides) ?? [:]
+        customization.buttonCustomizations = try container.decodeIfPresent([GameButton: GamepadButtonCustomization].self, forKey: .buttonCustomizations) ?? [:]
+        customization.customButtons = try container.decodeIfPresent([GamepadCustomButton].self, forKey: .customButtons) ?? []
+        customization.elements = try container.decodeIfPresent([KeypadElement].self, forKey: .elements) ?? []
+    }
+
+    private static func decodeControlBarFields(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into customization: inout GamepadCustomization
+    ) throws {
+        customization.topBarActivationRegion = try container.decodeIfPresent(GamepadButtonCustomization.self, forKey: .topBarActivationRegion) ?? Self.defaultTopBarActivationRegion
+        customization.controlBarItems = try container.decodeIfPresent([GamepadControlBarItem].self, forKey: .controlBarItems) ?? Self.defaultControlBarItems
+        customization.controlBarItemCustomizations = try container.decodeIfPresent([GamepadControlBarItemCustomization].self, forKey: .controlBarItemCustomizations) ?? []
+    }
+
+    private static func decodeDesignFields(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into customization: inout GamepadCustomization
+    ) throws {
+        customization.designMetadata = try container.decodeIfPresent(GamepadDesignMetadata.self, forKey: .designMetadata)
+        customization.styleLibrary = try container.decodeIfPresent(GamepadStyleLibrary.self, forKey: .styleLibrary) ?? .empty
+        customization.assetLibrary = try container.decodeIfPresent(GamepadAssetLibrary.self, forKey: .assetLibrary) ?? .empty
+        customization.updatedAt = try container.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? 0
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        // Keep each group in a separate frame. JSONEncoder calls this on a 512 KB
+        // Network.framework dispatch stack, and one monolithic Debug frame grows with
+        // every large customization field even though the fields encode sequentially.
+        try encodeLayoutFields(to: &container)
+        try encodeLabelOverrides(to: &container)
+        try encodeButtonCustomizations(to: &container)
+        try encodeCustomButtons(to: &container)
+        try encodeSynchronizedElements(to: &container)
+        try encodeControlBar(to: &container)
+        try encodeDesignFields(to: &container)
+    }
+
+    private func encodeLayoutFields(to container: inout KeyedEncodingContainer<CodingKeys>) throws {
         try container.encode(layoutMode, forKey: .layoutMode)
         try container.encode(controlScale, forKey: .controlScale)
         try container.encode(colorSchemePreference, forKey: .colorSchemePreference)
@@ -2604,43 +2653,98 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         if !artworkLayers.isEmpty { try container.encode(artworkLayers, forKey: .artworkLayers) }
         try container.encode(accentStyle, forKey: .accentStyle)
         try container.encode(showsButtonLabels, forKey: .showsButtonLabels)
+    }
+
+    private func encodeLabelOverrides(to container: inout KeyedEncodingContainer<CodingKeys>) throws {
         // GameButton-keyed dictionaries otherwise encode as an unkeyed sequence in
         // hash-table iteration order. Stable ordering keeps package/profile bytes,
         // catalog fingerprints, and agent artboard exports reproducible.
-        var labelContainer = container.nestedUnkeyedContainer(forKey: .labelOverrides)
+        var labels = container.nestedUnkeyedContainer(forKey: .labelOverrides)
         for button in GameButton.allCases where labelOverrides[button] != nil {
-            try labelContainer.encode(button)
-            try labelContainer.encode(labelOverrides[button]!)
+            try labels.encode(button)
+            try labels.encode(labelOverrides[button]!)
         }
-        var customizationContainer = container.nestedUnkeyedContainer(forKey: .buttonCustomizations)
-        for button in GameButton.allCases where buttonCustomizations[button] != nil {
-            try customizationContainer.encode(button)
-            try customizationContainer.encode(buttonCustomizations[button]!)
+    }
+
+    private func encodeButtonCustomizations(to container: inout KeyedEncodingContainer<CodingKeys>) throws {
+        var customizations = container.nestedUnkeyedContainer(forKey: .buttonCustomizations)
+        for button in GameButton.allCases {
+            guard let customization = buttonCustomizations[button] else { continue }
+            try customizations.encode(button)
+            // Calling the concrete implementation avoids the generic container's large
+            // Debug-only value-copy frame for GamepadButtonCustomization.
+            try customization.encode(to: customizations.superEncoder())
         }
+    }
+
+    private func encodeCustomButtons(to container: inout KeyedEncodingContainer<CodingKeys>) throws {
         try container.encode(customButtons, forKey: .customButtons)
-        let normalizedElements = synchronizedElements(migratesLegacySlots: elements.isEmpty, controlsAreNormalized: true)
-        if !normalizedElements.isEmpty { try container.encode(normalizedElements, forKey: .elements) }
-        let normalizedTopBarActivationRegion = topBarActivationRegion.normalized
-        if normalizedTopBarActivationRegion != Self.defaultTopBarActivationRegion.normalized {
-            try container.encode(normalizedTopBarActivationRegion, forKey: .topBarActivationRegion)
+    }
+
+    private func encodeSynchronizedElements(to container: inout KeyedEncodingContainer<CodingKeys>) throws {
+        let synchronized = synchronizedElements(
+            migratesLegacySlots: elements.isEmpty,
+            controlsAreNormalized: true
+        )
+        if !synchronized.isEmpty {
+            try container.encode(synchronized, forKey: .elements)
         }
-        let normalizedControlBarItems = Self.normalizedControlBarItems(controlBarItems)
-        if normalizedControlBarItems != Self.defaultControlBarItems {
-            try container.encode(normalizedControlBarItems, forKey: .controlBarItems)
+    }
+
+    private func encodeControlBar(to container: inout KeyedEncodingContainer<CodingKeys>) throws {
+        try encodeTopBarActivationRegion(to: &container)
+        let normalizedItems = Self.normalizedControlBarItems(controlBarItems)
+        try encodeControlBarItems(normalizedItems, to: &container)
+        try encodeControlBarItemCustomizations(for: normalizedItems, to: &container)
+    }
+
+    private func encodeTopBarActivationRegion(
+        to container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        let normalizedRegion = topBarActivationRegion.normalized
+        if normalizedRegion != Self.defaultTopBarActivationRegion.normalized {
+            try normalizedRegion.encode(to: container.superEncoder(forKey: .topBarActivationRegion))
         }
+    }
+
+    private func encodeControlBarItems(
+        _ normalizedItems: [GamepadControlBarItem],
+        to container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        if normalizedItems != Self.defaultControlBarItems {
+            try container.encode(normalizedItems, forKey: .controlBarItems)
+        }
+    }
+
+    private func encodeControlBarItemCustomizations(
+        for normalizedItems: [GamepadControlBarItem],
+        to container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
         // Do not normalize the entire customization from inside JSONEncoder. This runs
         // on a 512 KB Network.framework dispatch stack during pairing, and the nested
         // Codable frames plus a full GamepadCustomization copy can exhaust that stack.
-        let normalizedControlBarItemCustomizations = Self.normalizedControlBarItemCustomizations(
+        let normalizedCustomizations = Self.normalizedControlBarItemCustomizations(
             controlBarItemCustomizations,
-            for: normalizedControlBarItems
+            for: normalizedItems
         )
-        if !normalizedControlBarItemCustomizations.isEmpty {
-            try container.encode(normalizedControlBarItemCustomizations, forKey: .controlBarItemCustomizations)
+        if !normalizedCustomizations.isEmpty {
+            try container.encode(normalizedCustomizations, forKey: .controlBarItemCustomizations)
         }
-        try container.encodeIfPresent(designMetadata?.normalized(availableControls: allControlIdentitiesForDesign), forKey: .designMetadata)
-        if !styleLibrary.normalized.isEmpty { try container.encode(styleLibrary.normalized, forKey: .styleLibrary) }
-        if !assetLibrary.normalized.isEmpty { try container.encode(assetLibrary.normalized, forKey: .assetLibrary) }
+    }
+
+    private func encodeDesignFields(to container: inout KeyedEncodingContainer<CodingKeys>) throws {
+        try container.encodeIfPresent(
+            designMetadata?.normalized(availableControls: allControlIdentitiesForDesign),
+            forKey: .designMetadata
+        )
+        let normalizedStyleLibrary = styleLibrary.normalized
+        if !normalizedStyleLibrary.isEmpty {
+            try container.encode(normalizedStyleLibrary, forKey: .styleLibrary)
+        }
+        let normalizedAssetLibrary = assetLibrary.normalized
+        if !normalizedAssetLibrary.isEmpty {
+            try container.encode(normalizedAssetLibrary, forKey: .assetLibrary)
+        }
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 
@@ -2941,13 +3045,31 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         _ customizations: [GamepadControlBarItemCustomization],
         for normalizedItems: [GamepadControlBarItem]
     ) -> [GamepadControlBarItemCustomization] {
-        var latestAppearance: [GamepadControlBarItem: GamepadControlBarItemCustomization] = [:]
-        for customization in customizations {
-            latestAppearance[customization.item] = customization.normalized
+        let workspace = ControlBarCustomizationNormalizationWorkspace(capacity: normalizedItems.count)
+        workspace.recordLatestNormalized(customizations)
+        workspace.appendVisibleItems(normalizedItems)
+        return workspace.result
+    }
+
+    private final class ControlBarCustomizationNormalizationWorkspace {
+        private var latestAppearance: [GamepadControlBarItem: GamepadControlBarItemCustomization] = [:]
+        private(set) var result: [GamepadControlBarItemCustomization] = []
+
+        init(capacity: Int) {
+            result.reserveCapacity(capacity)
         }
-        return normalizedItems.compactMap { item in
-            guard let customization = latestAppearance[item], !customization.appearance.isDefault else { return nil }
-            return customization
+
+        func recordLatestNormalized(_ customizations: [GamepadControlBarItemCustomization]) {
+            for customization in customizations {
+                latestAppearance[customization.item] = customization.normalized
+            }
+        }
+
+        func appendVisibleItems(_ items: [GamepadControlBarItem]) {
+            for item in items {
+                guard let customization = latestAppearance[item], !customization.appearance.isDefault else { continue }
+                result.append(customization)
+            }
         }
     }
 
@@ -3019,30 +3141,55 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     }
 
     private func synchronizedElements(migratesLegacySlots: Bool, controlsAreNormalized: Bool = false) -> [KeypadElement] {
-        var existingByID: [UUID: KeypadElement] = [:]
-        var existingByBuiltIn: [GameButton: KeypadElement] = [:]
+        let existing = synchronizedElementIndexes(controlsAreNormalized: controlsAreNormalized)
+        var synchronized: [KeypadElement] = []
+        var seenIDs = Set<UUID>()
+        appendSynchronizedBuiltInElements(
+            to: &synchronized,
+            seenIDs: &seenIDs,
+            existingByButton: existing.byButton,
+            controlsAreNormalized: controlsAreNormalized
+        )
+        appendSynchronizedCustomElements(
+            to: &synchronized,
+            seenIDs: &seenIDs,
+            existingByID: existing.byID,
+            migratesLegacySlots: migratesLegacySlots,
+            controlsAreNormalized: controlsAreNormalized
+        )
+        return synchronized
+    }
+
+    private func synchronizedElementIndexes(
+        controlsAreNormalized: Bool
+    ) -> (byID: [UUID: KeypadElement], byButton: [GameButton: KeypadElement]) {
+        var byID: [UUID: KeypadElement] = [:]
+        var byButton: [GameButton: KeypadElement] = [:]
         for element in elements {
-            let normalizedElement: KeypadElement
-            if controlsAreNormalized {
-                normalizedElement = element.synchronizationMetadata
-            } else {
-                normalizedElement = element.normalized
-            }
-            existingByID[normalizedElement.id] = normalizedElement
-            if let builtInButton = normalizedElement.builtInButton {
-                existingByBuiltIn[builtInButton] = normalizedElement
+            let metadata = controlsAreNormalized ? element.synchronizationMetadata : element.normalized
+            byID[metadata.id] = metadata
+            if let builtInButton = metadata.builtInButton {
+                byButton[builtInButton] = metadata
             }
         }
-        var next: [KeypadElement] = []
-        var seenIDs = Set<UUID>()
+        return (byID, byButton)
+    }
 
+    private func appendSynchronizedBuiltInElements(
+        to synchronized: inout [KeypadElement],
+        seenIDs: inout Set<UUID>,
+        existingByButton: [GameButton: KeypadElement],
+        controlsAreNormalized: Bool
+    ) {
         for button in GameButton.builtInControls {
-            let layout = controlsAreNormalized ? (buttonCustomizations[button] ?? .defaultValue) : buttonCustomization(for: button)
+            let layout = controlsAreNormalized
+                ? (buttonCustomizations[button] ?? .defaultValue)
+                : buttonCustomization(for: button)
             guard !layout.isHidden else { continue }
-            let existing = existingByBuiltIn[button]
+            let existing = existingByButton[button]
             let id = existing?.id ?? KeypadElement.builtInID(for: button)
             guard seenIDs.insert(id).inserted else { continue }
-            next.append(
+            synchronized.append(
                 KeypadElement(
                     id: id,
                     label: visualLabel(for: button),
@@ -3056,12 +3203,20 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
                 ).normalized(layoutIsAlreadyNormalized: true)
             )
         }
+    }
 
+    private func appendSynchronizedCustomElements(
+        to synchronized: inout [KeypadElement],
+        seenIDs: inout Set<UUID>,
+        existingByID: [UUID: KeypadElement],
+        migratesLegacySlots: Bool,
+        controlsAreNormalized: Bool
+    ) {
         for customButton in customButtons {
             let normalizedButton = controlsAreNormalized ? customButton : customButton.normalized
             let existing = existingByID[normalizedButton.id]
             guard seenIDs.insert(normalizedButton.id).inserted else { continue }
-            next.append(
+            synchronized.append(
                 KeypadElement(
                     id: normalizedButton.id,
                     label: normalizedButton.visualLabel(fallback: visualLabel(for: normalizedButton.mappedButton)),
@@ -3079,40 +3234,75 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
                 ).normalized(layoutIsAlreadyNormalized: true)
             )
         }
-
-        return next
     }
 
     public var normalized: GamepadCustomization {
         var copy = self
-        copy.deviceCanvas = deviceCanvas.normalized
-        copy.backgroundLightColor = backgroundLightColor?.normalized
-        copy.backgroundDarkColor = backgroundDarkColor?.normalized
-        copy.backgroundFillStyle = backgroundFillStyle?.normalized
-        copy.backgroundLightFillStyle = backgroundLightFillStyle?.normalized
-        copy.backgroundDarkFillStyle = backgroundDarkFillStyle?.normalized
+        copy.normalizeInPlace()
+        return copy
+    }
+
+    mutating func normalizeInPlace() {
+        normalizeBackgroundInPlace()
+        normalizeArtworkInPlace()
+        normalizeLabelsInPlace()
+        normalizeBuiltInControlsInPlace()
+        normalizeCustomControlsInPlace()
+        normalizeElementsInPlace()
+        normalizeControlBarInPlace()
+        normalizeDesignInPlace()
+    }
+
+    private mutating func normalizeBackgroundInPlace() {
+        deviceCanvas = deviceCanvas.normalized
+        backgroundLightColor = backgroundLightColor?.normalized
+        backgroundDarkColor = backgroundDarkColor?.normalized
+        backgroundFillStyle = backgroundFillStyle?.normalized
+        backgroundLightFillStyle = backgroundLightFillStyle?.normalized
+        backgroundDarkFillStyle = backgroundDarkFillStyle?.normalized
+    }
+
+    private mutating func normalizeArtworkInPlace() {
         var artworkByID: [String: PocketPadSkinArtworkLayer] = [:]
         for layer in artworkLayers {
-            if let normalized = layer.normalized { artworkByID[normalized.id] = normalized }
+            if let normalizedLayer = layer.normalized {
+                artworkByID[normalizedLayer.id] = normalizedLayer
+            }
         }
-        copy.artworkLayers = artworkByID.values
+        artworkLayers = artworkByID.values
             .filter { !$0.isHidden }
             .sorted {
                 if $0.plane != $1.plane { return $0.plane.rawValue < $1.plane.rawValue }
                 if $0.zIndex != $1.zIndex { return $0.zIndex < $1.zIndex }
                 return $0.id < $1.id
             }
-        copy.labelOverrides = Dictionary(uniqueKeysWithValues: labelOverrides.compactMap { button, label in
-            let normalizedLabel = normalizedGamepadLabel(label)
-            guard !normalizedLabel.isEmpty else { return nil }
-            return (button, normalizedLabel)
-        })
-        copy.buttonCustomizations = Dictionary(uniqueKeysWithValues: buttonCustomizations.compactMap { button, customization in
-            let normalizedCustomization = customization.normalized
-            guard !normalizedCustomization.isDefault else { return nil }
-            return (button, normalizedCustomization)
-        })
+    }
 
+    private mutating func normalizeLabelsInPlace() {
+        var normalizedLabels: [GameButton: String] = [:]
+        normalizedLabels.reserveCapacity(labelOverrides.count)
+        for (button, label) in labelOverrides {
+            let normalizedLabel = normalizedGamepadLabel(label)
+            if !normalizedLabel.isEmpty {
+                normalizedLabels[button] = normalizedLabel
+            }
+        }
+        labelOverrides = normalizedLabels
+    }
+
+    private mutating func normalizeBuiltInControlsInPlace() {
+        var normalizedControls: [GameButton: GamepadButtonCustomization] = [:]
+        normalizedControls.reserveCapacity(buttonCustomizations.count)
+        for (button, customization) in buttonCustomizations {
+            let normalizedCustomization = customization.normalized
+            if !normalizedCustomization.isDefault {
+                normalizedControls[button] = normalizedCustomization
+            }
+        }
+        buttonCustomizations = normalizedControls
+    }
+
+    private mutating func normalizeCustomControlsInPlace() {
         var seenCustomButtonIDs = Set<UUID>()
         var normalizedCustomButtons: [GamepadCustomButton] = []
         var joystickCount = 0
@@ -3134,21 +3324,32 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
             normalizedCustomButtons.append(normalizedCustomButton)
             if normalizedCustomButtons.count >= Self.maximumCustomButtons { break }
         }
-        copy.customButtons = normalizedCustomButtons
-        copy.elements = copy.synchronizedElements(migratesLegacySlots: elements.isEmpty, controlsAreNormalized: true)
-        copy.topBarActivationRegion = topBarActivationRegion.normalized
-        if copy.topBarActivationRegion.centerX == nil { copy.topBarActivationRegion.centerX = Self.defaultTopBarActivationRegion.centerX }
-        if copy.topBarActivationRegion.centerY == nil { copy.topBarActivationRegion.centerY = Self.defaultTopBarActivationRegion.centerY }
-        if copy.topBarActivationRegion.shape == nil { copy.topBarActivationRegion.shape = .capsule }
-        copy.controlBarItems = Self.normalizedControlBarItems(controlBarItems)
-        copy.controlBarItemCustomizations = Self.normalizedControlBarItemCustomizations(
-            controlBarItemCustomizations,
-            for: copy.controlBarItems
+        customButtons = normalizedCustomButtons
+    }
+
+    private mutating func normalizeElementsInPlace() {
+        elements = synchronizedElements(
+            migratesLegacySlots: elements.isEmpty,
+            controlsAreNormalized: true
         )
-        copy.styleLibrary = styleLibrary.normalized
-        copy.assetLibrary = assetLibrary.normalized
-        copy.designMetadata = designMetadata?.normalized(availableControls: copy.allControlIdentitiesForDesign)
-        return copy
+    }
+
+    private mutating func normalizeControlBarInPlace() {
+        topBarActivationRegion = topBarActivationRegion.normalized
+        if topBarActivationRegion.centerX == nil { topBarActivationRegion.centerX = Self.defaultTopBarActivationRegion.centerX }
+        if topBarActivationRegion.centerY == nil { topBarActivationRegion.centerY = Self.defaultTopBarActivationRegion.centerY }
+        if topBarActivationRegion.shape == nil { topBarActivationRegion.shape = .capsule }
+        controlBarItems = Self.normalizedControlBarItems(controlBarItems)
+        controlBarItemCustomizations = Self.normalizedControlBarItemCustomizations(
+            controlBarItemCustomizations,
+            for: controlBarItems
+        )
+    }
+
+    private mutating func normalizeDesignInPlace() {
+        styleLibrary = styleLibrary.normalized
+        assetLibrary = assetLibrary.normalized
+        designMetadata = designMetadata?.normalized(availableControls: allControlIdentitiesForDesign)
     }
 
     public var stampedForLocalUpdate: GamepadCustomization {
@@ -3158,28 +3359,68 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     }
 
     public func hasSamePresentation(as other: GamepadCustomization) -> Bool {
-        layoutMode == other.layoutMode
-            && controlScale == other.controlScale
-            && colorSchemePreference == other.colorSchemePreference
-            && deviceCanvas.normalized == other.deviceCanvas.normalized
-            && backgroundLightColor?.normalized == other.backgroundLightColor?.normalized
-            && backgroundDarkColor?.normalized == other.backgroundDarkColor?.normalized
-            && backgroundFillStyle?.normalized == other.backgroundFillStyle?.normalized
-            && backgroundLightFillStyle?.normalized == other.backgroundLightFillStyle?.normalized
-            && backgroundDarkFillStyle?.normalized == other.backgroundDarkFillStyle?.normalized
-            && normalized.artworkLayers == other.normalized.artworkLayers
-            && accentStyle == other.accentStyle
-            && showsButtonLabels == other.showsButtonLabels
-            && normalized.labelOverrides == other.normalized.labelOverrides
-            && normalized.buttonCustomizations == other.normalized.buttonCustomizations
-            && normalized.customButtons == other.normalized.customButtons
-            && normalized.elements == other.normalized.elements
-            && normalized.topBarActivationRegion == other.normalized.topBarActivationRegion
-            && normalized.controlBarItems == other.normalized.controlBarItems
-            && normalized.controlBarItemCustomizations == other.normalized.controlBarItemCustomizations
-            && normalized.designMetadata == other.normalized.designMetadata
-            && normalized.styleLibrary == other.normalized.styleLibrary
-            && normalized.assetLibrary == other.normalized.assetLibrary
+        PresentationComparisonWorkspace(self, other).matches
+    }
+
+    private final class PresentationComparisonWorkspace {
+        private var lhs: GamepadCustomization
+        private var rhs: GamepadCustomization
+
+        init(_ lhs: GamepadCustomization, _ rhs: GamepadCustomization) {
+            self.lhs = lhs
+            self.rhs = rhs
+            normalizeLeft()
+            normalizeRight()
+        }
+
+        private func normalizeLeft() {
+            lhs = lhs.normalized
+        }
+
+        private func normalizeRight() {
+            rhs = rhs.normalized
+        }
+
+        var matches: Bool {
+            if !matchesLayoutAndBackground { return false }
+            if !matchesControls { return false }
+            if !matchesControlBar { return false }
+            return matchesDesign
+        }
+
+        private var matchesLayoutAndBackground: Bool {
+            if lhs.layoutMode != rhs.layoutMode { return false }
+            if lhs.controlScale != rhs.controlScale { return false }
+            if lhs.colorSchemePreference != rhs.colorSchemePreference { return false }
+            if lhs.deviceCanvas != rhs.deviceCanvas { return false }
+            if lhs.backgroundLightColor != rhs.backgroundLightColor { return false }
+            if lhs.backgroundDarkColor != rhs.backgroundDarkColor { return false }
+            if lhs.backgroundFillStyle != rhs.backgroundFillStyle { return false }
+            if lhs.backgroundLightFillStyle != rhs.backgroundLightFillStyle { return false }
+            if lhs.backgroundDarkFillStyle != rhs.backgroundDarkFillStyle { return false }
+            if lhs.artworkLayers != rhs.artworkLayers { return false }
+            if lhs.accentStyle != rhs.accentStyle { return false }
+            return lhs.showsButtonLabels == rhs.showsButtonLabels
+        }
+
+        private var matchesControls: Bool {
+            if lhs.labelOverrides != rhs.labelOverrides { return false }
+            if lhs.buttonCustomizations != rhs.buttonCustomizations { return false }
+            if lhs.customButtons != rhs.customButtons { return false }
+            return lhs.elements == rhs.elements
+        }
+
+        private var matchesControlBar: Bool {
+            if lhs.topBarActivationRegion != rhs.topBarActivationRegion { return false }
+            if lhs.controlBarItems != rhs.controlBarItems { return false }
+            return lhs.controlBarItemCustomizations == rhs.controlBarItemCustomizations
+        }
+
+        private var matchesDesign: Bool {
+            if lhs.designMetadata != rhs.designMetadata { return false }
+            if lhs.styleLibrary != rhs.styleLibrary { return false }
+            return lhs.assetLibrary == rhs.assetLibrary
+        }
     }
 
     public static func defaultVisualLabel(for button: GameButton) -> String {
@@ -4414,37 +4655,188 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     ) {
         self.id = id
         self.name = name
-        self.customization = customization.normalized
-        self.landscapeCustomization = landscapeCustomization?.normalized
-        self.portraitCustomization = portraitCustomization?.normalized
+        self.customization = customization
+        self.landscapeCustomization = landscapeCustomization
+        self.portraitCustomization = portraitCustomization
         self.skinReference = skinReference
-        self.skinBaselineCustomization = skinBaselineCustomization?.normalized
-        self.landscapeSkinBaselineCustomization = landscapeSkinBaselineCustomization?.normalized
-        self.portraitSkinBaselineCustomization = portraitSkinBaselineCustomization?.normalized
+        self.skinBaselineCustomization = skinBaselineCustomization
+        self.landscapeSkinBaselineCustomization = landscapeSkinBaselineCustomization
+        self.portraitSkinBaselineCustomization = portraitSkinBaselineCustomization
         self.orientationPreference = orientationPreference
         self.outputMode = outputMode
-        self.launchTarget = launchTarget?.normalized
+        self.launchTarget = launchTarget
         self.updatedAt = updatedAt
+        normalizePrimaryCustomizationInPlace()
+        normalizeLandscapeCustomizationInPlace()
+        normalizePortraitCustomizationInPlace()
+        normalizeSkinBaselineCustomizationInPlace()
+        normalizeLandscapeSkinBaselineCustomizationInPlace()
+        normalizePortraitSkinBaselineCustomizationInPlace()
+        normalizeLaunchTargetInPlace()
     }
 
     public init(from decoder: Decoder) throws {
+        let workspace = DecodingWorkspace()
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled"
-        customization = (try container.decodeIfPresent(GamepadCustomization.self, forKey: .customization) ?? .defaultValue).normalized
-        landscapeCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .landscapeCustomization)?.normalized
-        portraitCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .portraitCustomization)?.normalized
-        skinReference = try container.decodeIfPresent(PocketPadSkinReference.self, forKey: .skinReference)
-        skinBaselineCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .skinBaselineCustomization)?.normalized
-        landscapeSkinBaselineCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .landscapeSkinBaselineCustomization)?.normalized
-        portraitSkinBaselineCustomization = try container.decodeIfPresent(GamepadCustomization.self, forKey: .portraitSkinBaselineCustomization)?.normalized
-        orientationPreference = try container.decodeIfPresent(GamepadProfileOrientationPreference.self, forKey: .orientationPreference) ?? .automatic
+        try Self.decodeIdentityFields(from: container, into: workspace)
+        try Self.decodePrimaryCustomization(from: container, into: workspace)
+        try Self.decodeLandscapeCustomization(from: container, into: workspace)
+        try Self.decodePortraitCustomization(from: container, into: workspace)
+        try Self.decodeSkinBaselineCustomization(from: container, into: workspace)
+        try Self.decodeLandscapeSkinBaselineCustomization(from: container, into: workspace)
+        try Self.decodePortraitSkinBaselineCustomization(from: container, into: workspace)
+        try Self.decodeProfileMetadata(from: container, into: workspace)
+        self.init(decoded: workspace)
+    }
+
+    private final class DecodingWorkspace {
+        var id = UUID()
+        var name = "Untitled"
+        var customization = GamepadCustomization.defaultValue
+        var landscapeCustomization: GamepadCustomization?
+        var portraitCustomization: GamepadCustomization?
+        var skinReference: PocketPadSkinReference?
+        var skinBaselineCustomization: GamepadCustomization?
+        var landscapeSkinBaselineCustomization: GamepadCustomization?
+        var portraitSkinBaselineCustomization: GamepadCustomization?
+        var orientationPreference = GamepadProfileOrientationPreference.automatic
+        var outputMode = GamepadProfileOutputMode.custom
+        var launchTarget: GamepadProfileLaunchTarget?
+        var updatedAt = Date.currentMilliseconds
+    }
+
+    private init(decoded workspace: DecodingWorkspace) {
+        id = workspace.id
+        name = workspace.name
+        customization = .defaultValue
+        landscapeCustomization = nil
+        portraitCustomization = nil
+        skinReference = workspace.skinReference
+        skinBaselineCustomization = nil
+        landscapeSkinBaselineCustomization = nil
+        portraitSkinBaselineCustomization = nil
+        orientationPreference = workspace.orientationPreference
+        outputMode = workspace.outputMode
+        launchTarget = workspace.launchTarget
+        updatedAt = workspace.updatedAt
+        Self.commitPrimaryCustomization(from: workspace, into: &self)
+        Self.commitLandscapeCustomization(from: workspace, into: &self)
+        Self.commitPortraitCustomization(from: workspace, into: &self)
+        Self.commitSkinBaselineCustomization(from: workspace, into: &self)
+        Self.commitLandscapeSkinBaselineCustomization(from: workspace, into: &self)
+        Self.commitPortraitSkinBaselineCustomization(from: workspace, into: &self)
+    }
+
+    private static func commitPrimaryCustomization(
+        from workspace: DecodingWorkspace,
+        into profile: inout GamepadConfigurationProfile
+    ) {
+        profile.customization = workspace.customization
+    }
+
+    private static func commitLandscapeCustomization(
+        from workspace: DecodingWorkspace,
+        into profile: inout GamepadConfigurationProfile
+    ) {
+        profile.landscapeCustomization = workspace.landscapeCustomization
+    }
+
+    private static func commitPortraitCustomization(
+        from workspace: DecodingWorkspace,
+        into profile: inout GamepadConfigurationProfile
+    ) {
+        profile.portraitCustomization = workspace.portraitCustomization
+    }
+
+    private static func commitSkinBaselineCustomization(
+        from workspace: DecodingWorkspace,
+        into profile: inout GamepadConfigurationProfile
+    ) {
+        profile.skinBaselineCustomization = workspace.skinBaselineCustomization
+    }
+
+    private static func commitLandscapeSkinBaselineCustomization(
+        from workspace: DecodingWorkspace,
+        into profile: inout GamepadConfigurationProfile
+    ) {
+        profile.landscapeSkinBaselineCustomization = workspace.landscapeSkinBaselineCustomization
+    }
+
+    private static func commitPortraitSkinBaselineCustomization(
+        from workspace: DecodingWorkspace,
+        into profile: inout GamepadConfigurationProfile
+    ) {
+        profile.portraitSkinBaselineCustomization = workspace.portraitSkinBaselineCustomization
+    }
+
+    private static func decodeIdentityFields(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into workspace: DecodingWorkspace
+    ) throws {
+        workspace.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        workspace.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled"
+    }
+
+    private static func decodePrimaryCustomization(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into workspace: DecodingWorkspace
+    ) throws {
+        let decoded = try container.decodeIfPresent(GamepadCustomization.self, forKey: .customization) ?? .defaultValue
+        workspace.customization = decoded.normalized
+    }
+
+    private static func decodeLandscapeCustomization(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into workspace: DecodingWorkspace
+    ) throws {
+        guard let decoded = try container.decodeIfPresent(GamepadCustomization.self, forKey: .landscapeCustomization) else { return }
+        workspace.landscapeCustomization = decoded.normalized
+    }
+
+    private static func decodePortraitCustomization(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into workspace: DecodingWorkspace
+    ) throws {
+        guard let decoded = try container.decodeIfPresent(GamepadCustomization.self, forKey: .portraitCustomization) else { return }
+        workspace.portraitCustomization = decoded.normalized
+    }
+
+    private static func decodeSkinBaselineCustomization(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into workspace: DecodingWorkspace
+    ) throws {
+        guard let decoded = try container.decodeIfPresent(GamepadCustomization.self, forKey: .skinBaselineCustomization) else { return }
+        workspace.skinBaselineCustomization = decoded.normalized
+    }
+
+    private static func decodeLandscapeSkinBaselineCustomization(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into workspace: DecodingWorkspace
+    ) throws {
+        guard let decoded = try container.decodeIfPresent(GamepadCustomization.self, forKey: .landscapeSkinBaselineCustomization) else { return }
+        workspace.landscapeSkinBaselineCustomization = decoded.normalized
+    }
+
+    private static func decodePortraitSkinBaselineCustomization(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into workspace: DecodingWorkspace
+    ) throws {
+        guard let decoded = try container.decodeIfPresent(GamepadCustomization.self, forKey: .portraitSkinBaselineCustomization) else { return }
+        workspace.portraitSkinBaselineCustomization = decoded.normalized
+    }
+
+    private static func decodeProfileMetadata(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        into workspace: DecodingWorkspace
+    ) throws {
+        workspace.skinReference = try container.decodeIfPresent(PocketPadSkinReference.self, forKey: .skinReference)
+        workspace.orientationPreference = try container.decodeIfPresent(GamepadProfileOrientationPreference.self, forKey: .orientationPreference) ?? .automatic
         // Profiles saved before output modes had their Mac output bindings stored next
         // to the profile, not inside it. Treat legacy profiles as custom so any
         // existing mixed keyboard/controller bindings keep working after migration.
-        outputMode = try container.decodeIfPresent(GamepadProfileOutputMode.self, forKey: .outputMode) ?? .custom
-        launchTarget = try container.decodeIfPresent(GamepadProfileLaunchTarget.self, forKey: .launchTarget)?.normalized
-        updatedAt = try container.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? Date.currentMilliseconds
+        workspace.outputMode = try container.decodeIfPresent(GamepadProfileOutputMode.self, forKey: .outputMode) ?? .custom
+        workspace.launchTarget = try container.decodeIfPresent(GamepadProfileLaunchTarget.self, forKey: .launchTarget)?.normalized
+        workspace.updatedAt = try container.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? Date.currentMilliseconds
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -4464,18 +4856,116 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 
+    public static func == (
+        lhs: GamepadConfigurationProfile,
+        rhs: GamepadConfigurationProfile
+    ) -> Bool {
+        EqualityWorkspace(lhs, rhs).matches
+    }
+
+    private final class EqualityWorkspace {
+        private let lhs: GamepadConfigurationProfile
+        private let rhs: GamepadConfigurationProfile
+
+        init(_ lhs: GamepadConfigurationProfile, _ rhs: GamepadConfigurationProfile) {
+            self.lhs = lhs
+            self.rhs = rhs
+        }
+
+        var matches: Bool {
+            if !matchesIdentityAndMetadata { return false }
+            if !matchesPrimaryCustomization { return false }
+            if !matchesLandscapeCustomization { return false }
+            if !matchesPortraitCustomization { return false }
+            if !matchesSkinBaselineCustomization { return false }
+            if !matchesLandscapeSkinBaselineCustomization { return false }
+            return matchesPortraitSkinBaselineCustomization
+        }
+
+        private var matchesIdentityAndMetadata: Bool {
+            if lhs.id != rhs.id { return false }
+            if lhs.name != rhs.name { return false }
+            if lhs.skinReference != rhs.skinReference { return false }
+            if lhs.orientationPreference != rhs.orientationPreference { return false }
+            if lhs.outputMode != rhs.outputMode { return false }
+            if lhs.launchTarget != rhs.launchTarget { return false }
+            return lhs.updatedAt == rhs.updatedAt
+        }
+
+        private var matchesPrimaryCustomization: Bool {
+            lhs.customization == rhs.customization
+        }
+
+        private var matchesLandscapeCustomization: Bool {
+            lhs.landscapeCustomization == rhs.landscapeCustomization
+        }
+
+        private var matchesPortraitCustomization: Bool {
+            lhs.portraitCustomization == rhs.portraitCustomization
+        }
+
+        private var matchesSkinBaselineCustomization: Bool {
+            lhs.skinBaselineCustomization == rhs.skinBaselineCustomization
+        }
+
+        private var matchesLandscapeSkinBaselineCustomization: Bool {
+            lhs.landscapeSkinBaselineCustomization == rhs.landscapeSkinBaselineCustomization
+        }
+
+        private var matchesPortraitSkinBaselineCustomization: Bool {
+            lhs.portraitSkinBaselineCustomization == rhs.portraitSkinBaselineCustomization
+        }
+    }
+
     public var normalized: GamepadConfigurationProfile {
         var copy = self
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.name = trimmedName.isEmpty ? "Untitled" : trimmedName
-        copy.customization = customization.normalized
-        copy.landscapeCustomization = landscapeCustomization?.normalized
-        copy.portraitCustomization = portraitCustomization?.normalized
-        copy.skinBaselineCustomization = skinBaselineCustomization?.normalized
-        copy.landscapeSkinBaselineCustomization = landscapeSkinBaselineCustomization?.normalized
-        copy.portraitSkinBaselineCustomization = portraitSkinBaselineCustomization?.normalized
-        copy.launchTarget = launchTarget?.normalized
+        copy.normalizeIdentityInPlace()
+        copy.normalizePrimaryCustomizationInPlace()
+        copy.normalizeLandscapeCustomizationInPlace()
+        copy.normalizePortraitCustomizationInPlace()
+        copy.normalizeSkinBaselineCustomizationInPlace()
+        copy.normalizeLandscapeSkinBaselineCustomizationInPlace()
+        copy.normalizePortraitSkinBaselineCustomizationInPlace()
+        copy.normalizeLaunchTargetInPlace()
         return copy
+    }
+
+    private mutating func normalizeIdentityInPlace() {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        name = trimmedName.isEmpty ? "Untitled" : trimmedName
+    }
+
+    private mutating func normalizePrimaryCustomizationInPlace() {
+        customization = customization.normalized
+    }
+
+    private mutating func normalizeLandscapeCustomizationInPlace() {
+        guard let value = landscapeCustomization else { return }
+        landscapeCustomization = value.normalized
+    }
+
+    private mutating func normalizePortraitCustomizationInPlace() {
+        guard let value = portraitCustomization else { return }
+        portraitCustomization = value.normalized
+    }
+
+    private mutating func normalizeSkinBaselineCustomizationInPlace() {
+        guard let value = skinBaselineCustomization else { return }
+        skinBaselineCustomization = value.normalized
+    }
+
+    private mutating func normalizeLandscapeSkinBaselineCustomizationInPlace() {
+        guard let value = landscapeSkinBaselineCustomization else { return }
+        landscapeSkinBaselineCustomization = value.normalized
+    }
+
+    private mutating func normalizePortraitSkinBaselineCustomizationInPlace() {
+        guard let value = portraitSkinBaselineCustomization else { return }
+        portraitSkinBaselineCustomization = value.normalized
+    }
+
+    private mutating func normalizeLaunchTargetInPlace() {
+        launchTarget = launchTarget?.normalized
     }
 
     func customization(for orientation: GamepadEditorDeviceOrientation) -> GamepadCustomization {
@@ -4521,70 +5011,180 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         _ package: PocketPadSkinPackage,
         colorScheme: PocketPadSkinColorScheme = .light
     ) {
-        let reference = PocketPadSkinReference(
-            identifier: package.manifest.identifier,
-            version: package.manifest.version
+        let workspace = SkinApplicationWorkspace(
+            profile: self,
+            package: package,
+            colorScheme: colorScheme
         )
-        let fallbackOrientation = customization.deviceCanvas.editorDeviceFrame.orientation
-        let fallbackSkinOrientation: PocketPadSkinOrientation = fallbackOrientation == .portrait ? .portrait : .landscape
-        let previousFallbackBaseline = skinBaselineCustomization
-        let fallbackBaseline = customization.applying(
-            skinPackage: package,
-            orientation: fallbackSkinOrientation,
-            colorScheme: colorScheme,
-            options: .replacingAppearance
-        ).dehydratingAssets(from: package)
-        customization = previousFallbackBaseline.map { previousBaseline in
-            self.customization.applying(
+        workspace.apply()
+        self = workspace.profile
+    }
+
+    private final class SkinApplicationWorkspace {
+        private(set) var profile: GamepadConfigurationProfile
+        private let package: PocketPadSkinPackage
+        private let colorScheme: PocketPadSkinColorScheme
+        private let previousFallbackBaseline: GamepadCustomization?
+        private var preparedSlot: SkinSlotApplicationWorkspace?
+
+        init(
+            profile: GamepadConfigurationProfile,
+            package: PocketPadSkinPackage,
+            colorScheme: PocketPadSkinColorScheme
+        ) {
+            self.profile = profile
+            self.package = package
+            self.colorScheme = colorScheme
+            self.previousFallbackBaseline = profile.skinBaselineCustomization
+        }
+
+        func apply() {
+            applyFallback()
+            applyLandscapeIfPresent()
+            applyPortraitIfPresent()
+            profile.skinReference = PocketPadSkinReference(
+                identifier: package.manifest.identifier,
+                version: package.manifest.version
+            )
+            profile.updatedAt = Date.currentMilliseconds
+        }
+
+        private func applyFallback() {
+            prepareFallbackSlot()
+            resolvePreparedSlot()
+            commitFallbackSlot()
+            preparedSlot = nil
+        }
+
+        private func prepareFallbackSlot() {
+            let fallbackOrientation = profile.customization.deviceCanvas.editorDeviceFrame.orientation
+            let skinOrientation: PocketPadSkinOrientation = fallbackOrientation == .portrait ? .portrait : .landscape
+            preparedSlot = SkinSlotApplicationWorkspace(
+                source: profile.customization,
+                previousBaseline: previousFallbackBaseline,
+                package: package,
+                orientation: skinOrientation,
+                colorScheme: colorScheme
+            )
+        }
+
+        private func commitFallbackSlot() {
+            guard let preparedSlot else { return }
+            profile.customization = preparedSlot.result
+            profile.skinBaselineCustomization = preparedSlot.baseline
+        }
+
+        private func applyLandscapeIfPresent() {
+            preparedSlot = nil
+            prepareLandscapeSlot()
+            guard preparedSlot != nil else { return }
+            resolvePreparedSlot()
+            commitLandscapeSlot()
+            preparedSlot = nil
+        }
+
+        private func prepareLandscapeSlot() {
+            guard let source = profile.landscapeCustomization else { return }
+            preparedSlot = SkinSlotApplicationWorkspace(
+                source: source,
+                previousBaseline: profile.landscapeSkinBaselineCustomization ?? previousFallbackBaseline,
+                package: package,
+                orientation: .landscape,
+                colorScheme: colorScheme
+            )
+        }
+
+        private func commitLandscapeSlot() {
+            guard let preparedSlot else { return }
+            profile.landscapeCustomization = preparedSlot.result
+            profile.landscapeSkinBaselineCustomization = preparedSlot.baseline
+        }
+
+        private func applyPortraitIfPresent() {
+            preparedSlot = nil
+            preparePortraitSlot()
+            guard preparedSlot != nil else { return }
+            resolvePreparedSlot()
+            commitPortraitSlot()
+            preparedSlot = nil
+        }
+
+        private func preparePortraitSlot() {
+            guard let source = profile.portraitCustomization else { return }
+            preparedSlot = SkinSlotApplicationWorkspace(
+                source: source,
+                previousBaseline: profile.portraitSkinBaselineCustomization ?? previousFallbackBaseline,
+                package: package,
+                orientation: .portrait,
+                colorScheme: colorScheme
+            )
+        }
+
+        private func commitPortraitSlot() {
+            guard let preparedSlot else { return }
+            profile.portraitCustomization = preparedSlot.result
+            profile.portraitSkinBaselineCustomization = preparedSlot.baseline
+        }
+
+        private func resolvePreparedSlot() {
+            preparedSlot?.resolve()
+        }
+    }
+
+    private final class SkinSlotApplicationWorkspace {
+        private let source: GamepadCustomization
+        private let previousBaseline: GamepadCustomization?
+        private let package: PocketPadSkinPackage
+        private let orientation: PocketPadSkinOrientation
+        private let colorScheme: PocketPadSkinColorScheme
+        private(set) var baseline: GamepadCustomization
+        private(set) var result: GamepadCustomization
+
+        init(
+            source: GamepadCustomization,
+            previousBaseline: GamepadCustomization?,
+            package: PocketPadSkinPackage,
+            orientation: PocketPadSkinOrientation,
+            colorScheme: PocketPadSkinColorScheme
+        ) {
+            self.source = source
+            self.previousBaseline = previousBaseline
+            self.package = package
+            self.orientation = orientation
+            self.colorScheme = colorScheme
+            self.baseline = source
+            self.result = source
+        }
+
+        func resolve() {
+            resolveBaseline()
+            resolveResult()
+        }
+
+        private func resolveBaseline() {
+            baseline = source.applying(
                 skinPackage: package,
-                orientation: fallbackSkinOrientation,
+                orientation: orientation,
+                colorScheme: colorScheme,
+                options: .replacingAppearance
+            )
+            baseline.dehydrateAssetReferencesInPlace(from: package)
+        }
+
+        private func resolveResult() {
+            guard let previousBaseline else {
+                result = baseline
+                return
+            }
+            result = source.applying(
+                skinPackage: package,
+                orientation: orientation,
                 colorScheme: colorScheme,
                 options: .preservingUserOverrides,
                 overrideBaseline: previousBaseline
-            ).dehydratingAssets(from: package)
-        } ?? fallbackBaseline
-        skinBaselineCustomization = fallbackBaseline
-
-        if let landscapeCustomization {
-            let previousBaseline = landscapeSkinBaselineCustomization ?? previousFallbackBaseline
-            let baseline = landscapeCustomization.applying(
-                skinPackage: package,
-                orientation: .landscape,
-                colorScheme: colorScheme,
-                options: .replacingAppearance
-            ).dehydratingAssets(from: package)
-            self.landscapeCustomization = previousBaseline.map {
-                landscapeCustomization.applying(
-                    skinPackage: package,
-                    orientation: .landscape,
-                    colorScheme: colorScheme,
-                    options: .preservingUserOverrides,
-                    overrideBaseline: $0
-                ).dehydratingAssets(from: package)
-            } ?? baseline
-            landscapeSkinBaselineCustomization = baseline
+            )
+            result.dehydrateAssetReferencesInPlace(from: package)
         }
-        if let portraitCustomization {
-            let previousBaseline = portraitSkinBaselineCustomization ?? previousFallbackBaseline
-            let baseline = portraitCustomization.applying(
-                skinPackage: package,
-                orientation: .portrait,
-                colorScheme: colorScheme,
-                options: .replacingAppearance
-            ).dehydratingAssets(from: package)
-            self.portraitCustomization = previousBaseline.map {
-                portraitCustomization.applying(
-                    skinPackage: package,
-                    orientation: .portrait,
-                    colorScheme: colorScheme,
-                    options: .preservingUserOverrides,
-                    overrideBaseline: $0
-                ).dehydratingAssets(from: package)
-            } ?? baseline
-            portraitSkinBaselineCustomization = baseline
-        }
-        skinReference = reference
-        updatedAt = Date.currentMilliseconds
     }
 
     /// Materializes the selected variant and package assets before removing the package dependency.

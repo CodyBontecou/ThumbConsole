@@ -314,6 +314,7 @@ ThumbConsole Mac must be running for most runtime commands. `app open` launches 
 
 ```bash
 "$THUMBCONSOLE_CLI" app open
+"$THUMBCONSOLE_CLI" app screenshot -o /tmp/thumbconsole-window.png --json
 "$THUMBCONSOLE_CLI" status --json
 "$THUMBCONSOLE_CLI" server start
 "$THUMBCONSOLE_CLI" server stop
@@ -332,6 +333,8 @@ ThumbConsole Mac must be running for most runtime commands. `app open` launches 
 "$THUMBCONSOLE_CLI" test up left
 "$THUMBCONSOLE_CLI" release-all
 ```
+
+For visual verification, agents must use `app screenshot` instead of activating ThumbConsole, sending key events, running AppleScript, or taking a full-screen capture. It captures only the largest visible ThumbConsole window and does not move focus or control the user's screen. Use `--window-title TEXT` to choose among multiple app windows. If ThumbConsole is not running, ask the user to open it; do not launch it without permission because launching can change focus. If Screen Recording access is unavailable, stop and ask the user to grant it to the terminal or agent host; do not trigger permission UI or fall back to screen control.
 
 Use `latency simulate` before UI automation when investigating controller lag. It is headless and emits per-edge touch-to-injection timings; supported patterns are `hollow-knight`, `same-button-burst`, `udp-recovery`, and `udp-recovery-burst`, with modes `current`, `legacy-main-actor`, or `compare`. Use `latency verify` as the pass/fail gate for whether the current input path is below the configured lag budget.
 

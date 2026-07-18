@@ -527,26 +527,36 @@ public struct GamepadControlVisualStyle: Codable, Equatable, Sendable {
     public static let empty = GamepadControlVisualStyle()
 
     var normalized: GamepadControlVisualStyle? {
-        let copy = GamepadControlVisualStyle(
-            normal: normal.normalized,
-            pressed: pressed?.normalized,
-            active: active?.normalized,
-            disabled: disabled?.normalized,
-            icon: icon?.normalized,
-            hapticStyle: hapticStyle,
-            hapticFeedback: hapticFeedback?.normalized
-        )
+        var copy = self
+        copy.normalizeInPlace()
         return copy.isEmpty ? nil : copy
     }
 
+    mutating func normalizeInPlace() {
+        normalizeStateStylesInPlace()
+        normalizeFeedbackInPlace()
+    }
+
+    private mutating func normalizeStateStylesInPlace() {
+        normal = normal.normalized
+        pressed = pressed?.normalized
+        active = active?.normalized
+        disabled = disabled?.normalized
+    }
+
+    private mutating func normalizeFeedbackInPlace() {
+        icon = icon?.normalized
+        hapticFeedback = hapticFeedback?.normalized
+    }
+
     var isEmpty: Bool {
-        normal.isEmpty
-            && (pressed?.isEmpty ?? true)
-            && (active?.isEmpty ?? true)
-            && (disabled?.isEmpty ?? true)
-            && icon == nil
-            && hapticStyle == nil
-            && hapticFeedback == nil
+        if !normal.isEmpty { return false }
+        if pressed?.isEmpty == false { return false }
+        if active?.isEmpty == false { return false }
+        if disabled?.isEmpty == false { return false }
+        if icon != nil { return false }
+        if hapticStyle != nil { return false }
+        return hapticFeedback == nil
     }
 
     func stateStyle(for state: GamepadControlPresentationState) -> GamepadControlStateStyle {

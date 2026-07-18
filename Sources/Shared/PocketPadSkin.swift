@@ -177,60 +177,99 @@ public struct PocketPadSkinControlAppearance: Codable, Equatable, Sendable {
     public static let empty = PocketPadSkinControlAppearance()
 
     public var normalized: PocketPadSkinControlAppearance {
+        var copy = self
+        copy.normalizeInPlace()
+        return copy
+    }
+
+    mutating func normalizeInPlace() {
+        normalizeIdentityAndFeedbackInPlace()
+        normalizeVisualStyleInPlace()
+        normalizeGeometryAndColorInPlace()
+    }
+
+    private mutating func normalizeIdentityAndFeedbackInPlace() {
         let normalizedStyleID = styleID.map(GamepadStyleToken.normalizedIdentifier) ?? ""
-        return PocketPadSkinControlAppearance(
-            styleID: normalizedStyleID.isEmpty ? nil : normalizedStyleID,
-            shape: shape,
-            accentStyle: accentStyle,
-            visualStyle: visualStyle?.normalized,
-            icon: icon?.normalized,
-            hapticFeedback: hapticFeedback?.normalized,
-            cornerRadius: cornerRadius.map(GamepadButtonCustomization.normalizedCornerRadius),
-            cornerRadii: cornerRadii?.normalized,
-            shadowStrength: shadowStrength.map {
-                GamepadButtonCustomization.clamp(
-                    $0,
-                    lower: GamepadButtonCustomization.minimumShadowStrength,
-                    upper: GamepadButtonCustomization.maximumShadowStrength
-                )
-            },
-            joystickKnobColor: joystickKnobColor?.normalized,
-            joystickVisualStyle: joystickVisualStyle
-        )
+        styleID = normalizedStyleID.isEmpty ? nil : normalizedStyleID
+        icon = icon?.normalized
+        hapticFeedback = hapticFeedback?.normalized
+    }
+
+    private mutating func normalizeVisualStyleInPlace() {
+        visualStyle = visualStyle?.normalized
+    }
+
+    private mutating func normalizeGeometryAndColorInPlace() {
+        cornerRadius = cornerRadius.map(GamepadButtonCustomization.normalizedCornerRadius)
+        cornerRadii = cornerRadii?.normalized
+        shadowStrength = shadowStrength.map {
+            GamepadButtonCustomization.clamp(
+                $0,
+                lower: GamepadButtonCustomization.minimumShadowStrength,
+                upper: GamepadButtonCustomization.maximumShadowStrength
+            )
+        }
+        joystickKnobColor = joystickKnobColor?.normalized
     }
 
     public var isEmpty: Bool {
-        let value = normalized
-        return value.styleID == nil
-            && value.shape == nil
-            && value.accentStyle == nil
-            && value.visualStyle == nil
-            && value.icon == nil
-            && value.hapticFeedback == nil
-            && value.cornerRadius == nil
-            && value.cornerRadii == nil
-            && value.shadowStrength == nil
-            && value.joystickKnobColor == nil
-            && value.joystickVisualStyle == nil
+        var value = self
+        value.normalizeInPlace()
+        return value.isEmptyWithoutNormalization
+    }
+
+    fileprivate var isEmptyWithoutNormalization: Bool {
+        if styleID != nil { return false }
+        if shape != nil { return false }
+        if accentStyle != nil { return false }
+        if visualStyle != nil { return false }
+        if icon != nil { return false }
+        if hapticFeedback != nil { return false }
+        if cornerRadius != nil { return false }
+        if cornerRadii != nil { return false }
+        if shadowStrength != nil { return false }
+        if joystickKnobColor != nil { return false }
+        return joystickVisualStyle == nil
     }
 
     /// Returns this appearance layered over a less-specific appearance.
     public func merged(over base: PocketPadSkinControlAppearance) -> PocketPadSkinControlAppearance {
-        let base = base.normalized
-        let overlay = normalized
-        return PocketPadSkinControlAppearance(
-            styleID: overlay.styleID ?? base.styleID,
-            shape: overlay.shape ?? base.shape,
-            accentStyle: overlay.accentStyle ?? base.accentStyle,
-            visualStyle: overlay.visualStyle ?? base.visualStyle,
-            icon: overlay.icon ?? base.icon,
-            hapticFeedback: overlay.hapticFeedback ?? base.hapticFeedback,
-            cornerRadius: overlay.cornerRadius ?? base.cornerRadius,
-            cornerRadii: overlay.cornerRadii ?? base.cornerRadii,
-            shadowStrength: overlay.shadowStrength ?? base.shadowStrength,
-            joystickKnobColor: overlay.joystickKnobColor ?? base.joystickKnobColor,
-            joystickVisualStyle: overlay.joystickVisualStyle ?? base.joystickVisualStyle
-        ).normalized
+        MergeWorkspace(base: base, overlay: self).resolve()
+    }
+
+    private final class MergeWorkspace {
+        private var base: PocketPadSkinControlAppearance
+        private var overlay: PocketPadSkinControlAppearance
+        private var result: PocketPadSkinControlAppearance
+
+        init(base: PocketPadSkinControlAppearance, overlay: PocketPadSkinControlAppearance) {
+            self.base = base
+            self.overlay = overlay
+            self.result = base
+        }
+
+        func resolve() -> PocketPadSkinControlAppearance {
+            base.normalizeInPlace()
+            overlay.normalizeInPlace()
+            result = base
+            applyOverlay()
+            result.normalizeInPlace()
+            return result
+        }
+
+        private func applyOverlay() {
+            if let value = overlay.styleID { result.styleID = value }
+            if let value = overlay.shape { result.shape = value }
+            if let value = overlay.accentStyle { result.accentStyle = value }
+            if let value = overlay.visualStyle { result.visualStyle = value }
+            if let value = overlay.icon { result.icon = value }
+            if let value = overlay.hapticFeedback { result.hapticFeedback = value }
+            if let value = overlay.cornerRadius { result.cornerRadius = value }
+            if let value = overlay.cornerRadii { result.cornerRadii = value }
+            if let value = overlay.shadowStrength { result.shadowStrength = value }
+            if let value = overlay.joystickKnobColor { result.joystickKnobColor = value }
+            if let value = overlay.joystickVisualStyle { result.joystickVisualStyle = value }
+        }
     }
 }
 
@@ -289,31 +328,70 @@ public struct PocketPadSkinAppearance: Codable, Equatable, Sendable {
     public static let empty = PocketPadSkinAppearance()
 
     public var normalized: PocketPadSkinAppearance {
-        var roleByID: [GamepadVisualRole: PocketPadSkinControlAppearance] = [:]
+        var copy = self
+        copy.normalizeInPlace()
+        return copy
+    }
+
+    mutating func normalizeInPlace() {
+        normalizeSurfaceInPlace()
+        normalizeDefaultControlInPlace()
+        normalizeRoleRulesInPlace()
+        normalizeButtonRulesInPlace()
+        normalizeLibrariesAndArtworkInPlace()
+    }
+
+    private mutating func normalizeSurfaceInPlace() {
+        backgroundFillStyle = backgroundFillStyle?.normalized
+    }
+
+    private mutating func normalizeDefaultControlInPlace() {
+        guard var value = defaultControl else { return }
+        value.normalizeInPlace()
+        defaultControl = value.isEmptyWithoutNormalization ? nil : value
+    }
+
+    private mutating func normalizeRoleRulesInPlace() {
+        var byRole: [GamepadVisualRole: PocketPadSkinControlAppearance] = [:]
         for rule in roleRules {
-            let appearance = rule.appearance.normalized
-            if !appearance.isEmpty { roleByID[rule.role] = appearance }
+            var appearance = rule.appearance
+            appearance.normalizeInPlace()
+            if !appearance.isEmptyWithoutNormalization {
+                byRole[rule.role] = appearance
+            }
         }
-        var buttonByID: [GameButton: PocketPadSkinControlAppearance] = [:]
+        var normalizedRules: [PocketPadSkinRoleRule] = []
+        normalizedRules.reserveCapacity(byRole.count)
+        for role in GamepadVisualRole.allCases {
+            if let appearance = byRole[role] {
+                normalizedRules.append(PocketPadSkinRoleRule(role: role, appearance: appearance))
+            }
+        }
+        roleRules = normalizedRules
+    }
+
+    private mutating func normalizeButtonRulesInPlace() {
+        var byButton: [GameButton: PocketPadSkinControlAppearance] = [:]
         for rule in buttonRules {
-            let appearance = rule.appearance.normalized
-            if !appearance.isEmpty { buttonByID[rule.button] = appearance }
+            var appearance = rule.appearance
+            appearance.normalizeInPlace()
+            if !appearance.isEmptyWithoutNormalization {
+                byButton[rule.button] = appearance
+            }
         }
-        let normalizedDefault = defaultControl?.normalized
-        return PocketPadSkinAppearance(
-            backgroundFillStyle: backgroundFillStyle?.normalized,
-            accentStyle: accentStyle,
-            showsButtonLabels: showsButtonLabels,
-            defaultControl: normalizedDefault?.isEmpty == false ? normalizedDefault : nil,
-            roleRules: GamepadVisualRole.allCases.compactMap { role in
-                roleByID[role].map { PocketPadSkinRoleRule(role: role, appearance: $0) }
-            },
-            buttonRules: GameButton.allCases.compactMap { button in
-                buttonByID[button].map { PocketPadSkinButtonRule(button: button, appearance: $0) }
-            },
-            styleLibrary: styleLibrary.normalized,
-            artworkLayers: normalizedArtworkLayers(artworkLayers ?? [])
-        )
+        var normalizedRules: [PocketPadSkinButtonRule] = []
+        normalizedRules.reserveCapacity(byButton.count)
+        for button in GameButton.allCases {
+            if let appearance = byButton[button] {
+                normalizedRules.append(PocketPadSkinButtonRule(button: button, appearance: appearance))
+            }
+        }
+        buttonRules = normalizedRules
+    }
+
+    private mutating func normalizeLibrariesAndArtworkInPlace() {
+        styleLibrary = styleLibrary.normalized
+        artworkLayers = normalizedArtworkLayers(artworkLayers ?? [])
     }
 
     private func normalizedArtworkLayers(_ layers: [PocketPadSkinArtworkLayer]) -> [PocketPadSkinArtworkLayer] {
@@ -348,63 +426,96 @@ public struct PocketPadSkinAppearance: Codable, Equatable, Sendable {
 
     /// Returns this appearance layered over a less-specific appearance.
     public func merged(over base: PocketPadSkinAppearance) -> PocketPadSkinAppearance {
-        let base = base.normalized
-        let overlay = normalized
+        MergeWorkspace(base: base, overlay: self).resolve()
+    }
 
-        var styles = base.styleLibrary.styles
-        for style in overlay.styleLibrary.styles {
-            if let index = styles.firstIndex(where: { $0.id == style.id }) {
-                styles[index] = style
+    private final class MergeWorkspace {
+        private var base: PocketPadSkinAppearance
+        private var overlay: PocketPadSkinAppearance
+        private var result: PocketPadSkinAppearance
+
+        init(base: PocketPadSkinAppearance, overlay: PocketPadSkinAppearance) {
+            self.base = base
+            self.overlay = overlay
+            self.result = base
+        }
+
+        func resolve() -> PocketPadSkinAppearance {
+            base.normalizeInPlace()
+            overlay.normalizeInPlace()
+            result = base
+            mergeSurface()
+            mergeStyles()
+            mergeRoleRules()
+            mergeButtonRules()
+            mergeDefaultControl()
+            mergeArtwork()
+            result.normalizeInPlace()
+            return result
+        }
+
+        private func mergeSurface() {
+            if let value = overlay.backgroundFillStyle { result.backgroundFillStyle = value }
+            if let value = overlay.accentStyle { result.accentStyle = value }
+            if let value = overlay.showsButtonLabels { result.showsButtonLabels = value }
+        }
+
+        private func mergeStyles() {
+            var styles = base.styleLibrary.styles
+            for style in overlay.styleLibrary.styles {
+                if let index = styles.firstIndex(where: { $0.id == style.id }) {
+                    styles[index] = style
+                } else {
+                    styles.append(style)
+                }
+            }
+            result.styleLibrary = GamepadStyleLibrary(styles: styles)
+        }
+
+        private func mergeRoleRules() {
+            var rules = base.roleRules
+            for rule in overlay.roleRules {
+                if let index = rules.firstIndex(where: { $0.role == rule.role }) {
+                    rules[index].appearance = rule.appearance.merged(over: rules[index].appearance)
+                } else {
+                    rules.append(rule)
+                }
+            }
+            result.roleRules = rules
+        }
+
+        private func mergeButtonRules() {
+            var rules = base.buttonRules
+            for rule in overlay.buttonRules {
+                if let index = rules.firstIndex(where: { $0.button == rule.button }) {
+                    rules[index].appearance = rule.appearance.merged(over: rules[index].appearance)
+                } else {
+                    rules.append(rule)
+                }
+            }
+            result.buttonRules = rules
+        }
+
+        private func mergeDefaultControl() {
+            if let overlayDefault = overlay.defaultControl {
+                result.defaultControl = overlayDefault.merged(over: base.defaultControl ?? .empty)
             } else {
-                styles.append(style)
+                result.defaultControl = base.defaultControl
             }
         }
 
-        var roleRules = base.roleRules
-        for rule in overlay.roleRules {
-            if let index = roleRules.firstIndex(where: { $0.role == rule.role }) {
-                roleRules[index].appearance = rule.appearance.merged(over: roleRules[index].appearance)
-            } else {
-                roleRules.append(rule)
-            }
+        private func mergeArtwork() {
+            var artworkByID: [String: PocketPadSkinArtworkLayer] = [:]
+            for layer in base.artworkLayers ?? [] { artworkByID[layer.id] = layer }
+            for layer in overlay.artworkLayers ?? [] { artworkByID[layer.id] = layer }
+            result.artworkLayers = artworkByID.values
+                .filter { !$0.isHidden }
+                .sorted {
+                    if $0.plane != $1.plane { return $0.plane.rawValue < $1.plane.rawValue }
+                    if $0.zIndex != $1.zIndex { return $0.zIndex < $1.zIndex }
+                    return $0.id < $1.id
+                }
         }
-
-        var buttonRules = base.buttonRules
-        for rule in overlay.buttonRules {
-            if let index = buttonRules.firstIndex(where: { $0.button == rule.button }) {
-                buttonRules[index].appearance = rule.appearance.merged(over: buttonRules[index].appearance)
-            } else {
-                buttonRules.append(rule)
-            }
-        }
-
-        let defaultControl: PocketPadSkinControlAppearance?
-        if let overlayDefault = overlay.defaultControl {
-            defaultControl = overlayDefault.merged(over: base.defaultControl ?? .empty)
-        } else {
-            defaultControl = base.defaultControl
-        }
-
-        var artworkByID = Dictionary(uniqueKeysWithValues: (base.artworkLayers ?? []).map { ($0.id, $0) })
-        for layer in overlay.artworkLayers ?? [] { artworkByID[layer.id] = layer }
-        let artworkLayers = artworkByID.values
-            .filter { !$0.isHidden }
-            .sorted {
-                if $0.plane != $1.plane { return $0.plane.rawValue < $1.plane.rawValue }
-                if $0.zIndex != $1.zIndex { return $0.zIndex < $1.zIndex }
-                return $0.id < $1.id
-            }
-
-        return PocketPadSkinAppearance(
-            backgroundFillStyle: overlay.backgroundFillStyle ?? base.backgroundFillStyle,
-            accentStyle: overlay.accentStyle ?? base.accentStyle,
-            showsButtonLabels: overlay.showsButtonLabels ?? base.showsButtonLabels,
-            defaultControl: defaultControl,
-            roleRules: roleRules,
-            buttonRules: buttonRules,
-            styleLibrary: GamepadStyleLibrary(styles: styles),
-            artworkLayers: artworkLayers
-        ).normalized
     }
 }
 

@@ -107,7 +107,13 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         let json = String(decoding: data, as: UTF8.self)
         XCTAssertTrue(json.contains("controlBarItemCustomizations"))
 
-        let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data).normalized
+        let wireDecoded = try JSONDecoder().decode(GamepadCustomization.self, from: data)
+        let wireAppearance = wireDecoded.controlBarItemCustomization(for: .settings)
+        XCTAssertNil(wireAppearance.centerX)
+        XCTAssertNil(wireAppearance.centerY)
+        XCTAssertFalse(wireAppearance.isLocationLocked)
+
+        let decoded = wireDecoded.normalized
         XCTAssertEqual(decoded.controlBarItemCustomization(for: .settings), normalizedAppearance)
         XCTAssertFalse(GamepadCustomization.defaultValue.hasSamePresentation(as: decoded))
 

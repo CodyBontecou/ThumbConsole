@@ -290,6 +290,7 @@ thumbconsole element set jump --label A --shape circle --width 1.2 --height 1.2<
 
           <h3>Runtime helper commands</h3>
           <pre><code>thumbconsole app open
+thumbconsole app screenshot -o /tmp/thumbconsole-window.png --json
 thumbconsole status --json
 thumbconsole server restart
 thumbconsole pairing payload
@@ -297,7 +298,7 @@ thumbconsole accessibility status
 thumbconsole test tap jump
 thumbconsole release-all</code></pre>
 
-          <p>When ThumbConsole Mac is running, CLI profile, customization, and binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone.</p>
+          <p>When ThumbConsole Mac is running, CLI profile, customization, and binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone. <code>app screenshot</code> captures only the largest visible ThumbConsole window without activating the app or sending input events; it requires Screen Recording access for the terminal or agent host.</p>
         </section>
 
         <section id="troubleshooting" class="doc-section">

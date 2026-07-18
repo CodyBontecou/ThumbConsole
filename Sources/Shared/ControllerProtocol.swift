@@ -797,8 +797,45 @@ struct ButtonSequenceTracker {
     }
 }
 
+private final class ControllerCodecExpandedStackJob<Value>: @unchecked Sendable {
+    private let operation: () throws -> Value
+    private let lock = NSLock()
+    private var result: Result<Value, Error>?
+    let completed = DispatchSemaphore(value: 0)
+
+    init(operation: @escaping () throws -> Value) {
+        self.operation = operation
+    }
+
+    func run() {
+        let result = Result { try operation() }
+        lock.lock()
+        self.result = result
+        lock.unlock()
+        completed.signal()
+    }
+
+    func takeResult() -> Result<Value, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return result
+    }
+}
+
+public enum ControllerWireCodecError: LocalizedError, Equatable {
+    case inboundPayloadTooLarge(actualBytes: Int, maximumBytes: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case .inboundPayloadTooLarge(let actualBytes, let maximumBytes):
+            "Controller payload is \(actualBytes) bytes; the maximum is \(maximumBytes) bytes."
+        }
+    }
+}
+
 public enum ControllerWireCodec {
     public static let currentInputProtocolVersion = 2
+    public static let maximumInboundPayloadSize = 8 * 1024 * 1024
 
     private static let magic: [UInt8] = [0x50, 0x50] // "PP"
     private static let version: UInt8 = 1
@@ -814,6 +851,21 @@ public enum ControllerWireCodec {
     private static let buttonSequenceMask: UInt64 = (UInt64(1) << buttonSequenceBitCount) - 1
     private static let buttonPressIdentifierShift = buttonSequenceBitCount
     private static let buttonPressIdentifierMask: UInt64 = (UInt64(1) << 15) - 1
+    // Swift's Debug Codable path for complete profiles can exceed the 512 KiB stack
+    // used by Network.framework and dispatch workers even when our own frames are
+    // small. Heavy control-plane payloads run synchronously on a bounded 4 MiB stack;
+    // compact and latency-sensitive input messages stay on their current thread.
+    private static let expandedCodableStackSize = 4 * 1024 * 1024
+    private static let expandedDecodeSizeThreshold = 32 * 1024
+    private static let expandedDecodeFieldNames: Set<String> = [
+        "gamepadCustomization",
+        "gamepadProfiles",
+        "skinPackages",
+        "bindingPresentations"
+    ]
+    private static let expandedDecodeKeyMarkers = expandedDecodeFieldNames.map {
+        Data("\"\($0)\"".utf8)
+    }
     public static let maximumButtonSequenceNumber = buttonSequenceMask
     public static let maximumButtonPressIdentifier = buttonPressIdentifierMask
     private static let buttonDownFrames = GameButton.allCases.map {
@@ -837,14 +889,70 @@ public enum ControllerWireCodec {
         if let compactData = compactData(for: message) {
             return compactData
         }
+        if requiresExpandedStack(for: message) {
+            return try withExpandedCodableStack {
+                try encoder.encode(message)
+            }
+        }
         return try encoder.encode(message)
     }
 
     public static func decode(_ data: Data, using decoder: JSONDecoder) throws -> ControllerMessage {
+        guard data.count <= maximumInboundPayloadSize else {
+            throw ControllerWireCodecError.inboundPayloadTooLarge(
+                actualBytes: data.count,
+                maximumBytes: maximumInboundPayloadSize
+            )
+        }
         if let compactMessage = compactMessage(from: data) {
             return compactMessage
         }
+        if requiresExpandedStackForDecoding(data) {
+            return try withExpandedCodableStack {
+                try decoder.decode(ControllerMessage.self, from: data)
+            }
+        }
         return try decoder.decode(ControllerMessage.self, from: data)
+    }
+
+    private static func requiresExpandedStack(for message: ControllerMessage) -> Bool {
+        message.gamepadCustomization != nil
+            || message.gamepadProfiles != nil
+            || message.skinPackages != nil
+            || message.bindingPresentations != nil
+    }
+
+    static func requiresExpandedStackForDecoding(_ data: Data) -> Bool {
+        if data.count >= expandedDecodeSizeThreshold { return true }
+        if expandedDecodeKeyMarkers.contains(where: { data.range(of: $0) != nil }) {
+            return true
+        }
+        // Our encoder emits canonical ASCII keys, but JSON also permits escaped key
+        // spellings (for example, "\\u0067amepadProfiles"). Only take the slower
+        // structural fallback when an escape is present. Malformed escaped JSON also
+        // uses the expanded stack so an invalid control-plane payload cannot bypass
+        // the safety boundary before JSONDecoder reports its error.
+        guard data.contains(UInt8(ascii: "\\")) else { return false }
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let fields = object as? [String: Any]
+        else { return true }
+        return !expandedDecodeFieldNames.isDisjoint(with: fields.keys)
+    }
+
+    private static func withExpandedCodableStack<Value>(
+        _ operation: @escaping () throws -> Value
+    ) throws -> Value {
+        let job = ControllerCodecExpandedStackJob(operation: operation)
+        let thread = Thread { job.run() }
+        thread.name = "ThumbConsole.Codable"
+        thread.qualityOfService = .userInteractive
+        thread.stackSize = expandedCodableStackSize
+        thread.start()
+        job.completed.wait()
+        guard let result = job.takeResult() else {
+            preconditionFailure("Expanded-stack Codable worker completed without a result")
+        }
+        return try result.get()
     }
 
     public static func encodeButton(_ button: GameButton, state: ButtonPressState) -> Data {
