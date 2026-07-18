@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ThumbConsole Docs — Setup, pairing, keypad editor, and CLI</title>
-  <meta name="description" content="ThumbConsole documentation for pairing iPhone and Mac, setting permissions, customizing keypad profiles, recording shortcuts, using controller output, and automating with the CLI.">
+  <title>ThumbConsole Docs: Setup, keypad editor, CLI, and AI agents</title>
+  <meta name="description" content="ThumbConsole documentation for pairing iPhone and Mac, customizing keypad profiles, using controller output, automating with the CLI, and guiding AI agents.">
   <meta name="theme-color" content="#f4efe5">
   <meta property="og:title" content="ThumbConsole Docs">
-  <meta property="og:description" content="Complete setup and customization guide for ThumbConsole on macOS and iOS.">
+  <meta property="og:description" content="Set up and customize ThumbConsole on macOS and iOS, use its CLI, and delegate keypad work to an AI agent.">
   <meta property="og:type" content="article">
   <meta property="og:image" content="/assets/app-icon.png">
   <link rel="icon" href="/assets/favicon.png" type="image/png">
@@ -34,10 +34,10 @@
       <div>
         <p class="eyebrow">documentation</p>
         <h1>ThumbConsole app guide.</h1>
-        <p class="lede">Everything needed to set up ThumbConsole, connect your iPhone to your Mac, customize keypad layouts, bind shortcuts, and use the CLI.</p>
+        <p class="lede">Everything needed to set up ThumbConsole, connect your iPhone to your Mac, customize keypad layouts, use the CLI, and delegate configuration to an AI agent.</p>
         <div class="hero-actions">
           <a class="pixel-button" href="#getting-started">start setup</a>
-          <a class="pixel-button pixel-button-secondary" href="#keypad-editor">learn editor</a>
+          <a class="pixel-button pixel-button-secondary" href="#agents">guide an agent</a>
         </div>
       </div>
 
@@ -66,6 +66,7 @@
         <a href="#skins">Skins</a>
         <a href="#outputs">Outputs</a>
         <a href="#cli">CLI</a>
+        <a href="#agents">AI agents</a>
         <a href="#troubleshooting">Troubleshooting</a>
         <a href="#safety">Safety</a>
         <a href="#faq">FAQ</a>
@@ -274,6 +275,14 @@ thumbconsole skin render MySkin.pocketpad --clean -o preview.png</code></pre>
           <p class="eyebrow">cli</p>
           <h2>Script ThumbConsole with <code>thumbconsole</code></h2>
           <p>The CLI mirrors the saved-configuration features in the Mac Keypad editor and adds runtime helper commands for automation and debugging. Existing automation can continue using the legacy <code>pocketpad</code> executable during the rename.</p>
+          <p>If <code>thumbconsole</code> is not already on <code>PATH</code>, build it from a source checkout to a predictable location:</p>
+
+          <pre><code>xcodebuild -project ThumbConsole.xcodeproj \
+  -scheme ThumbConsoleCLI \
+  -destination 'platform=macOS' \
+  -derivedDataPath build/DerivedData build
+export PATH="$PWD/build/DerivedData/Build/Products/Debug:$PATH"
+thumbconsole --help</code></pre>
 
           <pre><code>thumbconsole profile list --ids
 thumbconsole template list
@@ -299,6 +308,59 @@ thumbconsole test tap jump
 thumbconsole release-all</code></pre>
 
           <p>When ThumbConsole Mac is running, CLI profile, customization, and binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone. <code>app screenshot</code> captures only the largest visible ThumbConsole window without activating the app or sending input events; it requires Screen Recording access for the terminal or agent host.</p>
+        </section>
+
+        <section id="agents" class="doc-section">
+          <p class="eyebrow">ai agents</p>
+          <h2>Tell an agent what you want, not how to click</h2>
+          <p>ThumbConsole includes a repository <a href="https://github.com/CodyBontecou/PocketPad/blob/main/SKILL.md" rel="noreferrer"><code>SKILL.md</code></a> for terminal-capable agents. It explains how to choose between game generation, templates, targeted profile editing, layout repair, skin operations, and runtime diagnostics while avoiding unsafe UI automation.</p>
+
+          <div class="doc-card-grid three">
+            <div class="doc-card">
+              <span>1 · context</span>
+              <h3>Give it the skill</h3>
+              <p>Tell the agent to read the local <code>SKILL.md</code>, or install that file in the skill directory supported by your agent host.</p>
+            </div>
+            <div class="doc-card">
+              <span>2 · outcome</span>
+              <h3>Describe the result</h3>
+              <p>Name the game or app, important controls, preferred orientation, and whether the agent may install, select, or default the profile.</p>
+            </div>
+            <div class="doc-card">
+              <span>3 · evidence</span>
+              <h3>Require verification</h3>
+              <p>Ask for a dry-run or preview, layout validation, final bindings, confidence/source, and confirmation of what actually synced.</p>
+            </div>
+          </div>
+
+          <h3>Copy this starter prompt</h3>
+          <pre><code>Read /absolute/path/to/ThumbConsole/SKILL.md, then use the
+thumbconsole CLI to create a landscape keypad for Celeste.
+Research the default Mac keyboard controls, inspect my profiles,
+and dry-run before installing. Preserve unrelated profiles,
+validate the final layout, and report the source, confidence,
+bindings, whether it became selected/default, and whether sync
+could be confirmed. Do not use UI automation.</code></pre>
+
+          <h3>The reliable agent loop</h3>
+          <ol class="doc-steps compact">
+            <li><strong>Inspect.</strong><p>Run <code>profile list</code>, <code>profile show active --json</code>, and <code>status --json</code> before editing.</p></li>
+            <li><strong>Preview.</strong><p>Use <code>generate --dry-run</code>, <code>layout validate</code>, and <code>layout preview</code> when available.</p></li>
+            <li><strong>Apply.</strong><p>Make only the requested profile, binding, output, layout, or skin changes. Generation selects and defaults a profile unless the agent passes <code>--no-select</code> or <code>--no-default</code>.</p></li>
+            <li><strong>Verify.</strong><p>Re-read the saved profile and bindings, rerun layout checks, and distinguish saved configuration from confirmed iPhone sync or physical-device feel.</p></li>
+          </ol>
+
+          <h3>Safe boundaries to include</h3>
+          <ul>
+            <li>Use the CLI instead of clicking through the Mac or iPhone UI.</li>
+            <li>Use <code>thumbconsole app screenshot</code> for visual checks; do not activate the app or send keyboard/mouse events.</li>
+            <li>Ask before launching apps, opening System Settings, triggering permission prompts, restarting the server, or sending test input.</li>
+            <li>Treat <code>test tap|down|up</code> as real output to the currently focused Mac app, and use <code>release-all</code> if a test is interrupted.</li>
+            <li>Inspect before deleting/resetting profiles, removing skins, clearing bindings, or replacing output modes. Export all profiles before a broad migration or reset.</li>
+            <li>For handcrafted community skins, require editable source, native-rendered review evidence, independent critique/QA, and explicit human approval before publication.</li>
+          </ul>
+
+          <p>See the complete <a href="https://github.com/CodyBontecou/PocketPad/blob/main/docs/agents.md" rel="noreferrer">Using ThumbConsole with an AI agent</a> guide for reusable instruction-file snippets and copy-paste prompts for games, productivity pads, layout repair, diagnostics, and skin installation.</p>
         </section>
 
         <section id="troubleshooting" class="doc-section">

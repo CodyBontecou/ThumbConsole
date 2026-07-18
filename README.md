@@ -49,6 +49,19 @@ The iOS script uses the `asc` CLI. Set `ASC_APP_ID` (or pass `--app`) and option
 
 For airplane/offline use, turn on Airplane Mode if desired, then manually re-enable Wi‑Fi and Bluetooth. ThumbConsole can use Apple peer-to-peer discovery without internet or a router; if both radios are off, wireless control is not possible.
 
+## Use with AI coding agents
+
+ThumbConsole includes a ready-to-use [`SKILL.md`](SKILL.md) that teaches terminal-capable agents how to inspect the current setup, generate or edit profiles, validate layouts, operate the Mac helper safely, and verify their work. Give the agent the skill's absolute path plus the outcome you want; you do not need to write the CLI commands yourself.
+
+```text
+Read /absolute/path/to/ThumbConsole/SKILL.md, then use the thumbconsole CLI to
+create a landscape keypad for Celeste. Research the default Mac controls, dry-run
+before installing, preserve unrelated profiles, validate the result, and report
+the source, confidence, final bindings, and whether sync could be confirmed.
+```
+
+See [Using ThumbConsole with an AI agent](docs/agents.md) for reusable agent instructions, skill setup, safe automation boundaries, an inspect, preview, apply, and verify workflow, and copy-paste prompts for games, productivity apps, layout repair, diagnostics, and skins.
+
 ## Programmatic keypad generation
 
 Build the CLI target and generate a game-specific profile from just a game name:
