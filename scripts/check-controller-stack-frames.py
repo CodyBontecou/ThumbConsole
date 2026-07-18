@@ -28,6 +28,7 @@ IOS_RUNTIME_OBJECT_NAMES = (
     "ControllerClient.o",
     "IOSLocalKeypadUX.o",
     "PocketPadSkin.o",
+    "PocketPadSkinPackage.o",
     "PocketPadSkinResolver.o",
 )
 
@@ -258,6 +259,26 @@ def is_ios_runtime_symbol(name: str) -> bool:
         )
     if ".PocketPadSkin." in name:
         return ".normalized.getter" in name or ".appearance(orientation:" in name
+    if ".PocketPadSkinPackageValidator." in name:
+        return any(
+            fragment in name
+            for fragment in (
+                ".validate(",
+                ".(ValidationWorkspace",
+                ".referencedAssetIDs(",
+                ".validateStyleReferences(",
+            )
+        )
+    if ".PocketPadSkinPackageCodec." in name:
+        return any(
+            fragment in name
+            for fragment in (
+                ".encode(",
+                ".decode(",
+                ".(EncodingWorkspace",
+                ".(DecodingWorkspace",
+            )
+        )
     if ".GamepadConfigurationProfile." in name and any(
         fragment in name
         for fragment in (".applySkin(", ".(SkinApplicationWorkspace", ".(SkinSlotApplicationWorkspace")
@@ -334,6 +355,10 @@ def frame_limit(scope: str, name: str, override: int | None) -> int:
         return 128 * KIB
     if "PocketPadSkinAppearance.(MergeWorkspace" in name:
         return 64 * KIB
+    if ".PocketPadSkinPackageValidator.referencedAssetIDs(" in name:
+        return 80 * KIB
+    if ".PocketPadSkinPackageCodec." in name:
+        return 64 * KIB
     if ".PocketPadSkinResolver.applying(package:" in name:
         return 64 * KIB
     if ".PocketPadSkinResolver.(applying in " in name:
@@ -370,6 +395,9 @@ def required_sentinels(scope: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
         ("skin appearance normalization", ("PocketPadSkinAppearance.normalized.getter",)),
         ("skin control normalization", ("PocketPadSkinControlAppearance.normalized.getter",)),
         ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
+        ("skin package validation", ("PocketPadSkinPackageValidator.validate(",)),
+        ("skin package encoding", ("PocketPadSkinPackageCodec.encode(",)),
+        ("skin package decoding", ("PocketPadSkinPackageCodec.decode(",)),
     )
 
 

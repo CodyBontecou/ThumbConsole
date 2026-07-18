@@ -13,6 +13,8 @@ struct GamepadLayoutResolverSmokeTests {
         testNudgeAllowsOverlaps()
         testOnePixelInspectorSizedControlsResolveAtRequestedSize()
         testZIndexSortsResolvedControls()
+        testResolvedControlCacheKeyIgnoresPresentationChanges()
+        testResolvedControlCacheRefreshesPresentationAndGeometry()
         testLayoutQualityPassesDefaultController()
         testLayoutQualityWarnsAboutAllowedOverlaps()
         testLayoutQualityDetectsUnderusedBottomSpace()
@@ -206,6 +208,66 @@ struct GamepadLayoutResolverSmokeTests {
         expect(frontIndex! < backIndex!, "lower z-index should render behind higher z-index regardless of layer order")
         expect(GamepadButtonCustomization(zIndex: 250).zIndex == 100, "z-index should clamp to the front limit")
         expect(GamepadButtonCustomization(zIndex: -250).zIndex == -100, "z-index should clamp to the back limit")
+    }
+
+    private static func testResolvedControlCacheKeyIgnoresPresentationChanges() {
+        var customization = GamepadCustomization.defaultValue
+        let baselineKey = GamepadResolvedControlsLayoutCacheKey(customization: customization)
+
+        var jump = customization.buttonCustomization(for: .jump)
+        jump.fillColor = GamepadRGBAColor(hexString: "#FF00AA")
+        jump.shadowStrength = 1.75
+        jump.hapticStyle = .heavy
+        jump.visualStyle = GamepadControlVisualStyle(
+            normal: GamepadControlStateStyle(glowRadius: 18, opacity: 0.42)
+        )
+        customization.setButtonCustomization(jump, for: .jump)
+        customization.backgroundFillStyle = .solid(GamepadRGBAColor(hexString: "#102030") ?? .defaultValue)
+
+        expect(
+            GamepadResolvedControlsLayoutCacheKey(customization: customization) == baselineKey,
+            "presentation-only changes should reuse resolved control geometry"
+        )
+
+        jump.widthScale = 1.4
+        customization.setButtonCustomization(jump, for: .jump)
+        expect(
+            GamepadResolvedControlsLayoutCacheKey(customization: customization) != baselineKey,
+            "size changes should invalidate resolved control geometry"
+        )
+    }
+
+    private static func testResolvedControlCacheRefreshesPresentationAndGeometry() {
+        let canvasSize = CGSize(width: 874, height: 402)
+        var customization = GamepadCustomization.defaultValue
+        let cache = GamepadResolvedControlsCache()
+        let initial = cache.controls(for: customization, in: canvasSize, defaultLabelProvider: nil)
+        expect(cache.resolutionCount == 1, "initial cache lookup should resolve geometry once")
+        guard let initialJump = initial.first(where: { $0.id == .builtin(.jump) }) else {
+            fail("resolved-control cache did not return jump")
+        }
+
+        var jump = customization.buttonCustomization(for: .jump)
+        jump.fillColor = GamepadRGBAColor(hexString: "#22CC88")
+        jump.shadowStrength = 0.25
+        customization.setButtonCustomization(jump, for: .jump)
+        let presentationRefresh = cache.controls(for: customization, in: canvasSize, defaultLabelProvider: nil)
+        expect(cache.resolutionCount == 1, "presentation refresh should not resolve geometry again")
+        guard let refreshedJump = presentationRefresh.first(where: { $0.id == .builtin(.jump) }) else {
+            fail("resolved-control cache lost jump after presentation refresh")
+        }
+        expectAlmostEqual(refreshedJump.center.x, initialJump.center.x, "presentation refresh should preserve cached geometry")
+        expectAlmostEqual(refreshedJump.size.width, initialJump.size.width, "presentation refresh should preserve cached size")
+        expectAlmostEqual(refreshedJump.layoutCustomization.shadowStrength, 0.25, "presentation refresh should expose the current style")
+
+        jump.widthScale = 1.5
+        customization.setButtonCustomization(jump, for: .jump)
+        let geometryRefresh = cache.controls(for: customization, in: canvasSize, defaultLabelProvider: nil)
+        expect(cache.resolutionCount == 2, "geometry refresh should run the resolver again")
+        guard let resizedJump = geometryRefresh.first(where: { $0.id == .builtin(.jump) }) else {
+            fail("resolved-control cache lost jump after geometry refresh")
+        }
+        expect(resizedJump.size.width > initialJump.size.width, "geometry changes should recompute resolved control size")
     }
 
     private static func testLayoutQualityPassesDefaultController() {

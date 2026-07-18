@@ -241,14 +241,42 @@ public struct PocketPadSemanticVersion: Comparable, CustomStringConvertible, Equ
     }
 }
 
+private final class PocketPadSkinPackageValueBox<Value: Equatable & Sendable>: @unchecked Sendable, Equatable {
+    let value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    static func == (
+        lhs: PocketPadSkinPackageValueBox<Value>,
+        rhs: PocketPadSkinPackageValueBox<Value>
+    ) -> Bool {
+        lhs.value == rhs.value
+    }
+}
+
 public struct PocketPadSkinPackage: Equatable, Sendable {
     public var manifest: PocketPadSkinManifest
-    public var skin: PocketPadSkin?
-    public var profile: GamepadConfigurationProfile?
+    private var storedSkin: PocketPadSkinPackageValueBox<PocketPadSkin>?
+    private var storedProfile: PocketPadSkinPackageValueBox<GamepadConfigurationProfile>?
     /// Resource data keyed by manifest asset ID.
     public var assets: [String: Data]
     /// Preview data keyed by manifest preview ID.
     public var previews: [String: Data]
+
+    public var skin: PocketPadSkin? {
+        get { storedSkin?.value }
+        set { storedSkin = newValue.map(PocketPadSkinPackageValueBox.init) }
+    }
+
+    public var profile: GamepadConfigurationProfile? {
+        get { storedProfile?.value }
+        set { storedProfile = newValue.map(PocketPadSkinPackageValueBox.init) }
+    }
+
+    fileprivate var containsSkin: Bool { storedSkin != nil }
+    fileprivate var containsProfile: Bool { storedProfile != nil }
 
     public init(
         manifest: PocketPadSkinManifest,
@@ -258,8 +286,8 @@ public struct PocketPadSkinPackage: Equatable, Sendable {
         previews: [String: Data] = [:]
     ) {
         self.manifest = manifest
-        self.skin = skin
-        self.profile = profile
+        storedSkin = skin.map(PocketPadSkinPackageValueBox.init)
+        storedProfile = profile.map(PocketPadSkinPackageValueBox.init)
         self.assets = assets
         self.previews = previews
     }
@@ -300,38 +328,65 @@ public struct PocketPadSkinValidationReport: Codable, Equatable, Sendable {
 
 public enum PocketPadSkinPackageValidator {
     public static func validate(_ package: PocketPadSkinPackage) -> PocketPadSkinValidationReport {
-        let manifest = package.manifest.normalized
-        var issues: [PocketPadSkinValidationIssue] = []
+        ValidationWorkspace(package: package).validate()
+    }
 
-        func error(_ code: String, _ message: String, path: String? = nil) {
+    /// Package values contain large, deeply nested appearance and profile structs. Keeping the
+    /// validation phases on a heap-backed workspace prevents Swift's Debug build from reserving
+    /// every phase's generic scratch storage in one main-thread stack frame during app launch.
+    private final class ValidationWorkspace {
+        private let package: PocketPadSkinPackage
+        private let manifest: PocketPadSkinManifest
+        private var issues: [PocketPadSkinValidationIssue] = []
+
+        init(package: PocketPadSkinPackage) {
+            self.package = package
+            manifest = package.manifest.normalized
+        }
+
+        func validate() -> PocketPadSkinValidationReport {
+            validateManifestIdentity()
+            validateCompatibility()
+            validatePackageContents()
+            validateResourcePayloads()
+            validateSkinContents()
+            return PocketPadSkinValidationReport(issues: issues)
+        }
+
+        private func error(_ code: String, _ message: String, path: String? = nil) {
             issues.append(PocketPadSkinValidationIssue(severity: .error, code: code, message: message, path: path))
         }
-        func warning(_ code: String, _ message: String, path: String? = nil) {
+
+        private func warning(_ code: String, _ message: String, path: String? = nil) {
             issues.append(PocketPadSkinValidationIssue(severity: .warning, code: code, message: message, path: path))
         }
 
-        if manifest.schema != PocketPadSkinManifest.schemaIdentifier {
-            error("unsupported-schema", "Unsupported package schema \(manifest.schema).", path: "manifest.json")
+        private func validateManifestIdentity() {
+            if manifest.schema != PocketPadSkinManifest.schemaIdentifier {
+                error("unsupported-schema", "Unsupported package schema \(manifest.schema).", path: "manifest.json")
+            }
+            if manifest.schemaVersion < 1 || manifest.schemaVersion > PocketPadSkinManifest.currentSchemaVersion {
+                error("unsupported-schema-version", "Unsupported schema version \(manifest.schemaVersion).", path: "manifest.json")
+            }
+            if !PocketPadSkinPackageValidator.isValidReverseDNSIdentifier(manifest.identifier) {
+                error("invalid-identifier", "Identifier must use reverse-DNS form, for example com.creator.skin-name.", path: "manifest.identifier")
+            }
+            if PocketPadSemanticVersion(manifest.version) == nil {
+                error("invalid-version", "Package version must be semantic versioning in major.minor.patch form.", path: "manifest.version")
+            }
+            if manifest.name.isEmpty {
+                error("missing-name", "Package name cannot be empty.", path: "manifest.name")
+            }
+            if manifest.author.name.isEmpty {
+                error("missing-author", "Package author cannot be empty.", path: "manifest.author.name")
+            }
+            if manifest.license.isEmpty {
+                warning("missing-license", "Add a license so community members know how the skin may be shared.", path: "manifest.license")
+            }
         }
-        if manifest.schemaVersion < 1 || manifest.schemaVersion > PocketPadSkinManifest.currentSchemaVersion {
-            error("unsupported-schema-version", "Unsupported schema version \(manifest.schemaVersion).", path: "manifest.json")
-        }
-        if !isValidReverseDNSIdentifier(manifest.identifier) {
-            error("invalid-identifier", "Identifier must use reverse-DNS form, for example com.creator.skin-name.", path: "manifest.identifier")
-        }
-        if PocketPadSemanticVersion(manifest.version) == nil {
-            error("invalid-version", "Package version must be semantic versioning in major.minor.patch form.", path: "manifest.version")
-        }
-        if manifest.name.isEmpty {
-            error("missing-name", "Package name cannot be empty.", path: "manifest.name")
-        }
-        if manifest.author.name.isEmpty {
-            error("missing-author", "Package author cannot be empty.", path: "manifest.author.name")
-        }
-        if manifest.license.isEmpty {
-            warning("missing-license", "Add a license so community members know how the skin may be shared.", path: "manifest.license")
-        }
-        if let rawCompatibility = package.manifest.compatibility {
+
+        private func validateCompatibility() {
+            guard let rawCompatibility = package.manifest.compatibility else { return }
             let compatibility = rawCompatibility.normalized
             if manifest.schemaVersion < 2 {
                 error("compatibility-requires-v2", "Compatibility declarations require package schema version 2.", path: "manifest.compatibility")
@@ -350,8 +405,12 @@ public enum PocketPadSkinPackageValidator {
             if hasInvalidAspect {
                 error("invalid-aspect-range", "Aspect ratios must be finite values from 0.25 through 4, and minimum cannot exceed maximum.", path: "manifest.compatibility")
             }
+            validateTemplateRequirements(rawCompatibility.templates)
+        }
+
+        private func validateTemplateRequirements(_ requirements: [PocketPadSkinTemplateRequirement]) {
             var templateIDs = Set<String>()
-            for (index, requirement) in rawCompatibility.templates.enumerated() {
+            for (index, requirement) in requirements.enumerated() {
                 let templateID = requirement.templateID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 if templateID.isEmpty {
                     error("invalid-template-requirement", "Template IDs cannot be empty.", path: "manifest.compatibility.templates[\(index)]")
@@ -366,26 +425,53 @@ public enum PocketPadSkinPackageValidator {
             }
         }
 
-        switch manifest.kind {
-        case .skin:
-            if package.skin == nil { error("missing-skin", "Skin packages must contain skin.json.", path: manifest.skinPath) }
-            if package.profile != nil { error("unexpected-profile", "Appearance-only skins cannot contain keypad profiles or executable bindings.", path: manifest.profilePath) }
-        case .layout:
-            if package.profile == nil { error("missing-profile", "Layout packages must contain profile.json.", path: manifest.profilePath) }
-        case .pack:
-            if package.skin == nil { error("missing-skin", "Full packs must contain skin.json.", path: manifest.skinPath) }
-            if package.profile == nil { error("missing-profile", "Full packs must contain profile.json.", path: manifest.profilePath) }
+        private func validatePackageContents() {
+            switch manifest.kind {
+            case .skin:
+                requireSkin("Skin packages must contain skin.json.")
+                rejectProfile("Appearance-only skins cannot contain keypad profiles or executable bindings.")
+            case .layout:
+                requireProfile("Layout packages must contain profile.json.")
+            case .pack:
+                requireSkin("Full packs must contain skin.json.")
+                requireProfile("Full packs must contain profile.json.")
+            }
+
+            if manifest.previews.isEmpty {
+                warning("missing-preview", "Add portrait or landscape previews to make the skin discoverable.", path: "manifest.previews")
+            }
         }
 
-        validateResources(manifest.assets, data: package.assets, root: "assets", issues: &issues)
-        validatePreviews(manifest.previews, data: package.previews, issues: &issues)
-
-        if manifest.previews.isEmpty {
-            warning("missing-preview", "Add portrait or landscape previews to make the skin discoverable.", path: "manifest.previews")
+        private func requireSkin(_ message: String) {
+            if !package.containsSkin { error("missing-skin", message, path: manifest.skinPath) }
         }
 
-        if let skin = package.skin {
-            let referencedAssets = referencedAssetIDs(in: skin.normalized)
+        private func requireProfile(_ message: String) {
+            if !package.containsProfile { error("missing-profile", message, path: manifest.profilePath) }
+        }
+
+        private func rejectProfile(_ message: String) {
+            if package.containsProfile { error("unexpected-profile", message, path: manifest.profilePath) }
+        }
+
+        private func validateResourcePayloads() {
+            PocketPadSkinPackageValidator.validateResources(
+                manifest.assets,
+                data: package.assets,
+                root: "assets",
+                issues: &issues
+            )
+            PocketPadSkinPackageValidator.validatePreviews(
+                manifest.previews,
+                data: package.previews,
+                issues: &issues
+            )
+        }
+
+        private func validateSkinContents() {
+            guard let skin = package.skin else { return }
+            let normalizedSkin = skin.normalized
+            let referencedAssets = PocketPadSkinPackageValidator.referencedAssetIDs(in: normalizedSkin)
             let declaredAssets = Set(manifest.assets.map(\.id))
             for assetID in referencedAssets.subtracting(declaredAssets).sorted() {
                 error("missing-asset-reference", "Skin references undeclared asset \(assetID).", path: "skin.json")
@@ -393,10 +479,8 @@ public enum PocketPadSkinPackageValidator {
             for assetID in declaredAssets.subtracting(referencedAssets).sorted() {
                 warning("unused-asset", "Asset \(assetID) is not referenced by this skin.", path: "manifest.assets")
             }
-            validateStyleReferences(in: skin.normalized, issues: &issues)
+            PocketPadSkinPackageValidator.validateStyleReferences(in: normalizedSkin, issues: &issues)
         }
-
-        return PocketPadSkinValidationReport(issues: issues)
     }
 
     public static func isValidReverseDNSIdentifier(_ value: String) -> Bool {
@@ -604,184 +688,347 @@ public enum PocketPadSkinPackageCodec {
     public static let maximumCompressionRatio: UInt64 = 200
 
     public static func encode(_ package: PocketPadSkinPackage) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try EncodingWorkspace(package: package).encode()
+    }
 
-        var prepared = package
-        prepared.skin = prepared.skin?.normalized
-        prepared.profile = prepared.profile?.normalized
-        var manifest = prepared.manifest.normalized
+    /// Encoding normalizes large value types, validates them, then writes their payloads. Phase
+    /// isolation keeps those temporary values from occupying one cumulative Debug stack frame.
+    private final class EncodingWorkspace {
+        private let encoder: JSONEncoder
+        private let originalCompatibility: PocketPadSkinCompatibility?
+        private var prepared: PocketPadSkinPackage
+        private var manifest: PocketPadSkinManifest
+        private var skinData: Data?
+        private var profileData: Data?
 
-        let skinData = try prepared.skin.map { try encoder.encode($0) }
-        let profileData = try prepared.profile.map { try encoder.encode($0) }
-        if let skinData {
-            manifest.skinPath = manifest.skinPath ?? "skin.json"
-            manifest.skinSHA256 = skinData.pocketPadSHA256
-        } else {
-            manifest.skinPath = nil
-            manifest.skinSHA256 = nil
-        }
-        if let profileData {
-            manifest.profilePath = manifest.profilePath ?? "profile.json"
-            manifest.profileSHA256 = profileData.pocketPadSHA256
-        } else {
-            manifest.profilePath = nil
-            manifest.profileSHA256 = nil
+        init(package: PocketPadSkinPackage) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            self.encoder = encoder
+            originalCompatibility = package.manifest.compatibility
+            prepared = package
+            manifest = package.manifest.normalized
         }
 
-        manifest.assets = manifest.assets.map { descriptor in
-            var descriptor = descriptor.normalized
-            if let data = prepared.assets[descriptor.id] {
-                descriptor.byteCount = data.count
-                descriptor.sha256 = data.pocketPadSHA256
+        func encode() throws -> Data {
+            normalizeSkin()
+            normalizeProfile()
+            try encodeSkinPayload()
+            try encodeProfilePayload()
+            updateManifestPayloadMetadata()
+            updateManifestResourceMetadata()
+            try validatePreparedPackage()
+            return try makeArchive()
+        }
+
+        private func normalizeSkin() {
+            prepared.skin = prepared.skin?.normalized
+        }
+
+        private func normalizeProfile() {
+            prepared.profile = prepared.profile?.normalized
+        }
+
+        private func encodeSkinPayload() throws {
+            skinData = try prepared.skin.map { try encoder.encode($0) }
+        }
+
+        private func encodeProfilePayload() throws {
+            profileData = try prepared.profile.map { try encoder.encode($0) }
+        }
+
+        private func updateManifestPayloadMetadata() {
+            if let skinData {
+                manifest.skinPath = manifest.skinPath ?? "skin.json"
+                manifest.skinSHA256 = skinData.pocketPadSHA256
+            } else {
+                manifest.skinPath = nil
+                manifest.skinSHA256 = nil
             }
-            return descriptor
-        }
-        manifest.previews = manifest.previews.map { descriptor in
-            var descriptor = descriptor.normalized
-            if let data = prepared.previews[descriptor.id] {
-                descriptor.byteCount = data.count
-                descriptor.sha256 = data.pocketPadSHA256
+            if let profileData {
+                manifest.profilePath = manifest.profilePath ?? "profile.json"
+                manifest.profileSHA256 = profileData.pocketPadSHA256
+            } else {
+                manifest.profilePath = nil
+                manifest.profileSHA256 = nil
             }
-            return descriptor
-        }
-        // Validate compatibility before its normalizer can repair malformed author input
-        // (for example a reversed aspect or template-revision range). Other manifest
-        // fields stay prepared so canonical hashes and byte counts are validated.
-        let normalizedCompatibility = manifest.compatibility
-        prepared.manifest = manifest
-        prepared.manifest.compatibility = package.manifest.compatibility
-        let report = PocketPadSkinPackageValidator.validate(prepared)
-        guard report.isValid else { throw PocketPadSkinPackageCodecError.invalidPackage(report.errors) }
-        manifest.compatibility = normalizedCompatibility
-        prepared.manifest = manifest
-
-        let archive: Archive
-        do {
-            archive = try Archive(accessMode: .create)
-        } catch {
-            throw PocketPadSkinPackageCodecError.invalidArchive
         }
 
-        try add(try encoder.encode(manifest), path: "manifest.json", to: archive)
-        if let skinData, let path = manifest.skinPath { try add(skinData, path: path, to: archive) }
-        if let profileData, let path = manifest.profilePath { try add(profileData, path: path, to: archive) }
-        for descriptor in manifest.assets {
-            guard let data = prepared.assets[descriptor.id] else { throw PocketPadSkinPackageCodecError.missingEntry(descriptor.path) }
-            try add(data, path: descriptor.path, to: archive)
+        private func updateManifestResourceMetadata() {
+            manifest.assets = manifest.assets.map { descriptor in
+                var descriptor = descriptor.normalized
+                if let data = prepared.assets[descriptor.id] {
+                    descriptor.byteCount = data.count
+                    descriptor.sha256 = data.pocketPadSHA256
+                }
+                return descriptor
+            }
+            manifest.previews = manifest.previews.map { descriptor in
+                var descriptor = descriptor.normalized
+                if let data = prepared.previews[descriptor.id] {
+                    descriptor.byteCount = data.count
+                    descriptor.sha256 = data.pocketPadSHA256
+                }
+                return descriptor
+            }
         }
-        for descriptor in manifest.previews {
-            guard let data = prepared.previews[descriptor.id] else { throw PocketPadSkinPackageCodecError.missingEntry(descriptor.path) }
-            try add(data, path: descriptor.path, to: archive)
+
+        private func validatePreparedPackage() throws {
+            // Validate compatibility before its normalizer can repair malformed author input
+            // (for example a reversed aspect or template-revision range). Other manifest
+            // fields stay prepared so canonical hashes and byte counts are validated.
+            let normalizedCompatibility = manifest.compatibility
+            prepared.manifest = manifest
+            prepared.manifest.compatibility = originalCompatibility
+            let report = PocketPadSkinPackageValidator.validate(prepared)
+            guard report.isValid else { throw PocketPadSkinPackageCodecError.invalidPackage(report.errors) }
+            manifest.compatibility = normalizedCompatibility
+            prepared.manifest = manifest
         }
-        guard let data = archive.data else { throw PocketPadSkinPackageCodecError.invalidArchive }
-        guard data.count <= maximumArchiveBytes else { throw PocketPadSkinPackageCodecError.archiveTooLarge }
-        return data
+
+        private func makeArchive() throws -> Data {
+            let archive: Archive
+            do {
+                archive = try Archive(accessMode: .create)
+            } catch {
+                throw PocketPadSkinPackageCodecError.invalidArchive
+            }
+
+            try PocketPadSkinPackageCodec.add(
+                try encoder.encode(manifest),
+                path: "manifest.json",
+                to: archive
+            )
+            if let skinData, let path = manifest.skinPath {
+                try PocketPadSkinPackageCodec.add(skinData, path: path, to: archive)
+            }
+            if let profileData, let path = manifest.profilePath {
+                try PocketPadSkinPackageCodec.add(profileData, path: path, to: archive)
+            }
+            for descriptor in manifest.assets {
+                guard let data = prepared.assets[descriptor.id] else {
+                    throw PocketPadSkinPackageCodecError.missingEntry(descriptor.path)
+                }
+                try PocketPadSkinPackageCodec.add(data, path: descriptor.path, to: archive)
+            }
+            for descriptor in manifest.previews {
+                guard let data = prepared.previews[descriptor.id] else {
+                    throw PocketPadSkinPackageCodecError.missingEntry(descriptor.path)
+                }
+                try PocketPadSkinPackageCodec.add(data, path: descriptor.path, to: archive)
+            }
+            guard let data = archive.data else { throw PocketPadSkinPackageCodecError.invalidArchive }
+            guard data.count <= PocketPadSkinPackageCodec.maximumArchiveBytes else {
+                throw PocketPadSkinPackageCodecError.archiveTooLarge
+            }
+            return data
+        }
     }
 
     public static func decode(_ data: Data) throws -> PocketPadSkinPackage {
-        guard data.count <= maximumArchiveBytes else { throw PocketPadSkinPackageCodecError.archiveTooLarge }
-        let archive: Archive
-        do {
-            archive = try Archive(data: data, accessMode: .read)
-        } catch {
-            throw PocketPadSkinPackageCodecError.invalidArchive
-        }
+        try DecodingWorkspace(data: data).decode()
+    }
 
-        var entries: [String: Entry] = [:]
-        var totalUncompressed: UInt64 = 0
-        for entry in archive {
-            guard entries.count < maximumEntryCount else { throw PocketPadSkinPackageCodecError.tooManyEntries }
-            let path = entry.path
-            guard isSafePackagePath(path) else { throw PocketPadSkinPackageCodecError.unsafeEntry(path) }
-            guard entries[path] == nil else { throw PocketPadSkinPackageCodecError.duplicateEntry(path) }
-            switch entry.type {
-            case .file:
-                guard entry.uncompressedSize <= UInt64(maximumEntryBytes) else { throw PocketPadSkinPackageCodecError.entryTooLarge(path) }
-                totalUncompressed += entry.uncompressedSize
-                guard totalUncompressed <= UInt64(maximumTotalUncompressedBytes) else { throw PocketPadSkinPackageCodecError.archiveTooLarge }
-                if entry.compressedSize > 0, entry.uncompressedSize / entry.compressedSize > maximumCompressionRatio {
-                    throw PocketPadSkinPackageCodecError.compressionRatioTooHigh(path)
-                }
-                entries[path] = entry
-            case .directory:
-                continue
-            case .symlink:
-                throw PocketPadSkinPackageCodecError.unsupportedEntry(path)
+    /// Decoding profiles can require substantial temporary storage in Debug builds. Keeping each
+    /// archive phase in a separate method releases that storage before package validation begins.
+    private final class DecodingWorkspace {
+        private let archive: Archive
+        private let decoder = JSONDecoder()
+        private var entries: [String: Entry] = [:]
+        private var manifest: PocketPadSkinManifest?
+        private var skin: PocketPadSkin?
+        private var profile: GamepadConfigurationProfile?
+        private var assets: [String: Data] = [:]
+        private var previews: [String: Data] = [:]
+
+        init(data: Data) throws {
+            guard data.count <= PocketPadSkinPackageCodec.maximumArchiveBytes else {
+                throw PocketPadSkinPackageCodecError.archiveTooLarge
+            }
+            do {
+                archive = try Archive(data: data, accessMode: .read)
+            } catch {
+                throw PocketPadSkinPackageCodecError.invalidArchive
             }
         }
 
-        guard let manifestEntry = entries["manifest.json"] else { throw PocketPadSkinPackageCodecError.missingEntry("manifest.json") }
-        let decoder = JSONDecoder()
-        let manifestData = try extract(manifestEntry, from: archive, maximumBytes: 1_000_000)
-        let manifest: PocketPadSkinManifest
-        do {
-            manifest = try decoder.decode(PocketPadSkinManifest.self, from: manifestData).normalized
-        } catch {
-            throw PocketPadSkinPackageCodecError.corruptEntry("manifest.json")
+        func decode() throws -> PocketPadSkinPackage {
+            try indexEntries()
+            try decodeManifest()
+            try validateAllowedPaths()
+            try decodeSkin()
+            try decodeProfile()
+            try decodeAssets()
+            try decodePreviews()
+            return try validatedPackage()
         }
 
-        var allowedPaths: Set<String> = ["manifest.json", "README.md", "LICENSE", "LICENSE.txt"]
-        if let path = manifest.skinPath { allowedPaths.insert(path) }
-        if let path = manifest.profilePath { allowedPaths.insert(path) }
-        allowedPaths.formUnion(manifest.assets.map(\.path))
-        allowedPaths.formUnion(manifest.previews.map(\.path))
-        for path in entries.keys where !allowedPaths.contains(path) {
-            throw PocketPadSkinPackageCodecError.unexpectedEntry(path)
+        private func indexEntries() throws {
+            var totalUncompressed: UInt64 = 0
+            for entry in archive {
+                guard entries.count < PocketPadSkinPackageCodec.maximumEntryCount else {
+                    throw PocketPadSkinPackageCodecError.tooManyEntries
+                }
+                let path = entry.path
+                guard PocketPadSkinPackageCodec.isSafePackagePath(path) else {
+                    throw PocketPadSkinPackageCodecError.unsafeEntry(path)
+                }
+                guard entries[path] == nil else {
+                    throw PocketPadSkinPackageCodecError.duplicateEntry(path)
+                }
+                switch entry.type {
+                case .file:
+                    guard entry.uncompressedSize <= UInt64(PocketPadSkinPackageCodec.maximumEntryBytes) else {
+                        throw PocketPadSkinPackageCodecError.entryTooLarge(path)
+                    }
+                    totalUncompressed += entry.uncompressedSize
+                    guard totalUncompressed <= UInt64(PocketPadSkinPackageCodec.maximumTotalUncompressedBytes) else {
+                        throw PocketPadSkinPackageCodecError.archiveTooLarge
+                    }
+                    if entry.compressedSize > 0,
+                       entry.uncompressedSize / entry.compressedSize > PocketPadSkinPackageCodec.maximumCompressionRatio {
+                        throw PocketPadSkinPackageCodecError.compressionRatioTooHigh(path)
+                    }
+                    entries[path] = entry
+                case .directory:
+                    continue
+                case .symlink:
+                    throw PocketPadSkinPackageCodecError.unsupportedEntry(path)
+                }
+            }
         }
 
-        let skin: PocketPadSkin?
-        if let path = manifest.skinPath {
-            guard let entry = entries[path] else { throw PocketPadSkinPackageCodecError.missingEntry(path) }
-            let payload = try extract(entry, from: archive, maximumBytes: 4_000_000)
-            guard manifest.skinSHA256 == payload.pocketPadSHA256 else { throw PocketPadSkinPackageCodecError.corruptEntry(path) }
+        private func decodeManifest() throws {
+            guard let entry = entries["manifest.json"] else {
+                throw PocketPadSkinPackageCodecError.missingEntry("manifest.json")
+            }
+            let data = try PocketPadSkinPackageCodec.extract(
+                entry,
+                from: archive,
+                maximumBytes: 1_000_000
+            )
+            do {
+                manifest = try decoder.decode(PocketPadSkinManifest.self, from: data).normalized
+            } catch {
+                throw PocketPadSkinPackageCodecError.corruptEntry("manifest.json")
+            }
+        }
+
+        private func validateAllowedPaths() throws {
+            guard let manifest else { throw PocketPadSkinPackageCodecError.invalidArchive }
+            var allowedPaths: Set<String> = ["manifest.json", "README.md", "LICENSE", "LICENSE.txt"]
+            if let path = manifest.skinPath { allowedPaths.insert(path) }
+            if let path = manifest.profilePath { allowedPaths.insert(path) }
+            allowedPaths.formUnion(manifest.assets.map(\.path))
+            allowedPaths.formUnion(manifest.previews.map(\.path))
+            for path in entries.keys where !allowedPaths.contains(path) {
+                throw PocketPadSkinPackageCodecError.unexpectedEntry(path)
+            }
+        }
+
+        private func decodeSkin() throws {
+            guard let manifest else { throw PocketPadSkinPackageCodecError.invalidArchive }
+            guard let path = manifest.skinPath else {
+                skin = nil
+                return
+            }
+            guard let entry = entries[path] else {
+                throw PocketPadSkinPackageCodecError.missingEntry(path)
+            }
+            let payload = try PocketPadSkinPackageCodec.extract(
+                entry,
+                from: archive,
+                maximumBytes: 4_000_000
+            )
+            guard manifest.skinSHA256 == payload.pocketPadSHA256 else {
+                throw PocketPadSkinPackageCodecError.corruptEntry(path)
+            }
             do {
                 skin = try decoder.decode(PocketPadSkin.self, from: payload).normalized
             } catch {
                 throw PocketPadSkinPackageCodecError.corruptEntry(path)
             }
-        } else {
-            skin = nil
         }
 
-        let profile: GamepadConfigurationProfile?
-        if let path = manifest.profilePath {
-            guard let entry = entries[path] else { throw PocketPadSkinPackageCodecError.missingEntry(path) }
-            let payload = try extract(entry, from: archive, maximumBytes: 8_000_000)
-            guard manifest.profileSHA256 == payload.pocketPadSHA256 else { throw PocketPadSkinPackageCodecError.corruptEntry(path) }
+        private func decodeProfile() throws {
+            guard let manifest else { throw PocketPadSkinPackageCodecError.invalidArchive }
+            guard let path = manifest.profilePath else {
+                profile = nil
+                return
+            }
+            guard let entry = entries[path] else {
+                throw PocketPadSkinPackageCodecError.missingEntry(path)
+            }
+            let payload = try PocketPadSkinPackageCodec.extract(
+                entry,
+                from: archive,
+                maximumBytes: 8_000_000
+            )
+            guard manifest.profileSHA256 == payload.pocketPadSHA256 else {
+                throw PocketPadSkinPackageCodecError.corruptEntry(path)
+            }
             do {
                 profile = try decoder.decode(GamepadConfigurationProfile.self, from: payload).normalized
             } catch {
                 throw PocketPadSkinPackageCodecError.corruptEntry(path)
             }
-        } else {
-            profile = nil
         }
 
-        var assets: [String: Data] = [:]
-        for descriptor in manifest.assets {
-            guard let entry = entries[descriptor.path] else { throw PocketPadSkinPackageCodecError.missingEntry(descriptor.path) }
-            let payload = try extract(entry, from: archive, maximumBytes: maximumEntryBytes)
-            guard payload.count == descriptor.byteCount, payload.pocketPadSHA256 == descriptor.sha256 else {
-                throw PocketPadSkinPackageCodecError.corruptEntry(descriptor.path)
+        private func decodeAssets() throws {
+            guard let manifest else { throw PocketPadSkinPackageCodecError.invalidArchive }
+            for descriptor in manifest.assets {
+                guard let entry = entries[descriptor.path] else {
+                    throw PocketPadSkinPackageCodecError.missingEntry(descriptor.path)
+                }
+                let payload = try PocketPadSkinPackageCodec.extract(
+                    entry,
+                    from: archive,
+                    maximumBytes: PocketPadSkinPackageCodec.maximumEntryBytes
+                )
+                guard payload.count == descriptor.byteCount,
+                      payload.pocketPadSHA256 == descriptor.sha256
+                else {
+                    throw PocketPadSkinPackageCodecError.corruptEntry(descriptor.path)
+                }
+                assets[descriptor.id] = payload
             }
-            assets[descriptor.id] = payload
         }
 
-        var previews: [String: Data] = [:]
-        for descriptor in manifest.previews {
-            guard let entry = entries[descriptor.path] else { throw PocketPadSkinPackageCodecError.missingEntry(descriptor.path) }
-            let payload = try extract(entry, from: archive, maximumBytes: maximumEntryBytes)
-            guard payload.count == descriptor.byteCount, payload.pocketPadSHA256 == descriptor.sha256 else {
-                throw PocketPadSkinPackageCodecError.corruptEntry(descriptor.path)
+        private func decodePreviews() throws {
+            guard let manifest else { throw PocketPadSkinPackageCodecError.invalidArchive }
+            for descriptor in manifest.previews {
+                guard let entry = entries[descriptor.path] else {
+                    throw PocketPadSkinPackageCodecError.missingEntry(descriptor.path)
+                }
+                let payload = try PocketPadSkinPackageCodec.extract(
+                    entry,
+                    from: archive,
+                    maximumBytes: PocketPadSkinPackageCodec.maximumEntryBytes
+                )
+                guard payload.count == descriptor.byteCount,
+                      payload.pocketPadSHA256 == descriptor.sha256
+                else {
+                    throw PocketPadSkinPackageCodecError.corruptEntry(descriptor.path)
+                }
+                previews[descriptor.id] = payload
             }
-            previews[descriptor.id] = payload
         }
 
-        let package = PocketPadSkinPackage(manifest: manifest, skin: skin, profile: profile, assets: assets, previews: previews)
-        let report = PocketPadSkinPackageValidator.validate(package)
-        guard report.isValid else { throw PocketPadSkinPackageCodecError.invalidPackage(report.errors) }
-        return package
+        private func validatedPackage() throws -> PocketPadSkinPackage {
+            guard let manifest else { throw PocketPadSkinPackageCodecError.invalidArchive }
+            let package = PocketPadSkinPackage(
+                manifest: manifest,
+                skin: skin,
+                profile: profile,
+                assets: assets,
+                previews: previews
+            )
+            let report = PocketPadSkinPackageValidator.validate(package)
+            guard report.isValid else {
+                throw PocketPadSkinPackageCodecError.invalidPackage(report.errors)
+            }
+            return package
+        }
     }
 
     public static func read(from url: URL) throws -> PocketPadSkinPackage {

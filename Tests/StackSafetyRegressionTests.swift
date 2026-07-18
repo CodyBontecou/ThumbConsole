@@ -9,6 +9,7 @@ final class StackSafetyRegressionTests: XCTestCase {
         case missingDecodedProfile
         case unexpectedDecodedState
         case skinApplicationFailed
+        case bundledSkinInstallationFailed
     }
 
     private final class ThreadResultBox: @unchecked Sendable {
@@ -133,6 +134,20 @@ final class StackSafetyRegressionTests: XCTestCase {
                   applied.portraitSkinBaselineCustomization != nil
             else {
                 throw StackTestError.skinApplicationFailed
+            }
+        }
+    }
+
+    func testBundledSkinInstallationRunsOn512KiBStack() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PocketPad-Bundled-Skin-Stack-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try runOnThread(stackSize: 512 * 1024) {
+            let store = try PocketPadSkinStore(rootURL: rootURL)
+            try store.installBundledSkinsIfNeeded()
+            guard try store.installedSkins().count == PocketPadBundledSkins.packages.count else {
+                throw StackTestError.bundledSkinInstallationFailed
             }
         }
     }

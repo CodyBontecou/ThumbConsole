@@ -1602,6 +1602,11 @@ final class MacControllerServer: ObservableObject {
         defaultProfileID: UUID,
         seededProfileOutputBindings: [UUID: [GameButton: MacControlOutputBinding]] = [:]
     ) {
+        let previousKeyBindings = keyBindings
+        let previousOutputBindings = outputBindings
+        let previousProfileKeyBindings = profileKeyBindings
+        let previousProfileOutputBindings = profileOutputBindings
+
         for (profileID, bindings) in seededProfileOutputBindings {
             profileOutputBindings[profileID] = bindings
             profileKeyBindings[profileID] = bindings.keyboardBindings
@@ -1646,10 +1651,18 @@ final class MacControllerServer: ObservableObject {
             GamepadCustomizationPersistence.save(realtimeCustomization)
         }
         persistGamepadProfileState()
-        saveKeyBindings()
-        saveProfileKeyBindings()
-        saveOutputBindings()
-        saveProfileOutputBindings()
+        if keyBindings != previousKeyBindings {
+            saveKeyBindings()
+        }
+        if profileKeyBindings != previousProfileKeyBindings {
+            saveProfileKeyBindings()
+        }
+        if outputBindings != previousOutputBindings {
+            saveOutputBindings()
+        }
+        if profileOutputBindings != previousProfileOutputBindings {
+            saveProfileOutputBindings()
+        }
         let deliveryRevision = beginEditorDelivery(detail: "Keypad setup saved on this Mac")
         let updatedPresentations = bindingPresentationsSnapshot()
 

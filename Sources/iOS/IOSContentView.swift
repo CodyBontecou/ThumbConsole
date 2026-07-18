@@ -1927,25 +1927,10 @@ private struct ControllerPadFreeformLayout: View {
             isEditingLayout: isEditingLayout,
             onCustomizationChanged: onCustomizationChanged
         )
-        .padding(
-            .leading,
-            max(
-                context.isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4,
-                context.safeAreaInsets.leading + Geist.Spacing.s2
-            )
-        )
-        .padding(
-            .trailing,
-            max(
-                context.isLandscape ? Geist.Spacing.s3 : Geist.Spacing.s4,
-                context.safeAreaInsets.trailing + Geist.Spacing.s2
-            )
-        )
-        .padding(
-            .bottom,
-            max(Geist.Spacing.s4, context.safeAreaInsets.bottom + Geist.Spacing.s2)
-                + (isEditingLayout ? 72 : 0)
-        )
+        // Freeform coordinates are authored against the editor's full device
+        // canvas, which already shows the Dynamic Island/notch. Insetting this
+        // view a second time changes both normalized positions and responsive
+        // control sizes, so the iPhone no longer matches the Mac preview.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             if !isEditingLayout {
@@ -5449,23 +5434,14 @@ private struct GamepadButton: View {
 
                 buttonContent(presentation: presentation)
 
-                if isPressed {
-                    RoundedRectangle(cornerRadius: max(4, min(size.width, size.height) * 0.14), style: .continuous)
-                        .stroke(
-                            presentation.foregroundSwiftUIColor,
-                            style: StrokeStyle(lineWidth: colorSchemeContrast == .increased ? 3 : 2, dash: [5, 3])
-                        )
-                        .padding(3)
-
-                    if differentiateWithoutColor {
-                        Image(systemName: "checkmark")
-                            .font(.caption2.bold())
-                            .foregroundStyle(presentation.foregroundSwiftUIColor)
-                            .padding(4)
-                            .background(Geist.color(.gray100, scheme: colorScheme), in: Circle())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                            .padding(4)
-                    }
+                if isPressed && differentiateWithoutColor {
+                    Image(systemName: "checkmark")
+                        .font(.caption2.bold())
+                        .foregroundStyle(presentation.foregroundSwiftUIColor)
+                        .padding(4)
+                        .background(Geist.color(.gray100, scheme: colorScheme), in: Circle())
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(4)
                 }
             }
             .opacity(reduceTransparency ? 1 : presentation.opacity)

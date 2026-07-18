@@ -7780,10 +7780,27 @@ private struct GamepadControlBarOutputPreview: View {
 private final class GamepadEditorUndoTarget {}
 
 private struct GamepadEditorUndoSnapshot: Equatable {
+    var profileID: UUID
+    var profileOrientation: GamepadEditorDeviceOrientation
     var customization: GamepadCustomization
     var selectedControlID: GamepadControlIdentity
     var selectedControlIDs: Set<GamepadControlIdentity>
     var isControlSelectionActive: Bool
+}
+
+private struct GamepadEditorContinuousEditSession {
+    let id: String
+    let actionName: String
+    let baseline: GamepadEditorUndoSnapshot
+    let hadPendingExternalCommit: Bool
+    var hasExplicitBoundary: Bool
+}
+
+private final class GamepadEditorContinuousEditCoordinator {
+    var session: GamepadEditorContinuousEditSession?
+    var isApplyingSample = false
+    var fallbackEndWorkItem: DispatchWorkItem?
+    var lastEmittedExternalCustomization: GamepadCustomization?
 }
 
 private struct GamepadEditorProfileUndoSnapshot: Equatable {
@@ -8306,6 +8323,13 @@ private enum GamepadFillPopoverTab: String, CaseIterable, Identifiable {
 private enum GamepadFillEditorTarget: Hashable {
     case element(GamepadControlIdentity)
     case background
+
+    var continuousEditID: String {
+        switch self {
+        case .element(let identity): "element.\(identity.id)"
+        case .background: "background"
+        }
+    }
 
     var defaultResetNoun: String {
         switch self {
@@ -8928,6 +8952,8 @@ struct GamepadCustomizationEditor: View {
     @State private var attachedApplicationStatus: String?
     @State private var pendingExternalCommitWorkItem: DispatchWorkItem?
     @State private var hasPendingExternalEditorCommit = false
+    @State private var continuousEditCoordinator = GamepadEditorContinuousEditCoordinator()
+    @State private var cachedLayoutQualityReport: GamepadLayoutQualityReport
     @State private var draftConfigurationSidebarWidth: CGFloat?
     @State private var draftInspectorSidebarWidth: CGFloat?
     @State private var draftCanvasZoom: CGFloat?
@@ -8998,6 +9024,12 @@ struct GamepadCustomizationEditor: View {
         self._externalCustomization = customization
         self._customization = State(initialValue: initialCustomization)
         self._editorLayerModel = State(initialValue: GamepadEditorLayerModel(customization: initialCustomization, defaultLabelProvider: defaultLabelProvider))
+        self._cachedLayoutQualityReport = State(
+            initialValue: initialCustomization.layoutQualityReport(
+                profileName: loadedProfiles.activeProfile?.name,
+                canvasSize: initialCustomization.deviceCanvas.editorDeviceFrame.screenRect.size
+            )
+        )
         self.showsPreview = showsPreview
         self.externalProfiles = initialProfiles
         self.externalSelectedProfileID = initialSelectedProfileID
@@ -9121,6 +9153,14 @@ struct GamepadCustomizationEditor: View {
     private func setEditorCustomization(_ normalizedCustomization: GamepadCustomization) {
         customization = normalizedCustomization
         editorLayerModel = makeEditorLayerModel(for: normalizedCustomization)
+        refreshLayoutQualityReport(for: normalizedCustomization)
+    }
+
+    private func refreshLayoutQualityReport(for customization: GamepadCustomization) {
+        cachedLayoutQualityReport = customization.layoutQualityReport(
+            profileName: selectedProfile?.name,
+            canvasSize: customization.deviceCanvas.editorDeviceFrame.screenRect.size
+        )
     }
 
     private var deviceFrameAnimation: Animation? {
@@ -9233,6 +9273,8 @@ struct GamepadCustomizationEditor: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             releaseAllTestInputs()
+            finishActiveContinuousEdit()
+            commitPendingEditorChanges()
         }
         .onChange(of: isProfileNameFieldFocused) { _, isFocused in
             if !isFocused {
@@ -9357,6 +9399,7 @@ struct GamepadCustomizationEditor: View {
         }
         .onDisappear {
             releaseAllTestInputs()
+            finishActiveContinuousEdit()
             commitPendingEditorChanges()
         }
     }
@@ -9921,7 +9964,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private var currentLayoutQualityReport: GamepadLayoutQualityReport {
-        customization.layoutQualityReport(profileName: selectedProfile?.name, canvasSize: activeDesignCanvasSize)
+        cachedLayoutQualityReport
     }
 
     @ViewBuilder
@@ -14325,14 +14368,55 @@ struct GamepadCustomizationEditor: View {
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
             }
 
-            GamepadColorPlane(color: joystickKnobColorValueBinding(for: identity, scheme: editingScheme), hue: $fillColorPickerHue)
+            GamepadColorPlane(
+                color: continuousBinding(
+                    id: "color.joystick.\(identity.id).plane",
+                    actionName: "Adjust Thumbstick Color",
+                    value: joystickKnobColorValueBinding(for: identity, scheme: editingScheme)
+                ),
+                hue: $fillColorPickerHue,
+                onEditingChanged: { isEditing in
+                    continuousEditingChanged(
+                        isEditing,
+                        id: "color.joystick.\(identity.id).plane",
+                        actionName: "Adjust Thumbstick Color"
+                    )
+                }
+            )
                 .frame(height: 220)
                 .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
 
-            GamepadHueSlider(color: joystickKnobColorValueBinding(for: identity, scheme: editingScheme), hue: $fillColorPickerHue)
+            GamepadHueSlider(
+                color: continuousBinding(
+                    id: "color.joystick.\(identity.id).hue",
+                    actionName: "Adjust Thumbstick Hue",
+                    value: joystickKnobColorValueBinding(for: identity, scheme: editingScheme)
+                ),
+                hue: $fillColorPickerHue,
+                onEditingChanged: { isEditing in
+                    continuousEditingChanged(
+                        isEditing,
+                        id: "color.joystick.\(identity.id).hue",
+                        actionName: "Adjust Thumbstick Hue"
+                    )
+                }
+            )
                 .frame(height: 26)
 
-            GamepadAlphaSlider(color: joystickKnobColorValueBinding(for: identity, scheme: editingScheme))
+            GamepadAlphaSlider(
+                color: continuousBinding(
+                    id: "color.joystick.\(identity.id).alpha",
+                    actionName: "Adjust Thumbstick Opacity",
+                    value: joystickKnobColorValueBinding(for: identity, scheme: editingScheme)
+                ),
+                onEditingChanged: { isEditing in
+                    continuousEditingChanged(
+                        isEditing,
+                        id: "color.joystick.\(identity.id).alpha",
+                        actionName: "Adjust Thumbstick Opacity"
+                    )
+                }
+            )
                 .frame(height: 26)
 
             HStack(spacing: Geist.Spacing.s2) {
@@ -14479,14 +14563,55 @@ struct GamepadCustomizationEditor: View {
         usesCustomColor: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-            GamepadColorPlane(color: fillColorValueBinding(for: target, scheme: editingScheme), hue: $fillColorPickerHue)
+            GamepadColorPlane(
+                color: continuousBinding(
+                    id: "color.fill.\(target.continuousEditID).plane",
+                    actionName: "Adjust Fill Color",
+                    value: fillColorValueBinding(for: target, scheme: editingScheme)
+                ),
+                hue: $fillColorPickerHue,
+                onEditingChanged: { isEditing in
+                    continuousEditingChanged(
+                        isEditing,
+                        id: "color.fill.\(target.continuousEditID).plane",
+                        actionName: "Adjust Fill Color"
+                    )
+                }
+            )
                 .frame(height: 240)
                 .clipShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
 
-            GamepadHueSlider(color: fillColorValueBinding(for: target, scheme: editingScheme), hue: $fillColorPickerHue)
+            GamepadHueSlider(
+                color: continuousBinding(
+                    id: "color.fill.\(target.continuousEditID).hue",
+                    actionName: "Adjust Fill Hue",
+                    value: fillColorValueBinding(for: target, scheme: editingScheme)
+                ),
+                hue: $fillColorPickerHue,
+                onEditingChanged: { isEditing in
+                    continuousEditingChanged(
+                        isEditing,
+                        id: "color.fill.\(target.continuousEditID).hue",
+                        actionName: "Adjust Fill Hue"
+                    )
+                }
+            )
                 .frame(height: 26)
 
-            GamepadAlphaSlider(color: fillColorValueBinding(for: target, scheme: editingScheme))
+            GamepadAlphaSlider(
+                color: continuousBinding(
+                    id: "color.fill.\(target.continuousEditID).alpha",
+                    actionName: "Adjust Fill Opacity",
+                    value: fillColorValueBinding(for: target, scheme: editingScheme)
+                ),
+                onEditingChanged: { isEditing in
+                    continuousEditingChanged(
+                        isEditing,
+                        id: "color.fill.\(target.continuousEditID).alpha",
+                        actionName: "Adjust Fill Opacity"
+                    )
+                }
+            )
                 .frame(height: 26)
 
             HStack(spacing: Geist.Spacing.s2) {
@@ -14600,7 +14725,21 @@ struct GamepadCustomizationEditor: View {
                         .geistTypography(.label13Mono)
                         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 }
-                Slider(value: gradientAngleBinding(for: target, scheme: editingScheme), in: 0...360)
+                Slider(
+                    value: continuousBinding(
+                        id: "fill.\(target.continuousEditID).gradient-angle",
+                        actionName: "Adjust Gradient Angle",
+                        value: gradientAngleBinding(for: target, scheme: editingScheme)
+                    ),
+                    in: 0...360,
+                    onEditingChanged: { isEditing in
+                        continuousEditingChanged(
+                            isEditing,
+                            id: "fill.\(target.continuousEditID).gradient-angle",
+                            actionName: "Adjust Gradient Angle"
+                        )
+                    }
+                )
             }
             .opacity(gradient.type == .linear ? 1 : 0.42)
             .disabled(gradient.type != .linear)
@@ -14714,9 +14853,9 @@ struct GamepadCustomizationEditor: View {
                 .frame(width: 190)
             }
 
-            fillSliderRow(title: "Scale", value: tileScaleBinding(for: target, scheme: editingScheme), range: 0.25...4, percent: true)
-            fillSliderRow(title: "Spacing X", value: tileSpacingBinding(for: target, scheme: editingScheme, keyPath: \.spacingX), range: 0...2, percent: true)
-            fillSliderRow(title: "Spacing Y", value: tileSpacingBinding(for: target, scheme: editingScheme, keyPath: \.spacingY), range: 0...2, percent: true)
+            fillSliderRow(title: "Scale", target: target, value: tileScaleBinding(for: target, scheme: editingScheme), range: 0.25...4, percent: true)
+            fillSliderRow(title: "Spacing X", target: target, value: tileSpacingBinding(for: target, scheme: editingScheme, keyPath: \.spacingX), range: 0...2, percent: true)
+            fillSliderRow(title: "Spacing Y", target: target, value: tileSpacingBinding(for: target, scheme: editingScheme, keyPath: \.spacingY), range: 0...2, percent: true)
 
             HStack(alignment: .top, spacing: Geist.Spacing.s3) {
                 Text("Alignment")
@@ -14802,13 +14941,13 @@ struct GamepadCustomizationEditor: View {
             .buttonStyle(.plain)
             .menuStyle(.button)
 
-            fillSliderRow(title: "Exposure", value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.exposure), range: -1...1)
-            fillSliderRow(title: "Contrast", value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.contrast), range: -1...1)
-            fillSliderRow(title: "Saturation", value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.saturation), range: -1...1)
-            fillSliderRow(title: "Temperat...", value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.temperature), range: -1...1)
-            fillSliderRow(title: "Tint", value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.tint), range: -1...1)
-            fillSliderRow(title: "Highlights", value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.highlights), range: -1...1)
-            fillSliderRow(title: "Shadows", value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.shadows), range: -1...1)
+            fillSliderRow(title: "Exposure", target: target, value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.exposure), range: -1...1)
+            fillSliderRow(title: "Contrast", target: target, value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.contrast), range: -1...1)
+            fillSliderRow(title: "Saturation", target: target, value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.saturation), range: -1...1)
+            fillSliderRow(title: "Temperat...", target: target, value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.temperature), range: -1...1)
+            fillSliderRow(title: "Tint", target: target, value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.tint), range: -1...1)
+            fillSliderRow(title: "Highlights", target: target, value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.highlights), range: -1...1)
+            fillSliderRow(title: "Shadows", target: target, value: imageAdjustmentBinding(for: target, scheme: editingScheme, keyPath: \.shadows), range: -1...1)
 
             fillPaletteScopeMenu(schemeName: schemeName)
 
@@ -14855,13 +14994,28 @@ struct GamepadCustomizationEditor: View {
         .menuStyle(.button)
     }
 
-    private func fillSliderRow(title: String, value: Binding<Double>, range: ClosedRange<Double>, percent: Bool = false) -> some View {
-        HStack(spacing: Geist.Spacing.s3) {
+    private func fillSliderRow(
+        title: String,
+        target: GamepadFillEditorTarget,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        percent: Bool = false
+    ) -> some View {
+        let editID = "fill.\(target.continuousEditID).\(title)"
+        let actionName = "Adjust \(title)"
+
+        return HStack(spacing: Geist.Spacing.s3) {
             Text(title)
                 .geistTypography(.label14)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .frame(width: 84, alignment: .leading)
-            Slider(value: value, in: range)
+            Slider(
+                value: continuousBinding(id: editID, actionName: actionName, value: value),
+                in: range,
+                onEditingChanged: { isEditing in
+                    continuousEditingChanged(isEditing, id: editID, actionName: actionName)
+                }
+            )
             Text(percent ? "\(Int((value.wrappedValue * 100).rounded()))%" : "\(Int((value.wrappedValue * 100).rounded()))")
                 .geistTypography(.label13Mono)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
@@ -15954,12 +16108,21 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func valueSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>, valueText: String) -> some View {
-        HStack(spacing: Geist.Spacing.s3) {
+        let editID = "control.\(selectedControlID.id).\(title)"
+        let actionName = "Adjust \(title)"
+
+        return HStack(spacing: Geist.Spacing.s3) {
             Text(title)
                 .geistTypography(.label13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .frame(width: 58, alignment: .leading)
-            Slider(value: value, in: range)
+            Slider(
+                value: continuousBinding(id: editID, actionName: actionName, value: value),
+                in: range,
+                onEditingChanged: { isEditing in
+                    continuousEditingChanged(isEditing, id: editID, actionName: actionName)
+                }
+            )
             Text(valueText)
                 .geistTypography(.label12Mono)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -16308,6 +16471,7 @@ struct GamepadCustomizationEditor: View {
         to destinationOrientation: GamepadEditorDeviceOrientation,
         automaticallyArranged: Bool
     ) {
+        finishActiveContinuousEdit()
         guard sourceOrientation != destinationOrientation,
               let index = profiles.firstIndex(where: { $0.id == selectedProfileID })
         else { return }
@@ -16334,6 +16498,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func switchSelectedProfileOrientation(to orientation: GamepadEditorDeviceOrientation, deviceFrame frame: GamepadEditorDeviceFrame) {
+        finishActiveContinuousEdit()
         releaseAllTestInputs()
         guard let index = profiles.firstIndex(where: { $0.id == selectedProfileID }) else {
             selectedProfileOrientation = orientation
@@ -16457,7 +16622,13 @@ struct GamepadCustomizationEditor: View {
 
     private func syncExternalCustomizationState(_ newCustomization: GamepadCustomization) {
         let normalized = newCustomization.normalized
+        if let lastEmittedCustomization = continuousEditCoordinator.lastEmittedExternalCustomization,
+           normalized.hasSamePresentation(as: lastEmittedCustomization) {
+            continuousEditCoordinator.lastEmittedExternalCustomization = nil
+            return
+        }
         guard !normalized.hasSamePresentation(as: customization) else { return }
+        cancelActiveContinuousEdit()
         pendingExternalCommitWorkItem?.cancel()
         pendingExternalCommitWorkItem = nil
         hasPendingExternalEditorCommit = false
@@ -16487,11 +16658,138 @@ struct GamepadCustomizationEditor: View {
         hasPendingExternalEditorCommit = false
         let normalized = customization.normalized
         syncSelectedProfile(with: normalized, persistsImmediately: false)
+        continuousEditCoordinator.lastEmittedExternalCustomization = normalized
         persistProfiles()
 
         if onProfilesChanged == nil,
            !normalized.hasSamePresentation(as: externalCustomization) {
             externalCustomization = normalized
+        }
+    }
+
+    private func beginContinuousEdit(
+        id: String,
+        actionName: String,
+        hasExplicitBoundary: Bool
+    ) {
+        if var activeSession = continuousEditCoordinator.session,
+           activeSession.id == id {
+            if hasExplicitBoundary && !activeSession.hasExplicitBoundary {
+                activeSession.hasExplicitBoundary = true
+                continuousEditCoordinator.session = activeSession
+                cancelContinuousEditFallbackEnd()
+            }
+            return
+        }
+
+        if continuousEditCoordinator.session != nil {
+            finishActiveContinuousEdit()
+        }
+
+        let hadPendingExternalCommit = hasPendingExternalEditorCommit
+        pendingExternalCommitWorkItem?.cancel()
+        pendingExternalCommitWorkItem = nil
+
+        continuousEditCoordinator.session = GamepadEditorContinuousEditSession(
+            id: id,
+            actionName: actionName,
+            baseline: currentUndoSnapshot(),
+            hadPendingExternalCommit: hadPendingExternalCommit,
+            hasExplicitBoundary: hasExplicitBoundary
+        )
+    }
+
+    private func finishContinuousEdit(id: String) {
+        guard let session = continuousEditCoordinator.session,
+              session.id == id
+        else { return }
+
+        cancelContinuousEditFallbackEnd()
+        continuousEditCoordinator.session = nil
+        continuousEditCoordinator.isApplyingSample = false
+
+        let normalizedCustomization = customization.normalized
+        guard normalizedCustomization != session.baseline.customization else {
+            setEditorCustomization(normalizedCustomization)
+            if session.hadPendingExternalCommit {
+                scheduleExternalEditorCommit()
+            }
+            return
+        }
+
+        registerUndoSnapshot(session.baseline, actionName: session.actionName)
+        activeLayoutQualityIssue = nil
+        highlightedQualityControlIDs.removeAll()
+        highlightedQualitySeverity = nil
+        syncSelectedProfile(with: normalizedCustomization, persistsImmediately: false)
+        setEditorCustomization(normalizedCustomization)
+        scheduleExternalEditorCommit()
+    }
+
+    private func finishActiveContinuousEdit() {
+        guard let id = continuousEditCoordinator.session?.id else { return }
+        finishContinuousEdit(id: id)
+    }
+
+    private func cancelActiveContinuousEdit() {
+        cancelContinuousEditFallbackEnd()
+        continuousEditCoordinator.session = nil
+        continuousEditCoordinator.isApplyingSample = false
+    }
+
+    private func cancelContinuousEditFallbackEnd() {
+        continuousEditCoordinator.fallbackEndWorkItem?.cancel()
+        continuousEditCoordinator.fallbackEndWorkItem = nil
+    }
+
+    private func scheduleContinuousEditFallbackEnd(id: String) {
+        cancelContinuousEditFallbackEnd()
+        guard continuousEditCoordinator.session?.hasExplicitBoundary == false else { return }
+
+        let workItem = DispatchWorkItem {
+            guard continuousEditCoordinator.session?.id == id,
+                  continuousEditCoordinator.session?.hasExplicitBoundary == false
+            else { return }
+            finishContinuousEdit(id: id)
+        }
+        continuousEditCoordinator.fallbackEndWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+    }
+
+    private func continuousBinding<Value>(
+        id: String,
+        actionName: String,
+        value: Binding<Value>
+    ) -> Binding<Value> {
+        Binding(
+            get: { value.wrappedValue },
+            set: { newValue in
+                beginContinuousEdit(
+                    id: id,
+                    actionName: actionName,
+                    hasExplicitBoundary: false
+                )
+                continuousEditCoordinator.isApplyingSample = true
+                defer { continuousEditCoordinator.isApplyingSample = false }
+                value.wrappedValue = newValue
+                scheduleContinuousEditFallbackEnd(id: id)
+            }
+        )
+    }
+
+    private func continuousEditingChanged(
+        _ isEditing: Bool,
+        id: String,
+        actionName: String
+    ) {
+        if isEditing {
+            beginContinuousEdit(
+                id: id,
+                actionName: actionName,
+                hasExplicitBoundary: true
+            )
+        } else {
+            finishContinuousEdit(id: id)
         }
     }
 
@@ -18739,6 +19037,14 @@ struct GamepadCustomizationEditor: View {
     ) {
         var next = customization
         mutate(&next)
+
+        if continuousEditCoordinator.isApplyingSample {
+            customization = next
+            return
+        }
+        if continuousEditCoordinator.session != nil {
+            finishActiveContinuousEdit()
+        }
         applyCustomization(next, undoActionName: registersUndo ? actionName : nil)
     }
 
@@ -18748,6 +19054,13 @@ struct GamepadCustomizationEditor: View {
         selectionSet nextSelectedControlIDs: Set<GamepadControlIdentity>? = nil,
         undoActionName: String? = nil
     ) {
+        if continuousEditCoordinator.isApplyingSample {
+            customization = nextCustomization
+            return
+        }
+        if continuousEditCoordinator.session != nil {
+            finishActiveContinuousEdit()
+        }
         let normalizedCustomization = nextCustomization.normalized
         let options = controlSelectionOptions(for: normalizedCustomization)
         let optionSet = Set(options)
@@ -18801,24 +19114,58 @@ struct GamepadCustomizationEditor: View {
         scheduleExternalEditorCommit()
     }
 
-    private func registerUndoSnapshot(actionName: String) {
-        guard let undoManager else { return }
-        let snapshot = GamepadEditorUndoSnapshot(
+    private func currentUndoSnapshot() -> GamepadEditorUndoSnapshot {
+        GamepadEditorUndoSnapshot(
+            profileID: selectedProfileID,
+            profileOrientation: selectedProfileOrientation,
             customization: customization.normalized,
             selectedControlID: selectedControlID,
             selectedControlIDs: selectedControlIDs,
             isControlSelectionActive: isControlSelectionActive
         )
+    }
+
+    private func registerUndoSnapshot(actionName: String) {
+        registerUndoSnapshot(currentUndoSnapshot(), actionName: actionName)
+    }
+
+    private func registerUndoSnapshot(
+        _ snapshot: GamepadEditorUndoSnapshot,
+        actionName: String
+    ) {
+        guard let undoManager else { return }
         undoManager.registerUndo(withTarget: undoTarget) { _ in
-            applyCustomization(
-                snapshot.customization,
-                selecting: snapshot.selectedControlID,
-                selectionSet: snapshot.selectedControlIDs,
-                undoActionName: actionName
-            )
-            isControlSelectionActive = snapshot.isControlSelectionActive && !selectedControlIDs.isEmpty
+            restoreEditorUndoSnapshot(snapshot, actionName: actionName)
         }
         undoManager.setActionName(actionName)
+    }
+
+    private func restoreEditorUndoSnapshot(
+        _ snapshot: GamepadEditorUndoSnapshot,
+        actionName: String
+    ) {
+        guard let profile = profiles.first(where: { $0.id == snapshot.profileID }) else { return }
+
+        if selectedProfileID != snapshot.profileID
+            || selectedProfileOrientation != snapshot.profileOrientation {
+            finishActiveContinuousEdit()
+            commitPendingEditorChanges()
+            selectedProfileID = snapshot.profileID
+            selectedProfileIDs.removeAll()
+            selectedProfileOrientation = snapshot.profileOrientation
+            selectedProfileNameDraft = profile.name
+            isSelectedProfileExpanded = true
+            selectKeypadInspector()
+            setEditorCustomization(profile.customization(for: snapshot.profileOrientation))
+        }
+
+        applyCustomization(
+            snapshot.customization,
+            selecting: snapshot.selectedControlID,
+            selectionSet: snapshot.selectedControlIDs,
+            undoActionName: actionName
+        )
+        isControlSelectionActive = snapshot.isControlSelectionActive && !selectedControlIDs.isEmpty
     }
 
     private var profileUndoSnapshot: GamepadEditorProfileUndoSnapshot {
@@ -18831,6 +19178,8 @@ struct GamepadCustomizationEditor: View {
             isSelectedProfileExpanded: isSelectedProfileExpanded,
             selectedProfileNameDraft: selectedProfileNameDraft,
             editorSnapshot: GamepadEditorUndoSnapshot(
+                profileID: selectedProfileID,
+                profileOrientation: selectedProfileOrientation,
                 customization: customization.normalized,
                 selectedControlID: selectedControlID,
                 selectedControlIDs: selectedControlIDs,
@@ -18854,6 +19203,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func restoreProfileUndoSnapshot(_ snapshot: GamepadEditorProfileUndoSnapshot, actionName: String) {
+        finishActiveContinuousEdit()
         registerProfileUndoSnapshot(actionName: actionName)
 
         profiles = snapshot.profiles
@@ -18915,6 +19265,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func selectNewProfile(_ profile: GamepadConfigurationProfile) {
+        finishActiveContinuousEdit()
         profiles.append(profile)
         selectedProfileID = profile.id
         selectedProfileIDs.removeAll()
@@ -19140,12 +19491,14 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func performUndo() -> Bool {
+        finishActiveContinuousEdit()
         guard let undoManager, undoManager.canUndo else { return false }
         undoManager.undo()
         return true
     }
 
     private func performRedo() -> Bool {
+        finishActiveContinuousEdit()
         guard let undoManager, undoManager.canRedo else { return false }
         undoManager.redo()
         return true
@@ -19400,6 +19753,7 @@ struct GamepadCustomizationEditor: View {
         guard profiles[index].name != nextName else { return }
         profiles[index].name = nextName
         profiles[index].updatedAt = Date.currentMilliseconds
+        refreshLayoutQualityReport(for: customization)
         persistProfiles()
     }
 
@@ -19418,6 +19772,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func duplicateProfiles(ids: Set<UUID>) {
+        finishActiveContinuousEdit()
         commitSelectedProfileNameDraft()
         let sourceProfiles = profiles.filter { ids.contains($0.id) }
         guard !sourceProfiles.isEmpty else { return }
@@ -19454,6 +19809,7 @@ struct GamepadCustomizationEditor: View {
     }
 
     private func deleteProfiles(_ ids: Set<UUID>) {
+        finishActiveContinuousEdit()
         commitSelectedProfileNameDraft()
         let validProfileIDs = Set(profiles.map(\.id))
         let removedIDs = ids.intersection(validProfileIDs)
@@ -19512,6 +19868,7 @@ struct GamepadCustomizationEditor: View {
         expandsDetails: Bool = true,
         selectionIDs: Set<UUID>
     ) {
+        finishActiveContinuousEdit()
         releaseAllTestInputs()
         commitSelectedProfileNameDraft()
         let nextProfile = profiles.first { $0.id == profile.id } ?? profile
@@ -19789,6 +20146,15 @@ struct GamepadCustomizationEditor: View {
 
         let didChangeSelectedProfile = selectedProfileID != state.activeProfileID
 
+        if didChangeSelectedProfile {
+            cancelActiveContinuousEdit()
+            pendingExternalCommitWorkItem?.cancel()
+            pendingExternalCommitWorkItem = nil
+            hasPendingExternalEditorCommit = false
+        } else {
+            finishActiveContinuousEdit()
+        }
+
         profiles = state.profiles
         selectedProfileID = state.activeProfileID
         defaultProfileID = state.defaultProfileID
@@ -19803,8 +20169,14 @@ struct GamepadCustomizationEditor: View {
         }
         if didChangeSelectedProfile {
             selectKeypadInspector()
+            if let profile = state.activeProfile {
+                let orientation = profile.customization.deviceCanvas.editorDeviceFrame.orientation
+                selectedProfileOrientation = orientation
+                setEditorCustomization(profile.customization(for: orientation))
+            }
         } else {
             reconcileSelection(in: customization)
+            refreshLayoutQualityReport(for: customization)
         }
     }
 
@@ -19833,11 +20205,13 @@ struct GamepadCustomizationEditor: View {
         if !isProfileNameFieldFocused {
             syncSelectedProfileNameDraft()
         }
-        GamepadConfigurationProfilePersistence.save(
-            state.profiles,
-            activeProfileID: state.activeProfileID,
-            defaultProfileID: state.defaultProfileID
-        )
+        if onProfilesChanged == nil {
+            GamepadConfigurationProfilePersistence.save(
+                state.profiles,
+                activeProfileID: state.activeProfileID,
+                defaultProfileID: state.defaultProfileID
+            )
+        }
         onProfilesChanged?(state.profiles, state.activeProfileID, state.defaultProfileID)
     }
 }
@@ -20271,6 +20645,8 @@ private struct GamepadColorPlane: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var color: GamepadRGBAColor
     @Binding var hue: CGFloat
+    var onEditingChanged: (Bool) -> Void = { _ in }
+    @State private var isEditing = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -20307,7 +20683,11 @@ private struct GamepadColorPlane: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
+                        beginEditingIfNeeded()
                         updateColor(at: value.location, size: proxy.size)
+                    }
+                    .onEnded { _ in
+                        endEditingIfNeeded()
                     }
             )
             .overlay(
@@ -20315,6 +20695,21 @@ private struct GamepadColorPlane: View {
                     .stroke(Geist.color(.grayAlpha300, scheme: colorScheme), lineWidth: 1)
             )
         }
+        .onDisappear {
+            endEditingIfNeeded()
+        }
+    }
+
+    private func beginEditingIfNeeded() {
+        guard !isEditing else { return }
+        isEditing = true
+        onEditingChanged(true)
+    }
+
+    private func endEditingIfNeeded() {
+        guard isEditing else { return }
+        isEditing = false
+        onEditingChanged(false)
     }
 
     private func effectiveHue(for hsba: GamepadHSBAColor) -> CGFloat {
@@ -20335,6 +20730,9 @@ private struct GamepadHueSlider: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var color: GamepadRGBAColor
     @Binding var hue: CGFloat
+    var onEditingChanged: (Bool) -> Void = { _ in }
+    @State private var isEditing = false
+    @State private var dragIsHorizontal: Bool?
 
     private let handleSize: CGFloat = 24
 
@@ -20368,13 +20766,46 @@ private struct GamepadHueSlider: View {
                     .position(x: x, y: proxy.size.height / 2)
             }
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 3)
                     .onChanged { value in
+                        if dragIsHorizontal == nil {
+                            dragIsHorizontal = abs(value.translation.width) >= abs(value.translation.height)
+                        }
+                        guard dragIsHorizontal == true else { return }
+                        beginEditingIfNeeded()
                         updateHue(at: value.location, width: proxy.size.width)
+                    }
+                    .onEnded { _ in
+                        dragIsHorizontal = nil
+                        endEditingIfNeeded()
+                    }
+            )
+            .simultaneousGesture(
+                SpatialTapGesture()
+                    .onEnded { value in
+                        onEditingChanged(true)
+                        updateHue(at: value.location, width: proxy.size.width)
+                        onEditingChanged(false)
                     }
             )
         }
+        .onDisappear {
+            dragIsHorizontal = nil
+            endEditingIfNeeded()
+        }
+    }
+
+    private func beginEditingIfNeeded() {
+        guard !isEditing else { return }
+        isEditing = true
+        onEditingChanged(true)
+    }
+
+    private func endEditingIfNeeded() {
+        guard isEditing else { return }
+        isEditing = false
+        onEditingChanged(false)
     }
 
     private func handlePosition(for hue: CGFloat, width: CGFloat) -> CGFloat {
@@ -20396,6 +20827,9 @@ private struct GamepadHueSlider: View {
 private struct GamepadAlphaSlider: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var color: GamepadRGBAColor
+    var onEditingChanged: (Bool) -> Void = { _ in }
+    @State private var isEditing = false
+    @State private var dragIsHorizontal: Bool?
 
     private let handleSize: CGFloat = 24
 
@@ -20431,13 +20865,46 @@ private struct GamepadAlphaSlider: View {
                     .position(x: x, y: proxy.size.height / 2)
             }
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 3)
                     .onChanged { value in
+                        if dragIsHorizontal == nil {
+                            dragIsHorizontal = abs(value.translation.width) >= abs(value.translation.height)
+                        }
+                        guard dragIsHorizontal == true else { return }
+                        beginEditingIfNeeded()
                         updateAlpha(at: value.location, width: proxy.size.width)
+                    }
+                    .onEnded { _ in
+                        dragIsHorizontal = nil
+                        endEditingIfNeeded()
+                    }
+            )
+            .simultaneousGesture(
+                SpatialTapGesture()
+                    .onEnded { value in
+                        onEditingChanged(true)
+                        updateAlpha(at: value.location, width: proxy.size.width)
+                        onEditingChanged(false)
                     }
             )
         }
+        .onDisappear {
+            dragIsHorizontal = nil
+            endEditingIfNeeded()
+        }
+    }
+
+    private func beginEditingIfNeeded() {
+        guard !isEditing else { return }
+        isEditing = true
+        onEditingChanged(true)
+    }
+
+    private func endEditingIfNeeded() {
+        guard isEditing else { return }
+        isEditing = false
+        onEditingChanged(false)
     }
 
     private func handlePosition(for alpha: CGFloat, width: CGFloat) -> CGFloat {
@@ -22161,11 +22628,168 @@ private struct GamepadAlignmentSnapCandidate {
     }
 }
 
-private final class GamepadResolvedControlsCache {
-    private var cachedCustomization: GamepadCustomization?
+struct GamepadResolvedControlsLayoutCacheKey: Equatable {
+    struct Control: Equatable {
+        let id: GamepadControlIdentity
+        let mappedButton: GameButton
+        let controlKind: GamepadCustomControlKind
+        let centerX: CGFloat?
+        let centerY: CGFloat?
+        let widthScale: CGFloat
+        let heightScale: CGFloat
+        let shape: GamepadButtonShapeStyle?
+        let zIndex: Int
+        let isHidden: Bool
+
+        init(
+            id: GamepadControlIdentity,
+            mappedButton: GameButton,
+            controlKind: GamepadCustomControlKind,
+            layout: GamepadButtonCustomization
+        ) {
+            self.id = id
+            self.mappedButton = mappedButton
+            self.controlKind = controlKind
+            self.centerX = layout.centerX
+            self.centerY = layout.centerY
+            self.widthScale = layout.widthScale
+            self.heightScale = layout.heightScale
+            self.shape = layout.shape
+            self.zIndex = layout.zIndex
+            self.isHidden = layout.isHidden
+        }
+    }
+
+    let layoutMode: GamepadLayoutMode
+    let controlScale: GamepadControlScale
+    let controls: [Control]
+    let layerOrder: [GamepadControlIdentity]
+
+    init(customization: GamepadCustomization) {
+        layoutMode = customization.layoutMode
+        controlScale = customization.controlScale
+
+        let builtInControls = GameButton.builtInControls.map { button in
+            Control(
+                id: .builtin(button),
+                mappedButton: button,
+                controlKind: .button,
+                layout: customization.buttonCustomization(for: button)
+            )
+        }
+        let customControls = customization.customButtons.map { button in
+            Control(
+                id: .custom(button.id),
+                mappedButton: button.mappedButton,
+                controlKind: button.controlKind,
+                layout: button.layout
+            )
+        }
+        let systemControls = [
+            Control(
+                id: .system(.topBarActivation),
+                mappedButton: .pause,
+                controlKind: .decoration,
+                layout: customization.topBarActivationRegion.normalized
+            )
+        ]
+
+        controls = builtInControls + customControls + systemControls
+        layerOrder = customization.orderedControlIdentitiesForDesign
+    }
+}
+
+private extension GamepadResolvedControl {
+    func refreshingDynamicValues(from customization: GamepadCustomization) -> GamepadResolvedControl? {
+        switch id {
+        case .builtin(let button):
+            let layout = customization.buttonCustomization(for: button)
+            guard !layout.isHidden else { return nil }
+            return GamepadResolvedControl(
+                id: id,
+                elementID: KeypadElement.builtInID(for: button),
+                mappedButton: button,
+                label: customization.visualLabel(for: button),
+                normalizedCenter: normalizedCenter,
+                center: center,
+                size: size,
+                shape: shape,
+                rotationDegrees: layout.rotationDegrees,
+                layoutCustomization: layout,
+                isCustom: false,
+                isLocationLocked: layout.isLocationLocked,
+                controlKind: .button,
+                visualRole: customization.elements.first(where: { $0.builtInButton == button })?.visualRole
+                    ?? GamepadVisualRole.inferred(for: button, controlKind: .button),
+                joystickMapping: nil,
+                joystickOutputSettings: nil,
+                triggerSettings: nil,
+                trackpadSettings: nil
+            )
+
+        case .custom(let id):
+            guard let button = customization.customButtons.first(where: { $0.id == id })?.normalized,
+                  !button.layout.isHidden
+            else { return nil }
+            let fallbackLabel = customization.visualLabel(for: button.mappedButton)
+            return GamepadResolvedControl(
+                id: self.id,
+                elementID: button.id,
+                mappedButton: button.mappedButton,
+                label: button.visualLabel(fallback: fallbackLabel),
+                normalizedCenter: normalizedCenter,
+                center: center,
+                size: size,
+                shape: shape,
+                rotationDegrees: button.layout.rotationDegrees,
+                layoutCustomization: button.layout,
+                isCustom: true,
+                isLocationLocked: button.layout.isLocationLocked,
+                controlKind: button.controlKind,
+                visualRole: button.visualRole
+                    ?? GamepadVisualRole.inferred(for: button.mappedButton, controlKind: button.controlKind),
+                joystickMapping: button.isJoystick ? (button.joystickMapping ?? .movement) : nil,
+                joystickOutputSettings: button.isJoystick ? (button.joystickOutputSettings ?? .defaultValue).normalized : nil,
+                triggerSettings: button.isTrigger ? (button.triggerSettings ?? .defaultValue).normalized : nil,
+                trackpadSettings: button.isTrackpad ? (button.trackpadSettings ?? .defaultValue).normalized : nil
+            )
+
+        case .system(.topBarActivation):
+            let layout = customization.topBarActivationRegion.normalized
+            guard !layout.isHidden else { return nil }
+            return GamepadResolvedControl(
+                id: id,
+                elementID: nil,
+                mappedButton: .pause,
+                label: GamepadSystemControl.topBarActivation.displayName,
+                normalizedCenter: normalizedCenter,
+                center: center,
+                size: size,
+                shape: shape,
+                rotationDegrees: layout.rotationDegrees,
+                layoutCustomization: layout,
+                isCustom: false,
+                isLocationLocked: layout.isLocationLocked,
+                controlKind: .decoration,
+                visualRole: .system,
+                joystickMapping: nil,
+                joystickOutputSettings: nil,
+                triggerSettings: nil,
+                trackpadSettings: nil
+            )
+
+        case .controlBarItem:
+            return nil
+        }
+    }
+}
+
+final class GamepadResolvedControlsCache {
+    private var cachedLayoutKey: GamepadResolvedControlsLayoutCacheKey?
     private var cachedLayoutSize: CGSize?
     private var cachedDefaultLabels: [GameButton: String] = [:]
     private var cachedControls: [GamepadResolvedControl] = []
+    private(set) var resolutionCount = 0
 
     func controls(
         for customization: GamepadCustomization,
@@ -22173,16 +22797,24 @@ private final class GamepadResolvedControlsCache {
         defaultLabelProvider: ((GameButton) -> String?)?
     ) -> [GamepadResolvedControl] {
         let defaultLabels = Self.defaultLabels(from: defaultLabelProvider)
+        let layoutKey = GamepadResolvedControlsLayoutCacheKey(customization: customization)
         if cachedLayoutSize == layoutSize,
            cachedDefaultLabels == defaultLabels,
-           cachedCustomization == customization {
-            return cachedControls
+           cachedLayoutKey == layoutKey {
+            let refreshedControls = cachedControls.compactMap {
+                $0.refreshingDynamicValues(from: customization)
+            }
+            if refreshedControls.count == cachedControls.count {
+                cachedControls = refreshedControls
+                return refreshedControls
+            }
         }
 
         let controls = customization.resolvedControls(in: layoutSize) { button in
             defaultLabels[button]
         }
-        cachedCustomization = customization
+        resolutionCount += 1
+        cachedLayoutKey = layoutKey
         cachedLayoutSize = layoutSize
         cachedDefaultLabels = defaultLabels
         cachedControls = controls
