@@ -22448,10 +22448,6 @@ private struct GamepadLayoutDesigner: View {
                             }
                     )
                     .allowsHitTesting((interactionMode == .test && !control.isDecoration) || (interactionMode == .edit && activeTool == .select))
-                    // Overlapping controls may render above the selected control in the
-                    // saved layer order. Keep its resize handles on top while editing so
-                    // a neighboring control cannot intercept a corner drag.
-                    .zIndex(isSelected && !isMultiSelection ? 1 : 0)
                 }
 
                 GamepadArtworkLayersView(layers: customization.artworkLayers, plane: .overlay)
