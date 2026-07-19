@@ -572,7 +572,7 @@ struct ThumbConsoleCLI {
             if removedEveryProfile {
                 let replacementProfile = GamepadConfigurationProfile(
                     name: "Setup 1",
-                    customization: GamepadCustomization.blankCanvas
+                    primaryCustomization: GamepadCustomization.blankCanvas
                 )
                 store.profiles = [replacementProfile]
                 store.activeProfileID = replacementProfile.id
@@ -766,14 +766,18 @@ struct ThumbConsoleCLI {
             defaultName = "Setup \(store.profiles.count + 1)"
         }
 
-        let profile = GamepadConfigurationProfile(
+        var profile = GamepadConfigurationProfile(
             name: requestedName.isEmpty ? defaultName : requestedName,
-            customization: baseCustomization,
-            landscapeCustomization: baseLandscapeCustomization,
-            portraitCustomization: basePortraitCustomization,
+            primaryCustomization: baseCustomization,
             orientationPreference: baseOrientationPreference,
             outputMode: baseOutputMode
         )
+        if let baseLandscapeCustomization {
+            profile.setCustomizationVariant(baseLandscapeCustomization, for: .landscape)
+        }
+        if let basePortraitCustomization {
+            profile.setCustomizationVariant(basePortraitCustomization, for: .portrait)
+        }
         store.profiles.append(profile)
         store.profileKeyBindings[profile.id.uuidString] = rawBindings(baseBindings)
         if let baseOutputBindings {
@@ -843,7 +847,7 @@ struct ThumbConsoleCLI {
             importedActiveID = profiles.first?.id
         } else if let customization = try? decoder.decode(GamepadCustomization.self, from: data) {
             let name = optionValue("--name", in: arguments) ?? URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-            let profile = GamepadConfigurationProfile(name: name, customization: customization)
+            let profile = GamepadConfigurationProfile(name: name, primaryCustomization: customization)
             importedProfiles = [profile]
             importedActiveID = profile.id
         } else {

@@ -1069,22 +1069,11 @@ final class ControllerClient: ObservableObject {
         else { return }
         let package = skinPackage(for: reference)
         var profile = gamepadProfiles[index]
-        let fallbackOrientation = profile.customization.deviceCanvas.editorDeviceFrame.orientation
-        let fallback = profile.resolvedCustomization(
-            for: fallbackOrientation,
-            colorScheme: colorScheme,
-            skinPackage: package
-        )
-        let landscape = profile.landscapeCustomization.map { _ in
-            profile.resolvedCustomization(for: .landscape, colorScheme: colorScheme, skinPackage: package)
+        if let package {
+            profile.detachSkin(resolving: package, colorScheme: colorScheme)
+        } else {
+            profile.detachSkin()
         }
-        let portrait = profile.portraitCustomization.map { _ in
-            profile.resolvedCustomization(for: .portrait, colorScheme: colorScheme, skinPackage: package)
-        }
-        profile.customization = fallback
-        profile.landscapeCustomization = landscape
-        profile.portraitCustomization = portrait
-        profile.detachSkin()
         gamepadProfiles[index] = profile.normalized
         commitLocalSkinProfileChange(at: index)
         submitSkinSelectionMutation(profileID: profile.id, reference: nil, packageData: nil)

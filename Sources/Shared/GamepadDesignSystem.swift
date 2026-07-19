@@ -497,14 +497,116 @@ public struct GamepadControlStateStyle: Codable, Equatable, Sendable {
     }
 }
 
+private final class GamepadControlVisualStyleStorage: @unchecked Sendable {
+    var normal: GamepadControlStateStyle
+    var pressed: GamepadControlStateStyle?
+    var active: GamepadControlStateStyle?
+    var disabled: GamepadControlStateStyle?
+    var icon: GamepadControlIcon?
+    var hapticStyle: GamepadHapticStyle?
+    var hapticFeedback: GamepadHapticFeedback?
+
+    init(normal: GamepadControlStateStyle) {
+        self.normal = normal
+        self.pressed = nil
+        self.active = nil
+        self.disabled = nil
+        self.icon = nil
+        self.hapticStyle = nil
+        self.hapticFeedback = nil
+    }
+
+    init(
+        normal: GamepadControlStateStyle,
+        pressed: GamepadControlStateStyle?,
+        active: GamepadControlStateStyle?,
+        disabled: GamepadControlStateStyle?,
+        icon: GamepadControlIcon?,
+        hapticStyle: GamepadHapticStyle?,
+        hapticFeedback: GamepadHapticFeedback?
+    ) {
+        self.normal = normal
+        self.pressed = pressed
+        self.active = active
+        self.disabled = disabled
+        self.icon = icon
+        self.hapticStyle = hapticStyle
+        self.hapticFeedback = hapticFeedback
+    }
+
+    func copy() -> GamepadControlVisualStyleStorage {
+        GamepadControlVisualStyleStorage(
+            normal: normal,
+            pressed: pressed,
+            active: active,
+            disabled: disabled,
+            icon: icon,
+            hapticStyle: hapticStyle,
+            hapticFeedback: hapticFeedback
+        )
+    }
+}
+
+/// Copy-on-write storage prevents every button, style token, and skin rule from
+/// embedding four large state-style values while preserving struct value semantics.
 public struct GamepadControlVisualStyle: Codable, Equatable, Sendable {
-    public var normal: GamepadControlStateStyle
-    public var pressed: GamepadControlStateStyle?
-    public var active: GamepadControlStateStyle?
-    public var disabled: GamepadControlStateStyle?
-    public var icon: GamepadControlIcon?
-    public var hapticStyle: GamepadHapticStyle?
-    public var hapticFeedback: GamepadHapticFeedback?
+    private var storage: GamepadControlVisualStyleStorage
+
+    public var normal: GamepadControlStateStyle {
+        get { storage.normal }
+        set {
+            ensureUniqueStorage()
+            storage.normal = newValue
+        }
+    }
+
+    public var pressed: GamepadControlStateStyle? {
+        get { storage.pressed }
+        set {
+            ensureUniqueStorage()
+            storage.pressed = newValue
+        }
+    }
+
+    public var active: GamepadControlStateStyle? {
+        get { storage.active }
+        set {
+            ensureUniqueStorage()
+            storage.active = newValue
+        }
+    }
+
+    public var disabled: GamepadControlStateStyle? {
+        get { storage.disabled }
+        set {
+            ensureUniqueStorage()
+            storage.disabled = newValue
+        }
+    }
+
+    public var icon: GamepadControlIcon? {
+        get { storage.icon }
+        set {
+            ensureUniqueStorage()
+            storage.icon = newValue
+        }
+    }
+
+    public var hapticStyle: GamepadHapticStyle? {
+        get { storage.hapticStyle }
+        set {
+            ensureUniqueStorage()
+            storage.hapticStyle = newValue
+        }
+    }
+
+    public var hapticFeedback: GamepadHapticFeedback? {
+        get { storage.hapticFeedback }
+        set {
+            ensureUniqueStorage()
+            storage.hapticFeedback = newValue
+        }
+    }
 
     public init(
         normal: GamepadControlStateStyle = .empty,
@@ -515,13 +617,53 @@ public struct GamepadControlVisualStyle: Codable, Equatable, Sendable {
         hapticStyle: GamepadHapticStyle? = nil,
         hapticFeedback: GamepadHapticFeedback? = nil
     ) {
-        self.normal = normal
-        self.pressed = pressed
-        self.active = active
-        self.disabled = disabled
-        self.icon = icon
-        self.hapticStyle = hapticStyle
-        self.hapticFeedback = hapticFeedback
+        storage = GamepadControlVisualStyleStorage(
+            normal: normal,
+            pressed: pressed,
+            active: active,
+            disabled: disabled,
+            icon: icon,
+            hapticStyle: hapticStyle,
+            hapticFeedback: hapticFeedback
+        )
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        storage = GamepadControlVisualStyleStorage(
+            normal: try container.decode(GamepadControlStateStyle.self, forKey: .normal)
+        )
+        storage.pressed = try container.decodeIfPresent(GamepadControlStateStyle.self, forKey: .pressed)
+        storage.active = try container.decodeIfPresent(GamepadControlStateStyle.self, forKey: .active)
+        storage.disabled = try container.decodeIfPresent(GamepadControlStateStyle.self, forKey: .disabled)
+        storage.icon = try container.decodeIfPresent(GamepadControlIcon.self, forKey: .icon)
+        storage.hapticStyle = try container.decodeIfPresent(GamepadHapticStyle.self, forKey: .hapticStyle)
+        storage.hapticFeedback = try container.decodeIfPresent(GamepadHapticFeedback.self, forKey: .hapticFeedback)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(storage.normal, forKey: .normal)
+        try container.encodeIfPresent(storage.pressed, forKey: .pressed)
+        try container.encodeIfPresent(storage.active, forKey: .active)
+        try container.encodeIfPresent(storage.disabled, forKey: .disabled)
+        try container.encodeIfPresent(storage.icon, forKey: .icon)
+        try container.encodeIfPresent(storage.hapticStyle, forKey: .hapticStyle)
+        try container.encodeIfPresent(storage.hapticFeedback, forKey: .hapticFeedback)
+    }
+
+    public static func == (
+        lhs: GamepadControlVisualStyle,
+        rhs: GamepadControlVisualStyle
+    ) -> Bool {
+        if lhs.storage === rhs.storage { return true }
+        if lhs.storage.normal != rhs.storage.normal { return false }
+        if lhs.storage.pressed != rhs.storage.pressed { return false }
+        if lhs.storage.active != rhs.storage.active { return false }
+        if lhs.storage.disabled != rhs.storage.disabled { return false }
+        if lhs.storage.icon != rhs.storage.icon { return false }
+        if lhs.storage.hapticStyle != rhs.storage.hapticStyle { return false }
+        return lhs.storage.hapticFeedback == rhs.storage.hapticFeedback
     }
 
     public static let empty = GamepadControlVisualStyle()
@@ -533,30 +675,31 @@ public struct GamepadControlVisualStyle: Codable, Equatable, Sendable {
     }
 
     mutating func normalizeInPlace() {
+        ensureUniqueStorage()
         normalizeStateStylesInPlace()
         normalizeFeedbackInPlace()
     }
 
     private mutating func normalizeStateStylesInPlace() {
-        normal = normal.normalized
-        pressed = pressed?.normalized
-        active = active?.normalized
-        disabled = disabled?.normalized
+        storage.normal = storage.normal.normalized
+        storage.pressed = storage.pressed?.normalized
+        storage.active = storage.active?.normalized
+        storage.disabled = storage.disabled?.normalized
     }
 
     private mutating func normalizeFeedbackInPlace() {
-        icon = icon?.normalized
-        hapticFeedback = hapticFeedback?.normalized
+        storage.icon = storage.icon?.normalized
+        storage.hapticFeedback = storage.hapticFeedback?.normalized
     }
 
     var isEmpty: Bool {
-        if !normal.isEmpty { return false }
-        if pressed?.isEmpty == false { return false }
-        if active?.isEmpty == false { return false }
-        if disabled?.isEmpty == false { return false }
-        if icon != nil { return false }
-        if hapticStyle != nil { return false }
-        return hapticFeedback == nil
+        if !storage.normal.isEmpty { return false }
+        if storage.pressed?.isEmpty == false { return false }
+        if storage.active?.isEmpty == false { return false }
+        if storage.disabled?.isEmpty == false { return false }
+        if storage.icon != nil { return false }
+        if storage.hapticStyle != nil { return false }
+        return storage.hapticFeedback == nil
     }
 
     func stateStyle(for state: GamepadControlPresentationState) -> GamepadControlStateStyle {
@@ -565,13 +708,29 @@ public struct GamepadControlVisualStyle: Codable, Equatable, Sendable {
         case .normal:
             override = nil
         case .pressed:
-            override = pressed
+            override = storage.pressed
         case .active:
-            override = active ?? pressed
+            override = storage.active ?? storage.pressed
         case .disabled:
-            override = disabled
+            override = storage.disabled
         }
-        return (override ?? .empty).merged(over: normal).normalized
+        return (override ?? .empty).merged(over: storage.normal).normalized
+    }
+
+    private mutating func ensureUniqueStorage() {
+        if !isKnownUniquelyReferenced(&storage) {
+            storage = storage.copy()
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case normal
+        case pressed
+        case active
+        case disabled
+        case icon
+        case hapticStyle
+        case hapticFeedback
     }
 }
 
@@ -680,11 +839,25 @@ public extension GamepadControlVisualStyle {
     }
 }
 
+/// Immutable indirection keeps style-library elements cheap to copy and compare in collections.
+private final class GamepadVisualStyleBox: @unchecked Sendable {
+    let value: GamepadControlVisualStyle
+
+    init(_ value: GamepadControlVisualStyle) {
+        self.value = value
+    }
+}
+
 public struct GamepadStyleToken: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     public var name: String
     public var appliesTo: [GamepadCustomControlKind]
-    public var visualStyle: GamepadControlVisualStyle
+    private var storedVisualStyle: GamepadVisualStyleBox
+
+    public var visualStyle: GamepadControlVisualStyle {
+        get { storedVisualStyle.value }
+        set { storedVisualStyle = GamepadVisualStyleBox(newValue) }
+    }
 
     public init(
         id: String = UUID().uuidString,
@@ -695,7 +868,42 @@ public struct GamepadStyleToken: Codable, Equatable, Identifiable, Sendable {
         self.id = id
         self.name = name
         self.appliesTo = appliesTo
-        self.visualStyle = visualStyle
+        self.storedVisualStyle = GamepadVisualStyleBox(visualStyle)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        appliesTo = try container.decodeIfPresent(
+            [GamepadCustomControlKind].self,
+            forKey: .appliesTo
+        ) ?? GamepadCustomControlKind.allCases
+        storedVisualStyle = GamepadVisualStyleBox(
+            try container.decode(GamepadControlVisualStyle.self, forKey: .visualStyle)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(appliesTo, forKey: .appliesTo)
+        try container.encode(storedVisualStyle.value, forKey: .visualStyle)
+    }
+
+    public static func == (lhs: GamepadStyleToken, rhs: GamepadStyleToken) -> Bool {
+        lhs.id == rhs.id
+            && lhs.name == rhs.name
+            && lhs.appliesTo == rhs.appliesTo
+            && lhs.storedVisualStyle.value == rhs.storedVisualStyle.value
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case appliesTo
+        case visualStyle
     }
 
     var normalized: GamepadStyleToken? {

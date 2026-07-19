@@ -21,6 +21,14 @@ xcodebuild -project ThumbConsole.xcodeproj -scheme ThumbConsoleiOS -destination 
 xcodebuild -project ThumbConsole.xcodeproj -scheme ThumbConsoleCLI -destination 'platform=macOS' build
 ```
 
+Before merging changes to shared models, codecs, profile synchronization, skins, or app startup, run the repository-wide stack-safety gate on Apple silicon (arm64):
+
+```bash
+./scripts/verify-stack-safety.sh
+```
+
+See [`docs/stack-safety.md`](docs/stack-safety.md) for the inline-size budgets, constrained-stack testing policy, and design rules for large Swift values.
+
 ## Distribution
 
 ThumbConsole has first-pass release automation for both shipping channels:

@@ -411,17 +411,85 @@ public struct PocketPadSkinAppearance: Codable, Equatable, Sendable {
         controlKind: GamepadCustomControlKind,
         visualRole: GamepadVisualRole? = nil
     ) -> PocketPadSkinControlAppearance {
-        let value = normalized
-        let role = visualRole ?? GamepadVisualRole.inferred(for: button, controlKind: controlKind)
-        let roleAppearance = value.roleRules.last { $0.role == role }?.appearance ?? .empty
-        let buttonAppearance = value.buttonRules.last { $0.button == button }?.appearance ?? .empty
-        return buttonAppearance.merged(over: roleAppearance.merged(over: value.defaultControl ?? .empty))
+        ControlAppearanceResolutionWorkspace(
+            appearance: self,
+            button: button,
+            controlKind: controlKind,
+            visualRole: visualRole
+        ).resolve()
     }
 
     public func controlAppearance(for role: GamepadVisualRole) -> PocketPadSkinControlAppearance {
-        let value = normalized
-        let roleAppearance = value.roleRules.last { $0.role == role }?.appearance ?? .empty
-        return roleAppearance.merged(over: value.defaultControl ?? .empty)
+        ControlAppearanceResolutionWorkspace(
+            appearance: self,
+            visualRole: role
+        ).resolve()
+    }
+
+    private final class ControlAppearanceResolutionWorkspace {
+        private var appearance: PocketPadSkinAppearance
+        private let button: GameButton?
+        private let controlKind: GamepadCustomControlKind?
+        private let requestedRole: GamepadVisualRole?
+        private var result = PocketPadSkinControlAppearance.empty
+
+        init(
+            appearance: PocketPadSkinAppearance,
+            button: GameButton,
+            controlKind: GamepadCustomControlKind,
+            visualRole: GamepadVisualRole?
+        ) {
+            self.appearance = appearance
+            self.button = button
+            self.controlKind = controlKind
+            self.requestedRole = visualRole
+        }
+
+        init(
+            appearance: PocketPadSkinAppearance,
+            visualRole: GamepadVisualRole
+        ) {
+            self.appearance = appearance
+            self.button = nil
+            self.controlKind = nil
+            self.requestedRole = visualRole
+        }
+
+        func resolve() -> PocketPadSkinControlAppearance {
+            normalizeAppearance()
+            selectDefaultAppearance()
+            mergeRoleAppearance()
+            mergeButtonAppearance()
+            return result
+        }
+
+        private func normalizeAppearance() {
+            appearance.normalizeInPlace()
+        }
+
+        private func selectDefaultAppearance() {
+            result = appearance.defaultControl ?? .empty
+        }
+
+        private func mergeRoleAppearance() {
+            guard let role = resolvedRole,
+                  let roleAppearance = appearance.roleRules.last(where: { $0.role == role })?.appearance
+            else { return }
+            result = roleAppearance.merged(over: result)
+        }
+
+        private func mergeButtonAppearance() {
+            guard let button,
+                  let buttonAppearance = appearance.buttonRules.last(where: { $0.button == button })?.appearance
+            else { return }
+            result = buttonAppearance.merged(over: result)
+        }
+
+        private var resolvedRole: GamepadVisualRole? {
+            if let requestedRole { return requestedRole }
+            guard let button, let controlKind else { return nil }
+            return GamepadVisualRole.inferred(for: button, controlKind: controlKind)
+        }
     }
 
     /// Returns this appearance layered over a less-specific appearance.

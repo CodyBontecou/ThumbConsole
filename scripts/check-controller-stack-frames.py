@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Callable
 
 KIB = 1024
-DEFAULT_CONTROLLER_MAX_BYTES = 32 * KIB
-DEFAULT_MAC_MAX_BYTES = 48 * KIB
-DEFAULT_IOS_RUNTIME_MAX_BYTES = 48 * KIB
+DEFAULT_CONTROLLER_MAX_BYTES = 24 * KIB
+DEFAULT_MAC_MAX_BYTES = 32 * KIB
+DEFAULT_IOS_RUNTIME_MAX_BYTES = 32 * KIB
 CONTROLLER_OBJECT_NAMES = ("IOSContentView.o",)
 MAC_RUNTIME_OBJECT_NAMES = (
     "GamepadCustomization.o",
@@ -158,8 +158,8 @@ def is_controller_symbol(name: str) -> bool:
 
 
 def is_shared_runtime_symbol(name: str) -> bool:
-    if ".GamepadButtonCustomization.normalized.getter" in name:
-        return True
+    if ".GamepadButtonCustomization." in name:
+        return ".normalized.getter" in name or ".(normalize" in name
     if ".GamepadCustomization." in name:
         return any(
             fragment in name
@@ -184,14 +184,50 @@ def is_shared_runtime_symbol(name: str) -> bool:
             for fragment in (
                 ".init(from:",
                 ".init(decoded:",
+                ".init(id:",
                 ".encode(to:",
                 ".normalized.getter",
+                ".customization.getter",
+                ".Customization.getter",
+                ".customization.setter",
+                ".Customization.setter",
+                ".customization(for:",
+                ".skinBaseline(for:",
+                ".resolvedCustomization(",
+                ".hasCustomizationVariant(",
+                ".setCustomization(",
+                ".setCustomizationVariant(",
+                ".detachSkin(",
+                ".(CustomizationMutationWorkspace",
+                ".(SkinDetachmentWorkspace",
+                ".(EqualityWorkspace",
                 ".(decode",
+                ".(encode",
                 ".(normalize",
             )
         )
     if ".GamepadConfigurationProfilePersistence." in name:
-        return ".normalizedState(" in name or "normalizedUniqueProfiles" in name
+        return any(
+            fragment in name
+            for fragment in (
+                ".load(",
+                ".save(",
+                ".normalizedState(",
+                ".(normalizedUniqueProfiles",
+                ".(defaultProfiles",
+                ".(migratedLegacySeededDefaultStateIfNeeded",
+            )
+        )
+    if ".GamepadControllerTemplate." in name:
+        return any(
+            fragment in name
+            for fragment in (
+                ".makeProfile(",
+                ".(make",
+                ".(tag",
+                "Customization in ",
+            )
+        )
     if ".ControllerMessage." in name:
         return ".init(from:" in name or ".encode(to:" in name
     if ".ControllerWireCodec." in name:
@@ -234,14 +270,19 @@ def is_ios_runtime_symbol(name: str) -> bool:
     if ".GamepadControlVisualStyle." in name:
         return any(
             fragment in name
-            for fragment in (".normalized.getter", ".isEmpty.getter", ".normalize")
+            for fragment in (".normalized.getter", ".isEmpty.getter", ".normalize", ".(normalize")
         )
+    if ".GamepadStyleLibrary." in name or ".GamepadStyleToken." in name:
+        return ".normalized.getter" in name or ".(normalize" in name
+    if ".GamepadAssetLibrary." in name:
+        return ".normalized.getter" in name or ".(normalize" in name
     if ".PocketPadSkinControlAppearance." in name:
         return any(
             fragment in name
             for fragment in (
                 ".normalized.getter",
                 ".normalize",
+                ".(normalize",
                 ".isEmpty.getter",
                 ".merged(over:",
                 ".(MergeWorkspace",
@@ -253,7 +294,10 @@ def is_ios_runtime_symbol(name: str) -> bool:
             for fragment in (
                 ".normalized.getter",
                 ".normalize",
+                ".(normalize",
                 ".merged(over:",
+                ".controlAppearance(",
+                ".(ControlAppearanceResolutionWorkspace",
                 ".(MergeWorkspace",
             )
         )
@@ -265,8 +309,8 @@ def is_ios_runtime_symbol(name: str) -> bool:
             for fragment in (
                 ".validate(",
                 ".(ValidationWorkspace",
-                ".referencedAssetIDs(",
-                ".validateStyleReferences(",
+                "referencedAssetIDs",
+                "validateStyleReferences",
             )
         )
     if ".PocketPadSkinPackageCodec." in name:
@@ -296,6 +340,10 @@ def is_ios_runtime_symbol(name: str) -> bool:
                 ".applying(skinPackage:",
                 ".(applying in ",
                 ".(SkinApplicationWorkspace",
+                ".(ControlApplicationWorkspace",
+                ".(StyleLibraryMergeWorkspace",
+                ".(mergedStyleLibrary",
+                ".(mergedAssetLibrary",
                 ".resolvingAssetReferences",
                 ".resolveAssetReferencesInPlace",
                 ".dehydratingAssets",
@@ -319,9 +367,13 @@ def is_ios_runtime_symbol(name: str) -> bool:
                 "acknowledgeSyncedSkinSelections",
                 "applyActiveCustomization",
                 "applySkinToSelectedProfile",
+                "detachSkinFromSelectedProfile",
+                ".init()",
             )
         )
-    return ".PendingKeypadLayoutReconciler.reconcile(" in name
+    if ".PendingKeypadLayoutReconciler." in name:
+        return ".reconcile(" in name or ".(ReconciliationWorkspace" in name
+    return False
 
 
 def scope_predicate(scope: str) -> Callable[[str], bool]:
@@ -345,26 +397,8 @@ def frame_limit(scope: str, name: str, override: int | None) -> int:
         return override
     if scope == "controller":
         return DEFAULT_CONTROLLER_MAX_BYTES
-    if "GamepadConfigurationProfile.init(decoded:" in name:
-        return 96 * KIB
     if scope in ("network", "mac-network"):
         return DEFAULT_MAC_MAX_BYTES
-    if "IncomingProfileReconciliationWorkspace" in name and ".init(message:" in name:
-        return 64 * KIB
-    if ".PendingKeypadLayoutReconciler.reconcile(" in name:
-        return 128 * KIB
-    if "PocketPadSkinAppearance.(MergeWorkspace" in name:
-        return 64 * KIB
-    if ".PocketPadSkinPackageValidator.referencedAssetIDs(" in name:
-        return 80 * KIB
-    if ".PocketPadSkinPackageCodec." in name:
-        return 64 * KIB
-    if ".PocketPadSkinResolver.applying(package:" in name:
-        return 64 * KIB
-    if ".PocketPadSkinResolver.(applying in " in name:
-        return 80 * KIB
-    if "SkinApplicationWorkspace" in name or "SkinSlotApplicationWorkspace" in name:
-        return 128 * KIB
     return DEFAULT_IOS_RUNTIME_MAX_BYTES
 
 
@@ -375,8 +409,17 @@ def required_sentinels(scope: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
         ("wire message decode", ("ControllerMessage.init(from:",)),
         ("wire codec decode", ("ControllerWireCodec.decode",)),
         ("customization decode", ("GamepadCustomization.init(from:",)),
+        ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
         ("profile decode", ("GamepadConfigurationProfile.init(from:",)),
+        ("profile encode", ("GamepadConfigurationProfile.encode(to:",)),
+        ("profile field encode", ("GamepadConfigurationProfile.(encode",)),
         ("profile normalization", ("GamepadConfigurationProfile.normalized.getter",)),
+        ("profile variant resolution", ("GamepadConfigurationProfile.customization(for:",)),
+        ("profile mutation", ("GamepadConfigurationProfile.setCustomization(",)),
+        ("profile mutation phase", ("GamepadConfigurationProfile.(CustomizationMutationWorkspace",)),
+        ("profile persistence load", ("GamepadConfigurationProfilePersistence.load(",)),
+        ("profile persistence save", ("GamepadConfigurationProfilePersistence.save(",)),
+        ("default profile construction", ("GamepadControllerTemplate.makeProfile(",)),
         ("presentation comparison", ("GamepadCustomization.hasSamePresentation",)),
     )
     if scope in ("network", "mac-network"):
@@ -387,17 +430,26 @@ def required_sentinels(scope: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
             ("Mac deferred send", ("sendNowOnNetworkQueue",)),
         )
     return shared + (
+        ("iOS startup", ("ControllerClient.init()",)),
         ("iOS receive", ("handleIncoming",)),
         ("iOS profile application", ("applyGamepadProfileStateFromMac",)),
         ("profile skin application", ("GamepadConfigurationProfile.applySkin",)),
+        ("profile skin detachment", ("GamepadConfigurationProfile.detachSkin(resolving:",)),
+        ("profile skin detachment phase", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace",)),
         ("skin resolver", ("PocketPadSkinResolver.applying(package:",)),
         ("skin appearance selection", ("PocketPadSkin.appearance(orientation:",)),
         ("skin appearance normalization", ("PocketPadSkinAppearance.normalized.getter",)),
         ("skin control normalization", ("PocketPadSkinControlAppearance.normalized.getter",)),
+        ("skin control selection", ("PocketPadSkinAppearance.controlAppearance(",)),
+        ("skin control selection phase", ("PocketPadSkinAppearance.(ControlAppearanceResolutionWorkspace",)),
         ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
+        ("style library merge", ("PocketPadSkinResolver.(StyleLibraryMergeWorkspace",)),
         ("skin package validation", ("PocketPadSkinPackageValidator.validate(",)),
+        ("skin referenced assets", ("PocketPadSkinPackageValidator.(referencedAssetIDs",)),
         ("skin package encoding", ("PocketPadSkinPackageCodec.encode(",)),
         ("skin package decoding", ("PocketPadSkinPackageCodec.decode(",)),
+        ("pending edit reconciliation", ("PendingKeypadLayoutReconciler.reconcile(",)),
+        ("pending edit reconciliation phase", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace",)),
     )
 
 
@@ -406,7 +458,7 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
         return (
             CallPathBudget(
                 name="Mac profile decode",
-                maximum_bytes=256 * KIB,
+                maximum_bytes=128 * KIB,
                 groups=(
                     ("receive", ("handleReceivedDataOnNetworkQueue",)),
                     ("wire codec", ("ControllerWireCodec.decode",)),
@@ -418,16 +470,18 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
                     ("customization normalization coordinator", ("GamepadCustomization.normalizeInPlace",)),
                     ("customization normalization phase", ("GamepadCustomization.(normalize",)),
                     ("button normalization", ("GamepadButtonCustomization.normalized.getter",)),
+                    ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
                 ),
             ),
             CallPathBudget(
                 name="Mac profile encode",
-                maximum_bytes=256 * KIB,
+                maximum_bytes=128 * KIB,
                 groups=(
                     ("send", ("sendNowOnNetworkQueue",)),
                     ("wire codec", ("ControllerWireCodec.encode(_:",)),
                     ("message encoder", ("ControllerMessage.encode(to:",)),
                     ("profile encoder", ("GamepadConfigurationProfile.encode(to:",)),
+                    ("profile field encoder", ("GamepadConfigurationProfile.(encode",)),
                     ("customization encoder", ("GamepadCustomization.encode(to:",)),
                     ("customization encode phase", ("GamepadCustomization.(encode",)),
                     ("element synchronization phase", ("appendSynchronized",)),
@@ -439,7 +493,7 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
     return (
         CallPathBudget(
             name="iOS profile decode",
-            maximum_bytes=256 * KIB,
+            maximum_bytes=128 * KIB,
             groups=(
                 ("incoming router", ("handleIncoming",)),
                 ("wire codec", ("ControllerWireCodec.decode",)),
@@ -450,28 +504,266 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
                 ("customization normalized getter", ("GamepadCustomization.normalized.getter",)),
                 ("normalization phase", ("GamepadCustomization.(normalize",)),
                 ("button normalization", ("GamepadButtonCustomization.normalized.getter",)),
+                ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
             ),
         ),
         CallPathBudget(
-            name="physical iOS skin application",
-            maximum_bytes=512 * KIB,
+            name="iOS direct profile persistence decode",
+            maximum_bytes=128 * KIB,
             groups=(
-                ("UI entry", ("ControllerClient.applySkinToSelectedProfile",)),
-                ("profile entry", ("GamepadConfigurationProfile.applySkin",)),
-                ("profile orientation coordinator", ("GamepadConfigurationProfile.(SkinApplicationWorkspace", ".apply")),
-                ("profile orientation preparation", ("GamepadConfigurationProfile.(SkinApplicationWorkspace", ".prepare")),
-                ("profile slot phase", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
+                ("persistence load", ("GamepadConfigurationProfilePersistence.load(",)),
+                ("profile decoder", ("GamepadConfigurationProfile.init(from:",)),
+                ("profile field decoder", ("GamepadConfigurationProfile.(decode",)),
+                ("customization decoder", ("GamepadCustomization.init(from:",)),
+                ("customization normalized getter", ("GamepadCustomization.normalized.getter",)),
+                ("normalization phase", ("GamepadCustomization.(normalize",)),
+                ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS direct profile persistence encode",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("persistence save", ("GamepadConfigurationProfilePersistence.save(",)),
+                ("profile encoder", ("GamepadConfigurationProfile.encode(to:",)),
+                ("profile field encoder", ("GamepadConfigurationProfile.(encode",)),
+                ("customization encoder", ("GamepadCustomization.encode(to:",)),
+                ("customization encode phase", ("GamepadCustomization.(encode",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS default profile startup",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("startup caller", ("ControllerClient.init()",)),
+                ("persistence load", ("GamepadConfigurationProfilePersistence.load(",)),
+                ("default selection", ("GamepadConfigurationProfilePersistence.(defaultProfiles",)),
+                ("template entry", ("GamepadControllerTemplate.makeProfile(",)),
+                ("template construction", ("GamepadControllerTemplate.(makeUntaggedProfile",)),
+                ("starter construction", ("GamepadControllerTemplate.(makeProductivityStarterProfile",)),
+                ("profile initializer", ("GamepadConfigurationProfile.init(id:", "primaryCustomization:")),
+                ("customization normalized getter", ("GamepadCustomization.normalized.getter",)),
+                ("normalization phase", ("GamepadCustomization.(normalize",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS pending acknowledgement normalization",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("incoming profile coordinator", ("ControllerClient.(IncomingProfileReconciliationWorkspace", ".reconcilePendingEdits")),
+                ("pending reconciliation entry", ("PendingKeypadLayoutReconciler.reconcile(",)),
+                ("reconciliation coordinator", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".resolve()")),
+                ("edit routing", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".reconcile(")),
+                ("acknowledgement branch", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".remoteProfileAcknowledges")),
+                ("profile variant resolution", ("GamepadConfigurationProfile.customization(for:",)),
+                ("customization normalized getter", ("GamepadCustomization.normalized.getter",)),
+                ("normalization phase", ("GamepadCustomization.(normalize",)),
+                ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS pending acknowledgement comparison",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("incoming profile coordinator", ("ControllerClient.(IncomingProfileReconciliationWorkspace", ".reconcilePendingEdits")),
+                ("pending reconciliation entry", ("PendingKeypadLayoutReconciler.reconcile(",)),
+                ("reconciliation coordinator", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".resolve()")),
+                ("edit routing", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".reconcile(")),
+                ("acknowledgement branch", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".remoteProfileAcknowledges")),
+                ("presentation comparison", ("GamepadCustomization.hasSamePresentation",)),
+                ("comparison phase", ("GamepadCustomization.(PresentationComparisonWorkspace",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS pending local edit",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("incoming profile coordinator", ("ControllerClient.(IncomingProfileReconciliationWorkspace", ".reconcilePendingEdits")),
+                ("pending reconciliation entry", ("PendingKeypadLayoutReconciler.reconcile(",)),
+                ("reconciliation coordinator", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".resolve()")),
+                ("edit routing", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".reconcile(")),
+                ("local edit branch", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".applyLocalEdit")),
+                ("profile mutation", ("GamepadConfigurationProfile.setCustomization(",)),
+                ("profile mutation coordinator", ("GamepadConfigurationProfile.(CustomizationMutationWorkspace", ".apply()")),
+                ("profile mutation phase", ("GamepadConfigurationProfile.(CustomizationMutationWorkspace",)),
+                ("customization normalized getter", ("GamepadCustomization.normalized.getter",)),
+                ("normalization phase", ("GamepadCustomization.(normalize",)),
+                ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS pending missing-profile recovery",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("incoming profile coordinator", ("ControllerClient.(IncomingProfileReconciliationWorkspace", ".reconcilePendingEdits")),
+                ("pending reconciliation entry", ("PendingKeypadLayoutReconciler.reconcile(",)),
+                ("reconciliation coordinator", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".resolve()")),
+                ("edit routing", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".reconcile(")),
+                ("recovery branch", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".recoverMissingProfile")),
+                ("recovery mutation", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace", ".applyRecoveredCustomization")),
+                ("profile mutation", ("GamepadConfigurationProfile.setCustomization(",)),
+                ("profile mutation coordinator", ("GamepadConfigurationProfile.(CustomizationMutationWorkspace", ".apply()")),
+                ("profile mutation phase", ("GamepadConfigurationProfile.(CustomizationMutationWorkspace",)),
+                ("customization normalized getter", ("GamepadCustomization.normalized.getter",)),
+                ("normalization phase", ("GamepadCustomization.(normalize",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin detachment local resolution",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("UI entry", ("ControllerClient.detachSkinFromSelectedProfile",)),
+                ("profile entry", ("GamepadConfigurationProfile.detachSkin(resolving:",)),
+                ("detachment coordinator", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace", ".resolve()")),
+                ("detachment phase", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace", ".resolve")),
+                ("resolved customization", ("GamepadConfigurationProfile.resolvedCustomization(",)),
+                ("profile variant resolution", ("GamepadConfigurationProfile.customization(for:",)),
+                ("customization normalized getter", ("GamepadCustomization.normalized.getter",)),
+                ("normalization phase", ("GamepadCustomization.(normalize",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin detachment baseline resolution",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("UI entry", ("ControllerClient.detachSkinFromSelectedProfile",)),
+                ("profile entry", ("GamepadConfigurationProfile.detachSkin(resolving:",)),
+                ("detachment coordinator", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace", ".resolve()")),
+                ("detachment phase", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace", ".resolve")),
+                ("resolved customization", ("GamepadConfigurationProfile.resolvedCustomization(",)),
+                ("skin baseline resolution", ("GamepadConfigurationProfile.skinBaseline(for:",)),
+                ("customization normalized getter", ("GamepadCustomization.normalized.getter",)),
+                ("normalization phase", ("GamepadCustomization.(normalize",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin detachment package resolution",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("UI entry", ("ControllerClient.detachSkinFromSelectedProfile",)),
+                ("profile entry", ("GamepadConfigurationProfile.detachSkin(resolving:",)),
+                ("detachment coordinator", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace", ".resolve()")),
+                ("detachment phase", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace", ".resolve")),
+                ("resolved customization", ("GamepadConfigurationProfile.resolvedCustomization(",)),
                 ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
                 ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
                 ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
-                ("skin resolver phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".apply")),
+                ("skin resolver phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin slot preparation",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("UI entry", ("ControllerClient.applySkinToSelectedProfile",)),
+                ("profile entry", ("GamepadConfigurationProfile.applySkin",)),
+                ("profile coordinator", ("GamepadConfigurationProfile.(SkinApplicationWorkspace", ".apply()")),
+                ("orientation branch", ("GamepadConfigurationProfile.(SkinApplicationWorkspace", ".apply")),
+                ("orientation preparation", ("GamepadConfigurationProfile.(SkinApplicationWorkspace", ".prepare")),
+                ("slot initializer", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".init(")),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin resolver normalization",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("UI entry", ("ControllerClient.applySkinToSelectedProfile",)),
+                ("profile entry", ("GamepadConfigurationProfile.applySkin",)),
+                ("profile coordinator", ("GamepadConfigurationProfile.(SkinApplicationWorkspace", ".apply()")),
+                ("orientation branch", ("GamepadConfigurationProfile.(SkinApplicationWorkspace", ".apply")),
+                ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
+                ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
+                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("input normalization", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".normalizeInputs")),
+                ("customization normalization coordinator", ("GamepadCustomization.normalizeInPlace",)),
+                ("customization normalization phase", ("GamepadCustomization.(normalize",)),
+                ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin appearance merge",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
+                ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
+                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("appearance preparation", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".prepareAppearance")),
                 ("skin appearance selection", ("PocketPadSkin.appearance(orientation:",)),
-                ("skin appearance merge", ("PocketPadSkinAppearance.merged(over:",)),
-                ("skin appearance merge phase", ("PocketPadSkinAppearance.(MergeWorkspace",)),
-                ("skin appearance normalization", ("PocketPadSkinAppearance.normalized.getter",)),
+                ("appearance merge", ("PocketPadSkinAppearance.merged(over:",)),
+                ("appearance merge coordinator", ("PocketPadSkinAppearance.(MergeWorkspace", ".resolve()")),
+                ("appearance merge phase", ("PocketPadSkinAppearance.(MergeWorkspace",)),
+                ("control appearance merge", ("PocketPadSkinControlAppearance.merged(over:",)),
+                ("control merge phase", ("PocketPadSkinControlAppearance.(MergeWorkspace",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin appearance normalization",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
+                ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
+                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("appearance preparation", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".prepareAppearance")),
+                ("skin appearance selection", ("PocketPadSkin.appearance(orientation:",)),
+                ("appearance normalized getter", ("PocketPadSkinAppearance.normalized.getter",)),
+                ("appearance normalization phase", ("PocketPadSkinAppearance.(normalize",)),
+                ("control normalization", ("PocketPadSkinControlAppearance.normalized.getter",)),
+                ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin style-library merge",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
+                ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
+                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("library merge phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".mergeLibrariesAndArtwork")),
+                ("style merge entry", ("PocketPadSkinResolver.(mergedStyleLibrary",)),
+                ("style merge coordinator", ("PocketPadSkinResolver.(StyleLibraryMergeWorkspace", ".resolve()")),
+                ("style merge phase", ("PocketPadSkinResolver.(StyleLibraryMergeWorkspace",)),
+                ("style library normalization", ("GamepadStyleLibrary.normalized.getter",)),
+                ("style token normalization", ("GamepadStyleToken.normalized.getter",)),
+                ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin control selection",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
+                ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
+                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("control loop phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".apply")),
+                ("control selection entry", ("PocketPadSkinAppearance.controlAppearance(",)),
+                ("control selection coordinator", ("PocketPadSkinAppearance.(ControlAppearanceResolutionWorkspace", ".resolve()")),
+                ("control selection phase", ("PocketPadSkinAppearance.(ControlAppearanceResolutionWorkspace",)),
+                ("appearance normalization phase", ("PocketPadSkinAppearance.(normalize",)),
+                ("control appearance merge", ("PocketPadSkinControlAppearance.merged(over:",)),
+                ("control merge phase", ("PocketPadSkinControlAppearance.(MergeWorkspace",)),
+            ),
+        ),
+        CallPathBudget(
+            name="iOS skin control application",
+            maximum_bytes=128 * KIB,
+            groups=(
+                ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
+                ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
+                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("control loop phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".apply")),
+                ("control application entry", ("PocketPadSkinResolver.(applying in ",)),
+                ("control application coordinator", ("PocketPadSkinResolver.(ControlApplicationWorkspace", ".resolve()")),
+                ("control application phase", ("PocketPadSkinResolver.(ControlApplicationWorkspace",)),
                 ("skin control normalization", ("PocketPadSkinControlAppearance.normalized.getter",)),
                 ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
-                ("control appearance application", ("PocketPadSkinResolver.(applying in ",)),
+                ("button normalization", ("GamepadButtonCustomization.normalized.getter",)),
+                ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
             ),
         ),
     )

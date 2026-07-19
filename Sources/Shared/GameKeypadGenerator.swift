@@ -851,7 +851,7 @@ private enum GeneratedProfileBuilder {
 
         let profile = GamepadConfigurationProfile(
             name: resolvedGameName,
-            customization: customization.normalized
+            primaryCustomization: customization.normalized
         )
 
         return GeneratedGameKeypadProfile(

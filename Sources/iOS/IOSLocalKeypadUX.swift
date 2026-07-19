@@ -75,44 +75,122 @@ enum PendingKeypadLayoutReconciler {
         pendingEdits: [PendingKeypadLayoutEdit],
         authoritativeServerID: String?
     ) -> PendingKeypadLayoutReconciliation {
-        var profiles = incomingProfiles.map(\.normalized)
-        var remaining: [PendingKeypadLayoutEdit] = []
-        var uploads: [PendingKeypadLayoutEdit] = []
-        var acknowledged: [String] = []
-        let serverID = authoritativeServerID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ReconciliationWorkspace(
+            incomingProfiles: incomingProfiles,
+            pendingEdits: pendingEdits,
+            authoritativeServerID: authoritativeServerID
+        ).resolve()
+    }
 
-        for edit in pendingEdits {
-            guard let editServerID = edit.serverID,
-                  let serverID,
-                  editServerID == serverID
-            else {
-                remaining.append(edit)
-                continue
+    private final class ReconciliationWorkspace {
+        private let incomingProfiles: [GamepadConfigurationProfile]
+        private let pendingEdits: [PendingKeypadLayoutEdit]
+        private let serverID: String?
+        private var profiles: [GamepadConfigurationProfile] = []
+        private var remaining: [PendingKeypadLayoutEdit] = []
+        private var uploads: [PendingKeypadLayoutEdit] = []
+        private var acknowledged: [String] = []
+
+        init(
+            incomingProfiles: [GamepadConfigurationProfile],
+            pendingEdits: [PendingKeypadLayoutEdit],
+            authoritativeServerID: String?
+        ) {
+            self.incomingProfiles = incomingProfiles
+            self.pendingEdits = pendingEdits
+            serverID = authoritativeServerID?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nilIfEmpty
+        }
+
+        func resolve() -> PendingKeypadLayoutReconciliation {
+            normalizeIncomingProfiles()
+            reconcilePendingEdits()
+            return makeResult()
+        }
+
+        private func normalizeIncomingProfiles() {
+            profiles = incomingProfiles.map(\.normalized)
+        }
+
+        private func reconcilePendingEdits() {
+            for edit in pendingEdits {
+                reconcile(edit)
             }
+        }
 
+        private func reconcile(_ edit: PendingKeypadLayoutEdit) {
+            guard isTrusted(edit) else {
+                remaining.append(edit)
+                return
+            }
             guard let profileIndex = profiles.firstIndex(where: { $0.id == edit.profileID }) else {
-                // The profile was removed while the iPhone was offline. Restore
-                // the edited layout as an explicit recovered copy instead of
-                // retaining an invisible, permanently unsynchronizable record.
-                var recovered = GamepadConfigurationProfile(
-                    id: edit.profileID,
-                    name: "Recovered iPhone Layout",
-                    customization: edit.customization,
-                    updatedAt: edit.updatedAt
-                )
-                recovered.setCustomization(edit.customization, for: edit.orientation)
-                profiles.append(recovered.normalized)
-                remaining.append(edit)
-                uploads.append(edit)
-                continue
+                recoverMissingProfile(for: edit)
+                return
             }
-
-            let remoteCustomization = profiles[profileIndex].customization(for: edit.orientation).normalized
-            if remoteCustomization.hasSamePresentation(as: edit.customization.normalized) {
+            if remoteProfileAcknowledges(edit, profileIndex: profileIndex) {
                 acknowledged.append(edit.id)
-                continue
+                return
             }
+            applyLocalEdit(edit, profileIndex: profileIndex)
+        }
 
+        private func isTrusted(_ edit: PendingKeypadLayoutEdit) -> Bool {
+            guard let editServerID = edit.serverID, let serverID else { return false }
+            return editServerID == serverID
+        }
+
+        private func recoverMissingProfile(for edit: PendingKeypadLayoutEdit) {
+            // The profile was removed while the iPhone was offline. Restore
+            // the edited layout as an explicit recovered copy instead of
+            // retaining an invisible, permanently unsynchronizable record.
+            let recovered = makeRecoveredProfile(for: edit)
+            let oriented = applyRecoveredCustomization(edit, to: recovered)
+            profiles.append(normalizeRecoveredProfile(oriented))
+            remaining.append(edit)
+            uploads.append(edit)
+        }
+
+        private func makeRecoveredProfile(
+            for edit: PendingKeypadLayoutEdit
+        ) -> GamepadConfigurationProfile {
+            GamepadConfigurationProfile(
+                id: edit.profileID,
+                name: "Recovered iPhone Layout",
+                primaryCustomization: edit.customization,
+                updatedAt: edit.updatedAt
+            )
+        }
+
+        private func applyRecoveredCustomization(
+            _ edit: PendingKeypadLayoutEdit,
+            to profile: GamepadConfigurationProfile
+        ) -> GamepadConfigurationProfile {
+            var profile = profile
+            profile.setCustomization(edit.customization, for: edit.orientation)
+            return profile
+        }
+
+        private func normalizeRecoveredProfile(
+            _ profile: GamepadConfigurationProfile
+        ) -> GamepadConfigurationProfile {
+            profile.normalized
+        }
+
+        private func remoteProfileAcknowledges(
+            _ edit: PendingKeypadLayoutEdit,
+            profileIndex: Int
+        ) -> Bool {
+            let remoteCustomization = profiles[profileIndex]
+                .customization(for: edit.orientation)
+                .normalized
+            return remoteCustomization.hasSamePresentation(as: edit.customization.normalized)
+        }
+
+        private func applyLocalEdit(
+            _ edit: PendingKeypadLayoutEdit,
+            profileIndex: Int
+        ) {
             // Local pending edits win until the Mac echoes them. This prevents
             // the first reconnect snapshot from silently discarding offline work.
             profiles[profileIndex].setCustomization(edit.customization, for: edit.orientation)
@@ -121,12 +199,14 @@ enum PendingKeypadLayoutReconciler {
             uploads.append(edit)
         }
 
-        return PendingKeypadLayoutReconciliation(
-            profiles: profiles,
-            remainingEdits: deduplicated(remaining),
-            editsToUpload: deduplicated(uploads),
-            acknowledgedEditIDs: acknowledged.sorted()
-        )
+        private func makeResult() -> PendingKeypadLayoutReconciliation {
+            PendingKeypadLayoutReconciliation(
+                profiles: profiles,
+                remainingEdits: PendingKeypadLayoutReconciler.deduplicated(remaining),
+                editsToUpload: PendingKeypadLayoutReconciler.deduplicated(uploads),
+                acknowledgedEditIDs: acknowledged.sorted()
+            )
+        }
     }
 
     static func recording(

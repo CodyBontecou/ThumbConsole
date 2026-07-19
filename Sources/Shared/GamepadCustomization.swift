@@ -1416,43 +1416,77 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
 
     var normalized: GamepadButtonCustomization {
         var copy = self
-        copy.centerX = copy.centerX.map { Self.clamp($0, lower: 0, upper: 1) }
-        copy.centerY = copy.centerY.map { Self.clamp($0, lower: 0, upper: 1) }
-        copy.widthScale = Self.clamp(copy.widthScale, lower: Self.minimumScale, upper: Self.maximumScale)
-        copy.heightScale = Self.clamp(copy.heightScale, lower: Self.minimumScale, upper: Self.maximumScale)
-        copy.rotationDegrees = Self.normalizedRotationDegrees(copy.rotationDegrees)
-        copy.zIndex = Self.normalizedZIndex(copy.zIndex)
-        copy.hitInsets = copy.hitInsets?.normalized
-        copy.fillColor = copy.fillColor?.normalized
-        copy.lightFillColor = copy.lightFillColor?.normalized
-        copy.darkFillColor = copy.darkFillColor?.normalized
-        copy.fillStyle = copy.fillStyle?.normalized
-        copy.lightFillStyle = copy.lightFillStyle?.normalized
-        copy.darkFillStyle = copy.darkFillStyle?.normalized
-        copy.joystickKnobColor = copy.joystickKnobColor?.normalized
-        copy.lightJoystickKnobColor = copy.lightJoystickKnobColor?.normalized
-        copy.darkJoystickKnobColor = copy.darkJoystickKnobColor?.normalized
-        if copy.joystickVisualStyle == .pad { copy.joystickVisualStyle = nil }
-        let normalizedStyleID = copy.styleID.map(GamepadStyleToken.normalizedIdentifier) ?? ""
-        copy.styleID = normalizedStyleID.isEmpty ? nil : normalizedStyleID
-        copy.visualStyle = copy.visualStyle?.normalized
-        copy.icon = copy.icon?.normalized
-        copy.hapticFeedback = copy.hapticFeedback?.normalized
-        if copy.hapticFeedback?.isDefault == true {
-            copy.hapticFeedback = nil
-        }
-        let defaultCornerRadius = Self.defaultCornerRadius(for: copy.shape)
-        let usesDynamicCornerRadiusDefault = copy.shape?.usesDynamicEditableCornerRadiusDefault == true
-        if let cornerRadii = copy.cornerRadii {
-            let normalizedRadii = cornerRadii.normalized
-            copy.cornerRadii = !usesDynamicCornerRadiusDefault && normalizedRadii.isUniform(equalTo: defaultCornerRadius) ? nil : normalizedRadii
-            copy.cornerRadius = nil
-        } else if let cornerRadius = copy.cornerRadius {
-            let normalizedRadius = Self.normalizedCornerRadius(cornerRadius)
-            copy.cornerRadius = !usesDynamicCornerRadiusDefault && abs(normalizedRadius - defaultCornerRadius) < 0.001 ? nil : normalizedRadius
-        }
-        copy.shadowStrength = Self.clamp(copy.shadowStrength, lower: Self.minimumShadowStrength, upper: Self.maximumShadowStrength)
+        copy.normalizeLayoutInPlace()
+        copy.normalizeFillInPlace()
+        copy.normalizeStyleInPlace()
+        copy.normalizeFeedbackInPlace()
+        copy.normalizeCornersInPlace()
+        copy.normalizeShadowInPlace()
         return copy
+    }
+
+    private mutating func normalizeLayoutInPlace() {
+        centerX = centerX.map { Self.clamp($0, lower: 0, upper: 1) }
+        centerY = centerY.map { Self.clamp($0, lower: 0, upper: 1) }
+        widthScale = Self.clamp(widthScale, lower: Self.minimumScale, upper: Self.maximumScale)
+        heightScale = Self.clamp(heightScale, lower: Self.minimumScale, upper: Self.maximumScale)
+        rotationDegrees = Self.normalizedRotationDegrees(rotationDegrees)
+        zIndex = Self.normalizedZIndex(zIndex)
+        hitInsets = hitInsets?.normalized
+    }
+
+    private mutating func normalizeFillInPlace() {
+        fillColor = fillColor?.normalized
+        lightFillColor = lightFillColor?.normalized
+        darkFillColor = darkFillColor?.normalized
+        fillStyle = fillStyle?.normalized
+        lightFillStyle = lightFillStyle?.normalized
+        darkFillStyle = darkFillStyle?.normalized
+        joystickKnobColor = joystickKnobColor?.normalized
+        lightJoystickKnobColor = lightJoystickKnobColor?.normalized
+        darkJoystickKnobColor = darkJoystickKnobColor?.normalized
+        if joystickVisualStyle == .pad { joystickVisualStyle = nil }
+    }
+
+    private mutating func normalizeStyleInPlace() {
+        let normalizedStyleID = styleID.map(GamepadStyleToken.normalizedIdentifier) ?? ""
+        styleID = normalizedStyleID.isEmpty ? nil : normalizedStyleID
+        visualStyle = visualStyle?.normalized
+        icon = icon?.normalized
+    }
+
+    private mutating func normalizeFeedbackInPlace() {
+        hapticFeedback = hapticFeedback?.normalized
+        if hapticFeedback?.isDefault == true {
+            hapticFeedback = nil
+        }
+    }
+
+    private mutating func normalizeCornersInPlace() {
+        let defaultCornerRadius = Self.defaultCornerRadius(for: shape)
+        let usesDynamicCornerRadiusDefault = shape?.usesDynamicEditableCornerRadiusDefault == true
+        if let cornerRadii {
+            let normalizedRadii = cornerRadii.normalized
+            self.cornerRadii = !usesDynamicCornerRadiusDefault
+                && normalizedRadii.isUniform(equalTo: defaultCornerRadius)
+                ? nil
+                : normalizedRadii
+            cornerRadius = nil
+        } else if let cornerRadius {
+            let normalizedRadius = Self.normalizedCornerRadius(cornerRadius)
+            self.cornerRadius = !usesDynamicCornerRadiusDefault
+                && abs(normalizedRadius - defaultCornerRadius) < 0.001
+                ? nil
+                : normalizedRadius
+        }
+    }
+
+    private mutating func normalizeShadowInPlace() {
+        shadowStrength = Self.clamp(
+            shadowStrength,
+            lower: Self.minimumShadowStrength,
+            upper: Self.maximumShadowStrength
+        )
     }
 
     var isDefault: Bool {
@@ -4618,25 +4652,65 @@ public enum GamepadProfileOrientationPreference: String, Codable, CaseIterable, 
     }
 }
 
+/// Immutable indirection keeps profile copies small while preserving struct value semantics.
+/// Mutating a computed customization property replaces its box rather than sharing mutable state.
+private final class GamepadProfileCustomizationBox: @unchecked Sendable {
+    let value: GamepadCustomization
+
+    init(_ value: GamepadCustomization) {
+        self.value = value
+    }
+}
+
 public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
-    /// Legacy/current layout. This remains the fallback for older saved profiles and
-    /// clients, while orientation-specific variants below can override it on iPhone.
-    public var customization: GamepadCustomization
-    public var landscapeCustomization: GamepadCustomization?
-    public var portraitCustomization: GamepadCustomization?
+    private var storedCustomization: GamepadProfileCustomizationBox
+    private var storedLandscapeCustomization: GamepadProfileCustomizationBox?
+    private var storedPortraitCustomization: GamepadProfileCustomizationBox?
+    private var storedSkinBaselineCustomization: GamepadProfileCustomizationBox?
+    private var storedLandscapeSkinBaselineCustomization: GamepadProfileCustomizationBox?
+    private var storedPortraitSkinBaselineCustomization: GamepadProfileCustomizationBox?
     /// Installed appearance package. Geometry and executable bindings remain in this profile.
     public var skinReference: PocketPadSkinReference?
-    /// Rendered baselines captured when the skin was applied. Differences between the current
-    /// customization and these baselines are user overrides layered over future skin updates.
-    public var skinBaselineCustomization: GamepadCustomization?
-    public var landscapeSkinBaselineCustomization: GamepadCustomization?
-    public var portraitSkinBaselineCustomization: GamepadCustomization?
     public var orientationPreference: GamepadProfileOrientationPreference
     public var outputMode: GamepadProfileOutputMode
     public var launchTarget: GamepadProfileLaunchTarget?
     public var updatedAt: Int64
+
+    /// Legacy/current layout. This remains the fallback for older saved profiles and
+    /// clients, while orientation-specific variants below can override it on iPhone.
+    public var customization: GamepadCustomization {
+        get { storedCustomization.value }
+        set { storedCustomization = GamepadProfileCustomizationBox(newValue) }
+    }
+
+    public var landscapeCustomization: GamepadCustomization? {
+        get { storedLandscapeCustomization?.value }
+        set { storedLandscapeCustomization = newValue.map(GamepadProfileCustomizationBox.init) }
+    }
+
+    public var portraitCustomization: GamepadCustomization? {
+        get { storedPortraitCustomization?.value }
+        set { storedPortraitCustomization = newValue.map(GamepadProfileCustomizationBox.init) }
+    }
+
+    /// Rendered baselines captured when the skin was applied. Differences between the current
+    /// customization and these baselines are user overrides layered over future skin updates.
+    public var skinBaselineCustomization: GamepadCustomization? {
+        get { storedSkinBaselineCustomization?.value }
+        set { storedSkinBaselineCustomization = newValue.map(GamepadProfileCustomizationBox.init) }
+    }
+
+    public var landscapeSkinBaselineCustomization: GamepadCustomization? {
+        get { storedLandscapeSkinBaselineCustomization?.value }
+        set { storedLandscapeSkinBaselineCustomization = newValue.map(GamepadProfileCustomizationBox.init) }
+    }
+
+    public var portraitSkinBaselineCustomization: GamepadCustomization? {
+        get { storedPortraitSkinBaselineCustomization?.value }
+        set { storedPortraitSkinBaselineCustomization = newValue.map(GamepadProfileCustomizationBox.init) }
+    }
 
     public init(
         id: UUID = UUID(),
@@ -4655,23 +4729,55 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     ) {
         self.id = id
         self.name = name
-        self.customization = customization
-        self.landscapeCustomization = landscapeCustomization
-        self.portraitCustomization = portraitCustomization
+        storedCustomization = GamepadProfileCustomizationBox(customization)
+        storedLandscapeCustomization = landscapeCustomization.map(GamepadProfileCustomizationBox.init)
+        storedPortraitCustomization = portraitCustomization.map(GamepadProfileCustomizationBox.init)
+        storedSkinBaselineCustomization = skinBaselineCustomization.map(GamepadProfileCustomizationBox.init)
+        storedLandscapeSkinBaselineCustomization = landscapeSkinBaselineCustomization.map(GamepadProfileCustomizationBox.init)
+        storedPortraitSkinBaselineCustomization = portraitSkinBaselineCustomization.map(GamepadProfileCustomizationBox.init)
         self.skinReference = skinReference
-        self.skinBaselineCustomization = skinBaselineCustomization
-        self.landscapeSkinBaselineCustomization = landscapeSkinBaselineCustomization
-        self.portraitSkinBaselineCustomization = portraitSkinBaselineCustomization
         self.orientationPreference = orientationPreference
         self.outputMode = outputMode
         self.launchTarget = launchTarget
         self.updatedAt = updatedAt
+        normalizeIdentityInPlace()
         normalizePrimaryCustomizationInPlace()
         normalizeLandscapeCustomizationInPlace()
         normalizePortraitCustomizationInPlace()
         normalizeSkinBaselineCustomizationInPlace()
         normalizeLandscapeSkinBaselineCustomizationInPlace()
         normalizePortraitSkinBaselineCustomizationInPlace()
+        normalizeLaunchTargetInPlace()
+    }
+
+    /// Stack-safe construction for profiles that begin with only a primary layout.
+    /// The full public initializer remains available for imports that already carry
+    /// orientation variants and skin baselines.
+    init(
+        id: UUID = UUID(),
+        name: String,
+        primaryCustomization: GamepadCustomization,
+        skinReference: PocketPadSkinReference? = nil,
+        orientationPreference: GamepadProfileOrientationPreference = .automatic,
+        outputMode: GamepadProfileOutputMode = .keyboard,
+        launchTarget: GamepadProfileLaunchTarget? = nil,
+        updatedAt: Int64 = Date.currentMilliseconds
+    ) {
+        self.id = id
+        self.name = name
+        storedCustomization = GamepadProfileCustomizationBox(primaryCustomization)
+        storedLandscapeCustomization = nil
+        storedPortraitCustomization = nil
+        storedSkinBaselineCustomization = nil
+        storedLandscapeSkinBaselineCustomization = nil
+        storedPortraitSkinBaselineCustomization = nil
+        self.skinReference = skinReference
+        self.orientationPreference = orientationPreference
+        self.outputMode = outputMode
+        self.launchTarget = launchTarget
+        self.updatedAt = updatedAt
+        normalizeIdentityInPlace()
+        normalizePrimaryCustomizationInPlace()
         normalizeLaunchTargetInPlace()
     }
 
@@ -4708,13 +4814,13 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     private init(decoded workspace: DecodingWorkspace) {
         id = workspace.id
         name = workspace.name
-        customization = .defaultValue
-        landscapeCustomization = nil
-        portraitCustomization = nil
+        storedCustomization = GamepadProfileCustomizationBox(.defaultValue)
+        storedLandscapeCustomization = nil
+        storedPortraitCustomization = nil
+        storedSkinBaselineCustomization = nil
+        storedLandscapeSkinBaselineCustomization = nil
+        storedPortraitSkinBaselineCustomization = nil
         skinReference = workspace.skinReference
-        skinBaselineCustomization = nil
-        landscapeSkinBaselineCustomization = nil
-        portraitSkinBaselineCustomization = nil
         orientationPreference = workspace.orientationPreference
         outputMode = workspace.outputMode
         launchTarget = workspace.launchTarget
@@ -4731,42 +4837,42 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         from workspace: DecodingWorkspace,
         into profile: inout GamepadConfigurationProfile
     ) {
-        profile.customization = workspace.customization
+        profile.storedCustomization = GamepadProfileCustomizationBox(workspace.customization)
     }
 
     private static func commitLandscapeCustomization(
         from workspace: DecodingWorkspace,
         into profile: inout GamepadConfigurationProfile
     ) {
-        profile.landscapeCustomization = workspace.landscapeCustomization
+        profile.storedLandscapeCustomization = workspace.landscapeCustomization.map(GamepadProfileCustomizationBox.init)
     }
 
     private static func commitPortraitCustomization(
         from workspace: DecodingWorkspace,
         into profile: inout GamepadConfigurationProfile
     ) {
-        profile.portraitCustomization = workspace.portraitCustomization
+        profile.storedPortraitCustomization = workspace.portraitCustomization.map(GamepadProfileCustomizationBox.init)
     }
 
     private static func commitSkinBaselineCustomization(
         from workspace: DecodingWorkspace,
         into profile: inout GamepadConfigurationProfile
     ) {
-        profile.skinBaselineCustomization = workspace.skinBaselineCustomization
+        profile.storedSkinBaselineCustomization = workspace.skinBaselineCustomization.map(GamepadProfileCustomizationBox.init)
     }
 
     private static func commitLandscapeSkinBaselineCustomization(
         from workspace: DecodingWorkspace,
         into profile: inout GamepadConfigurationProfile
     ) {
-        profile.landscapeSkinBaselineCustomization = workspace.landscapeSkinBaselineCustomization
+        profile.storedLandscapeSkinBaselineCustomization = workspace.landscapeSkinBaselineCustomization.map(GamepadProfileCustomizationBox.init)
     }
 
     private static func commitPortraitSkinBaselineCustomization(
         from workspace: DecodingWorkspace,
         into profile: inout GamepadConfigurationProfile
     ) {
-        profile.portraitSkinBaselineCustomization = workspace.portraitSkinBaselineCustomization
+        profile.storedPortraitSkinBaselineCustomization = workspace.portraitSkinBaselineCustomization.map(GamepadProfileCustomizationBox.init)
     }
 
     private static func decodeIdentityFields(
@@ -4841,15 +4947,68 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try encodeIdentityFields(into: &container)
+        try encodePrimaryCustomization(into: &container)
+        try encodeLandscapeCustomization(into: &container)
+        try encodePortraitCustomization(into: &container)
+        try encodeSkinBaselineCustomization(into: &container)
+        try encodeLandscapeSkinBaselineCustomization(into: &container)
+        try encodePortraitSkinBaselineCustomization(into: &container)
+        try encodeProfileMetadata(into: &container)
+    }
+
+    private func encodeIdentityFields(
+        into container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
-        try container.encode(customization, forKey: .customization)
-        try container.encodeIfPresent(landscapeCustomization, forKey: .landscapeCustomization)
-        try container.encodeIfPresent(portraitCustomization, forKey: .portraitCustomization)
+    }
+
+    private func encodePrimaryCustomization(
+        into container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        try container.encode(storedCustomization.value, forKey: .customization)
+    }
+
+    private func encodeLandscapeCustomization(
+        into container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        guard let box = storedLandscapeCustomization else { return }
+        try container.encode(box.value, forKey: .landscapeCustomization)
+    }
+
+    private func encodePortraitCustomization(
+        into container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        guard let box = storedPortraitCustomization else { return }
+        try container.encode(box.value, forKey: .portraitCustomization)
+    }
+
+    private func encodeSkinBaselineCustomization(
+        into container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        guard let box = storedSkinBaselineCustomization else { return }
+        try container.encode(box.value, forKey: .skinBaselineCustomization)
+    }
+
+    private func encodeLandscapeSkinBaselineCustomization(
+        into container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        guard let box = storedLandscapeSkinBaselineCustomization else { return }
+        try container.encode(box.value, forKey: .landscapeSkinBaselineCustomization)
+    }
+
+    private func encodePortraitSkinBaselineCustomization(
+        into container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        guard let box = storedPortraitSkinBaselineCustomization else { return }
+        try container.encode(box.value, forKey: .portraitSkinBaselineCustomization)
+    }
+
+    private func encodeProfileMetadata(
+        into container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
         try container.encodeIfPresent(skinReference, forKey: .skinReference)
-        try container.encodeIfPresent(skinBaselineCustomization, forKey: .skinBaselineCustomization)
-        try container.encodeIfPresent(landscapeSkinBaselineCustomization, forKey: .landscapeSkinBaselineCustomization)
-        try container.encodeIfPresent(portraitSkinBaselineCustomization, forKey: .portraitSkinBaselineCustomization)
         try container.encode(orientationPreference, forKey: .orientationPreference)
         try container.encode(outputMode, forKey: .outputMode)
         try container.encodeIfPresent(launchTarget?.normalized, forKey: .launchTarget)
@@ -4893,27 +5052,47 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         }
 
         private var matchesPrimaryCustomization: Bool {
-            lhs.customization == rhs.customization
+            lhs.storedCustomization.value == rhs.storedCustomization.value
         }
 
         private var matchesLandscapeCustomization: Bool {
-            lhs.landscapeCustomization == rhs.landscapeCustomization
+            Self.matches(lhs.storedLandscapeCustomization, rhs.storedLandscapeCustomization)
         }
 
         private var matchesPortraitCustomization: Bool {
-            lhs.portraitCustomization == rhs.portraitCustomization
+            Self.matches(lhs.storedPortraitCustomization, rhs.storedPortraitCustomization)
         }
 
         private var matchesSkinBaselineCustomization: Bool {
-            lhs.skinBaselineCustomization == rhs.skinBaselineCustomization
+            Self.matches(lhs.storedSkinBaselineCustomization, rhs.storedSkinBaselineCustomization)
         }
 
         private var matchesLandscapeSkinBaselineCustomization: Bool {
-            lhs.landscapeSkinBaselineCustomization == rhs.landscapeSkinBaselineCustomization
+            Self.matches(
+                lhs.storedLandscapeSkinBaselineCustomization,
+                rhs.storedLandscapeSkinBaselineCustomization
+            )
         }
 
         private var matchesPortraitSkinBaselineCustomization: Bool {
-            lhs.portraitSkinBaselineCustomization == rhs.portraitSkinBaselineCustomization
+            Self.matches(
+                lhs.storedPortraitSkinBaselineCustomization,
+                rhs.storedPortraitSkinBaselineCustomization
+            )
+        }
+
+        private static func matches(
+            _ lhs: GamepadProfileCustomizationBox?,
+            _ rhs: GamepadProfileCustomizationBox?
+        ) -> Bool {
+            switch (lhs, rhs) {
+            case (nil, nil):
+                return true
+            case let (lhs?, rhs?):
+                return lhs.value == rhs.value
+            default:
+                return false
+            }
         }
     }
 
@@ -4936,32 +5115,32 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     }
 
     private mutating func normalizePrimaryCustomizationInPlace() {
-        customization = customization.normalized
+        storedCustomization = GamepadProfileCustomizationBox(storedCustomization.value.normalized)
     }
 
     private mutating func normalizeLandscapeCustomizationInPlace() {
-        guard let value = landscapeCustomization else { return }
-        landscapeCustomization = value.normalized
+        guard let box = storedLandscapeCustomization else { return }
+        storedLandscapeCustomization = GamepadProfileCustomizationBox(box.value.normalized)
     }
 
     private mutating func normalizePortraitCustomizationInPlace() {
-        guard let value = portraitCustomization else { return }
-        portraitCustomization = value.normalized
+        guard let box = storedPortraitCustomization else { return }
+        storedPortraitCustomization = GamepadProfileCustomizationBox(box.value.normalized)
     }
 
     private mutating func normalizeSkinBaselineCustomizationInPlace() {
-        guard let value = skinBaselineCustomization else { return }
-        skinBaselineCustomization = value.normalized
+        guard let box = storedSkinBaselineCustomization else { return }
+        storedSkinBaselineCustomization = GamepadProfileCustomizationBox(box.value.normalized)
     }
 
     private mutating func normalizeLandscapeSkinBaselineCustomizationInPlace() {
-        guard let value = landscapeSkinBaselineCustomization else { return }
-        landscapeSkinBaselineCustomization = value.normalized
+        guard let box = storedLandscapeSkinBaselineCustomization else { return }
+        storedLandscapeSkinBaselineCustomization = GamepadProfileCustomizationBox(box.value.normalized)
     }
 
     private mutating func normalizePortraitSkinBaselineCustomizationInPlace() {
-        guard let value = portraitSkinBaselineCustomization else { return }
-        portraitSkinBaselineCustomization = value.normalized
+        guard let box = storedPortraitSkinBaselineCustomization else { return }
+        storedPortraitSkinBaselineCustomization = GamepadProfileCustomizationBox(box.value.normalized)
     }
 
     private mutating func normalizeLaunchTargetInPlace() {
@@ -4969,22 +5148,28 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     }
 
     func customization(for orientation: GamepadEditorDeviceOrientation) -> GamepadCustomization {
-        var resolved = switch orientation {
+        let selectedBox: GamepadProfileCustomizationBox
+        switch orientation {
         case .landscape:
-            (landscapeCustomization ?? customization).normalized
+            selectedBox = storedLandscapeCustomization ?? storedCustomization
         case .portrait:
-            (portraitCustomization ?? customization).normalized
+            selectedBox = storedPortraitCustomization ?? storedCustomization
         }
+        var resolved = selectedBox.value.normalized
         // Saved Mode is a setup-level preference, not a per-orientation design choice.
-        resolved.colorSchemePreference = customization.colorSchemePreference
-        return resolved.normalized
+        resolved.colorSchemePreference = storedCustomization.value.colorSchemePreference
+        return resolved
     }
 
     func skinBaseline(for orientation: GamepadEditorDeviceOrientation) -> GamepadCustomization? {
+        let selectedBox: GamepadProfileCustomizationBox?
         switch orientation {
-        case .landscape: (landscapeSkinBaselineCustomization ?? skinBaselineCustomization)?.normalized
-        case .portrait: (portraitSkinBaselineCustomization ?? skinBaselineCustomization)?.normalized
+        case .landscape:
+            selectedBox = storedLandscapeSkinBaselineCustomization ?? storedSkinBaselineCustomization
+        case .portrait:
+            selectedBox = storedPortraitSkinBaselineCustomization ?? storedSkinBaselineCustomization
         }
+        return selectedBox?.value.normalized
     }
 
     func resolvedCustomization(
@@ -5035,7 +5220,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
             self.profile = profile
             self.package = package
             self.colorScheme = colorScheme
-            self.previousFallbackBaseline = profile.skinBaselineCustomization
+            self.previousFallbackBaseline = profile.storedSkinBaselineCustomization?.value
         }
 
         func apply() {
@@ -5057,10 +5242,11 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         }
 
         private func prepareFallbackSlot() {
-            let fallbackOrientation = profile.customization.deviceCanvas.editorDeviceFrame.orientation
+            let source = profile.storedCustomization.value
+            let fallbackOrientation = source.deviceCanvas.editorDeviceFrame.orientation
             let skinOrientation: PocketPadSkinOrientation = fallbackOrientation == .portrait ? .portrait : .landscape
             preparedSlot = SkinSlotApplicationWorkspace(
-                source: profile.customization,
+                source: source,
                 previousBaseline: previousFallbackBaseline,
                 package: package,
                 orientation: skinOrientation,
@@ -5070,8 +5256,8 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 
         private func commitFallbackSlot() {
             guard let preparedSlot else { return }
-            profile.customization = preparedSlot.result
-            profile.skinBaselineCustomization = preparedSlot.baseline
+            profile.storedCustomization = GamepadProfileCustomizationBox(preparedSlot.result)
+            profile.storedSkinBaselineCustomization = GamepadProfileCustomizationBox(preparedSlot.baseline)
         }
 
         private func applyLandscapeIfPresent() {
@@ -5084,10 +5270,12 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         }
 
         private func prepareLandscapeSlot() {
-            guard let source = profile.landscapeCustomization else { return }
+            guard let sourceBox = profile.storedLandscapeCustomization else { return }
+            let previousBaseline = profile.storedLandscapeSkinBaselineCustomization?.value
+                ?? previousFallbackBaseline
             preparedSlot = SkinSlotApplicationWorkspace(
-                source: source,
-                previousBaseline: profile.landscapeSkinBaselineCustomization ?? previousFallbackBaseline,
+                source: sourceBox.value,
+                previousBaseline: previousBaseline,
                 package: package,
                 orientation: .landscape,
                 colorScheme: colorScheme
@@ -5096,8 +5284,8 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 
         private func commitLandscapeSlot() {
             guard let preparedSlot else { return }
-            profile.landscapeCustomization = preparedSlot.result
-            profile.landscapeSkinBaselineCustomization = preparedSlot.baseline
+            profile.storedLandscapeCustomization = GamepadProfileCustomizationBox(preparedSlot.result)
+            profile.storedLandscapeSkinBaselineCustomization = GamepadProfileCustomizationBox(preparedSlot.baseline)
         }
 
         private func applyPortraitIfPresent() {
@@ -5110,10 +5298,12 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         }
 
         private func preparePortraitSlot() {
-            guard let source = profile.portraitCustomization else { return }
+            guard let sourceBox = profile.storedPortraitCustomization else { return }
+            let previousBaseline = profile.storedPortraitSkinBaselineCustomization?.value
+                ?? previousFallbackBaseline
             preparedSlot = SkinSlotApplicationWorkspace(
-                source: source,
-                previousBaseline: profile.portraitSkinBaselineCustomization ?? previousFallbackBaseline,
+                source: sourceBox.value,
+                previousBaseline: previousBaseline,
                 package: package,
                 orientation: .portrait,
                 colorScheme: colorScheme
@@ -5122,8 +5312,8 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 
         private func commitPortraitSlot() {
             guard let preparedSlot else { return }
-            profile.portraitCustomization = preparedSlot.result
-            profile.portraitSkinBaselineCustomization = preparedSlot.baseline
+            profile.storedPortraitCustomization = GamepadProfileCustomizationBox(preparedSlot.result)
+            profile.storedPortraitSkinBaselineCustomization = GamepadProfileCustomizationBox(preparedSlot.baseline)
         }
 
         private func resolvePreparedSlot() {
@@ -5192,66 +5382,212 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         resolving package: PocketPadSkinPackage,
         colorScheme: PocketPadSkinColorScheme
     ) {
-        let fallbackOrientation = customization.deviceCanvas.editorDeviceFrame.orientation
-        let fallback = resolvedCustomization(
-            for: fallbackOrientation,
-            colorScheme: colorScheme,
-            skinPackage: package
+        let workspace = SkinDetachmentWorkspace(
+            profile: self,
+            package: package,
+            colorScheme: colorScheme
         )
-        let landscape = landscapeCustomization.map { _ in
-            resolvedCustomization(for: .landscape, colorScheme: colorScheme, skinPackage: package)
+        workspace.resolve()
+        self = workspace.profile
+    }
+
+    private final class SkinDetachmentWorkspace {
+        private(set) var profile: GamepadConfigurationProfile
+        private let package: PocketPadSkinPackage
+        private let colorScheme: PocketPadSkinColorScheme
+        private var fallbackBox: GamepadProfileCustomizationBox?
+        private var landscapeBox: GamepadProfileCustomizationBox?
+        private var portraitBox: GamepadProfileCustomizationBox?
+
+        init(
+            profile: GamepadConfigurationProfile,
+            package: PocketPadSkinPackage,
+            colorScheme: PocketPadSkinColorScheme
+        ) {
+            self.profile = profile
+            self.package = package
+            self.colorScheme = colorScheme
         }
-        let portrait = portraitCustomization.map { _ in
-            resolvedCustomization(for: .portrait, colorScheme: colorScheme, skinPackage: package)
+
+        func resolve() {
+            resolveFallback()
+            resolveLandscapeIfPresent()
+            resolvePortraitIfPresent()
+            commitResolvedCustomizations()
         }
-        customization = fallback
-        landscapeCustomization = landscape
-        portraitCustomization = portrait
-        detachSkin()
+
+        private func resolveFallback() {
+            let orientation = profile.storedCustomization.value
+                .deviceCanvas.editorDeviceFrame.orientation
+            fallbackBox = GamepadProfileCustomizationBox(
+                profile.resolvedCustomization(
+                    for: orientation,
+                    colorScheme: colorScheme,
+                    skinPackage: package
+                )
+            )
+        }
+
+        private func resolveLandscapeIfPresent() {
+            guard profile.storedLandscapeCustomization != nil else { return }
+            landscapeBox = GamepadProfileCustomizationBox(
+                profile.resolvedCustomization(
+                    for: .landscape,
+                    colorScheme: colorScheme,
+                    skinPackage: package
+                )
+            )
+        }
+
+        private func resolvePortraitIfPresent() {
+            guard profile.storedPortraitCustomization != nil else { return }
+            portraitBox = GamepadProfileCustomizationBox(
+                profile.resolvedCustomization(
+                    for: .portrait,
+                    colorScheme: colorScheme,
+                    skinPackage: package
+                )
+            )
+        }
+
+        private func commitResolvedCustomizations() {
+            guard let fallbackBox else { return }
+            profile.storedCustomization = fallbackBox
+            profile.storedLandscapeCustomization = landscapeBox
+            profile.storedPortraitCustomization = portraitBox
+            profile.detachSkin()
+        }
     }
 
     /// Keeps the saved appearance and makes it fully local/editable.
     mutating func detachSkin() {
         skinReference = nil
-        skinBaselineCustomization = nil
-        landscapeSkinBaselineCustomization = nil
-        portraitSkinBaselineCustomization = nil
+        storedSkinBaselineCustomization = nil
+        storedLandscapeSkinBaselineCustomization = nil
+        storedPortraitSkinBaselineCustomization = nil
         updatedAt = Date.currentMilliseconds
     }
 
     func hasCustomizationVariant(for orientation: GamepadEditorDeviceOrientation) -> Bool {
         switch orientation {
-        case .landscape: landscapeCustomization != nil
-        case .portrait: portraitCustomization != nil
+        case .landscape: storedLandscapeCustomization != nil
+        case .portrait: storedPortraitCustomization != nil
         }
     }
 
-    mutating func setCustomization(_ customization: GamepadCustomization, for orientation: GamepadEditorDeviceOrientation) {
-        let previousCustomization = self.customization.normalized
-        let previousOrientation = previousCustomization.deviceCanvas.editorDeviceFrame.orientation
-        if previousOrientation != orientation, !hasCustomizationVariant(for: previousOrientation) {
+    /// Adds or replaces one orientation slot without changing the primary layout.
+    /// Keeping this operation separate avoids passing several large optional values
+    /// through the full initializer at once.
+    mutating func setCustomizationVariant(
+        _ customization: GamepadCustomization,
+        for orientation: GamepadEditorDeviceOrientation
+    ) {
+        let box = GamepadProfileCustomizationBox(customization.normalized)
+        switch orientation {
+        case .landscape:
+            storedLandscapeCustomization = box
+        case .portrait:
+            storedPortraitCustomization = box
+        }
+    }
+
+    mutating func setCustomization(
+        _ customization: GamepadCustomization,
+        for orientation: GamepadEditorDeviceOrientation
+    ) {
+        let workspace = CustomizationMutationWorkspace(
+            profile: self,
+            customization: customization,
+            orientation: orientation
+        )
+        workspace.apply()
+        self = workspace.profile
+    }
+
+    private final class CustomizationMutationWorkspace {
+        private(set) var profile: GamepadConfigurationProfile
+        private let customization: GamepadCustomization
+        private let orientation: GamepadEditorDeviceOrientation
+        private var preparedCustomization: GamepadCustomization?
+        private var correctedOrientation = false
+        private var replacementBox: GamepadProfileCustomizationBox?
+
+        init(
+            profile: GamepadConfigurationProfile,
+            customization: GamepadCustomization,
+            orientation: GamepadEditorDeviceOrientation
+        ) {
+            self.profile = profile
+            self.customization = customization
+            self.orientation = orientation
+        }
+
+        func apply() {
+            preservePreviousOrientationIfNeeded()
+            prepareReplacement()
+            commitReplacement()
+        }
+
+        private func preservePreviousOrientationIfNeeded() {
+            let previousCustomization = profile.storedCustomization.value.normalized
+            let previousOrientation = previousCustomization.deviceCanvas.editorDeviceFrame.orientation
+            guard previousOrientation != orientation,
+                  !profile.hasCustomizationVariant(for: previousOrientation)
+            else { return }
+
+            let previousBox = GamepadProfileCustomizationBox(previousCustomization)
             switch previousOrientation {
             case .landscape:
-                landscapeCustomization = previousCustomization
+                profile.storedLandscapeCustomization = previousBox
             case .portrait:
-                portraitCustomization = previousCustomization
+                profile.storedPortraitCustomization = previousBox
             }
         }
 
-        var normalizedCustomization = customization.normalized
-        let storedFrame = normalizedCustomization.deviceCanvas.editorDeviceFrame
-        if storedFrame.orientation != orientation {
-            normalizedCustomization.deviceCanvas = GamepadDeviceCanvas(
-                frameID: GamepadEditorDeviceFrame(spec: storedFrame.spec, orientation: orientation).id
-            )
-            normalizedCustomization = normalizedCustomization.normalized
+        private func prepareReplacement() {
+            normalizeIncomingCustomization()
+            correctPreparedOrientationIfNeeded()
+            normalizeCorrectedOrientationIfNeeded()
+            boxPreparedCustomization()
         }
-        self.customization = normalizedCustomization
-        switch orientation {
-        case .landscape:
-            landscapeCustomization = normalizedCustomization
-        case .portrait:
-            portraitCustomization = normalizedCustomization
+
+        private func normalizeIncomingCustomization() {
+            preparedCustomization = customization.normalized
+        }
+
+        private func correctPreparedOrientationIfNeeded() {
+            guard var preparedCustomization else { return }
+            let storedFrame = preparedCustomization.deviceCanvas.editorDeviceFrame
+            guard storedFrame.orientation != orientation else { return }
+            preparedCustomization.deviceCanvas = GamepadDeviceCanvas(
+                frameID: GamepadEditorDeviceFrame(
+                    spec: storedFrame.spec,
+                    orientation: orientation
+                ).id
+            )
+            self.preparedCustomization = preparedCustomization
+            correctedOrientation = true
+        }
+
+        private func normalizeCorrectedOrientationIfNeeded() {
+            guard correctedOrientation, let preparedCustomization else { return }
+            self.preparedCustomization = preparedCustomization.normalized
+        }
+
+        private func boxPreparedCustomization() {
+            guard let preparedCustomization else { return }
+            replacementBox = GamepadProfileCustomizationBox(preparedCustomization)
+        }
+
+        private func commitReplacement() {
+            guard let replacementBox else { return }
+            profile.storedCustomization = replacementBox
+            switch orientation {
+            case .landscape:
+                profile.storedLandscapeCustomization = replacementBox
+            case .portrait:
+                profile.storedPortraitCustomization = replacementBox
+            }
         }
     }
 
@@ -5364,42 +5700,180 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
     }
 
     func makeProfile() -> GamepadConfigurationProfile {
-        var profile: GamepadConfigurationProfile
+        var profile = makeUntaggedProfile()
+        tagPrimaryCustomization(in: &profile)
+        tagLandscapeCustomization(in: &profile)
+        tagPortraitCustomization(in: &profile)
+        return profile
+    }
+
+    private func makeUntaggedProfile() -> GamepadConfigurationProfile {
         switch self {
         case .productivityStarter:
-            let landscape = Self.productivityStarterCustomization(isPortrait: false)
-            let portrait = Self.productivityStarterCustomization(isPortrait: true)
-            profile = GamepadConfigurationProfile(
-                name: displayName,
-                customization: landscape,
-                landscapeCustomization: landscape,
-                portraitCustomization: portrait
-            )
+            return makeProductivityStarterProfile()
         case .productivityOneHandedLeft, .productivityOneHandedRight:
-            let usesLeftHand = self == .productivityOneHandedLeft
-            let portrait = Self.oneHandedProductivityCustomization(usesLeftHand: usesLeftHand, isPortrait: true)
-            let landscape = Self.oneHandedProductivityCustomization(usesLeftHand: usesLeftHand, isPortrait: false)
-            profile = GamepadConfigurationProfile(
-                name: displayName,
-                customization: portrait,
-                landscapeCustomization: landscape,
-                portraitCustomization: portrait
-            )
-        default:
-            profile = GamepadConfigurationProfile(name: displayName, customization: makeCustomization())
+            return makeOneHandedProductivityProfile()
+        case .nes:
+            return makeNESProfile()
+        case .snes:
+            return makeSNESProfile()
+        case .nintendo64:
+            return makeNintendo64Profile()
+        case .gameCube:
+            return makeGameCubeProfile()
+        case .gameBoy:
+            return makeGameBoyProfile()
+        case .gameBoyAdvance:
+            return makeGameBoyAdvanceProfile()
+        case .genesisSixButton:
+            return makeGenesisProfile()
+        case .saturn:
+            return makeSaturnProfile()
+        case .dreamcast:
+            return makeDreamcastProfile()
+        case .arcadeStick:
+            return makeArcadeStickProfile()
+        case .psp:
+            return makePSPProfile()
+        case .playStation:
+            return makePlayStationProfile()
+        case .xbox:
+            return makeXboxProfile()
+        case .softWhite:
+            return makeSoftWhiteProfile()
         }
+    }
+
+    private func makePrimaryProfile(
+        _ customization: GamepadCustomization
+    ) -> GamepadConfigurationProfile {
+        GamepadConfigurationProfile(
+            name: displayName,
+            primaryCustomization: customization
+        )
+    }
+
+    private func makeNESProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.nesCustomization())
+    }
+
+    private func makeSNESProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.snesCustomization())
+    }
+
+    private func makeNintendo64Profile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.nintendo64Customization())
+    }
+
+    private func makeGameCubeProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.gameCubeCustomization())
+    }
+
+    private func makeGameBoyProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.gameBoyCustomization())
+    }
+
+    private func makeGameBoyAdvanceProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.gameBoyAdvanceCustomization())
+    }
+
+    private func makeGenesisProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.genesisSixButtonCustomization())
+    }
+
+    private func makeSaturnProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.saturnCustomization())
+    }
+
+    private func makeDreamcastProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.dreamcastCustomization())
+    }
+
+    private func makeArcadeStickProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.arcadeStickCustomization())
+    }
+
+    private func makePSPProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.pspCustomization())
+    }
+
+    private func makePlayStationProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.playStationCustomization())
+    }
+
+    private func makeXboxProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.xboxCustomization())
+    }
+
+    private func makeSoftWhiteProfile() -> GamepadConfigurationProfile {
+        makePrimaryProfile(Self.softWhiteCustomization())
+    }
+
+    private func makeProductivityStarterProfile() -> GamepadConfigurationProfile {
+        let landscape = Self.productivityStarterCustomization(isPortrait: false)
+        var profile = GamepadConfigurationProfile(
+            name: displayName,
+            primaryCustomization: landscape
+        )
+        profile.setCustomizationVariant(landscape, for: .landscape)
+        profile.setCustomizationVariant(
+            Self.productivityStarterCustomization(isPortrait: true),
+            for: .portrait
+        )
+        return profile
+    }
+
+    private func makeOneHandedProductivityProfile() -> GamepadConfigurationProfile {
+        let usesLeftHand = self == .productivityOneHandedLeft
+        let portrait = Self.oneHandedProductivityCustomization(
+            usesLeftHand: usesLeftHand,
+            isPortrait: true
+        )
+        var profile = GamepadConfigurationProfile(
+            name: displayName,
+            primaryCustomization: portrait
+        )
+        profile.setCustomizationVariant(
+            Self.oneHandedProductivityCustomization(
+                usesLeftHand: usesLeftHand,
+                isPortrait: false
+            ),
+            for: .landscape
+        )
+        profile.setCustomizationVariant(portrait, for: .portrait)
+        return profile
+    }
+
+    private func tagPrimaryCustomization(in profile: inout GamepadConfigurationProfile) {
         profile.customization = Self.taggedWithTemplateMetadata(
             profile.customization,
             templateID: rawValue,
             revision: templateRevision
         )
-        profile.landscapeCustomization = profile.landscapeCustomization.map {
-            Self.taggedWithTemplateMetadata($0, templateID: rawValue, revision: templateRevision)
-        }
-        profile.portraitCustomization = profile.portraitCustomization.map {
-            Self.taggedWithTemplateMetadata($0, templateID: rawValue, revision: templateRevision)
-        }
-        return profile
+    }
+
+    private func tagLandscapeCustomization(in profile: inout GamepadConfigurationProfile) {
+        guard let customization = profile.landscapeCustomization else { return }
+        profile.setCustomizationVariant(
+            Self.taggedWithTemplateMetadata(
+                customization,
+                templateID: rawValue,
+                revision: templateRevision
+            ),
+            for: .landscape
+        )
+    }
+
+    private func tagPortraitCustomization(in profile: inout GamepadConfigurationProfile) {
+        guard let customization = profile.portraitCustomization else { return }
+        profile.setCustomizationVariant(
+            Self.taggedWithTemplateMetadata(
+                customization,
+                templateID: rawValue,
+                revision: templateRevision
+            ),
+            for: .portrait
+        )
     }
 
     private static func taggedWithTemplateMetadata(
@@ -5415,45 +5889,6 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
             availableControls: customization.allControlIdentitiesForDesign
         )
         return customization.normalized
-    }
-
-    private func makeCustomization() -> GamepadCustomization {
-        switch self {
-        case .productivityStarter:
-            Self.productivityStarterCustomization(isPortrait: false)
-        case .productivityOneHandedLeft:
-            Self.oneHandedProductivityCustomization(usesLeftHand: true, isPortrait: true)
-        case .productivityOneHandedRight:
-            Self.oneHandedProductivityCustomization(usesLeftHand: false, isPortrait: true)
-        case .nes:
-            Self.nesCustomization()
-        case .snes:
-            Self.snesCustomization()
-        case .nintendo64:
-            Self.nintendo64Customization()
-        case .gameCube:
-            Self.gameCubeCustomization()
-        case .gameBoy:
-            Self.gameBoyCustomization()
-        case .gameBoyAdvance:
-            Self.gameBoyAdvanceCustomization()
-        case .genesisSixButton:
-            Self.genesisSixButtonCustomization()
-        case .saturn:
-            Self.saturnCustomization()
-        case .dreamcast:
-            Self.dreamcastCustomization()
-        case .arcadeStick:
-            Self.arcadeStickCustomization()
-        case .psp:
-            Self.pspCustomization()
-        case .playStation:
-            Self.playStationCustomization()
-        case .xbox:
-            Self.xboxCustomization()
-        case .softWhite:
-            Self.softWhiteCustomization()
-        }
     }
 
     private static func baseCustomization(accentStyle: GamepadAccentStyle, controlScale: GamepadControlScale = .compact) -> GamepadCustomization {
@@ -6568,7 +7003,7 @@ enum GamepadConfigurationProfilePersistence {
                 } else {
                     let currentProfile = GamepadConfigurationProfile(
                         name: "Current Setup",
-                        customization: activeCustomization
+                        primaryCustomization: activeCustomization
                     )
                     profiles.insert(currentProfile, at: 0)
                     activeProfileID = currentProfile.id
@@ -6641,30 +7076,92 @@ enum GamepadConfigurationProfilePersistence {
         activeProfileID: UUID?,
         activeCustomization: GamepadCustomization
     ) -> LoadedState? {
-        guard isLegacySeededDefaultProfileList(profiles) else { return nil }
+        LegacyMigrationWorkspace(
+            profiles: profiles,
+            activeProfileID: activeProfileID,
+            activeCustomization: activeCustomization
+        ).resolve()
+    }
 
-        let selectedProfileID = validProfileID(activeProfileID, in: profiles) ?? profiles[0].id
-        var starterProfile = profiles.first { $0.id == selectedProfileID } ?? profiles[0]
-        let normalizedActiveCustomization = activeCustomization.normalized
-        let activeLooksLikeOldDefault = normalizedActiveCustomization.hasSamePresentation(as: GamepadCustomization.defaultValue.normalized)
-            || normalizedActiveCustomization.hasSamePresentation(as: GamepadCustomization.blankCanvas)
+    private final class LegacyMigrationWorkspace {
+        private let profiles: [GamepadConfigurationProfile]
+        private let activeProfileID: UUID?
+        private let activeCustomization: GamepadCustomization
+        private var starterProfile: GamepadConfigurationProfile?
+        private var normalizedActiveCustomization: GamepadCustomization?
 
-        if starterProfile.name == "Current Setup", activeLooksLikeOldDefault {
-            starterProfile.name = "My First Keypad"
-            starterProfile.customization = GamepadCustomization.blankCanvas
-        } else {
-            starterProfile.customization = normalizedActiveCustomization
+        init(
+            profiles: [GamepadConfigurationProfile],
+            activeProfileID: UUID?,
+            activeCustomization: GamepadCustomization
+        ) {
+            self.profiles = profiles
+            self.activeProfileID = activeProfileID
+            self.activeCustomization = activeCustomization
         }
 
-        starterProfile.landscapeCustomization = nil
-        starterProfile.portraitCustomization = nil
-        starterProfile.updatedAt = Date.currentMilliseconds
-        let normalizedProfile = starterProfile.normalized
-        return LoadedState(
-            profiles: [normalizedProfile],
-            activeProfileID: normalizedProfile.id,
-            defaultProfileID: normalizedProfile.id
-        )
+        func resolve() -> LoadedState? {
+            guard GamepadConfigurationProfilePersistence.isLegacySeededDefaultProfileList(profiles)
+            else { return nil }
+            selectStarterProfile()
+            normalizeActiveCustomization()
+            applyActiveCustomization()
+            clearLegacyVariants()
+            return makeLoadedState()
+        }
+
+        private func selectStarterProfile() {
+            let selectedProfileID = GamepadConfigurationProfilePersistence.validProfileID(
+                activeProfileID,
+                in: profiles
+            ) ?? profiles[0].id
+            starterProfile = profiles.first { $0.id == selectedProfileID } ?? profiles[0]
+        }
+
+        private func normalizeActiveCustomization() {
+            normalizedActiveCustomization = activeCustomization.normalized
+        }
+
+        private func applyActiveCustomization() {
+            guard var starterProfile, let normalizedActiveCustomization else { return }
+            if starterProfile.name == "Current Setup", activeLooksLikeOldDefault {
+                starterProfile.name = "My First Keypad"
+                starterProfile.customization = GamepadCustomization.blankCanvas
+            } else {
+                starterProfile.customization = normalizedActiveCustomization
+            }
+            self.starterProfile = starterProfile
+        }
+
+        private var activeLooksLikeOldDefault: Bool {
+            guard let normalizedActiveCustomization else { return false }
+            if normalizedActiveCustomization.hasSamePresentation(
+                as: GamepadCustomization.defaultValue.normalized
+            ) {
+                return true
+            }
+            return normalizedActiveCustomization.hasSamePresentation(
+                as: GamepadCustomization.blankCanvas
+            )
+        }
+
+        private func clearLegacyVariants() {
+            guard var starterProfile else { return }
+            starterProfile.landscapeCustomization = nil
+            starterProfile.portraitCustomization = nil
+            starterProfile.updatedAt = Date.currentMilliseconds
+            self.starterProfile = starterProfile
+        }
+
+        private func makeLoadedState() -> LoadedState? {
+            guard let starterProfile else { return nil }
+            let normalizedProfile = starterProfile.normalized
+            return LoadedState(
+                profiles: [normalizedProfile],
+                activeProfileID: normalizedProfile.id,
+                defaultProfileID: normalizedProfile.id
+            )
+        }
     }
 
     private static func isLegacySeededDefaultProfileList(_ profiles: [GamepadConfigurationProfile]) -> Bool {
@@ -6679,7 +7176,7 @@ enum GamepadConfigurationProfilePersistence {
             && !normalizedActiveCustomization.hasSamePresentation(as: blankCustomization)
         if hasLegacyCustomization {
             return [
-                GamepadConfigurationProfile(name: "Current Setup", customization: normalizedActiveCustomization)
+                GamepadConfigurationProfile(name: "Current Setup", primaryCustomization: normalizedActiveCustomization)
             ]
         }
 
@@ -19227,7 +19724,7 @@ struct GamepadCustomizationEditor: View {
         commitSelectedProfileNameDraft()
         let profile = GamepadConfigurationProfile(
             name: "Setup \(profiles.count + 1)",
-            customization: GamepadCustomization.blankCanvas
+            primaryCustomization: GamepadCustomization.blankCanvas
         )
         selectNewProfile(profile)
     }
@@ -19830,7 +20327,7 @@ struct GamepadCustomizationEditor: View {
         if removedEveryProfile {
             let replacementProfile = GamepadConfigurationProfile(
                 name: "Setup 1",
-                customization: GamepadCustomization.blankCanvas
+                primaryCustomization: GamepadCustomization.blankCanvas
             )
             profiles = [replacementProfile]
             selectedProfileID = replacementProfile.id

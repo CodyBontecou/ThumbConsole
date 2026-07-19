@@ -889,7 +889,7 @@ final class MacControllerServer: ObservableObject {
             let trimmedName = sourceName.trimmingCharacters(in: .whitespacesAndNewlines)
             let profile = GamepadConfigurationProfile(
                 name: trimmedName.isEmpty ? "Imported Setup" : trimmedName,
-                customization: customization.normalized
+                primaryCustomization: customization.normalized
             )
             importedProfiles = [profile]
             importedActiveProfileID = profile.id
@@ -1447,7 +1447,7 @@ final class MacControllerServer: ObservableObject {
             var profile = GamepadConfigurationProfile(
                 id: profileID,
                 name: "Recovered iPhone Layout",
-                customization: normalizedCustomization
+                primaryCustomization: normalizedCustomization
             )
             profile.setCustomization(normalizedCustomization, for: orientation)
             gamepadProfiles.append(profile)
@@ -4940,9 +4940,6 @@ final class MacControllerServer: ObservableObject {
     private func gamepadProfilesForClient(_ profiles: [GamepadConfigurationProfile]) -> [GamepadConfigurationProfile] {
         profiles.map { profile in
             var clientProfile = profile
-            clientProfile.customization = gamepadCustomizationForClient(profile.customization)
-            clientProfile.landscapeCustomization = profile.landscapeCustomization.map(gamepadCustomizationForClient)
-            clientProfile.portraitCustomization = profile.portraitCustomization.map(gamepadCustomizationForClient)
             clientProfile.launchTarget = profile.launchTarget?.normalized
             return clientProfile
         }
