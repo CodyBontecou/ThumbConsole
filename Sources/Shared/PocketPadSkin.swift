@@ -37,7 +37,7 @@ public enum GamepadVisualRole: String, Codable, CaseIterable, Identifiable, Send
         case .joystick: return .joystick
         case .trigger: return .trigger
         case .trackpad: return .trackpad
-        case .decoration: return .decoration
+        case .text, .decoration: return .decoration
         case .button:
             switch button {
             case .up, .down, .left, .right: return .movement

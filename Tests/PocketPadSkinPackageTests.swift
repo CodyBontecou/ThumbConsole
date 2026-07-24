@@ -85,6 +85,7 @@ final class PocketPadSkinPackageTests: XCTestCase {
         XCTAssertEqual(GamepadVisualRole.inferred(for: .pause, controlKind: .button), .menu)
         XCTAssertEqual(GamepadVisualRole.inferred(for: .custom8, controlKind: .button), .custom)
         XCTAssertEqual(GamepadVisualRole.inferred(for: .jump, controlKind: .joystick), .joystick)
+        XCTAssertEqual(GamepadVisualRole.inferred(for: .jump, controlKind: .text), .decoration)
         XCTAssertEqual(GamepadVisualRole.inferred(for: .jump, controlKind: .decoration), .decoration)
     }
 

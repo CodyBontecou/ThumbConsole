@@ -841,7 +841,9 @@ private enum GeneratedProfileBuilder {
                 )
             }
 
-            if controlKind != .decoration, !control.binding.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if controlKind != .decoration,
+               controlKind != .text,
+               !control.binding.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 keyBindings[control.button] = control.binding
             }
         }

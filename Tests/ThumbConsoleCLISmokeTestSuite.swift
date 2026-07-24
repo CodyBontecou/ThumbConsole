@@ -584,6 +584,58 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         XCTAssertTrue(controls.contains { $0.id == .custom(id) && $0.isTrackpad })
     }
 
+    func testTextElementRoundTripsAsPassiveLayer() throws {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-00000000A11E")!
+        var customization = GamepadCustomization.blankCanvas
+        customization.addText(
+            id: id,
+            text: "Z",
+            centerX: 0.72,
+            centerY: 0.66,
+            widthScale: 1.2,
+            heightScale: 0.8
+        )
+
+        var normalized = customization.normalized
+        let elementIndex = try XCTUnwrap(normalized.elements.firstIndex(where: { $0.id == id }))
+        normalized.elements[elementIndex].output = KeypadElementOutputBinding(
+            keyboard: KeypadKeyboardBinding(keyCode: 6)
+        )
+        normalized = normalized.normalized
+
+        let text = try XCTUnwrap(normalized.customButtons.first(where: { $0.id == id })?.normalized)
+        XCTAssertTrue(text.isText)
+        XCTAssertTrue(text.isDecoration)
+        XCTAssertEqual(text.label, "Z")
+        XCTAssertFalse(text.layout.showsIntegratedLabel)
+        XCTAssertEqual(text.layout.shadowStrength, 0)
+        XCTAssertNil(normalized.elements.first(where: { $0.id == id })?.output)
+
+        let control = try XCTUnwrap(
+            normalized.resolvedControls(in: CGSize(width: 874, height: 402)).first { $0.id == .custom(id) }
+        )
+        XCTAssertTrue(control.isText)
+        XCTAssertTrue(control.isDecoration)
+
+        let data = try JSONEncoder().encode(normalized)
+        let decoded = try JSONDecoder().decode(GamepadCustomization.self, from: data).normalized
+        XCTAssertEqual(decoded.customButtons.first(where: { $0.id == id })?.controlKind, .text)
+        XCTAssertEqual(decoded.customButtons.first(where: { $0.id == id })?.label, "Z")
+    }
+
+    func testIntegratedLabelVisibilityRoundTripsWithoutChangingLegacyDecodeDefault() throws {
+        let hidden = GamepadButtonCustomization(showsIntegratedLabel: false)
+        let roundTripped = try JSONDecoder().decode(
+            GamepadButtonCustomization.self,
+            from: JSONEncoder().encode(hidden)
+        )
+        XCTAssertFalse(roundTripped.showsIntegratedLabel)
+
+        let legacy = Data(#"{"widthScale":1,"heightScale":1,"shadowStrength":1,"isLocationLocked":false,"isHidden":false}"#.utf8)
+        let decoded = try JSONDecoder().decode(GamepadButtonCustomization.self, from: legacy)
+        XCTAssertTrue(decoded.showsIntegratedLabel)
+    }
+
     func testJoystickThumbColorCustomizationRoundTrips() throws {
         let id = UUID(uuidString: "00000000-0000-0000-0000-00000000BEEF")!
         var customization = GamepadCustomization.blankCanvas
@@ -1369,6 +1421,14 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(
             GamepadControllerPresentationRouting.resolvedControlRoute(
                 kind: .decoration,
+                hasJoystickMapping: false,
+                hasTriggerSettings: false
+            ),
+            .decoration
+        )
+        XCTAssertEqual(
+            GamepadControllerPresentationRouting.resolvedControlRoute(
+                kind: .text,
                 hasJoystickMapping: false,
                 hasTriggerSettings: false
             ),

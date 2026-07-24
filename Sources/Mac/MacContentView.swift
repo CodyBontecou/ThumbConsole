@@ -2797,7 +2797,7 @@ private struct MacKeypadPreviewControl: View {
                 joystickFace
             } else if control.isTrackpad {
                 trackpadFace
-            } else if customization.showsButtonLabels {
+            } else if customization.showsButtonLabels && control.layoutCustomization.showsIntegratedLabel {
                 controlLabel
             }
         }
@@ -2864,7 +2864,7 @@ private struct MacKeypadPreviewControl: View {
                     height: min(visualSize.width, visualSize.height) * knobRatio
                 )
 
-            if customization.showsButtonLabels && !isThumbstick {
+            if customization.showsButtonLabels && control.layoutCustomization.showsIntegratedLabel && !isThumbstick {
                 controlLabel
                     .offset(y: visualSize.height * (isThumbstick ? 0.58 : 0.34))
             }
@@ -2881,7 +2881,7 @@ private struct MacKeypadPreviewControl: View {
                 .foregroundStyle(controlForeground.opacity(0.62))
                 .offset(y: max(-4, -8 * scale))
 
-            if customization.showsButtonLabels {
+            if customization.showsButtonLabels && control.layoutCustomization.showsIntegratedLabel {
                 controlLabel
                     .offset(y: max(6, 12 * scale))
             }
@@ -3220,7 +3220,7 @@ private struct MacKeypadElementOutputInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
             HStack(alignment: .firstTextBaseline, spacing: Geist.Spacing.s2) {
-                Text("Shortcut")
+                Text("Key Press")
                     .geistTypography(.label13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
 
@@ -3236,12 +3236,12 @@ private struct MacKeypadElementOutputInspector: View {
                         server.clearElementOutputBinding(for: input)
                     }
                 } label: {
-                    Label("Clear Shortcut", systemImage: "xmark.circle")
+                    Label("Clear Key Press", systemImage: "xmark.circle")
                         .labelStyle(.iconOnly)
                 }
                 .geistButtonStyle(.tertiary, size: .small)
                 .disabled(server.directElementOutputBinding(for: input) == nil)
-                .help("Clear shortcut")
+                .help("Clear key press")
             }
 
             MacElementKeyBindingRecorderField(input: input)
@@ -3261,7 +3261,7 @@ private struct MacKeypadElementOutputInspector: View {
                 .frame(maxWidth: 220)
             }
 
-            Text("Element outputs are saved directly and can mix keyboard and controller output.")
+            Text("The key press is the button’s action. A virtual gamepad button can be added when a game needs controller input too.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)

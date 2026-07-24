@@ -129,7 +129,7 @@ Control fields:
 | `shadowStrength` | optional | Shadow multiplier `0`–`2`. |
 | `isHidden` | optional | Hide this control. |
 | `isLocationLocked` | optional | Prevent drag repositioning in the Mac editor. |
-| `kind` / `controlKind` | optional | `button`, `joystick`, or `trackpad` for saved element/profile editing. Agent-generated key specs still require a keyboard `key`. |
+| `kind` / `controlKind` | optional | `button`, `joystick`, `trigger`, `trackpad`, `text`, or `decoration` for saved element/profile editing. `text` and `decoration` are passive; agent-generated action specs still require a keyboard `key`. |
 | `trackpadSettings` | optional | Object with `sensitivity`, `scrollSensitivity`, `tapToClick`, `twoFingerScroll`, and `naturalScrolling` for trackpad components. |
 | `sensitivity`, `cursorSensitivity`, `pointerSensitivity` | optional | Trackpad cursor sensitivity multiplier (`0.2`–`4.0` after normalization). Implies `kind: "trackpad"` if no kind is set. |
 | `scrollSensitivity` | optional | Trackpad scroll sensitivity multiplier (`0.1`–`4.0` after normalization). |
@@ -272,7 +272,8 @@ Element-level controls:
 "$THUMBCONSOLE_CLI" element add button --label Fire --maps-to custom1 --x 0.50 --y 0.80 --light-fill '#F59E0B' --dark-fill '#78350F'
 "$THUMBCONSOLE_CLI" element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
 "$THUMBCONSOLE_CLI" element add trackpad --label Trackpad --x 0.50 --y 0.58 --width 1.25 --sensitivity 1.2 --scroll-sensitivity 0.85 --tap-to-click true
-"$THUMBCONSOLE_CLI" element set jump --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
+"$THUMBCONSOLE_CLI" element add text --text A --x 0.72 --y 0.66 --text-color '#FFFFFF'
+"$THUMBCONSOLE_CLI" element set jump --keyboard Space --hide-integrated-label --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
 "$THUMBCONSOLE_CLI" element set "Right Stick" --thumb-fill '#22C55E'
 "$THUMBCONSOLE_CLI" element set focus --icon sf:sparkles --haptic medium --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9' --glow-radius 12
 "$THUMBCONSOLE_CLI" element set jump --lock
@@ -288,7 +289,7 @@ Appearance/design flags:
 - `--fill '#RRGGBB'` remains the shared/legacy fill for both palettes; `--clear-light-fill`, `--clear-dark-fill`, and `--clear-fill` remove custom colors.
 - `style list|create|show|apply|detach|delete|export|import` manages reusable style tokens.
 - `element set BUTTON --z-index -100...100` sets explicit stack order; `layer list|move|front|back|bring-forward|send-backward` still manages same-z tie order.
-- `group list|create|ungroup|hide|show|lock|unlock` stores editor groups and can apply group visibility/lock to child controls.
+- `group list|create|ungroup|hide|show|lock|unlock` stores editor groups and can apply group visibility/lock to child controls. Use `element add text`, hide a button’s legacy caption with `--hide-integrated-label`, then group both layers for a composed visual label.
 - `asset import|list|remove` stores profile-local design assets for future icon/background workflows.
 
 ## iPhone control bar

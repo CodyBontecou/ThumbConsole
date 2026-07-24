@@ -279,7 +279,6 @@ final class MacControllerServer: ObservableObject {
     private var lastRuntimeStatusPublishUptime: UInt64 = 0
     private var lastInputDebugPublishUptime: UInt64 = 0
     private var lastClientActivityPublishUptime: UInt64 = 0
-    private var lastAccessibilityRefresh = Date.distantPast
     private var lastAccessibilityRefreshRequestUptime: UInt64 = 0
     private var activeBindings: [GameButton: MacKeyBinding] = [:]
     private var activeOutputBindings: [GameButton: MacControlOutputBinding] = [:]
@@ -675,13 +674,19 @@ final class MacControllerServer: ObservableObject {
     }
 
     func refreshAccessibilityStatus() {
-        accessibilityTrusted = syncOnNetworkQueue {
-            let keyboardTrusted = injector.refreshAccessibilityStatus()
-            let pointerTrusted = pointerInjector.refreshAccessibilityStatus()
-            return keyboardTrusted && pointerTrusted
+        asyncOnNetworkQueue { [weak self] in
+            guard let self else { return }
+            let keyboardTrusted = self.injector.refreshAccessibilityStatus()
+            let pointerTrusted = self.pointerInjector.refreshAccessibilityStatus()
+            let isTrusted = keyboardTrusted && pointerTrusted
+
+            DispatchQueue.main.async { [weak self] in
+                // @Published emits for equal assignments, which needlessly relayouts the full editor.
+                guard let self, self.accessibilityTrusted != isTrusted else { return }
+                self.accessibilityTrusted = isTrusted
+                self.publishRuntimeStatus()
+            }
         }
-        lastAccessibilityRefresh = Date()
-        publishRuntimeStatus()
     }
 
     func promptForAccessibility() {
@@ -5273,9 +5278,7 @@ final class MacControllerServer: ObservableObject {
               now - lastAccessibilityRefreshRequestUptime >= 2_000_000_000
         else { return }
         lastAccessibilityRefreshRequestUptime = now
-        DispatchQueue.main.async { [weak self] in
-            self?.refreshAccessibilityStatus()
-        }
+        refreshAccessibilityStatus()
     }
 
     private func noteClientActivity() {

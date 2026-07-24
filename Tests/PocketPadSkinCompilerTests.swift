@@ -71,7 +71,7 @@ final class PocketPadSkinCompilerTests: XCTestCase {
         )
 
         XCTAssertEqual(result.packageData, try Data(contentsOf: golden))
-        XCTAssertEqual(result.packageData.pocketPadSHA256, "72fdbb32d789cd3c13d32b79cc83d9a373eb9b7d4d663d9e1cab1c80ba3bb3d3")
+        XCTAssertEqual(result.packageData.pocketPadSHA256, "d88d237a01c42a70e8bdce8577a2efe3e036ab09fa0840e9822d123a85b7f037")
     }
 
     func testCompilerMapsOptionalMaterialStateControlsAndJoystickColors() throws {

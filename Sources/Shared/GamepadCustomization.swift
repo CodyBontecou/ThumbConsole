@@ -968,6 +968,7 @@ public enum GamepadCustomControlKind: String, Codable, CaseIterable, Identifiabl
     case joystick
     case trigger
     case trackpad
+    case text
     case decoration
 
     public var id: String { rawValue }
@@ -978,6 +979,7 @@ public enum GamepadCustomControlKind: String, Codable, CaseIterable, Identifiabl
         case .joystick: "Joystick"
         case .trigger: "Trigger"
         case .trackpad: "Trackpad"
+        case .text: "Text"
         case .decoration: "Decoration"
         }
     }
@@ -1283,6 +1285,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
     public var cornerRadius: CGFloat?
     public var cornerRadii: GamepadCornerRadii?
     public var shadowStrength: CGFloat
+    /// Whether an interactive control draws its legacy label inside its own shape.
+    /// Text layers are the preferred way to compose editable labels with controls.
+    public var showsIntegratedLabel: Bool
     public var isLocationLocked: Bool
     public var isHidden: Bool
 
@@ -1314,6 +1319,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         cornerRadius: CGFloat? = nil,
         cornerRadii: GamepadCornerRadii? = nil,
         shadowStrength: CGFloat = GamepadButtonCustomization.defaultShadowStrength,
+        showsIntegratedLabel: Bool = true,
         isLocationLocked: Bool = false,
         isHidden: Bool = false
     ) {
@@ -1344,6 +1350,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         self.cornerRadius = cornerRadius
         self.cornerRadii = cornerRadii
         self.shadowStrength = shadowStrength
+        self.showsIntegratedLabel = showsIntegratedLabel
         self.isLocationLocked = isLocationLocked
         self.isHidden = isHidden
     }
@@ -1377,6 +1384,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         cornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
         cornerRadii = try container.decodeIfPresent(GamepadCornerRadii.self, forKey: .cornerRadii)
         shadowStrength = try container.decodeIfPresent(CGFloat.self, forKey: .shadowStrength) ?? Self.defaultShadowStrength
+        showsIntegratedLabel = try container.decodeIfPresent(Bool.self, forKey: .showsIntegratedLabel) ?? true
         isLocationLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocationLocked) ?? false
         isHidden = try container.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
     }
@@ -1410,6 +1418,9 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         try container.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
         try container.encodeIfPresent(cornerRadii, forKey: .cornerRadii)
         try container.encode(shadowStrength, forKey: .shadowStrength)
+        if !showsIntegratedLabel {
+            try container.encode(false, forKey: .showsIntegratedLabel)
+        }
         try container.encode(isLocationLocked, forKey: .isLocationLocked)
         try container.encode(isHidden, forKey: .isHidden)
     }
@@ -1519,6 +1530,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         if cornerRadius != nil { return false }
         if cornerRadii != nil { return false }
         if !(abs(shadowStrength - Self.defaultShadowStrength) < 0.001) { return false }
+        if !showsIntegratedLabel { return false }
         if isLocationLocked { return false }
         if isHidden { return false }
         return true
@@ -1662,6 +1674,7 @@ public struct GamepadButtonCustomization: Codable, Equatable, Sendable {
         case cornerRadius
         case cornerRadii
         case shadowStrength
+        case showsIntegratedLabel
         case isLocationLocked
         case isHidden
     }
@@ -1813,6 +1826,15 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
             copy.triggerSettings = nil
             copy.trackpadSettings = nil
             if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
+        case .text:
+            copy.joystickMapping = nil
+            copy.joystickOutputSettings = nil
+            copy.triggerSettings = nil
+            copy.trackpadSettings = nil
+            copy.layout.showsIntegratedLabel = false
+            copy.layout.shadowStrength = 0
+            if copy.layout.shape == nil { copy.layout.shape = .rectangle }
+            if copy.label.isEmpty { copy.label = "Text" }
         case .decoration:
             copy.joystickMapping = nil
             copy.joystickOutputSettings = nil
@@ -1836,8 +1858,12 @@ public struct GamepadCustomButton: Codable, Equatable, Identifiable, Sendable {
         controlKind == .trackpad
     }
 
+    var isText: Bool {
+        controlKind == .text
+    }
+
     var isDecoration: Bool {
-        controlKind == .decoration
+        controlKind == .decoration || controlKind == .text
     }
 
     func visualLabel(fallback: String) -> String {
@@ -1952,6 +1978,17 @@ public struct KeypadElement: Codable, Equatable, Identifiable, Sendable {
             copy.trackpadSettings = nil
             if copy.layout.shape == nil { copy.layout.shape = .roundedRectangle }
             if copy.label.isEmpty { copy.label = copy.legacySlot.map(GamepadCustomization.defaultVisualLabel(for:)) ?? "Button" }
+        case .text:
+            copy.output = nil
+            copy.partOutputs.removeAll()
+            copy.joystickMapping = nil
+            copy.joystickOutputSettings = nil
+            copy.triggerSettings = nil
+            copy.trackpadSettings = nil
+            copy.layout.showsIntegratedLabel = false
+            copy.layout.shadowStrength = 0
+            if copy.layout.shape == nil { copy.layout.shape = .rectangle }
+            if copy.label.isEmpty { copy.label = "Text" }
         case .decoration:
             copy.output = nil
             copy.partOutputs.removeAll()
@@ -2978,6 +3015,35 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         upsertElementMirror(for: customButton, migratesLegacySlot: mappedButton != nil)
     }
 
+    public mutating func addText(
+        id: UUID = UUID(),
+        text: String = "Text",
+        centerX: CGFloat = 0.5,
+        centerY: CGFloat = 0.5,
+        widthScale: CGFloat = 1.4,
+        heightScale: CGFloat = 0.7
+    ) {
+        guard customButtons.count < Self.maximumCustomButtons else { return }
+        let textElement = GamepadCustomButton(
+            id: id,
+            mappedButton: .custom8,
+            label: normalizedGamepadLabel(text).isEmpty ? "Text" : text,
+            layout: GamepadButtonCustomization(
+                centerX: centerX,
+                centerY: centerY,
+                widthScale: widthScale,
+                heightScale: heightScale,
+                shape: .rectangle,
+                shadowStrength: 0,
+                showsIntegratedLabel: false
+            ),
+            controlKind: .text,
+            visualRole: .decoration
+        )
+        customButtons.append(textElement)
+        upsertElementMirror(for: textElement, migratesLegacySlot: false)
+    }
+
     public mutating func addDecoration(
         id: UUID = UUID(),
         label: String = "Decoration",
@@ -3584,8 +3650,12 @@ struct GamepadResolvedControl: Identifiable, Equatable {
         controlKind == .trackpad
     }
 
+    var isText: Bool {
+        controlKind == .text
+    }
+
     var isDecoration: Bool {
-        controlKind == .decoration
+        controlKind == .decoration || controlKind == .text
     }
 
     var frame: CGRect {
@@ -3831,6 +3901,8 @@ enum GamepadLayoutResolver {
                 baseControlSize = triggerBaseSize(controlScale: customization.controlScale, in: canvasSize)
             } else if normalizedButton.isTrackpad {
                 baseControlSize = trackpadBaseSize(controlScale: customization.controlScale, in: canvasSize)
+            } else if normalizedButton.isText {
+                baseControlSize = textBaseSize(controlScale: customization.controlScale, in: canvasSize)
             } else if normalizedButton.isDecoration {
                 baseControlSize = baseSize(for: .jump, controlScale: customization.controlScale, in: canvasSize)
             } else {
@@ -3923,6 +3995,11 @@ enum GamepadLayoutResolver {
                 trackpadSettings: nil
             )
         ]
+    }
+
+    private static func textBaseSize(controlScale: GamepadControlScale, in canvasSize: CGSize) -> CGSize {
+        let buttonSize = baseSize(for: .jump, controlScale: controlScale, in: canvasSize)
+        return CGSize(width: buttonSize.width, height: max(24, buttonSize.height * 0.58))
     }
 
     static func defaultShape(for button: GameButton) -> GamepadButtonShapeStyle {
@@ -7704,17 +7781,23 @@ struct GamepadRenderedControlFace: View {
         let presentation = resolvedPresentation
 
         ZStack {
-            if let glowColor = presentation.glowSwiftUIColor, presentation.glowRadius > 0 {
+            if !control.isText,
+               let glowColor = presentation.glowSwiftUIColor,
+               presentation.glowRadius > 0 {
                 controlSilhouette(fill: glowColor)
                     .blur(radius: presentation.glowRadius)
                     .opacity(0.68)
                     .allowsHitTesting(false)
             }
 
-            controlBackground(presentation: presentation)
-                .gamepadOuterShadows(presentation)
+            if !control.isText {
+                controlBackground(presentation: presentation)
+                    .gamepadOuterShadows(presentation)
+            }
 
-            if control.isDecoration {
+            if control.isText {
+                textContent(presentation: presentation)
+            } else if control.isDecoration {
                 if let icon = presentation.icon {
                     controlIcon(icon, presentation: presentation)
                         .padding(.horizontal, 4)
@@ -7786,6 +7869,23 @@ struct GamepadRenderedControlFace: View {
         }
     }
 
+    private func textContent(presentation: GamepadResolvedControlPresentation) -> some View {
+        Text(control.label)
+            .font(
+                .system(
+                    size: max(10, control.size.height * 0.72),
+                    weight: .semibold,
+                    design: .rounded
+                )
+            )
+            .lineLimit(1)
+            .minimumScaleFactor(0.12)
+            .allowsTightening(true)
+            .foregroundStyle(presentation.foregroundSwiftUIColor)
+            .padding(.horizontal, 2)
+            .allowsHitTesting(false)
+    }
+
     @ViewBuilder
     private func buttonContent(presentation: GamepadResolvedControlPresentation) -> some View {
         if let icon = presentation.icon {
@@ -7793,7 +7893,9 @@ struct GamepadRenderedControlFace: View {
                 .padding(.horizontal, 4)
         }
 
-        if customization.showsButtonLabels && (presentation.icon?.placement != .center || control.label.count <= 2) {
+        if customization.showsButtonLabels
+            && control.layoutCustomization.showsIntegratedLabel
+            && (presentation.icon?.placement != .center || control.label.count <= 2) {
             VStack(spacing: 1) {
                 nativeButtonLabel
                 if let visibleSecondaryBindingText {
@@ -7903,7 +8005,7 @@ struct GamepadRenderedControlFace: View {
                 .overlay(Circle().stroke(knobStrokeColor, lineWidth: 1))
                 .frame(width: visualSide * knobRatio, height: visualSide * knobRatio)
 
-            if customization.showsButtonLabels && !isThumbstick {
+            if customization.showsButtonLabels && control.layoutCustomization.showsIntegratedLabel && !isThumbstick {
                 VStack(spacing: 1) {
                     Text(control.label)
                         .geistTypography(visualSide <= 88 ? .button12 : .button14)
@@ -7956,7 +8058,7 @@ struct GamepadRenderedControlFace: View {
             HStack(spacing: 9) {
                 Image(systemName: "cursorarrow")
                     .font(.system(size: max(12, min(control.size.width, control.size.height) * 0.18), weight: .semibold))
-                if customization.showsButtonLabels {
+                if customization.showsButtonLabels && control.layoutCustomization.showsIntegratedLabel {
                     VStack(spacing: 1) {
                         Text(control.label)
                             .geistTypography(control.size.width <= 96 ? .button12 : .button14)
@@ -8469,6 +8571,9 @@ private struct GamepadEditorLayerModel {
                 let analogTarget = (customButton.joystickOutputSettings ?? .defaultValue).normalized.analogTarget
                 subtitle = analogTarget == .none ? "Joystick → 4 directions" : "Joystick → \(analogTarget.displayName)"
                 systemImage = "circle.grid.cross"
+            } else if customButton.isText {
+                subtitle = "Text layer"
+                systemImage = "textformat"
             } else if customButton.isDecoration {
                 subtitle = "Decoration layer"
                 systemImage = "square.3.layers.3d.down.right"
@@ -8530,6 +8635,7 @@ private struct GamepadEditorLayerModel {
         if customButton.isJoystick { return "Joystick" }
         if customButton.isTrigger { return (customButton.triggerSettings ?? .defaultValue).normalized.target.shortName }
         if customButton.isTrackpad { return "Trackpad" }
+        if customButton.isText { return "Text" }
         if customButton.isDecoration { return "Decoration" }
         return "Button"
     }
@@ -10236,6 +10342,13 @@ struct GamepadCustomizationEditor: View {
                     systemImage: "rectangle.roundedtop"
                 ) {
                     activeCanvasTool = .rectangle
+                }
+                addControlPaletteButton(
+                    title: "Text",
+                    subtitle: "Overlay a letter or caption",
+                    systemImage: "textformat"
+                ) {
+                    addTextControl()
                 }
                 addControlPaletteButton(
                     title: "Joystick",
@@ -13281,7 +13394,11 @@ struct GamepadCustomizationEditor: View {
             controlBarItemInspector(item)
         } else if selectedControlIsEditable {
             LazyVStack(alignment: .leading, spacing: 0) {
-                inspectorAccordionSection(.selectedElementIdentity, title: "Action & Label", subtitle: selectedControlTitle) {
+                inspectorAccordionSection(
+                    .selectedElementIdentity,
+                    title: selectedIdentitySectionTitle,
+                    subtitle: selectedControlTitle
+                ) {
                     selectedElementIdentitySection
                 }
 
@@ -13314,7 +13431,7 @@ struct GamepadCustomizationEditor: View {
                 inspectorAccordionSection(.selectedElementFill, title: "Appearance") {
                     VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
                         selectedElementColorSection
-                        if inspectorMode == .advanced {
+                        if inspectorMode == .advanced && !selectedControlIsText {
                             Divider()
                             selectedElementStyleFoundationSection
                             Divider()
@@ -13325,7 +13442,7 @@ struct GamepadCustomizationEditor: View {
                     }
                 }
 
-                if inspectorMode == .advanced {
+                if inspectorMode == .advanced && selectedControlAcceptsInput {
                     Divider()
                     inspectorAccordionSection(.selectedElementHaptic, title: "Feedback") {
                         selectedElementHapticControls
@@ -14172,9 +14289,14 @@ struct GamepadCustomizationEditor: View {
                     VStack(alignment: .leading, spacing: Geist.Spacing.s2) { selectedElementQuickActions }
                 }
 
-                controlSelectionPicker
-                selectedElementLabelControls
+                if selectedControlUsesInlineInspectorContent {
+                    selectedElementLabelControls
+                }
                 selectedElementOutputControls
+
+                if selectedControlIsButton {
+                    buttonTextLayerControls
+                }
 
                 if selectedControlSupportsVisualRole {
                     selectedElementVisualRoleControls
@@ -14197,8 +14319,66 @@ struct GamepadCustomizationEditor: View {
 
     private var selectedControlSupportsVisualRole: Bool {
         switch selectedControlID {
-        case .builtin, .custom: true
-        case .system, .controlBarItem: false
+        case .builtin:
+            true
+        case .custom(let id):
+            customButton(id: id)?.normalized.isDecoration != true
+        case .system, .controlBarItem:
+            false
+        }
+    }
+
+    private var selectedControlIsButton: Bool {
+        switch selectedControlID {
+        case .builtin:
+            true
+        case .custom(let id):
+            customButton(id: id)?.normalized.controlKind == .button
+        case .system, .controlBarItem:
+            false
+        }
+    }
+
+    private var selectedControlIsText: Bool {
+        guard case .custom(let id) = selectedControlID else { return false }
+        return customButton(id: id)?.normalized.isText == true
+    }
+
+    private var selectedControlAcceptsInput: Bool {
+        switch selectedControlID {
+        case .builtin:
+            true
+        case .custom(let id):
+            customButton(id: id)?.normalized.isDecoration != true
+        case .system, .controlBarItem:
+            false
+        }
+    }
+
+    private var selectedControlUsesInlineInspectorContent: Bool {
+        switch selectedControlID {
+        case .builtin:
+            false
+        case .custom(let id):
+            customButton(id: id)?.normalized.controlKind != .button
+        case .system, .controlBarItem:
+            true
+        }
+    }
+
+    private var buttonTextLayerControls: some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Button {
+                addTextControl()
+            } label: {
+                Label("Add Text Layer", systemImage: "textformat")
+            }
+            .geistButtonStyle(.secondary, size: .small)
+
+            Text("Buttons only define what a press sends. Add a separate text layer for a visible letter or caption, then move or group it with the button.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -14559,21 +14739,8 @@ struct GamepadCustomizationEditor: View {
     @ViewBuilder
     private var selectedElementLabelControls: some View {
         switch selectedControlID {
-        case .builtin(let button):
-            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Label")
-                    .geistTypography(.label13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                TextField(
-                    defaultLabel(for: button),
-                    text: labelBinding(for: button)
-                )
-                .geistInput(size: .small)
-                .focused($isElementLabelFieldFocused)
-                Text("Leave blank to use the element’s output label (\(defaultLabel(for: button))).")
-                    .geistTypography(.copy13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-            }
+        case .builtin:
+            EmptyView()
         case .custom(let id):
             if customButton(id: id) != nil {
                 customButtonControls(id: id)
@@ -14605,20 +14772,33 @@ struct GamepadCustomizationEditor: View {
     private var selectedElementOutputControls: some View {
         if let selectedElementOutputContent,
            let input = selectedPrimaryElementInputID {
+            selectedElementOutputContent(input)
+        }
+    }
+
+    @ViewBuilder
+    private var selectedElementColorSection: some View {
+        if selectedControlIsText {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Output")
-                    .geistTypography(.label13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                selectedElementOutputContent(input)
-                Text("This output is saved directly on the selected element. It can be a keyboard shortcut, a virtual controller button, or both.")
+                Text("Text Color")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                colorTextField(
+                    title: "Color",
+                    value: visualStyleColorHexBinding(for: selectedControlID, keyPath: \.foregroundColor),
+                    unit: nil
+                )
+                Text("Resize the text layer to change its type size. It remains non-interactive on the iPhone keypad.")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
+        } else {
+            selectedElementFillColorSection
         }
     }
 
-    private var selectedElementColorSection: some View {
+    private var selectedElementFillColorSection: some View {
         let editingScheme = activeKeypadColorScheme
         let colorValue = selectedFillColorValue(for: selectedControlID, scheme: editingScheme)
         let fillStyle = selectedLayoutCustomization(for: selectedControlID).fillStyle(for: editingScheme) ?? .solid(colorValue)
@@ -16386,6 +16566,8 @@ struct GamepadCustomizationEditor: View {
     private func customButtonControls(id: UUID) -> some View {
         if customButton(id: id)?.normalized.isJoystick == true {
             joystickControls(id: id)
+        } else if customButton(id: id)?.normalized.isText == true {
+            textControls(id: id)
         } else if customButton(id: id)?.normalized.isDecoration == true {
             decorationControls(id: id)
         } else if customButton(id: id)?.normalized.isTrigger == true {
@@ -16393,21 +16575,22 @@ struct GamepadCustomizationEditor: View {
         } else if customButton(id: id)?.normalized.isTrackpad == true {
             trackpadControls(id: id)
         } else {
-            VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Label")
-                    .geistTypography(.label13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            EmptyView()
+        }
+    }
 
-                let fallbackLabel = customButton(id: id).map { customButtonFallbackLabel(for: $0.normalized) } ?? "Button"
-                TextField(fallbackLabel, text: customLabelBinding(id: id))
-                    .geistInput(size: .small)
-                    .focused($isElementLabelFieldFocused)
-
-                Text("Use Output to assign the keyboard shortcut or virtual controller button this element sends.")
-                    .geistTypography(.copy13)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+    private func textControls(id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text("Text")
+                .geistTypography(.label13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+            TextField("Text", text: customLabelBinding(id: id))
+                .geistInput(size: .small)
+                .focused($isElementLabelFieldFocused)
+            Text("This layer is visual only. It is grouped automatically when added from a selected button; otherwise, command-click both layers and press ⌘G.")
+                .geistTypography(.copy13)
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -17058,15 +17241,31 @@ struct GamepadCustomizationEditor: View {
         return selectedControlIsEditable ? selectedControlTitle : "Keypad: \(selectedProfile?.name ?? "Current Setup")"
     }
 
+    private var selectedIdentitySectionTitle: String {
+        switch selectedControlID {
+        case .builtin:
+            "Action"
+        case .custom(let id):
+            customButton(id: id)?.normalized.isText == true
+                ? "Text"
+                : (customButton(id: id)?.normalized.isDecoration == true ? "Decoration" : "Action")
+        case .system:
+            "Behavior"
+        case .controlBarItem:
+            "Control Bar Item"
+        }
+    }
+
     private var selectedControlTitle: String {
         switch selectedControlID {
-        case .builtin(let button):
-            return "Button: \(visualLabel(for: button))"
+        case .builtin:
+            return "Button"
         case .custom(let id):
             guard let customButton = customButton(id: id)?.normalized else { return "Button" }
-            let kindLabel = customControlKindLabel(for: customButton)
-            let fallback = customButtonFallbackLabel(for: customButton)
-            return "\(kindLabel): \(customButton.visualLabel(fallback: fallback))"
+            if customButton.isText {
+                return "Text"
+            }
+            return customControlKindLabel(for: customButton)
         case .system(let control):
             return control.displayName
         case .controlBarItem(let item):
@@ -17078,6 +17277,7 @@ struct GamepadCustomizationEditor: View {
         if customButton.isJoystick { return "Joystick" }
         if customButton.isTrigger { return "Trigger" }
         if customButton.isTrackpad { return "Trackpad" }
+        if customButton.isText { return "Text" }
         if customButton.isDecoration { return "Decoration" }
         return "Button"
     }
@@ -17086,6 +17286,7 @@ struct GamepadCustomizationEditor: View {
         if customButton.isJoystick { return "Joystick" }
         if customButton.isTrigger { return (customButton.triggerSettings ?? .defaultValue).normalized.target.shortName }
         if customButton.isTrackpad { return "Trackpad" }
+        if customButton.isText { return "Text" }
         if customButton.isDecoration { return "Decoration" }
         return "Button"
     }
@@ -19466,7 +19667,23 @@ struct GamepadCustomizationEditor: View {
                         centerY: 0.5,
                         widthScale: 1.0,
                         heightScale: 1.0,
-                        shape: .roundedRectangle
+                        shape: .roundedRectangle,
+                        showsIntegratedLabel: false
+                    )
+                    $0.joystickMapping = nil
+                    $0.joystickOutputSettings = nil
+                    $0.triggerSettings = nil
+                    $0.trackpadSettings = nil
+                case .text:
+                    $0.label = "Text"
+                    $0.layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.5,
+                        widthScale: 1.4,
+                        heightScale: 0.7,
+                        shape: .rectangle,
+                        shadowStrength: 0,
+                        showsIntegratedLabel: false
                     )
                     $0.joystickMapping = nil
                     $0.joystickOutputSettings = nil
@@ -19795,6 +20012,78 @@ struct GamepadCustomizationEditor: View {
         next.addTrackpad(id: id)
         placeCustomControl(id: id, in: &next)
         applyCustomization(next, selecting: .custom(id), undoActionName: "Add Trackpad")
+    }
+
+    private func addTextControl() {
+        let id = UUID()
+        var next = customization
+        let sourceIdentity = selectedControlIDs.count == 1 && selectedControlIsButton
+            ? selectedControlID
+            : nil
+        let sourceControl = sourceIdentity.flatMap { identity in
+            next.resolvedControls(in: currentCanvasLayoutSize).first { $0.id == identity }
+        }
+        next.addText(
+            id: id,
+            text: sourceControl?.label ?? "Text",
+            centerX: sourceControl?.normalizedCenter.x ?? 0.5,
+            centerY: sourceControl?.normalizedCenter.y ?? 0.5,
+            widthScale: sourceControl.map { max(0.5, $0.size.width / 76) } ?? 1.4,
+            heightScale: sourceControl.map { max(0.5, $0.size.height / 44) } ?? 0.7
+        )
+
+        if let sourceIdentity {
+            setIntegratedLabel(false, for: sourceIdentity, in: &next)
+            groupTextLayer(.custom(id), with: sourceIdentity, in: &next)
+        }
+
+        applyCustomization(next, selecting: .custom(id), undoActionName: "Add Text Layer")
+        DispatchQueue.main.async {
+            isElementLabelFieldFocused = true
+        }
+    }
+
+    private func setIntegratedLabel(
+        _ isVisible: Bool,
+        for identity: GamepadControlIdentity,
+        in customization: inout GamepadCustomization
+    ) {
+        switch identity {
+        case .builtin(let button):
+            var layout = customization.buttonCustomization(for: button)
+            layout.showsIntegratedLabel = isVisible
+            customization.setButtonCustomization(layout, for: button)
+        case .custom(let id):
+            guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { return }
+            customization.customButtons[index].layout.showsIntegratedLabel = isVisible
+        case .system, .controlBarItem:
+            break
+        }
+    }
+
+    private func groupTextLayer(
+        _ textIdentity: GamepadControlIdentity,
+        with sourceIdentity: GamepadControlIdentity,
+        in customization: inout GamepadCustomization
+    ) {
+        var metadata = customization.designMetadata ?? .empty
+        if let groupIndex = metadata.groups.firstIndex(where: { $0.children.contains(sourceIdentity) }) {
+            if !metadata.groups[groupIndex].children.contains(textIdentity) {
+                metadata.groups[groupIndex].children.append(textIdentity)
+            }
+        } else {
+            metadata.groups.append(
+                GamepadLayerGroup(name: "Button Label", children: [sourceIdentity, textIdentity])
+            )
+        }
+
+        var order = customization.orderedControlIdentitiesForDesign.filter { $0 != textIdentity }
+        let insertionIndex = min((order.firstIndex(of: sourceIdentity) ?? (order.count - 1)) + 1, order.count)
+        order.insert(textIdentity, at: max(0, insertionIndex))
+        metadata.layerOrder = order
+        customization.designMetadata = metadata.normalized(
+            availableControls: customization.allControlIdentitiesForDesign
+        )
     }
 
     private func addDecorationControl(kind: GamepadDecorationTemplateKind) {
@@ -24163,13 +24452,14 @@ private struct GamepadLayoutDesigner: View {
 
         let baseControl = next.resolvedControls(in: canvasSize).first { $0.id == .custom(id) }
         let baseSize = baseControl?.size ?? Self.defaultDrawnButtonSize
-        next.customButtons[index].label = tool.displayName
+        next.customButtons[index].label = "Button"
         next.customButtons[index].layout = GamepadButtonCustomization(
             centerX: placementRect.midX / max(canvasSize.width, 1),
             centerY: placementRect.midY / max(canvasSize.height, 1),
             widthScale: placementRect.width / max(baseSize.width, 1),
             heightScale: placementRect.height / max(baseSize.height, 1),
-            shape: shape
+            shape: shape,
+            showsIntegratedLabel: false
         )
 
         customization = next.normalized
@@ -25395,7 +25685,7 @@ private struct GamepadDesignerButton: View {
         .modifier(
             GamepadDesignerAccessibilityActionsModifier(
                 isTestMode: isTestMode,
-                supportsCornerRadius: control.shape.usesEditableCornerRadii,
+                supportsCornerRadius: control.shape.usesEditableCornerRadii && !control.isText,
                 onTest: onAccessibilityTest,
                 onSelect: onAccessibilitySelect,
                 onNudge: onAccessibilityNudge,
@@ -25454,7 +25744,7 @@ private struct GamepadDesignerButton: View {
                     .position(handlePosition(for: corner))
             }
 
-            if control.shape.usesEditableCornerRadii {
+            if control.shape.usesEditableCornerRadii && !control.isText {
                 radiusHandle
                     .position(radiusHandlePosition)
             }

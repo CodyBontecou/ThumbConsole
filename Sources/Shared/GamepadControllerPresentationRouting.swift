@@ -111,7 +111,7 @@ enum GamepadControllerPresentationRouting {
         hasTriggerSettings: Bool
     ) -> GamepadResolvedControlRoute {
         switch kind {
-        case .decoration:
+        case .text, .decoration:
             return .decoration
         case .joystick where hasJoystickMapping:
             return .joystick

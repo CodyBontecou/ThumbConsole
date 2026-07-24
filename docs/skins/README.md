@@ -115,6 +115,8 @@ A universal skin styles semantic roles on any keypad. A `template_aligned` skin 
 
 Underlay and overlay artwork layers are normalized, z-ordered, non-interactive, accessibility-hidden decorations. They support bounded frames, opacity, rotation, and normal/multiply/screen/overlay/soft-light blending. Layers never carry bindings, labels, or geometry.
 
+Profile-level text elements are also passive native layers, but they remain editable keypad geometry rather than packaged artwork. Their control kind is `text`, they inherit the `decoration` semantic role for skin styling, and they never carry keyboard, pointer, or gamepad output.
+
 ## Assets and nine-slice media
 
 Each asset has a normalized ID and a path under `assets/`. Reference the ID from an image fill, artwork layer, or asset icon—never an absolute path. PocketPad materializes package resources into its native asset library when rendering or customizing a skin.

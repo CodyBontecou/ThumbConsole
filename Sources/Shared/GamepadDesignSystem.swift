@@ -1707,6 +1707,8 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
             layout.styleID = "soft-white-raised"
             if controlKind == .trigger { layout.shape = .capsule }
             if controlKind == .trackpad { layout.shape = .roundedRectangle }
+        case .text:
+            layout.styleID = "soft-white-lavender"
         case .decoration:
             layout.styleID = "soft-white-plate"
         case .button:

@@ -3600,7 +3600,7 @@ struct ThumbConsoleCLI {
     }
 
     private static func addElement(arguments: [String]) throws {
-        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: thumbconsole element add <button|joystick|trigger|trackpad|decoration> [options]") }
+        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: thumbconsole element add <button|joystick|trigger|trackpad|text|decoration> [options]") }
         let kind = try parseCustomControlKind(kindText)
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             guard customization.customButtons.count < GamepadCustomization.maximumCustomButtons else { throw CLIError.message("Maximum custom element count reached") }
@@ -3617,11 +3617,12 @@ struct ThumbConsoleCLI {
             let id = UUID()
             let triggerCount = customization.customButtons.filter { $0.normalized.isTrigger }.count
             let defaultTriggerTarget: VirtualGamepadTrigger = triggerCount == 0 ? .left : .right
-            let mapped = try optionValue("--maps-to", in: arguments).map(parseButton) ?? (kind == .joystick ? .up : (kind == .decoration ? .custom8 : firstAvailableCustomSlot(in: customization) ?? .custom1))
+            let isPassiveLayer = kind == .text || kind == .decoration
+            let mapped = try optionValue("--maps-to", in: arguments).map(parseButton) ?? (kind == .joystick ? .up : (isPassiveLayer ? .custom8 : firstAvailableCustomSlot(in: customization) ?? .custom1))
             var customButton = GamepadCustomButton(
                 id: id,
                 mappedButton: mapped,
-                label: optionValue("--label", in: arguments) ?? (kind == .trigger ? defaultTriggerTarget.shortName : defaultLabel(for: kind)),
+                label: optionValue("--text", in: arguments) ?? optionValue("--label", in: arguments) ?? (kind == .trigger ? defaultTriggerTarget.shortName : defaultLabel(for: kind)),
                 controlKind: kind,
                 visualRole: try (optionValue("--visual-role", in: arguments) ?? optionValue("--skin-role", in: arguments)).map(parseVisualRole),
                 joystickMapping: kind == .joystick ? try joystickMapping(from: arguments) : nil,
@@ -3630,6 +3631,9 @@ struct ThumbConsoleCLI {
                 trackpadSettings: kind == .trackpad ? .defaultValue : nil
             )
             try applyLayoutOptions(arguments, to: &customButton.layout)
+            if kind == .button {
+                customButton.layout.showsIntegratedLabel = false
+            }
             if kind == .joystick {
                 customButton.layout.shape = .circle
                 let defaultScale: CGFloat = customButton.layout.joystickVisualStyle == .thumbstick ? 0.58 : 1.35
@@ -3664,6 +3668,16 @@ struct ThumbConsoleCLI {
                 }
                 customButton.triggerSettings = nil
                 customButton.trackpadSettings = try trackpadSettings(from: arguments)
+            } else if kind == .text {
+                customButton.layout.shape = .rectangle
+                customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 1.4 : customButton.layout.widthScale
+                customButton.layout.heightScale = customButton.layout.heightScale == 1.0 ? 0.7 : customButton.layout.heightScale
+                customButton.layout.shadowStrength = 0
+                customButton.layout.showsIntegratedLabel = false
+                customButton.joystickMapping = nil
+                customButton.joystickOutputSettings = nil
+                customButton.triggerSettings = nil
+                customButton.trackpadSettings = nil
             } else if kind == .decoration {
                 customButton.layout.shape = customButton.layout.shape ?? .roundedRectangle
                 customButton.layout.widthScale = customButton.layout.widthScale == 1.0 ? 2.2 : customButton.layout.widthScale
@@ -3678,7 +3692,7 @@ struct ThumbConsoleCLI {
                 customButton.trackpadSettings = nil
             }
             customization.customButtons.append(customButton)
-            if kind != .decoration && hasAnyOption(elementOutputOptionNames, in: arguments) {
+            if !isPassiveLayer && hasAnyOption(elementOutputOptionNames, in: arguments) {
                 try applyElementOutputOptions(arguments, target: .custom(id), to: &customization)
             }
         }
@@ -3710,8 +3724,10 @@ struct ThumbConsoleCLI {
             case .custom(let id):
                 guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { throw CLIError.message("Custom element not found") }
                 if arguments.contains("--clear-label") {
-                    customization.customButtons[index].label = customization.visualLabel(for: customization.customButtons[index].mappedButton)
-                } else if let label = optionValue("--label", in: arguments) {
+                    customization.customButtons[index].label = customization.customButtons[index].controlKind == .text
+                        ? "Text"
+                        : customization.visualLabel(for: customization.customButtons[index].mappedButton)
+                } else if let label = optionValue("--text", in: arguments) ?? optionValue("--label", in: arguments) {
                     customization.customButtons[index].label = normalizedLabel(label)
                 }
                 if let mapped = optionValue("--maps-to", in: arguments) { customization.customButtons[index].mappedButton = try parseButton(mapped) }
@@ -3747,6 +3763,14 @@ struct ThumbConsoleCLI {
                     customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].layout.shape = customization.customButtons[index].layout.shape ?? .roundedRectangle
                     customization.customButtons[index].trackpadSettings = try trackpadSettings(from: arguments, fallback: customization.customButtons[index].trackpadSettings ?? .defaultValue)
+                } else if customization.customButtons[index].controlKind == .text {
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].joystickOutputSettings = nil
+                    customization.customButtons[index].triggerSettings = nil
+                    customization.customButtons[index].trackpadSettings = nil
+                    customization.customButtons[index].layout.shape = .rectangle
+                    customization.customButtons[index].layout.shadowStrength = 0
+                    customization.customButtons[index].layout.showsIntegratedLabel = false
                 } else if customization.customButtons[index].controlKind == .decoration {
                     customization.customButtons[index].joystickMapping = nil
                     customization.customButtons[index].joystickOutputSettings = nil
@@ -3966,9 +3990,24 @@ struct ThumbConsoleCLI {
                         centerY: 0.5,
                         widthScale: 1.0,
                         heightScale: 1.0,
-                        shape: .roundedRectangle
+                        shape: .roundedRectangle,
+                        showsIntegratedLabel: false
                     )
                     customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].trackpadSettings = nil
+                case .text:
+                    customization.customButtons[index].layout = GamepadButtonCustomization(
+                        centerX: 0.5,
+                        centerY: 0.5,
+                        widthScale: 1.4,
+                        heightScale: 0.7,
+                        shape: .rectangle,
+                        shadowStrength: 0,
+                        showsIntegratedLabel: false
+                    )
+                    customization.customButtons[index].joystickMapping = nil
+                    customization.customButtons[index].joystickOutputSettings = nil
+                    customization.customButtons[index].triggerSettings = nil
                     customization.customButtons[index].trackpadSettings = nil
                 case .decoration:
                     customization.customButtons[index].layout = GamepadButtonCustomization(
@@ -4011,6 +4050,11 @@ struct ThumbConsoleCLI {
         if let value = optionValue("--y", in: arguments) ?? optionValue("--center-y", in: arguments), let number = Double(value) { layout.centerY = CGFloat(number) }
         if let value = optionValue("--width", in: arguments) ?? optionValue("--width-scale", in: arguments), let number = Double(value) { layout.widthScale = CGFloat(number) }
         if let value = optionValue("--height", in: arguments) ?? optionValue("--height-scale", in: arguments), let number = Double(value) { layout.heightScale = CGFloat(number) }
+        if arguments.contains("--show-integrated-label") { layout.showsIntegratedLabel = true }
+        if arguments.contains("--hide-integrated-label") { layout.showsIntegratedLabel = false }
+        if let value = optionValue("--integrated-label", in: arguments) {
+            layout.showsIntegratedLabel = try parseBool(value)
+        }
         if let value = optionValue("--z-index", in: arguments) ?? optionValue("--z", in: arguments) ?? optionValue("--zindex", in: arguments) {
             layout.zIndex = GamepadButtonCustomization.normalizedZIndex(try parseInteger(value))
         }
@@ -5628,6 +5672,7 @@ struct ThumbConsoleCLI {
         if normalized == "stick" { return .joystick }
         if normalized == "trigger" || normalized == "slider" { return .trigger }
         if normalized == "touchpad" || normalized == "trackpad" || normalized == "cursorpad" { return .trackpad }
+        if normalized == "text" || normalized == "label" || normalized == "caption" || normalized == "letter" { return .text }
         if normalized == "decoration" || normalized == "decor" || normalized == "visual" || normalized == "plate" || normalized == "panel" || normalized == "ring" { return .decoration }
         throw CLIError.message("Unknown element kind: \(text)")
     }
@@ -5713,6 +5758,7 @@ struct ThumbConsoleCLI {
         case .joystick: return "Joystick"
         case .trigger: return "Trigger"
         case .trackpad: return "Trackpad"
+        case .text: return "Text"
         case .decoration: return "Decoration"
         }
     }
@@ -6373,8 +6419,10 @@ struct ThumbConsoleCLI {
           thumbconsole element add joystick --label Nub --thumbstick --target right-stick --no-digital-directions --x 0.5 --y 0.58
           thumbconsole element add trigger --target left --orientation horizontal --sensitivity 1.2
           thumbconsole element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
+          thumbconsole element add text --text Z --x 0.5 --y 0.5 --width 1.2 --height 0.8 --text-color '#FFFFFF'
           thumbconsole element add decoration --label Shell --material soft-white-plate --x 0.5 --y 0.5 --width 3.2 --height 1.5 --shape rounded_rectangle
-          thumbconsole element set jump --keyboard Space --gamepad south
+          thumbconsole element set jump --keyboard Space --gamepad south --hide-integrated-label
+          thumbconsole element set "Text" --text Jump --text-color '#FFFFFF'
           thumbconsole element set jump --clear-label
           thumbconsole element set jump --skin-role primary-action --hit-insets 16
           thumbconsole element set "Menu" --visual-role menu --hit-insets 10,18,14,18

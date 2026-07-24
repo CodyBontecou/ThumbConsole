@@ -4732,7 +4732,7 @@ private struct GamepadJoystick: View {
                     .allowsHitTesting(false)
             }
 
-            if customization.showsButtonLabels && !isThumbstick {
+            if customization.showsButtonLabels && elementCustomization.showsIntegratedLabel && !isThumbstick {
                 VStack(spacing: 1) {
                     Text(label)
                         .geistTypography(visualSide <= 88 ? .button12 : .button14)
@@ -4931,7 +4931,7 @@ private struct GamepadTrigger: View {
                 )
                 .allowsHitTesting(false)
 
-            if customization.showsButtonLabels {
+            if customization.showsButtonLabels && elementCustomization.showsIntegratedLabel {
                 HStack(spacing: 5) {
                     Text(label)
                         .geistTypography(size.height <= 44 ? .button12 : .button14)
@@ -5277,7 +5277,7 @@ private struct GamepadTrackpad: View {
                     .font(.system(size: max(18, min(size.width, size.height) * 0.20), weight: .semibold))
                     .foregroundStyle(foregroundColor.opacity(isActive ? 0.95 : 0.70))
 
-                if customization.showsButtonLabels {
+                if customization.showsButtonLabels && elementCustomization.showsIntegratedLabel {
                     VStack(spacing: 2) {
                         Text(label)
                             .geistTypography(size.width <= 112 ? .button12 : .button14)
@@ -5554,7 +5554,9 @@ private struct GamepadButton: View {
                 .padding(.horizontal, 4)
         }
 
-        if customization.showsButtonLabels && (presentation.icon?.placement != .center || title.count <= 2) {
+        if customization.showsButtonLabels
+            && (elementCustomization?.showsIntegratedLabel ?? true)
+            && (presentation.icon?.placement != .center || title.count <= 2) {
             VStack(spacing: 1) {
                 Text(title)
                     .geistTypography(title.count <= 2 ? .heading32 : .button16)
