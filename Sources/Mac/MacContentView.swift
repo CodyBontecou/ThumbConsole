@@ -9,6 +9,7 @@ struct MacContentView: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @AppStorage(ThumbConsoleMacIPC.onboardingCompletedDefaultsKey) private var hasCompletedOnboarding = false
     @State private var selectedSection: MacSidebarSection? = .gamepad
     @State private var advancedConfigExpanded = false
@@ -19,45 +20,32 @@ struct MacContentView: View {
     @State private var keypadExportFilename = ThumbConsoleKeypadConfigurationExport.suggestedFilename()
     @State private var keypadExportError: String?
 
+    private var shouldPresentOnboarding: Bool {
+        !hasCompletedOnboarding || isShowingOnboarding
+    }
+
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selectedSection) {
-                ForEach(MacSidebarSection.allCases) { section in
-                    Label(section.title, systemImage: section.systemImage)
-                        .tag(section)
-                }
-            }
-            .navigationTitle("ThumbConsole")
-            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
-        } detail: {
-            selectedContent
-                .navigationTitle((selectedSection ?? .home).title)
-        }
-        .geistScreenBackground()
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    isShowingOnboarding = true
-                } label: {
-                    Label("Setup Guide", systemImage: "questionmark.circle")
-                }
+        ZStack {
+            if shouldPresentOnboarding {
+                MacOnboardingView(
+                    onOpenEditor: {
+                        hasCompletedOnboarding = true
+                        isShowingOnboarding = false
+                        selectedSection = .gamepad
+                    },
+                    onComplete: {
+                        hasCompletedOnboarding = true
+                        isShowingOnboarding = false
+                    }
+                )
+                .environmentObject(server)
+                .transition(accessibilityReduceMotion ? .identity : .opacity)
+            } else {
+                applicationContent
+                    .transition(accessibilityReduceMotion ? .identity : .opacity)
             }
         }
-        .sheet(isPresented: $isShowingOnboarding) {
-            MacOnboardingView(
-                onOpenEditor: {
-                    hasCompletedOnboarding = true
-                    isShowingOnboarding = false
-                    selectedSection = .gamepad
-                },
-                onComplete: {
-                    hasCompletedOnboarding = true
-                    isShowingOnboarding = false
-                }
-            )
-            .environmentObject(server)
-            .frame(minWidth: 740, idealWidth: 860, minHeight: 560, idealHeight: 640)
-        }
+        .animation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.24), value: shouldPresentOnboarding)
         .fileExporter(
             isPresented: $isExportingKeypadConfiguration,
             document: keypadExportDocument,
@@ -82,10 +70,30 @@ struct MacContentView: View {
         } message: {
             Text(keypadExportError ?? "The keypad could not be exported.")
         }
-        .onAppear {
-            guard !hasCompletedOnboarding else { return }
-            DispatchQueue.main.async {
-                isShowingOnboarding = true
+    }
+
+    private var applicationContent: some View {
+        NavigationSplitView {
+            List(selection: $selectedSection) {
+                ForEach(MacSidebarSection.allCases) { section in
+                    Label(section.title, systemImage: section.systemImage)
+                        .tag(section)
+                }
+            }
+            .navigationTitle("ThumbConsole")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
+        } detail: {
+            selectedContent
+                .navigationTitle((selectedSection ?? .home).title)
+        }
+        .geistScreenBackground()
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    isShowingOnboarding = true
+                } label: {
+                    Label("Setup Guide", systemImage: "questionmark.circle")
+                }
             }
         }
     }
@@ -1932,7 +1940,9 @@ private enum MacOnboardingStep: String, CaseIterable, Identifiable, Hashable {
 private struct MacOnboardingView: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var selectedStep: MacOnboardingStep = .welcome
+    @State private var navigationDirection = 1
 
     let onOpenEditor: () -> Void
     let onComplete: () -> Void
@@ -1951,15 +1961,27 @@ private struct MacOnboardingView: View {
 
             HStack(spacing: 0) {
                 sidebar
-                    .frame(width: 228)
+                    .frame(width: 244)
 
                 Divider()
                     .overlay(Geist.color(.grayAlpha400, scheme: colorScheme))
 
-                ScrollView(.vertical, showsIndicators: false) {
-                    stepContent
-                        .padding(Geist.Spacing.s8)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        Color.clear
+                            .frame(height: 0)
+                            .id("mac-onboarding-top")
+
+                        stepContent
+                            .id(selectedStep)
+                            .transition(stepTransition)
+                            .padding(Geist.Spacing.s8)
+                            .frame(maxWidth: 900, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, alignment: .top)
+                    }
+                    .onChange(of: selectedStep) { _, _ in
+                        scrollProxy.scrollTo("mac-onboarding-top", anchor: .top)
+                    }
                 }
             }
 
@@ -1968,44 +1990,76 @@ private struct MacOnboardingView: View {
 
             footer
         }
-        .geistScreenBackground()
+        .background {
+            Geist.color(.background200, scheme: colorScheme)
+                .overlay(alignment: .topTrailing) {
+                    Circle()
+                        .fill(Geist.color(.blue200, scheme: colorScheme).opacity(0.42))
+                        .frame(width: 360, height: 360)
+                        .blur(radius: 110)
+                        .offset(x: 140, y: -180)
+                }
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+        }
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: Geist.Spacing.s4) {
-            Image(systemName: selectedStep.systemImage)
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                .frame(width: 48, height: 48)
-                .background(Geist.color(.gray100, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
-                        .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
-                )
+        VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
+            HStack(alignment: .center, spacing: Geist.Spacing.s4) {
+                Image(systemName: "rectangle.grid.2x2.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(Geist.color(.background100, scheme: colorScheme))
+                    .frame(width: 48, height: 48)
+                    .background(Geist.color(.gray1000, scheme: colorScheme), in: RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous))
+                    .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                Text("Set up ThumbConsole")
-                    .geistTypography(.heading24)
-                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
-                Text("Enable the Mac helper, pair your iPhone, then customize the keypad that syncs to the phone.")
-                    .geistTypography(.copy14)
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("ThumbConsole")
+                        .geistTypography(.heading24)
+                        .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    Text("Guided setup · Step \(selectedIndex + 1) of \(steps.count)")
+                        .geistTypography(.label13)
+                        .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                }
+
+                Spacer(minLength: Geist.Spacing.s4)
+
+                MacStatusPill(
+                    title: readinessSummary,
+                    systemImage: server.accessibilityTrusted && server.isRunning && server.isClientConnected ? "checkmark.circle.fill" : "list.bullet.clipboard.fill",
+                    tone: server.accessibilityTrusted && server.isRunning && server.isClientConnected ? .success : .warning
+                )
             }
 
-            Spacer(minLength: Geist.Spacing.s4)
-
-            MacStatusPill(
-                title: readinessSummary,
-                systemImage: server.accessibilityTrusted && server.isRunning && server.isClientConnected ? "checkmark.circle.fill" : "list.bullet.clipboard.fill",
-                tone: server.accessibilityTrusted && server.isRunning && server.isClientConnected ? .success : .warning
-            )
+            ProgressView(value: Double(selectedIndex + 1), total: Double(steps.count))
+                .tint(Geist.color(.blue700, scheme: colorScheme))
+                .accessibilityLabel("Setup progress")
+                .accessibilityValue("Step \(selectedIndex + 1) of \(steps.count), \(selectedStep.title)")
         }
-        .padding(Geist.Spacing.s6)
+        .padding(.horizontal, Geist.Spacing.s6)
+        .padding(.vertical, Geist.Spacing.s4)
+        .background(Geist.color(.background100, scheme: colorScheme).opacity(0.96))
+    }
+
+    private var stepTransition: AnyTransition {
+        guard !accessibilityReduceMotion else { return .identity }
+        let incomingEdge: Edge = navigationDirection > 0 ? .trailing : .leading
+        let outgoingEdge: Edge = navigationDirection > 0 ? .leading : .trailing
+        return .asymmetric(
+            insertion: .move(edge: incomingEdge).combined(with: .opacity),
+            removal: .move(edge: outgoingEdge).combined(with: .opacity)
+        )
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
+            Text("SETUP PROGRESS")
+                .geistTypography(.label12Mono)
+                .foregroundStyle(Geist.color(.gray800, scheme: colorScheme))
+                .padding(.horizontal, Geist.Spacing.s2)
+                .padding(.bottom, Geist.Spacing.s1)
+
             ForEach(steps) { step in
                 onboardingStepButton(step)
             }
@@ -2037,15 +2091,20 @@ private struct MacOnboardingView: View {
 
     private func onboardingStepButton(_ step: MacOnboardingStep) -> some View {
         let isSelected = step == selectedStep
+        let stepNumber = (steps.firstIndex(of: step) ?? 0) + 1
 
         return Button {
-            selectedStep = step
+            selectStep(step)
         } label: {
             HStack(spacing: Geist.Spacing.s3) {
-                Image(systemName: step.systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isSelected ? Geist.color(.gray1000, scheme: colorScheme) : Geist.color(.gray900, scheme: colorScheme))
-                    .frame(width: 18)
+                Text("\(stepNumber)")
+                    .geistTypography(.heading14)
+                    .foregroundStyle(isSelected ? Geist.color(.background100, scheme: colorScheme) : Geist.color(.gray900, scheme: colorScheme))
+                    .frame(width: 28, height: 28)
+                    .background(
+                        isSelected ? Geist.color(.gray1000, scheme: colorScheme) : Geist.color(.gray100, scheme: colorScheme),
+                        in: Circle()
+                    )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(step.title)
@@ -2070,6 +2129,9 @@ private struct MacOnboardingView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Step \(stepNumber), \(step.title)")
+        .accessibilityValue(isSelected ? "Current step" : step.subtitle)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     @ViewBuilder
@@ -2089,15 +2151,18 @@ private struct MacOnboardingView: View {
     private var welcomeStep: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                Text("Your iPhone becomes a programmable Mac keypad.")
+                Text("Your shortcuts, exactly where you need them.")
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
                 Text("ThumbConsole Mac receives button presses from the iPhone and turns them into keyboard shortcuts, pointer gestures, or virtual controller output for the focused Mac app.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            MacOnboardingSystemPreview()
 
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: Geist.Spacing.s4) {
@@ -2124,9 +2189,10 @@ private struct MacOnboardingView: View {
     private var permissionsStep: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Grant the permissions ThumbConsole needs.")
+                Text("Grant two focused permissions.")
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .accessibilityAddTraits(.isHeader)
                 Text("macOS controls both keyboard injection and local-network discovery. The Mac helper can run before permissions are complete, but shortcuts will not fire until Accessibility is allowed.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -2177,6 +2243,7 @@ private struct MacOnboardingView: View {
                 Text("Connect the iPhone to this Mac.")
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                    .accessibilityAddTraits(.isHeader)
                 Text("Use Smart Connect first. If the iPhone does not find this Mac automatically, scan the QR code or enter a local address and the six-digit pairing code.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -2319,10 +2386,11 @@ private struct MacOnboardingView: View {
     private var editorStep: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Customize the keypad before or after pairing.")
+                Text("Make the keypad yours.")
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
                 Text("The Mac Keypad editor is where profiles, layout, colors, haptics, shortcuts, and output mode are saved. Changes sync to the connected iPhone automatically.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
@@ -2337,45 +2405,48 @@ private struct MacOnboardingView: View {
                 MacOnboardingInstructionCard(step: "5", title: "Sync and test", text: "Focus the Mac app you want to control. The connected iPhone receives the current profile and can switch setups from its Keypad menu.")
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: Geist.Spacing.s3) {
-                    Button("Open Keypad Editor") { onOpenEditor() }
-                        .geistButtonStyle(.primary)
-                    Button("Finish Guide") { onComplete() }
-                        .geistButtonStyle(.secondary)
-                }
+            HStack(spacing: Geist.Spacing.s3) {
+                Button("Open Keypad Editor") { onOpenEditor() }
+                    .geistButtonStyle(.primary, size: .large)
 
-                VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                    Button("Open Keypad Editor") { onOpenEditor() }
-                        .geistButtonStyle(.primary)
-                    Button("Finish Guide") { onComplete() }
-                        .geistButtonStyle(.secondary)
-                }
+                MacOnboardingCallout(
+                    title: "Changes sync automatically",
+                    text: "You can return to this guide any time from the question-mark button in the toolbar.",
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
             }
         }
     }
 
     private var footer: some View {
         HStack(spacing: Geist.Spacing.s3) {
-            Button("Skip Guide") { onComplete() }
-                .geistButtonStyle(.tertiary)
+            if !isLastStep {
+                Button("Set Up Later") { onComplete() }
+                    .geistButtonStyle(.tertiary, size: .large)
+                    .accessibilityHint("Closes the guide. You can reopen it from the toolbar.")
+            }
 
             Spacer(minLength: Geist.Spacing.s4)
 
-            Button("Back") { moveSelection(by: -1) }
-                .geistButtonStyle(.secondary)
-                .disabled(isFirstStep)
+            if !isFirstStep {
+                Button("Back") { moveSelection(by: -1) }
+                    .geistButtonStyle(.secondary, size: .large)
+            }
 
-            Button(isLastStep ? "Finish" : "Next") {
+            Button(isLastStep ? "Open ThumbConsole" : (isFirstStep ? "Get Started" : "Continue")) {
                 if isLastStep {
                     onComplete()
                 } else {
                     moveSelection(by: 1)
                 }
             }
-            .geistButtonStyle(.primary)
+            .geistButtonStyle(.primary, size: .large)
+            .frame(minWidth: 144)
+            .accessibilityHint(isLastStep ? "Finishes setup and opens ThumbConsole." : "Advances to the next setup step.")
         }
-        .padding(Geist.Spacing.s4)
+        .padding(.horizontal, Geist.Spacing.s6)
+        .padding(.vertical, Geist.Spacing.s3)
+        .background(Geist.color(.background100, scheme: colorScheme).opacity(0.98))
     }
 
     private var readinessSummary: String {
@@ -2383,15 +2454,118 @@ private struct MacOnboardingView: View {
         return readyCount == 3 ? "Ready" : "\(readyCount) of 3 ready"
     }
 
+    private func selectStep(_ step: MacOnboardingStep) {
+        guard let nextIndex = steps.firstIndex(of: step), nextIndex != selectedIndex else { return }
+        navigationDirection = nextIndex > selectedIndex ? 1 : -1
+        updateSelection(step)
+    }
+
     private func moveSelection(by offset: Int) {
         let nextIndex = min(max(selectedIndex + offset, 0), steps.count - 1)
-        selectedStep = steps[nextIndex]
+        guard nextIndex != selectedIndex else { return }
+        navigationDirection = offset >= 0 ? 1 : -1
+        updateSelection(steps[nextIndex])
+    }
+
+    private func updateSelection(_ step: MacOnboardingStep) {
+        if accessibilityReduceMotion {
+            selectedStep = step
+        } else {
+            withAnimation(.easeInOut(duration: 0.28)) {
+                selectedStep = step
+            }
+        }
     }
 
     private func copyToPasteboard(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+}
+
+private struct MacOnboardingSystemPreview: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: Geist.Spacing.s3) {
+            stage(
+                title: "Tap on iPhone",
+                subtitle: "A keypad control sends its assigned action.",
+                systemImage: "iphone.gen3"
+            )
+
+            connector(systemImage: "lock.fill", label: "Secure")
+
+            stage(
+                title: "Mac helper",
+                subtitle: "ThumbConsole translates the action instantly.",
+                systemImage: "macbook"
+            )
+
+            connector(systemImage: "arrow.right", label: "Output")
+
+            stage(
+                title: "Focused app",
+                subtitle: "The frontmost app receives the shortcut or input.",
+                systemImage: "macwindow"
+            )
+        }
+        .padding(Geist.Spacing.s4)
+        .frame(maxWidth: .infinity)
+        .background(
+            LinearGradient(
+                colors: [
+                    Geist.color(.blue100, scheme: colorScheme),
+                    Geist.color(.background100, scheme: colorScheme)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Geist.Radius.lg, style: .continuous)
+                .stroke(Geist.color(.blue400, scheme: colorScheme), lineWidth: 1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("How ThumbConsole works")
+        .accessibilityValue("Tap a keypad control on iPhone. The secure Mac helper translates it into input for the focused app.")
+    }
+
+    private func stage(title: String, subtitle: String, systemImage: String) -> some View {
+        VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
+            Image(systemName: systemImage)
+                .font(.system(size: 22, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                .frame(width: 38, height: 38)
+                .background(Geist.color(.background100, scheme: colorScheme).opacity(0.82), in: RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
+
+            VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
+                Text(title)
+                    .geistTypography(.heading14)
+                    .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
+                Text(subtitle)
+                    .geistTypography(.copy13)
+                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func connector(systemImage: String, label: String) -> some View {
+        VStack(spacing: Geist.Spacing.s1) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
+            Text(label)
+                .geistTypography(.label12)
+                .foregroundStyle(Geist.color(.gray800, scheme: colorScheme))
+        }
+        .frame(width: 48)
+        .accessibilityHidden(true)
     }
 }
 
@@ -2426,6 +2600,7 @@ private struct MacOnboardingStatusRow: View {
             RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous)
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -2460,6 +2635,7 @@ private struct MacOnboardingFeatureCard: View {
             RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -2502,6 +2678,7 @@ private struct MacOnboardingPermissionCard: View {
             RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -2536,6 +2713,7 @@ private struct MacOnboardingInstructionCard: View {
             RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
                 .stroke(Geist.color(.grayAlpha400, scheme: colorScheme), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -2568,6 +2746,7 @@ private struct MacOnboardingCallout: View {
             RoundedRectangle(cornerRadius: Geist.Radius.md, style: .continuous)
                 .stroke(Geist.color(.blue400, scheme: colorScheme), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
     }
 }
 

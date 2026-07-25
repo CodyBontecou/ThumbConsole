@@ -17,6 +17,7 @@ struct ThumbConsoleMacApp: App {
                     server.releaseAll(reason: "Mac helper quitting")
                 }
         }
+        .defaultSize(width: 1120, height: 760)
         .windowResizability(.contentMinSize)
     }
 }
