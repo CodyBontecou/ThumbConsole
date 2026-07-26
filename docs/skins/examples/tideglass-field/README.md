@@ -7,10 +7,10 @@ The four orientation/appearance SVGs build an original hydrographic plate from c
 ## Build and review
 
 ```bash
-thumbconsole skin compile . -o build/tideglass-field-1.0.0.pocketpad --clean --strict
-thumbconsole skin validate build/tideglass-field-1.0.0.pocketpad --strict
-thumbconsole skin quality . --artboard game-boy-v1 --strict
-thumbconsole skin preview . -o reviews/contact-sheet-5.png --all-variants --all-states --native-renderer --contact-sheet --columns 4
+thumble skin compile . -o build/tideglass-field-1.0.0.pocketpad --clean --strict
+thumble skin validate build/tideglass-field-1.0.0.pocketpad --strict
+thumble skin quality . --artboard game-boy-v1 --strict
+thumble skin preview . -o reviews/contact-sheet-5.png --all-variants --all-states --native-renderer --contact-sheet --columns 4
 ```
 
 Final independent evidence is `reviews/contact-sheet-5.png`; `reviews/critique-5.md` is `visual-pass` and `reviews/qa-report.md` is `qa-pass`. Package SHA-256: `77927e956d14bd5cf6710c7dc2810da91ce577f290e7f5311d3b389f3e5e24ed`.

@@ -14,7 +14,7 @@ struct MacSkinLibraryView: View {
     @State private var libraryError: String?
     @State private var isExportingSkin = false
     @State private var exportDocument = PocketPadSkinPackageDocument(package: PocketPadBundledSkins.packages[0])
-    @State private var exportFilename = "PocketPad-Skin.pocketpad"
+    @State private var exportFilename = "Thumble-Skin.pocketpad"
 
     private let grid = [GridItem(.adaptive(minimum: 300, maximum: 440), spacing: Geist.Spacing.s4)]
 

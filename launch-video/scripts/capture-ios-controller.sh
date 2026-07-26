@@ -20,7 +20,7 @@ OUT="$VIDEO_DIR/public/captures/${BASENAME}.mp4"
 
 mkdir -p "$(dirname "$RAW")" "$(dirname "$OUT")"
 baguette orientation --udid "$UDID" landscape-left
-xcrun simctl launch --terminate-running-process "$UDID" com.codybontecou.ThumbConsole.iOS >/dev/null
+xcrun simctl launch --terminate-running-process "$UDID" com.codybontecou.PocketPad.iOS >/dev/null
 sleep 2
 
 rm -f "$RAW" "$OUT"

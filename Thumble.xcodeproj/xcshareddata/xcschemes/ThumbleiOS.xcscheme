@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "14DF5D3329BDAF4D2C5191C3"
-               BuildableName = "ThumbConsoleiOS.app"
-               BlueprintName = "ThumbConsoleiOS"
-               ReferencedContainer = "container:ThumbConsole.xcodeproj">
+               BlueprintIdentifier = "E55AABC6A70811C8B4DCBDC6"
+               BuildableName = "ThumbleiOS.app"
+               BlueprintName = "ThumbleiOS"
+               ReferencedContainer = "container:Thumble.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "14DF5D3329BDAF4D2C5191C3"
-            BuildableName = "ThumbConsoleiOS.app"
-            BlueprintName = "ThumbConsoleiOS"
-            ReferencedContainer = "container:ThumbConsole.xcodeproj">
+            BlueprintIdentifier = "E55AABC6A70811C8B4DCBDC6"
+            BuildableName = "ThumbleiOS.app"
+            BlueprintName = "ThumbleiOS"
+            ReferencedContainer = "container:Thumble.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -55,10 +55,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "14DF5D3329BDAF4D2C5191C3"
-            BuildableName = "ThumbConsoleiOS.app"
-            BlueprintName = "ThumbConsoleiOS"
-            ReferencedContainer = "container:ThumbConsole.xcodeproj">
+            BlueprintIdentifier = "E55AABC6A70811C8B4DCBDC6"
+            BuildableName = "ThumbleiOS.app"
+            BlueprintName = "ThumbleiOS"
+            ReferencedContainer = "container:Thumble.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
@@ -74,10 +74,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "14DF5D3329BDAF4D2C5191C3"
-            BuildableName = "ThumbConsoleiOS.app"
-            BlueprintName = "ThumbConsoleiOS"
-            ReferencedContainer = "container:ThumbConsole.xcodeproj">
+            BlueprintIdentifier = "E55AABC6A70811C8B4DCBDC6"
+            BuildableName = "ThumbleiOS.app"
+            BlueprintName = "ThumbleiOS"
+            ReferencedContainer = "container:Thumble.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

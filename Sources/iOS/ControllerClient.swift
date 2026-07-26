@@ -47,7 +47,7 @@ private final class ControllerInputTransport {
     private var pendingAnalogPayloads: [String: AnalogPayload] = [:]
     private var pendingAnalogWorkItems: [String: DispatchWorkItem] = [:]
     private let binaryMessageContext = NWConnection.ContentContext(
-        identifier: "ThumbConsoleInputMessage",
+        identifier: "ThumbleInputMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
     )
     private let encoder = JSONEncoder()
@@ -881,7 +881,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var smartConnectStatus: String?
     @Published private(set) var isPracticeModeEnabled: Bool
 
-    private let networkQueue = DispatchQueue(label: "ThumbConsole.iOS.Network", qos: .userInteractive)
+    private let networkQueue = DispatchQueue(label: "Thumble.iOS.Network", qos: .userInteractive)
     private let skinStore: PocketPadSkinStore
     private var skinPackagesByReference: [PocketPadSkinReference: PocketPadSkinPackage]
     private var pendingSkinSelectionMutations: [PendingSkinSelectionMutation]
@@ -903,7 +903,7 @@ final class ControllerClient: ObservableObject {
     private var lastSentEventUpdateTask: Task<Void, Never>?
     private var pendingLastSentEvent = "None"
     private let binaryMessageContext = NWConnection.ContentContext(
-        identifier: "ThumbConsoleMessage",
+        identifier: "ThumbleMessage",
         metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)]
     )
     private let encoder = JSONEncoder()
@@ -2210,7 +2210,7 @@ final class ControllerClient: ObservableObject {
         let macName = currentServiceResolution?.displayName
             ?? trustedMacCredential?.macName
             ?? controlURL?.host
-            ?? "ThumbConsole Mac"
+            ?? "Thumble Mac"
         let credential = TrustedMacCredential(
             serverID: serverIDToStore,
             authToken: tokenToStore,

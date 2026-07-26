@@ -11,7 +11,7 @@ The source page describes the track as free to use in projects with attribution 
 
 > “Technotronic” by Eric Matyas — www.soundimage.org
 
-ThumbConsole uses the opening 45 seconds, with a short fade at the beginning and end. The original OGG is preserved at:
+Thumble uses the opening 45 seconds, with a short fade at the beginning and end. The original OGG is preserved at:
 
 - `assets/music/technotronic.ogg`
 - `public/music/technotronic.ogg`

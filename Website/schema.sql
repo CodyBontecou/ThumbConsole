@@ -1,4 +1,4 @@
--- Cloudflare D1 schema for the ThumbConsole launch waitlist.
+-- Cloudflare D1 schema for the Thumble launch waitlist.
 -- Apply with:
 --   wrangler d1 execute pocketpad-waitlist --file=Website/schema.sql --remote
 

@@ -42,7 +42,7 @@ const HeaderMark: React.FC<{section: string}> = ({section}) => (
       letterSpacing: 1.5,
     }}
   >
-    <span>THUMBCONSOLE</span>
+    <span>THUMBLE</span>
     <span>{section}</span>
   </div>
 );
@@ -92,7 +92,7 @@ const HeroScene: React.FC<{duration: number}> = ({duration}) => {
       />
       <div style={{position: 'absolute', left: 200, bottom: 130, display: 'flex', alignItems: 'center', gap: 26}}>
         <AppIcon size={100} />
-        <div style={{fontSize: 44, color: '#E5E5E5', fontWeight: 500}}>ThumbConsole</div>
+        <div style={{fontSize: 44, color: '#E5E5E5', fontWeight: 500}}>Thumble</div>
       </div>
     </SceneFade>
   );
@@ -112,7 +112,7 @@ const GenerateScene: React.FC<{duration: number}> = ({duration}) => {
           </AnimatedHeadline>
         </div>
         <div style={{marginTop: 78, fontSize: 48, lineHeight: 1.4, color: '#929292', maxWidth: 850}}>
-          ThumbConsole’s CLI turns a game name into controls, bindings, styles, and haptics.
+          Thumble’s CLI turns a game name into controls, bindings, styles, and haptics.
         </div>
         <div style={{marginTop: 70}}>
           <StaggeredChips items={['CLI', 'JSON', 'Agent-ready']} delay={35} blueIndex={2} />
@@ -121,7 +121,7 @@ const GenerateScene: React.FC<{duration: number}> = ({duration}) => {
       <ProductFrame
         width={2500}
         radius={38}
-        label="TART VM / MACOS / THUMBCONSOLE CLI"
+        label="TART VM / MACOS / THUMBLE CLI"
         style={{position: 'absolute', right: 150, top: 330}}
       >
         <VideoFill src="captures/mac-cli-tart.mp4" />
@@ -157,7 +157,7 @@ const BuildScene: React.FC<{duration: number}> = ({duration}) => {
       <ProductFrame
         width={2520}
         radius={40}
-        label="THUMBCONSOLE MAC / KEYPAD EDITOR"
+        label="THUMBLE MAC / KEYPAD EDITOR"
         style={{position: 'absolute', right: 130, top: 250}}
       >
         <div style={{height: 1575, overflow: 'hidden'}}>
@@ -288,7 +288,7 @@ const SyncScene: React.FC<{duration: number}> = ({duration}) => {
       <ProductFrame
         width={1370}
         radius={42}
-        label="TART VM / THUMBCONSOLE MAC"
+        label="TART VM / THUMBLE MAC"
         style={{position: 'absolute', left: 180, top: 730}}
       >
         <VideoFill src="captures/mac-app-tart.mp4" />
@@ -345,7 +345,7 @@ const OutroScene: React.FC<{duration: number}> = ({duration}) => {
       >
         <AppIcon size={270} style={{transform: `scale(${iconScale})`, opacity: p}} />
         <div style={{marginTop: 80, fontSize: 184, fontWeight: 600, letterSpacing: -8, color: '#F2F2F2'}}>
-          ThumbConsole
+          Thumble
         </div>
         <div style={{marginTop: 38, fontSize: 80, color: '#B5B5B5', letterSpacing: -2}}>
           Turn your iPhone into a custom gaming controller.
@@ -369,14 +369,14 @@ const OutroScene: React.FC<{duration: number}> = ({duration}) => {
           letterSpacing: 1.5,
         }}
       >
-        <span>THUMBCONSOLE / LAUNCH</span>
+        <span>THUMBLE / LAUNCH</span>
         <span>CONTROLLER • KEYPAD • TRACKPAD</span>
       </div>
     </SceneFade>
   );
 };
 
-export const ThumbConsoleLaunch: React.FC = () => {
+export const ThumbleLaunch: React.FC = () => {
   return (
     <AbsoluteFill style={{backgroundColor: '#000', color: '#fff'}}>
       <Audio

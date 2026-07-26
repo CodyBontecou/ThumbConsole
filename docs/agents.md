@@ -1,20 +1,20 @@
-# Use ThumbConsole with an AI agent
+# Use Thumble with an AI agent
 
-ThumbConsole's macOS editor has a command-line counterpart designed for coding agents and automation. An agent can create and revise keypad profiles, bind shortcuts, validate layouts, install skins, inspect the running Mac helper, and sync changes to a paired iPhone without driving the UI.
+Thumble's macOS editor has a command-line counterpart designed for coding agents and automation. An agent can create and revise keypad profiles, bind shortcuts, validate layouts, install skins, inspect the running Mac helper, and sync changes to a paired iPhone without driving the UI.
 
-This guide is for users who want to tell an agent such as Pi, Claude Code, Codex, or another terminal-capable assistant to configure ThumbConsole on their behalf.
+This guide is for users who want to tell an agent such as Pi, Claude Code, Codex, or another terminal-capable assistant to configure Thumble on their behalf.
 
 ## What to give your agent
 
 Give the agent these inputs:
 
-1. The `thumbconsole` executable, either on `PATH` or at a known absolute path.
+1. The `thumble` executable, either on `PATH` or at a known absolute path.
 2. This repository's [`SKILL.md`](../SKILL.md), which documents the full agent workflow and command surface.
 3. A concrete outcome, including the target app or game, important controls, and whether the agent may install/select the result.
 
 A good request is outcome-focused:
 
-> Use ThumbConsole to create a landscape keypad for Celeste. Research the default Mac keyboard controls, keep movement on the left and actions on the right, dry-run the profile first, install and select it, validate both orientations, and report the final bindings. Read `/path/to/ThumbConsole/SKILL.md` before using the CLI.
+> Use Thumble to create a landscape keypad for Celeste. Research the default Mac keyboard controls, keep movement on the left and actions on the right, dry-run the profile first, install and select it, validate both orientations, and report the final bindings. Read `/path/to/Thumble/SKILL.md` before using the CLI.
 
 You do not need to translate the request into CLI commands. The skill teaches the agent how to inspect the current setup, choose the right workflow, and verify its work.
 
@@ -25,7 +25,7 @@ You do not need to translate the request into CLI commands. The skill teaches th
 Include the absolute path to `SKILL.md` in your prompt:
 
 ```text
-Before working on ThumbConsole, read /absolute/path/to/ThumbConsole/SKILL.md
+Before working on Thumble, read /absolute/path/to/Thumble/SKILL.md
 and follow its inspection, dry-run, safety, and verification guidance.
 ```
 
@@ -36,11 +36,11 @@ This is the simplest option when the agent can read local files.
 Add this to the instruction file your agent already reads, such as `AGENTS.md` or `CLAUDE.md`:
 
 ```md
-## ThumbConsole
+## Thumble
 
 When a task involves an iPhone keypad, Mac shortcuts, game controls, or
-ThumbConsole runtime diagnostics, read `/absolute/path/to/ThumbConsole/SKILL.md`
-and use the `thumbconsole` CLI. Inspect before editing, preview or dry-run when
+Thumble runtime diagnostics, read `/absolute/path/to/Thumble/SKILL.md`
+and use the `thumble` CLI. Inspect before editing, preview or dry-run when
 available, avoid UI automation, and verify the saved profile after changes.
 ```
 
@@ -49,36 +49,36 @@ available, avoid UI automation, and verify the saved profile after changes.
 Tools that discover `SKILL.md` directories can use the repository skill directly or copy it into their documented project/user skill directory. For example, if your tool follows the `.agents/skills` convention:
 
 ```bash
-mkdir -p .agents/skills/thumbconsole
-cp /absolute/path/to/ThumbConsole/SKILL.md \
-  .agents/skills/thumbconsole/SKILL.md
+mkdir -p .agents/skills/thumble
+cp /absolute/path/to/Thumble/SKILL.md \
+  .agents/skills/thumble/SKILL.md
 ```
 
-Use the skill directory documented by your agent host if it expects a different location. Keep the copied skill updated when ThumbConsole adds commands.
+Use the skill directory documented by your agent host if it expects a different location. Keep the copied skill updated when Thumble adds commands.
 
 ## Locate or build the CLI
 
 First ask the agent to check whether the CLI is already available:
 
 ```bash
-command -v thumbconsole
-thumbconsole --help
+command -v thumble
+thumble --help
 ```
 
-From a ThumbConsole source checkout, build to a predictable location:
+From a Thumble source checkout, build to a predictable location:
 
 ```bash
-xcodebuild -project ThumbConsole.xcodeproj \
-  -scheme ThumbConsoleCLI \
+xcodebuild -project Thumble.xcodeproj \
+  -scheme ThumbleCLI \
   -destination 'platform=macOS' \
   -derivedDataPath build/DerivedData \
   build
 
-export THUMBCONSOLE_CLI="$PWD/build/DerivedData/Build/Products/Debug/thumbconsole"
-"$THUMBCONSOLE_CLI" --help
+export THUMBLE_CLI="$PWD/build/DerivedData/Build/Products/Debug/thumble"
+"$THUMBLE_CLI" --help
 ```
 
-The build also produces the legacy `pocketpad` executable, but new instructions should use `thumbconsole`.
+The build also produces `thumbconsole` and `pocketpad` compatibility executables, but new instructions should use `thumble`.
 
 ## Recommended agent workflow
 
@@ -87,13 +87,13 @@ Ask the agent to follow this loop for reliable, reviewable changes.
 ### 1. Inspect without changing anything
 
 ```bash
-thumbconsole --help
-thumbconsole profile list --ids
-thumbconsole profile show active --json
-thumbconsole status --json
+thumble --help
+thumble profile list --ids
+thumble profile show active --json
+thumble status --json
 ```
 
-`profile` commands can inspect saved configuration while the Mac helper is closed. Runtime status and syncing require ThumbConsole Mac to be running.
+`profile` commands can inspect saved configuration while the Mac helper is closed. Runtime status and syncing require Thumble Mac to be running.
 
 ### 2. Choose the smallest workflow
 
@@ -115,9 +115,9 @@ For generated profiles, remember that `generate` installs, selects, and makes th
 Use the non-mutating path whenever one exists:
 
 ```bash
-thumbconsole generate --spec /tmp/game-keypad.json --json --dry-run
-thumbconsole layout validate --profile "My Keypad" --json
-thumbconsole layout preview --profile "My Keypad" \
+thumble generate --spec /tmp/game-keypad.json --json --dry-run
+thumble layout validate --profile "My Keypad" --json
+thumble layout preview --profile "My Keypad" \
   --variant landscape \
   -o /tmp/my-keypad-landscape.png
 ```
@@ -128,15 +128,15 @@ For unknown games, the spec should identify its source and use an honest `high`,
 
 When the prompt clearly asks the agent to create, install, select, or update a keypad, it may make that scoped change after previewing it. It should avoid unrelated profile, default, output-mode, or appearance changes.
 
-When ThumbConsole Mac is running, saved CLI changes are reloaded and synced to the paired iPhone. The iPhone may still show the saved profile offline when the helper is closed, but it cannot control the Mac until reconnected.
+When Thumble Mac is running, saved CLI changes are reloaded and synced to the paired iPhone. The iPhone may still show the saved profile offline when the helper is closed, but it cannot control the Mac until reconnected.
 
 ### 5. Verify and report
 
 ```bash
-thumbconsole profile show active --json
-thumbconsole layout validate --profile active --json
-thumbconsole binding display --profile active --json
-thumbconsole status --json
+thumble profile show active --json
+thumble layout validate --profile active --json
+thumble binding display --profile active --json
+thumble status --json
 ```
 
 A useful final report names the profile, confidence/source when relevant, final bindings, layout validation result, whether it was selected/defaulted, and whether sync could be confirmed.
@@ -148,7 +148,7 @@ Replace paths and names before sending these to your agent.
 ### Create a game keypad
 
 ```text
-Read /absolute/path/to/ThumbConsole/SKILL.md, then use the thumbconsole CLI to
+Read /absolute/path/to/Thumble/SKILL.md, then use the thumble CLI to
 create a keypad for [GAME]. Look up the default Mac keyboard controls from a
 reliable source. Dry-run before installing. Put movement on the left, frequent
 actions within easy right-thumb reach, and pause/menu away from primary actions.
@@ -159,7 +159,7 @@ the layout and summarize the source, confidence, bindings, and validation result
 ### Create a productivity pad
 
 ```text
-Read /absolute/path/to/ThumbConsole/SKILL.md and create a ThumbConsole profile
+Read /absolute/path/to/Thumble/SKILL.md and create a Thumble profile
 named "[NAME]" for [APP]. I need controls for [LIST OF ACTIONS/SHORTCUTS]. Keep
 labels short, use a trackpad only if it helps this workflow, attach the app at
 [APP PATH] only if it exists, and preserve my current default profile. Preview
@@ -169,7 +169,7 @@ and validate the layout, then show me exactly what changed.
 ### Improve an existing layout
 
 ```text
-Read /absolute/path/to/ThumbConsole/SKILL.md. Inspect my ThumbConsole profile
+Read /absolute/path/to/Thumble/SKILL.md. Inspect my Thumble profile
 "[PROFILE]" without changing it first. Validate portrait and landscape layouts,
 then fix only touch-target, overlap, edge, and thumb-reach issues. Preserve all
 bindings, labels, output modes, and the current default. Render layout previews
@@ -179,7 +179,7 @@ and report each repair plus any issue that remains.
 ### Diagnose connection or input lag
 
 ```text
-Read /absolute/path/to/ThumbConsole/SKILL.md. Diagnose ThumbConsole without UI
+Read /absolute/path/to/Thumble/SKILL.md. Diagnose Thumble without UI
 automation. Inspect status and accessibility, then use the synthetic latency
 compare/verify commands before suggesting physical-device capture. Do not restart
 the server, open System Settings, launch apps, or send test input unless I approve
@@ -189,7 +189,7 @@ that action. Summarize evidence separately from recommendations.
 ### Install a skin safely
 
 ```text
-Read /absolute/path/to/ThumbConsole/SKILL.md. Inspect and strictly validate
+Read /absolute/path/to/Thumble/SKILL.md. Inspect and strictly validate
 [PACKAGE.pocketpad], explain what it can style and any warnings, then apply it to
 "[PROFILE]" only. Preserve geometry, labels, bindings, launch targets, and output
 mode. Do not publish or submit the skin anywhere.
@@ -202,8 +202,8 @@ Handcrafted skin creation has a stricter art-direction, editable-source, native-
 Tell the agent about any stricter boundaries you want. The repository skill uses these defaults:
 
 - Prefer CLI inspection and mutation over clicking through the Mac or iPhone UI.
-- Use `thumbconsole app screenshot` for visual verification. It captures a ThumbConsole window without activating it or sending keyboard/mouse events.
-- Do not launch ThumbConsole Mac, open System Settings, or trigger permission prompts without user permission because those actions can change focus or interrupt work.
+- Use `thumble app screenshot` for visual verification. It captures a Thumble window without activating it or sending keyboard/mouse events.
+- Do not launch Thumble Mac, open System Settings, or trigger permission prompts without user permission because those actions can change focus or interrupt work.
 - Treat `test tap`, `test down`, and `test up` as real input: they invoke the selected control's configured output in the focused Mac app.
 - Use `release-all` if a test is interrupted or a held input is uncertain.
 - Inspect before destructive commands such as profile deletion/reset, skin removal, binding reset, or output-mode replacement. Export a backup with `profile export --all` before a broad migration or reset.
@@ -218,11 +218,11 @@ An agent cannot infer that physical iPhone input feels good from a rendered prev
 
 ## Troubleshooting an agent session
 
-- **`thumbconsole: command not found`:** Give the agent the absolute binary path or let it build the CLI from the source checkout.
+- **`thumble: command not found`:** Give the agent the absolute binary path or let it build the CLI from the source checkout.
 - **The agent keeps trying to click the app:** Explicitly require `SKILL.md`, CLI-only operation, and `app screenshot` for visual checks.
 - **A new profile unexpectedly became the default:** Generation defaults to install + select + default. Request `--no-default` and optionally `--no-select`.
 - **An unknown game fails generation:** Ask the agent to research or infer controls and provide a JSON spec instead of inventing a hidden fallback.
-- **Changes do not appear on iPhone:** Saved changes can still be valid. ThumbConsole Mac must be running and the iPhone paired for immediate sync.
+- **Changes do not appear on iPhone:** Saved changes can still be valid. Thumble Mac must be running and the iPhone paired for immediate sync.
 - **Screenshot verification fails:** Screen Recording access must already be granted to the terminal or agent host. Do not ask the agent to bypass the permission with screen-control automation.
 - **Controller mode does not appear in a game:** System-visible virtual gamepad output requires Apple's virtual HID entitlement. Keyboard and pointer output can still work.
 

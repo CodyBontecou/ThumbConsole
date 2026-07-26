@@ -1,6 +1,6 @@
 # Swift stack-safety policy
 
-ThumbConsole moves unusually rich keypad, profile, and skin values through SwiftUI, Codable, Network.framework, and file-backed stores. In unoptimized Debug builds, copying several large structs in one call chain can exhaust the 512 KiB stacks used by worker threads or the roughly 1 MiB iOS main-thread stack. A crash may surface in `___chkstk_darwin` or an innocent optional getter even when there is no recursion.
+Thumble moves unusually rich keypad, profile, and skin values through SwiftUI, Codable, Network.framework, and file-backed stores. In unoptimized Debug builds, copying several large structs in one call chain can exhaust the 512 KiB stacks used by worker threads or the roughly 1 MiB iOS main-thread stack. A crash may surface in `___chkstk_darwin` or an innocent optional getter even when there is no recursion.
 
 ## Required gate
 

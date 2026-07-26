@@ -198,9 +198,9 @@ private enum IOSKeypadSettings {
     static let immersiveModeDefaultsKey = "PocketPad.iOS.immersiveKeypad.v1"
 }
 
-private enum ThumbConsoleSupportLinks {
+private enum ThumbleSupportLinks {
     static let discord = URL(string: "https://discord.gg/RaQYS4t6gn")!
-    static let newGitHubIssue = URL(string: "https://github.com/CodyBontecou/ThumbConsole/issues/new")!
+    static let newGitHubIssue = URL(string: "https://github.com/CodyBontecou/Thumble/issues/new")!
     static let discordPromoDismissedDefaultsKey = "PocketPad.iOS.discordPromoDismissed.v1"
 }
 
@@ -214,7 +214,7 @@ private struct ConnectionView: View {
     @AppStorage(IOSKeypadPreferenceKeys.hapticIntensity) private var keypadHapticIntensity = IOSKeypadPreferenceKeys.defaultHapticIntensity
     @AppStorage(IOSKeypadPreferenceKeys.showBindingGlyphs) private var showsBindingGlyphs = IOSKeypadPreferenceKeys.defaultShowBindingGlyphs
     @AppStorage(IOSKeypadSettings.immersiveModeDefaultsKey) private var prefersImmersiveKeypad = true
-    @AppStorage(ThumbConsoleSupportLinks.discordPromoDismissedDefaultsKey) private var isDiscordPromoDismissed = false
+    @AppStorage(ThumbleSupportLinks.discordPromoDismissedDefaultsKey) private var isDiscordPromoDismissed = false
     let onShowSavedKeypad: () -> Void
     let onShowOnboarding: () -> Void
 
@@ -304,7 +304,7 @@ private struct ConnectionView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s4) {
-            Text("ThumbConsole")
+            Text("Thumble")
                 .geistTypography(.heading40)
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 .lineLimit(1)
@@ -447,7 +447,7 @@ private struct ConnectionView: View {
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .multilineTextAlignment(.center)
 
-                Text("Enter the code shown on ThumbConsole Mac.")
+                Text("Enter the code shown on Thumble Mac.")
                     .geistTypography(.copy14)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .multilineTextAlignment(.center)
@@ -479,7 +479,7 @@ private struct ConnectionView: View {
 
     private func handleScannedPairingCode(_ text: String) {
         guard let payload = PairingPayload.decode(from: text) else {
-            qrScanError = "QR code not recognized. Scan the ThumbConsole code shown on your Mac."
+            qrScanError = "QR code not recognized. Scan the Thumble code shown on your Mac."
             isShowingScanner = false
             return
         }
@@ -624,7 +624,7 @@ private struct IOSOnboardingView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("ThumbConsole")
+                    Text("Thumble")
                         .geistTypography(.heading20)
                         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     Text("Quick setup")
@@ -693,7 +693,7 @@ private struct IOSOnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
 
-                Text("ThumbConsole turns this iPhone into a programmable control surface for shortcuts, pointer actions, and virtual gamepad input on your Mac.")
+                Text("Thumble turns this iPhone into a programmable control surface for shortcuts, pointer actions, and virtual gamepad input on your Mac.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -702,13 +702,13 @@ private struct IOSOnboardingView: View {
             IOSOnboardingConnectionPreview()
 
             IOSOnboardingCallout(
-                title: "Install ThumbConsole on both devices",
+                title: "Install Thumble on both devices",
                 text: "The Mac app handles permissions, secure pairing, and keypad editing. This iPhone displays your synced controls and sends every press.",
                 systemImage: "macbook"
             )
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                IOSOnboardingInstructionCard(step: "1", title: "Open ThumbConsole Mac", text: "Leave the helper running while you use the phone keypad.")
+                IOSOnboardingInstructionCard(step: "1", title: "Open Thumble Mac", text: "Leave the helper running while you use the phone keypad.")
                 IOSOnboardingInstructionCard(step: "2", title: "Pair securely", text: "Use Smart Connect, scan the QR code, or type the local address and pairing code.")
                 IOSOnboardingInstructionCard(step: "3", title: "Control the focused Mac app", text: "After pairing, focus Terminal, Cursor, a browser, or a game and press controls on this iPhone.")
             }
@@ -723,7 +723,7 @@ private struct IOSOnboardingView: View {
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                Text("ThumbConsole only needs local device discovery and QR scanning. Keyboard permissions are granted on the Mac, not on the iPhone.")
+                Text("Thumble only needs local device discovery and QR scanning. Keyboard permissions are granted on the Mac, not on the iPhone.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -732,12 +732,12 @@ private struct IOSOnboardingView: View {
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
                 IOSOnboardingPermissionCard(
                     title: "Local Network",
-                    text: "Allow this so Smart Connect can discover ThumbConsole Mac over Wi‑Fi or nearby peer-to-peer, and so manual WebSocket pairing works on your network.",
+                    text: "Allow this so Smart Connect can discover Thumble Mac over Wi‑Fi or nearby peer-to-peer, and so manual WebSocket pairing works on your network.",
                     systemImage: "wifi"
                 )
                 IOSOnboardingPermissionCard(
                     title: "Camera",
-                    text: "Allow camera access when you tap Scan Mac QR Code. ThumbConsole only uses the camera to read the pairing QR code.",
+                    text: "Allow camera access when you tap Scan Mac QR Code. Thumble only uses the camera to read the pairing QR code.",
                     systemImage: "camera.viewfinder"
                 )
             }
@@ -752,7 +752,7 @@ private struct IOSOnboardingView: View {
 
             IOSOnboardingCallout(
                 title: "Mac permissions happen on the Mac",
-                text: "If shortcuts do not fire, open ThumbConsole Mac and enable Accessibility in System Settings → Privacy & Security → Accessibility.",
+                text: "If shortcuts do not fire, open Thumble Mac and enable Accessibility in System Settings → Privacy & Security → Accessibility.",
                 systemImage: "checkmark.shield.fill"
             )
         }
@@ -761,7 +761,7 @@ private struct IOSOnboardingView: View {
     private var connectStep: some View {
         VStack(alignment: .leading, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("Pair with ThumbConsole Mac.")
+                Text("Pair with Thumble Mac.")
                     .geistTypography(.heading32)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .accessibilityAddTraits(.isHeader)
@@ -775,14 +775,14 @@ private struct IOSOnboardingView: View {
                 status: client.state.label,
                 detail: client.isConnected
                     ? "This iPhone is paired and ready to receive its keypad."
-                    : (client.smartConnectStatus ?? client.lastError ?? "Open ThumbConsole Mac, then let Smart Connect find it nearby."),
+                    : (client.smartConnectStatus ?? client.lastError ?? "Open Thumble Mac, then let Smart Connect find it nearby."),
                 isConnected: client.isConnected
             )
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                IOSOnboardingInstructionCard(step: "1", title: "Tap Smart Connect", text: "ThumbConsole looks for the Mac helper advertised on your local or nearby peer-to-peer network.")
+                IOSOnboardingInstructionCard(step: "1", title: "Tap Smart Connect", text: "Thumble looks for the Mac helper advertised on your local or nearby peer-to-peer network.")
                 IOSOnboardingInstructionCard(step: "2", title: "If needed, scan the QR", text: "On the Mac Home screen, scan the QR card shown under Connect From iPhone.")
-                IOSOnboardingInstructionCard(step: "3", title: "Enter the six-digit code", text: "Manual pairing asks you to type the code shown on ThumbConsole Mac. Smart Connect will remember this Mac after pairing.")
+                IOSOnboardingInstructionCard(step: "3", title: "Enter the six-digit code", text: "Manual pairing asks you to type the code shown on Thumble Mac. Smart Connect will remember this Mac after pairing.")
             }
 
             Button {
@@ -812,7 +812,7 @@ private struct IOSOnboardingView: View {
             IOSOnboardingKeypadPreview()
 
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
-                IOSOnboardingInstructionCard(step: "1", title: "Edit on Mac", text: "Open the Keypad section on ThumbConsole Mac to add controls, style them, and record shortcuts.")
+                IOSOnboardingInstructionCard(step: "1", title: "Edit on Mac", text: "Open the Keypad section on Thumble Mac to add controls, style them, and record shortcuts.")
                 IOSOnboardingInstructionCard(step: "2", title: "Open the top bar", text: "Swipe down from the top edge if the keypad controls are hidden.")
                 IOSOnboardingInstructionCard(step: "3", title: "Switch setups", text: "Use the Keypad setup menu to choose another synced setup, mark it as default, or export keypads as JSON.")
                 IOSOnboardingInstructionCard(step: "4", title: "Adjust a freeform layout", text: "Tap the lock icon to unlock controls, then move, resize, rotate, or delete elements before locking again.")
@@ -875,7 +875,7 @@ private struct IOSOnboardingView: View {
     }
 
     private var continueButton: some View {
-        Button(isLastStep ? "Open ThumbConsole" : (isFirstStep ? "Get Started" : "Continue")) {
+        Button(isLastStep ? "Open Thumble" : (isFirstStep ? "Get Started" : "Continue")) {
             if isLastStep {
                 onComplete()
             } else {
@@ -883,7 +883,7 @@ private struct IOSOnboardingView: View {
             }
         }
         .geistButtonStyle(.primary, size: .large)
-        .accessibilityHint(isLastStep ? "Finishes setup and opens ThumbConsole." : "Advances to the next setup step.")
+        .accessibilityHint(isLastStep ? "Finishes setup and opens Thumble." : "Advances to the next setup step.")
     }
 
     private func moveSelection(by offset: Int) {
@@ -954,7 +954,7 @@ private struct IOSOnboardingConnectionPreview: View {
                 .stroke(Geist.color(.blue400, scheme: colorScheme), lineWidth: 1)
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("ThumbConsole connection")
+        .accessibilityLabel("Thumble connection")
         .accessibilityValue("Build shortcuts on the Mac, then use the securely connected keypad on this iPhone.")
     }
 
@@ -1029,7 +1029,7 @@ private struct IOSOnboardingKeypadPreview: View {
                     Text("My Mac Shortcuts")
                         .geistTypography(.heading14)
                         .foregroundStyle(Geist.color(.gray1000, scheme: .dark))
-                    Text("Synced from ThumbConsole Mac")
+                    Text("Synced from Thumble Mac")
                         .geistTypography(.label12)
                         .foregroundStyle(Geist.color(.gray900, scheme: .dark))
                 }
@@ -1325,7 +1325,7 @@ private struct DiscordCommunityBanner: View {
     }
 
     private var joinLink: some View {
-        Link(destination: ThumbConsoleSupportLinks.discord) {
+        Link(destination: ThumbleSupportLinks.discord) {
             Text("Join")
                 .geistTypography(.button12)
                 .foregroundStyle(Geist.color(.blue900, scheme: colorScheme))
@@ -1333,7 +1333,7 @@ private struct DiscordCommunityBanner: View {
                 .padding(.vertical, 7)
                 .background(Geist.color(.blue100, scheme: colorScheme), in: Capsule())
         }
-        .accessibilityLabel("Join the ThumbConsole Discord")
+        .accessibilityLabel("Join the Thumble Discord")
         .accessibilityHint("Opens Discord")
     }
 
@@ -1637,12 +1637,12 @@ private struct KeypadSettingsSheet: View {
                 }
 
                 Section("Community & Support") {
-                    Link(destination: ThumbConsoleSupportLinks.discord) {
+                    Link(destination: ThumbleSupportLinks.discord) {
                         Label("Join Our Discord", systemImage: "bubble.left.and.bubble.right.fill")
                     }
-                    .accessibilityHint("Opens the ThumbConsole Discord community")
+                    .accessibilityHint("Opens the Thumble Discord community")
 
-                    Link(destination: ThumbConsoleSupportLinks.newGitHubIssue) {
+                    Link(destination: ThumbleSupportLinks.newGitHubIssue) {
                         Label("Submit an Issue on GitHub", systemImage: "ladybug.fill")
                     }
                     .accessibilityHint("Opens a new GitHub issue")
@@ -1992,9 +1992,9 @@ private struct ControllerPadView: View {
         UIAccessibility.post(notification: .announcement, argument: message)
     }
 
-    private var keypadExportDocument: ThumbConsoleKeypadConfigurationJSONDocument {
-        ThumbConsoleKeypadConfigurationJSONDocument(
-            export: ThumbConsoleKeypadConfigurationExport(
+    private var keypadExportDocument: ThumbleKeypadConfigurationJSONDocument {
+        ThumbleKeypadConfigurationJSONDocument(
+            export: ThumbleKeypadConfigurationExport(
                 profiles: client.gamepadProfiles,
                 activeProfileID: client.selectedGamepadProfileID,
                 defaultProfileID: client.defaultGamepadProfileID
@@ -2003,7 +2003,7 @@ private struct ControllerPadView: View {
     }
 
     private var keypadExportFilename: String {
-        ThumbConsoleKeypadConfigurationExport.suggestedFilename(activeProfileName: client.selectedGamepadProfileName)
+        ThumbleKeypadConfigurationExport.suggestedFilename(activeProfileName: client.selectedGamepadProfileName)
     }
 }
 

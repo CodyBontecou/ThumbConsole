@@ -10,14 +10,14 @@ struct MacContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.undoManager) private var undoManager
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @AppStorage(ThumbConsoleMacIPC.onboardingCompletedDefaultsKey) private var hasCompletedOnboarding = false
+    @AppStorage(ThumbleMacIPC.onboardingCompletedDefaultsKey) private var hasCompletedOnboarding = false
     @State private var selectedSection: MacSidebarSection? = .gamepad
     @State private var advancedConfigExpanded = false
     @State private var isShowingOnboarding = false
     @State private var gamepadEditorUndoTarget = MacGamepadEditorUndoTarget()
     @State private var isExportingKeypadConfiguration = false
     @State private var keypadExportDocument = MacKeypadConfigurationJSONDocument()
-    @State private var keypadExportFilename = ThumbConsoleKeypadConfigurationExport.suggestedFilename()
+    @State private var keypadExportFilename = ThumbleKeypadConfigurationExport.suggestedFilename()
     @State private var keypadExportError: String?
 
     private var shouldPresentOnboarding: Bool {
@@ -80,7 +80,7 @@ struct MacContentView: View {
                         .tag(section)
                 }
             }
-            .navigationTitle("ThumbConsole")
+            .navigationTitle("Thumble")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
             selectedContent
@@ -224,7 +224,7 @@ struct MacContentView: View {
     private var homeHeroHeader: some View {
         HStack(alignment: .top, spacing: Geist.Spacing.s4) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s1) {
-                Text("ThumbConsole")
+                Text("Thumble")
                     .geistTypography(.heading24)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
 
@@ -496,7 +496,7 @@ struct MacContentView: View {
                     .textSelection(.enabled)
             }
 
-            Text("Scan from ThumbConsole on iPhone or enter the code manually.")
+            Text("Scan from Thumble on iPhone or enter the code manually.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
@@ -798,8 +798,8 @@ struct MacContentView: View {
             SectionHeader(
                 title: server.isClientConnected ? "Pair Another iPhone" : "Pair Your iPhone",
                 subtitle: server.isClientConnected
-                    ? "Need a different phone? Scan this code from ThumbConsole on iPhone."
-                    : "Open ThumbConsole on your iPhone and scan this QR code to connect."
+                    ? "Need a different phone? Scan this code from Thumble on iPhone."
+                    : "Open Thumble on your iPhone and scan this QR code to connect."
             )
 
             if server.isRunning {
@@ -807,7 +807,7 @@ struct MacContentView: View {
                     QRCodeView(text: server.pairingPayload)
                         .frame(width: server.isClientConnected ? 132 : 168, height: server.isClientConnected ? 132 : 168)
 
-                    Text("Tap Scan Mac QR Code in ThumbConsole on iPhone.")
+                    Text("Tap Scan Mac QR Code in Thumble on iPhone.")
                         .geistTypography(.copy13)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                         .multilineTextAlignment(.center)
@@ -1088,7 +1088,7 @@ struct MacContentView: View {
 
     private var homeCompactConnectionSubtitle: String {
         if !server.accessibilityTrusted {
-            return "Allow ThumbConsole to send shortcuts from your phone."
+            return "Allow Thumble to send shortcuts from your phone."
         }
         if !server.isRunning {
             return "Start the helper before pairing an iPhone."
@@ -1149,8 +1149,8 @@ struct MacContentView: View {
 #if DEBUG
     private func replayOnboardingFromDebugSettings() {
         hasCompletedOnboarding = false
-        UserDefaults.standard.set(false, forKey: ThumbConsoleMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey)
-        UserDefaults.standard.set(true, forKey: ThumbConsoleMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey)
+        UserDefaults.standard.set(false, forKey: ThumbleMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey)
+        UserDefaults.standard.set(true, forKey: ThumbleMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey)
         UserDefaults.standard.synchronize()
         isShowingOnboarding = false
         DispatchQueue.main.async {
@@ -1325,7 +1325,7 @@ struct MacContentView: View {
             let exportedProfileName = exportingProfileID.flatMap { profileID in
                 profiles.first(where: { $0.id == profileID })?.name
             }
-            keypadExportFilename = ThumbConsoleKeypadConfigurationExport.suggestedFilename(
+            keypadExportFilename = ThumbleKeypadConfigurationExport.suggestedFilename(
                 activeProfileName: exportedProfileName
             )
             isExportingKeypadConfiguration = true
@@ -1337,7 +1337,7 @@ struct MacContentView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: Geist.Spacing.s6) {
             VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
-                Text("ThumbConsole Mac Helper")
+                Text("Thumble Mac Helper")
                     .geistTypography(.heading40)
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                 Text("iPhone keypad → WebSocket → keyboard shortcuts or virtual controller")
@@ -1388,7 +1388,7 @@ struct MacContentView: View {
                 VStack(alignment: .leading, spacing: Geist.Spacing.s2) {
                     Text("Accessibility Permission")
                         .geistTypography(.heading20)
-                    Text("macOS requires Accessibility access before ThumbConsole can inject keyboard events.")
+                    Text("macOS requires Accessibility access before Thumble can inject keyboard events.")
                         .geistTypography(.copy14)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 }
@@ -1403,7 +1403,7 @@ struct MacContentView: View {
             }
 
             if !server.accessibilityTrusted {
-                Text("Keyboard injection is blocked. Open System Settings → Privacy & Security → Accessibility and enable ThumbConsole Mac.")
+                Text("Keyboard injection is blocked. Open System Settings → Privacy & Security → Accessibility and enable Thumble Mac.")
                     .geistTypography(.copy14)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1460,7 +1460,7 @@ struct MacContentView: View {
                     Text("Secure Pairing Request")
                         .geistTypography(.heading20)
                         .foregroundStyle(Color.white)
-                    Text("\(server.pendingPairingClientName ?? "An iPhone") wants to pair with ThumbConsole Mac.")
+                    Text("\(server.pendingPairingClientName ?? "An iPhone") wants to pair with Thumble Mac.")
                         .geistTypography(.copy14)
                         .foregroundStyle(Color.white.opacity(0.68))
                 }
@@ -1481,7 +1481,7 @@ struct MacContentView: View {
             }
 
             VStack(spacing: Geist.Spacing.s3) {
-                Text("Enter this code on ThumbConsole iPhone:")
+                Text("Enter this code on Thumble iPhone:")
                     .geistTypography(.label13)
                     .foregroundStyle(Color.white.opacity(0.72))
 
@@ -1555,7 +1555,7 @@ struct MacContentView: View {
                 .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
             QRCodeView(text: server.pairingPayload)
                 .frame(width: 152, height: 152)
-            Text("Tap Scan Mac QR Code in ThumbConsole on iPhone.")
+            Text("Tap Scan Mac QR Code in Thumble on iPhone.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .multilineTextAlignment(.center)
@@ -1920,7 +1920,7 @@ private enum MacOnboardingStep: String, CaseIterable, Identifiable, Hashable {
 
     var subtitle: String {
         switch self {
-        case .welcome: "What ThumbConsole does"
+        case .welcome: "What Thumble does"
         case .permissions: "Allow shortcuts and local discovery"
         case .connect: "Pair over local or nearby network"
         case .editor: "Build and sync your controls"
@@ -2015,7 +2015,7 @@ private struct MacOnboardingView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("ThumbConsole")
+                    Text("Thumble")
                         .geistTypography(.heading24)
                         .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     Text("Guided setup · Step \(selectedIndex + 1) of \(steps.count)")
@@ -2156,7 +2156,7 @@ private struct MacOnboardingView: View {
                     .foregroundStyle(Geist.color(.gray1000, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                Text("ThumbConsole Mac receives button presses from the iPhone and turns them into keyboard shortcuts, pointer gestures, or virtual controller output for the focused Mac app.")
+                Text("Thumble Mac receives button presses from the iPhone and turns them into keyboard shortcuts, pointer gestures, or virtual controller output for the focused Mac app.")
                     .geistTypography(.copy16)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -2180,7 +2180,7 @@ private struct MacOnboardingView: View {
 
             MacOnboardingCallout(
                 title: "Before you start",
-                text: "Keep this Mac and your iPhone on the same Wi‑Fi network, or leave Wi‑Fi/Bluetooth enabled for nearby peer-to-peer. Open ThumbConsole on both devices and leave the Mac helper running while you use the keypad.",
+                text: "Keep this Mac and your iPhone on the same Wi‑Fi network, or leave Wi‑Fi/Bluetooth enabled for nearby peer-to-peer. Open Thumble on both devices and leave the Mac helper running while you use the keypad.",
                 systemImage: "wifi"
             )
         }
@@ -2202,14 +2202,14 @@ private struct MacOnboardingView: View {
             VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
                 MacOnboardingPermissionCard(
                     title: "Accessibility",
-                    subtitle: server.accessibilityTrusted ? "ThumbConsole can send keyboard and pointer events." : "Open System Settings → Privacy & Security → Accessibility, then enable ThumbConsole Mac.",
+                    subtitle: server.accessibilityTrusted ? "Thumble can send keyboard and pointer events." : "Open System Settings → Privacy & Security → Accessibility, then enable Thumble Mac.",
                     systemImage: "checkmark.shield.fill",
                     isComplete: server.accessibilityTrusted
                 )
 
                 MacOnboardingPermissionCard(
                     title: "Local Network",
-                    subtitle: "If macOS asks, allow ThumbConsole to find and advertise devices on your local network. This enables Smart Connect and QR pairing.",
+                    subtitle: "If macOS asks, allow Thumble to find and advertise devices on your local network. This enables Smart Connect and QR pairing.",
                     systemImage: "network",
                     isComplete: server.isRunning
                 )
@@ -2284,7 +2284,7 @@ private struct MacOnboardingView: View {
                 .frame(width: 188, height: 188)
                 .opacity(server.isRunning ? 1 : 0.42)
 
-            Text(server.isRunning ? "Open ThumbConsole on iPhone → Scan Mac QR Code." : "Start the helper before scanning.")
+            Text(server.isRunning ? "Open Thumble on iPhone → Scan Mac QR Code." : "Start the helper before scanning.")
                 .geistTypography(.copy13)
                 .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                 .multilineTextAlignment(.center)
@@ -2433,7 +2433,7 @@ private struct MacOnboardingView: View {
                     .geistButtonStyle(.secondary, size: .large)
             }
 
-            Button(isLastStep ? "Open ThumbConsole" : (isFirstStep ? "Get Started" : "Continue")) {
+            Button(isLastStep ? "Open Thumble" : (isFirstStep ? "Get Started" : "Continue")) {
                 if isLastStep {
                     onComplete()
                 } else {
@@ -2442,7 +2442,7 @@ private struct MacOnboardingView: View {
             }
             .geistButtonStyle(.primary, size: .large)
             .frame(minWidth: 144)
-            .accessibilityHint(isLastStep ? "Finishes setup and opens ThumbConsole." : "Advances to the next setup step.")
+            .accessibilityHint(isLastStep ? "Finishes setup and opens Thumble." : "Advances to the next setup step.")
         }
         .padding(.horizontal, Geist.Spacing.s6)
         .padding(.vertical, Geist.Spacing.s3)
@@ -2499,7 +2499,7 @@ private struct MacOnboardingSystemPreview: View {
 
             stage(
                 title: "Mac helper",
-                subtitle: "ThumbConsole translates the action instantly.",
+                subtitle: "Thumble translates the action instantly.",
                 systemImage: "macbook"
             )
 
@@ -2529,7 +2529,7 @@ private struct MacOnboardingSystemPreview: View {
                 .stroke(Geist.color(.blue400, scheme: colorScheme), lineWidth: 1)
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("How ThumbConsole works")
+        .accessibilityLabel("How Thumble works")
         .accessibilityValue("Tap a keypad control on iPhone. The secure Mac helper translates it into input for the focused app.")
     }
 

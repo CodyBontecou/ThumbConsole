@@ -2,13 +2,13 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// ThumbConsole's versioned JSON format for saving and sharing keypad setup layouts.
+/// Thumble's versioned JSON format for saving and sharing keypad setup layouts.
 ///
-/// There is not a broadly adopted interchange format for ThumbConsole-style multitouch
+/// There is not a broadly adopted interchange format for Thumble-style multitouch
 /// keypad layouts, so exports use this app-owned schema identifier and version.
 /// The macOS CLI may add Mac-only shortcut binding data next to these fields, while
 /// iOS exports include the layout/profile state that the phone can actually use.
-public struct ThumbConsoleKeypadConfigurationExport: Codable, Equatable, Sendable {
+public struct ThumbleKeypadConfigurationExport: Codable, Equatable, Sendable {
     public static let schemaIdentifier = "com.codybontecou.pocketpad.keypad-configuration"
     /// Version 4 adds installed-skin references and per-orientation appearance baselines.
     public static let currentVersion = 4
@@ -50,14 +50,14 @@ public struct ThumbConsoleKeypadConfigurationExport: Codable, Equatable, Sendabl
             throw DecodingError.dataCorruptedError(
                 forKey: .schema,
                 in: container,
-                debugDescription: "Unsupported ThumbConsole keypad configuration schema: \(schema)"
+                debugDescription: "Unsupported Thumble keypad configuration schema: \(schema)"
             )
         }
         guard version >= 1 && version <= Self.currentVersion else {
             throw DecodingError.dataCorruptedError(
                 forKey: .version,
                 in: container,
-                debugDescription: "Unsupported ThumbConsole keypad configuration version: \(version)"
+                debugDescription: "Unsupported Thumble keypad configuration version: \(version)"
             )
         }
 
@@ -67,7 +67,7 @@ public struct ThumbConsoleKeypadConfigurationExport: Codable, Equatable, Sendabl
             throw DecodingError.dataCorruptedError(
                 forKey: .profiles,
                 in: container,
-                debugDescription: "ThumbConsole keypad configuration export must contain at least one profile."
+                debugDescription: "Thumble keypad configuration export must contain at least one profile."
             )
         }
         let decodedActiveID = try container.decodeIfPresent(UUID.self, forKey: .activeProfileID)
@@ -97,7 +97,7 @@ public struct ThumbConsoleKeypadConfigurationExport: Codable, Equatable, Sendabl
         let name = activeProfileName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseName = name?.isEmpty == false ? name! : "keypads"
         let safeName = sanitizedFilenameComponent(baseName)
-        return "ThumbConsole-\(safeName).json"
+        return "Thumble-\(safeName).json"
     }
 
     private static func sanitizedFilenameComponent(_ value: String) -> String {
@@ -128,13 +128,13 @@ public struct ThumbConsoleKeypadConfigurationExport: Codable, Equatable, Sendabl
     }
 }
 
-public struct ThumbConsoleKeypadConfigurationJSONDocument: FileDocument {
+public struct ThumbleKeypadConfigurationJSONDocument: FileDocument {
     public static var readableContentTypes: [UTType] { [.json] }
     public static var writableContentTypes: [UTType] { [.json] }
 
-    public var export: ThumbConsoleKeypadConfigurationExport
+    public var export: ThumbleKeypadConfigurationExport
 
-    public init(export: ThumbConsoleKeypadConfigurationExport) {
+    public init(export: ThumbleKeypadConfigurationExport) {
         self.export = export
     }
 
@@ -142,7 +142,7 @@ public struct ThumbConsoleKeypadConfigurationJSONDocument: FileDocument {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        export = try JSONDecoder().decode(ThumbConsoleKeypadConfigurationExport.self, from: data)
+        export = try JSONDecoder().decode(ThumbleKeypadConfigurationExport.self, from: data)
     }
 
     public func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {

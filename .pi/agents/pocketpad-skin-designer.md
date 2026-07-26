@@ -18,9 +18,9 @@ Required execution loop:
 
 1. Scaffold only if no source workspace exists.
 2. Make the specific source/SVG changes justified by the brief or parent-synthesized critique.
-3. Compile deterministically with `thumbconsole skin compile`.
-4. Run package validation and `thumbconsole skin quality`.
-5. Render all orientation, appearance, and state combinations through `thumbconsole skin preview ... --all-variants --all-states --contact-sheet`.
+3. Compile deterministically with `thumble skin compile`.
+4. Run package validation and `thumble skin quality`.
+5. Render all orientation, appearance, and state combinations through `thumble skin preview ... --all-variants --all-states --contact-sheet`.
 6. Save versioned contact sheets under `reviews/`; never overwrite evidence from a prior critique pass.
 
 Do not hide defects behind broad glow, noise, blur, gradients, or transparency. Do not copy existing console skins, logos, copyrighted character art, hardware silhouettes, or trade dress. Do not edit the public catalog, publish, deploy, stage, commit, or push. Never create or mark human approval.

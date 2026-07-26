@@ -1,8 +1,8 @@
 import SwiftUI
 
 @main
-struct ThumbConsoleiOSApp: App {
-    @UIApplicationDelegateAdaptor(ThumbConsoleApplicationDelegate.self) private var applicationDelegate
+struct ThumbleiOSApp: App {
+    @UIApplicationDelegateAdaptor(ThumbleApplicationDelegate.self) private var applicationDelegate
     @StateObject private var client = ControllerClient()
     @StateObject private var orientationCoordinator = GamepadOrientationCoordinator()
     @Environment(\.scenePhase) private var scenePhase

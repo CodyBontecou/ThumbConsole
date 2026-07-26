@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DERIVED_DATA_PATH="${STACK_SAFETY_DERIVED_DATA_PATH:-$ROOT_DIR/build/StackSafetyDerivedData}"
-PROJECT_PATH="$ROOT_DIR/ThumbConsole.xcodeproj"
+PROJECT_PATH="$ROOT_DIR/Thumble.xcodeproj"
 HOST_ARCH="$(uname -m)"
 
 if [[ "$HOST_ARCH" != "arm64" ]]; then
@@ -16,14 +16,14 @@ printf '%s\n' "==> Verifying Debug arm64 build settings"
 MAC_BUILD_SETTINGS="$(
   xcodebuild -showBuildSettings \
     -project "$PROJECT_PATH" \
-    -scheme ThumbConsoleCLI \
+    -scheme ThumbleCLI \
     -configuration Debug \
     -destination 'platform=macOS,arch=arm64'
 )"
 IOS_BUILD_SETTINGS="$(
   xcodebuild -showBuildSettings \
     -project "$PROJECT_PATH" \
-    -scheme ThumbConsoleiOS \
+    -scheme ThumbleiOS \
     -configuration Debug \
     -destination 'generic/platform=iOS'
 )"
@@ -46,18 +46,18 @@ python3 "$ROOT_DIR/scripts/check-controller-stack-frames.py" --self-test
 printf '%s\n' "==> Running constrained-stack regression tests"
 xcodebuild test \
   -project "$PROJECT_PATH" \
-  -scheme ThumbConsoleCLI \
+  -scheme ThumbleCLI \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED_DATA_PATH" \
-  -only-testing:ThumbConsoleCLITests/StackSafetyRegressionTests \
+  -only-testing:ThumbleCLITests/StackSafetyRegressionTests \
   CODE_SIGNING_ALLOWED=NO \
   COMPILER_INDEX_STORE_ENABLE=NO
 
 printf '%s\n' "==> Building macOS Debug target with network stack budgets"
 xcodebuild build \
   -project "$PROJECT_PATH" \
-  -scheme ThumbConsoleMac \
+  -scheme ThumbleMac \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED_DATA_PATH" \
@@ -67,7 +67,7 @@ xcodebuild build \
 printf '%s\n' "==> Building iOS Debug target with static stack budgets"
 xcodebuild build \
   -project "$PROJECT_PATH" \
-  -scheme ThumbConsoleiOS \
+  -scheme ThumbleiOS \
   -configuration Debug \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "$DERIVED_DATA_PATH" \

@@ -1,7 +1,7 @@
 ---
 name: pocketpad-skin-author
-description: Authors or revises handcrafted PocketPad/ThumbConsole skins from editable JSON and SVG against canonical artboards, compiles packages, renders native state contact sheets, runs independent visual critique and strict QA, and prepares evidence for human approval. Use whenever creating, redesigning, critiquing, validating, or preparing a community PocketPad skin. Never publishes autonomously.
-compatibility: Requires macOS, Xcode, the ThumbConsole project, and the thumbconsole CLI.
+description: Authors or revises handcrafted PocketPad/Thumble skins from editable JSON and SVG against canonical artboards, compiles packages, renders native state contact sheets, runs independent visual critique and strict QA, and prepares evidence for human approval. Use whenever creating, redesigning, critiquing, validating, or preparing a community PocketPad skin. Never publishes autonomously.
+compatibility: Requires macOS, Xcode, the Thumble project, and the thumble CLI.
 ---
 
 # PocketPad Skin Author
@@ -35,22 +35,22 @@ Dependencies make these stages sequential. Do not run art direction, design, and
 ## Core commands
 
 ```bash
-thumbconsole skin artboard list
-thumbconsole skin artboard show ARTBOARD --json
-thumbconsole skin scaffold "Skin Name" \
+thumble skin artboard list
+thumble skin artboard show ARTBOARD --json
+thumble skin scaffold "Skin Name" \
   --identifier com.creator.skin-name \
   --artboard ARTBOARD \
   -o PATH
 
-thumbconsole skin compile PATH -o PATH/build/skin.pocketpad --clean
-thumbconsole skin validate PATH/build/skin.pocketpad --strict
-thumbconsole skin quality PATH --artboard ARTBOARD --strict
-thumbconsole skin preview PATH \
+thumble skin compile PATH -o PATH/build/skin.pocketpad --clean
+thumble skin validate PATH/build/skin.pocketpad --strict
+thumble skin quality PATH --artboard ARTBOARD --strict
+thumble skin preview PATH \
   -o PATH/reviews/contact-sheet-N.png \
   --all-variants --all-states --native-renderer --contact-sheet --columns 4
 ```
 
-If `thumbconsole` is not on `PATH`, build `ThumbConsoleCLI` with Xcode and use the resulting executable. Guard long builds with a timeout and keep output bounded.
+If `thumble` is not on `PATH`, build `ThumbleCLI` with Xcode and use the resulting executable. Guard long builds with a timeout and keep output bounded.
 
 ## Completion contract
 

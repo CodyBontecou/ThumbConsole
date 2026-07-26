@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ThumbConsoleLatencySimulationPattern: String, Codable, CaseIterable, Sendable {
+public enum ThumbleLatencySimulationPattern: String, Codable, CaseIterable, Sendable {
     case hollowKnight = "hollow-knight"
     case sameButtonBurst = "same-button-burst"
     case udpRecovery = "udp-recovery"
@@ -23,7 +23,7 @@ public enum ThumbConsoleLatencySimulationPattern: String, Codable, CaseIterable,
     }
 }
 
-public enum ThumbConsoleLatencySimulationMode: String, Codable, CaseIterable, Sendable {
+public enum ThumbleLatencySimulationMode: String, Codable, CaseIterable, Sendable {
     case current
     case legacyMainActor = "legacy-main-actor"
 
@@ -37,12 +37,12 @@ public enum ThumbConsoleLatencySimulationMode: String, Codable, CaseIterable, Se
     }
 }
 
-public struct ThumbConsoleLatencySimulationReport: Codable, Sendable {
-    public var pattern: ThumbConsoleLatencySimulationPattern
-    public var mode: ThumbConsoleLatencySimulationMode
+public struct ThumbleLatencySimulationReport: Codable, Sendable {
+    public var pattern: ThumbleLatencySimulationPattern
+    public var mode: ThumbleLatencySimulationMode
     public var assumptions: [String: Double]
-    public var summary: ThumbConsoleLatencySimulationSummary
-    public var samples: [ThumbConsoleLatencySimulationSample]
+    public var summary: ThumbleLatencySimulationSummary
+    public var samples: [ThumbleLatencySimulationSample]
     public var duplicateMirrorFrames: Int
     public var staleFrames: Int
     public var bufferedFrames: Int
@@ -51,15 +51,15 @@ public struct ThumbConsoleLatencySimulationReport: Codable, Sendable {
     public var heartbeatResyncFrames: Int
 }
 
-public struct ThumbConsoleLatencyVerificationReport: Codable, Sendable {
+public struct ThumbleLatencyVerificationReport: Codable, Sendable {
     public var passed: Bool
     public var maxAllowedMilliseconds: Double
     public var p95AllowedMilliseconds: Double
-    public var reports: [ThumbConsoleLatencySimulationReport]
+    public var reports: [ThumbleLatencySimulationReport]
     public var failures: [String]
 }
 
-public struct ThumbConsoleLatencySimulationSummary: Codable, Sendable {
+public struct ThumbleLatencySimulationSummary: Codable, Sendable {
     public var sampleCount: Int
     public var p50Milliseconds: Double
     public var p95Milliseconds: Double
@@ -68,7 +68,7 @@ public struct ThumbConsoleLatencySimulationSummary: Codable, Sendable {
     public var overSixteenMilliseconds: Int
 }
 
-public struct ThumbConsoleLatencySimulationSample: Codable, Sendable {
+public struct ThumbleLatencySimulationSample: Codable, Sendable {
     public var sequenceNumber: UInt64
     public var button: GameButton
     public var state: ButtonPressState
@@ -84,17 +84,17 @@ public struct ThumbConsoleLatencySimulationSample: Codable, Sendable {
     public var note: String?
 }
 
-public enum ThumbConsoleInputLatencySimulator {
+public enum ThumbleInputLatencySimulator {
     public static func run(
-        pattern: ThumbConsoleLatencySimulationPattern = .hollowKnight,
-        mode: ThumbConsoleLatencySimulationMode = .current
-    ) -> ThumbConsoleLatencySimulationReport {
+        pattern: ThumbleLatencySimulationPattern = .hollowKnight,
+        mode: ThumbleLatencySimulationMode = .current
+    ) -> ThumbleLatencySimulationReport {
         var simulator = Simulation(pattern: pattern, mode: mode)
         return simulator.run()
     }
 
     public static func verifyCurrentPath(
-        patterns: [ThumbConsoleLatencySimulationPattern] = [
+        patterns: [ThumbleLatencySimulationPattern] = [
             .hollowKnight,
             .sameButtonBurst,
             .udpRecovery,
@@ -103,7 +103,7 @@ public enum ThumbConsoleInputLatencySimulator {
         ],
         maxAllowedMilliseconds: Double = 4,
         p95AllowedMilliseconds: Double = 4
-    ) -> ThumbConsoleLatencyVerificationReport {
+    ) -> ThumbleLatencyVerificationReport {
         let reports = patterns.map {
             run(pattern: $0, mode: .current)
         }
@@ -126,7 +126,7 @@ public enum ThumbConsoleInputLatencySimulator {
             }
             return failures
         }
-        return ThumbConsoleLatencyVerificationReport(
+        return ThumbleLatencyVerificationReport(
             passed: failures.isEmpty,
             maxAllowedMilliseconds: maxAllowedMilliseconds,
             p95AllowedMilliseconds: p95AllowedMilliseconds,
@@ -208,9 +208,9 @@ private struct Simulation {
         var heartbeatResync = false
         var note: String?
 
-        var output: ThumbConsoleLatencySimulationSample {
+        var output: ThumbleLatencySimulationSample {
             let latency = injectedAt.map { $0 >= touchAt ? $0 - touchAt : 0 }
-            return ThumbConsoleLatencySimulationSample(
+            return ThumbleLatencySimulationSample(
                 sequenceNumber: sequenceNumber,
                 button: button,
                 state: state,
@@ -239,8 +239,8 @@ private struct Simulation {
     private static let buttonReorderDelayNanoseconds: UInt64 = 4_000_000
     private static let heldDirectionHeartbeatResyncNanoseconds: UInt64 = 850_000_000
 
-    private let pattern: ThumbConsoleLatencySimulationPattern
-    private let mode: ThumbConsoleLatencySimulationMode
+    private let pattern: ThumbleLatencySimulationPattern
+    private let mode: ThumbleLatencySimulationMode
     private var samples: [UInt64: MutableSample] = [:]
     private var pendingFrames: [UInt64: FrameEvent] = [:]
     private var sequenceTracker = ButtonSequenceTracker()
@@ -251,12 +251,12 @@ private struct Simulation {
     private var bufferedFrames = 0
     private var recoveredByMirrorFrames = 0
 
-    init(pattern: ThumbConsoleLatencySimulationPattern, mode: ThumbConsoleLatencySimulationMode) {
+    init(pattern: ThumbleLatencySimulationPattern, mode: ThumbleLatencySimulationMode) {
         self.pattern = pattern
         self.mode = mode
     }
 
-    mutating func run() -> ThumbConsoleLatencySimulationReport {
+    mutating func run() -> ThumbleLatencySimulationReport {
         var scheduledEvents = scheduledFrameEvents(for: clientEdges())
         process(&scheduledEvents)
 
@@ -264,7 +264,7 @@ private struct Simulation {
             .sorted { $0.sequenceNumber < $1.sequenceNumber }
             .map(\.output)
         let latencies = orderedSamples.compactMap(\.latencyMilliseconds).sorted()
-        let summary = ThumbConsoleLatencySimulationSummary(
+        let summary = ThumbleLatencySimulationSummary(
             sampleCount: latencies.count,
             p50Milliseconds: percentile(0.50, in: latencies),
             p95Milliseconds: percentile(0.95, in: latencies),
@@ -273,7 +273,7 @@ private struct Simulation {
             overSixteenMilliseconds: latencies.filter { $0 > 16 }.count
         )
 
-        return ThumbConsoleLatencySimulationReport(
+        return ThumbleLatencySimulationReport(
             pattern: pattern,
             mode: mode,
             assumptions: assumptions,

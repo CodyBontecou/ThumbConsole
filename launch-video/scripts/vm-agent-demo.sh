@@ -5,9 +5,9 @@ clear
 printf '\033[?25l'
 printf '\033[38;5;45magent\033[0m  Create a Hollow Knight controller.\n'
 sleep 1.0
-printf '\n\033[38;5;244m$\033[0m \033[1mthumbconsole generate "Hollow Knight"\033[0m\n\n'
+printf '\n\033[38;5;244m$\033[0m \033[1mthumble generate "Hollow Knight"\033[0m\n\n'
 sleep 0.8
-/usr/local/bin/thumbconsole generate "Hollow Knight" >/tmp/pocketpad-agent-generate.log
+/usr/local/bin/thumble generate "Hollow Knight" >/tmp/pocketpad-agent-generate.log
 printf '\033[38;5;82m✓\033[0m Layout quality passed\n'; sleep 0.25
 printf '\033[38;5;82m✓\033[0m Generated \033[1mHollow Knight\033[0m with the Cavern Glow theme\n'; sleep 0.25
 printf '\033[38;5;82m✓\033[0m Confidence: high\n\n'; sleep 0.25

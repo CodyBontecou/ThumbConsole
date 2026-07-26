@@ -664,8 +664,8 @@ public enum PocketPadSkinPackageCodecError: LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .archiveTooLarge: "PocketPad package exceeds the compressed size limit."
-        case .invalidArchive: "The file is not a readable PocketPad ZIP package."
+        case .archiveTooLarge: "Thumble skin package exceeds the compressed size limit."
+        case .invalidArchive: "The file is not a readable Thumble skin package."
         case .unsafeEntry(let path): "Package contains an unsafe path: \(path)."
         case .duplicateEntry(let path): "Package contains a duplicate entry: \(path)."
         case .unsupportedEntry(let path): "Package contains an unsupported entry type: \(path)."
@@ -675,7 +675,7 @@ public enum PocketPadSkinPackageCodecError: LocalizedError, Equatable {
         case .missingEntry(let path): "Package is missing required entry: \(path)."
         case .unexpectedEntry(let path): "Package contains an undeclared entry: \(path)."
         case .corruptEntry(let path): "Package entry failed integrity validation: \(path)."
-        case .invalidPackage(let issues): issues.first?.message ?? "PocketPad package is invalid."
+        case .invalidPackage(let issues): issues.first?.message ?? "Thumble skin package is invalid."
         }
     }
 }

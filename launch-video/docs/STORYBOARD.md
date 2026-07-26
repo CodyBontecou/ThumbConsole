@@ -2,7 +2,7 @@
 
 ## Direction
 
-A minimal, product-first film inspired by Vercel’s launch work: black canvas, fine grid, high-contrast Geist typography, terse labels, precise motion, and one electric-blue accent borrowed from ThumbConsole’s UI.
+A minimal, product-first film inspired by Vercel’s launch work: black canvas, fine grid, high-contrast Geist typography, terse labels, precise motion, and one electric-blue accent borrowed from Thumble’s UI.
 
 No voiceover is required. Music carries the pace while copy and real product captures tell the story.
 
@@ -20,9 +20,9 @@ Visual: Hollow Knight controller rises into frame inside a landscape phone treat
 
 **Eyebrow:** Describe the game
 **Headline:** Ask once. Start with a complete layout.
-**Support:** ThumbConsole’s CLI turns a game name into controls, bindings, styles, and haptics.
+**Support:** Thumble’s CLI turns a game name into controls, bindings, styles, and haptics.
 
-Visual: Tart VM Terminal runs `thumbconsole generate "Hollow Knight"`, then reports mapped controls and successful sync.
+Visual: Tart VM Terminal runs `thumble generate "Hollow Knight"`, then reports mapped controls and successful sync.
 
 ### 0:13–0:20 — Mac editor
 
@@ -30,7 +30,7 @@ Visual: Tart VM Terminal runs `thumbconsole generate "Hollow Knight"`, then repo
 **Headline:** Every control starts with intent.
 **Support:** Edit the device, layout, shortcuts, layers, icons, colors, and response from the Mac.
 
-Visual: Real ThumbConsole keypad editor with device canvas and inspector. Binding chips call out Arrows, Z, X, C, and A.
+Visual: Real Thumble keypad editor with device canvas and inspector. Binding chips call out Arrows, Z, X, C, and A.
 
 ### 0:19–0:28 — Controller
 
@@ -55,12 +55,12 @@ Visual: Tart VM Mac helper and iPhone controller side by side, joined by an anim
 
 ### 0:40–0:45 — End card
 
-**Wordmark:** ThumbConsole
+**Wordmark:** Thumble
 **Tagline:** Turn your iPhone into a custom gaming controller.
 **CTA:** macOS + iOS / Build yours / Coming soon
 
 ## Safe copy notes
 
 - Avoid “zero latency” or other absolute performance claims.
-- “Low latency” is supported by ThumbConsole’s local authenticated UDP path.
+- “Low latency” is supported by Thumble’s local authenticated UDP path.
 - The Hollow Knight name is used only to demonstrate a user-created compatibility profile. No game art is bundled.

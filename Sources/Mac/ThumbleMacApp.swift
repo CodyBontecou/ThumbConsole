@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct ThumbConsoleMacApp: App {
+struct ThumbleMacApp: App {
     @StateObject private var server = MacControllerServer()
 
     var body: some Scene {

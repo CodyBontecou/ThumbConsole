@@ -71,11 +71,11 @@ public enum PocketPadSkinStoreError: LocalizedError, Equatable {
         case .skinNotInstalled(let reference):
             "\(reference.identifier) version \(reference.version) is not installed."
         case .cannotCreateStore(let detail):
-            "Could not create the PocketPad skin library: \(detail)"
+            "Could not create the Thumble skin library: \(detail)"
         case .cannotWritePackage(let detail):
-            "Could not install the PocketPad skin: \(detail)"
+            "Could not install the Thumble skin: \(detail)"
         case .cannotRemovePackage(let detail):
-            "Could not remove the PocketPad skin: \(detail)"
+            "Could not remove the Thumble skin: \(detail)"
         }
     }
 }
@@ -338,7 +338,7 @@ public enum PocketPadBundledSkins {
                 identifier: identifier,
                 version: "1.0.0",
                 name: preset.displayName,
-                author: PocketPadSkinAuthor(name: "ThumbConsole"),
+                author: PocketPadSkinAuthor(name: "Thumble"),
                 summary: preset.description,
                 license: "All Rights Reserved",
                 tags: ["bundled", "preset", preset.rawValue]

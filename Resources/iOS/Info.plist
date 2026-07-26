@@ -22,7 +22,7 @@
   <array>
     <dict>
       <key>CFBundleTypeName</key>
-      <string>PocketPad Skin Package</string>
+      <string>Thumble Skin Package</string>
       <key>CFBundleTypeRole</key>
       <string>Editor</string>
       <key>LSHandlerRank</key>
@@ -39,7 +39,7 @@
       <key>UTTypeIdentifier</key>
       <string>com.codybontecou.pocketpad.skin-package</string>
       <key>UTTypeDescription</key>
-      <string>PocketPad Skin Package</string>
+      <string>Thumble Skin Package</string>
       <key>UTTypeConformsTo</key>
       <array>
         <string>public.zip-archive</string>
@@ -61,13 +61,13 @@
   <key>LSSupportsOpeningDocumentsInPlace</key>
   <true/>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>ThumbConsole connects to your Mac helper over your local network or nearby peer-to-peer.</string>
+  <string>Thumble connects to your Mac helper over your local network or nearby peer-to-peer.</string>
   <key>NSBonjourServices</key>
   <array>
     <string>_pocketpad._tcp</string>
   </array>
   <key>NSCameraUsageDescription</key>
-  <string>ThumbConsole uses the camera to scan the Mac helper QR code.</string>
+  <string>Thumble uses the camera to scan the Mac helper QR code.</string>
   <key>UIApplicationSupportsIndirectInputEvents</key>
   <true/>
   <key>UILaunchScreen</key>

@@ -546,7 +546,7 @@ public struct PocketPadSkinWorkspace: Codable, Equatable, Sendable {
             identifier: identifier,
             name: name,
             author: PocketPadSkinAuthor(name: "Your Name"),
-            summary: "A handcrafted controller skin built from a canonical ThumbConsole artboard.",
+            summary: "A handcrafted controller skin built from a canonical Thumble artboard.",
             license: "All Rights Reserved",
             artboardID: artboardID,
             palette: [
@@ -998,12 +998,12 @@ public enum PocketPadSkinScaffolder {
         """
         # \(name)
 
-        Editable ThumbConsole skin workspace targeting `\(artboardID)`.
+        Editable Thumble skin workspace targeting `\(artboardID)`.
 
         - Edit `skin-source.json` for palette, materials, components, semantic assignments, and preview requests.
         - Keep authoring SVG under `sources/`; SVG is sanitized and rasterized during compilation and is never shipped at runtime.
         - Treat `build/` as generated output.
-        - Compile with `thumbconsole skin compile . --strict`.
+        - Compile with `thumble skin compile . --strict`.
         - Review the native contact sheet before publication.
         """ + "\n"
     }

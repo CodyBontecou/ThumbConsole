@@ -1,8 +1,8 @@
 # Indigo Pocket
 
-Reference-quality ThumbConsole skin workspace targeting `showcase-controller-v1` / SNES template revision 2.
+Reference-quality Thumble skin workspace targeting `showcase-controller-v1` / SNES template revision 2.
 
-Indigo Pocket is an original compact calibration instrument: a softened-octagonal indigo field case with orientation-specific movement and action harbors, a single violet calibration seam, warm ivory native legends, and upper-left lighting. The SVG artwork remains passive; ThumbConsole owns control geometry, labels, hit testing, state, bindings, and accessibility.
+Indigo Pocket is an original compact calibration instrument: a softened-octagonal indigo field case with orientation-specific movement and action harbors, a single violet calibration seam, warm ivory native legends, and upper-left lighting. The SVG artwork remains passive; Thumble owns control geometry, labels, hit testing, state, bindings, and accessibility.
 
 ## Source hierarchy
 
@@ -14,10 +14,10 @@ Indigo Pocket is an original compact calibration instrument: a softened-octagona
 - `build/` — generated package output; never edit by hand.
 
 ```bash
-thumbconsole skin compile . -o build/indigo-pocket-1.0.0.pocketpad --clean --strict
-thumbconsole skin validate build/indigo-pocket-1.0.0.pocketpad --strict
-thumbconsole skin quality . --artboard showcase-controller-v1 --strict
-thumbconsole skin preview . -o reviews/contact-sheet.png \
+thumble skin compile . -o build/indigo-pocket-1.0.0.pocketpad --clean --strict
+thumble skin validate build/indigo-pocket-1.0.0.pocketpad --strict
+thumble skin quality . --artboard showcase-controller-v1 --strict
+thumble skin preview . -o reviews/contact-sheet.png \
   --all-variants --all-states --native-renderer --contact-sheet
 ```
 

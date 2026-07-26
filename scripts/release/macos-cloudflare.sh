@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Build, notarize, package, and upload ThumbConsole Mac for direct web distribution.
+Build, notarize, package, and upload Thumble Mac for direct web distribution.
 
 Usage:
   scripts/release/macos-cloudflare.sh [options]
@@ -15,11 +15,12 @@ Options:
   --release-notes-file <path> Read release notes from a file.
   --skip-notarize             Package without submitting to Apple notarization.
   --skip-upload               Build local artifacts but do not upload to Cloudflare R2.
-  --skip-xcodegen             Do not regenerate ThumbConsole.xcodeproj from project.yml.
+  --skip-xcodegen             Do not regenerate Thumble.xcodeproj from project.yml.
   -h, --help                  Show this help.
 
 Required for upload:
-  CF_RELEASES_BUCKET or THUMBCONSOLE_RELEASES_BUCKET (legacy POCKETPAD_RELEASES_BUCKET also works)
+  CF_RELEASES_BUCKET or THUMBLE_RELEASES_BUCKET
+  Legacy THUMBCONSOLE_* and POCKETPAD_* variable names remain supported.
   Wrangler authenticated with Cloudflare.
 
 Required for notarization unless --skip-notarize:
@@ -39,9 +40,9 @@ log() {
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-VERSION="${THUMBCONSOLE_MAC_VERSION:-${POCKETPAD_MAC_VERSION:-}}"
-BUILD_NUMBER="${THUMBCONSOLE_MAC_BUILD_NUMBER:-${THUMBCONSOLE_BUILD_NUMBER:-${POCKETPAD_MAC_BUILD_NUMBER:-${POCKETPAD_BUILD_NUMBER:-}}}}"
-RELEASE_NOTES="${THUMBCONSOLE_RELEASE_NOTES:-${POCKETPAD_RELEASE_NOTES:-}}"
+VERSION="${THUMBLE_MAC_VERSION:-${THUMBCONSOLE_MAC_VERSION:-${POCKETPAD_MAC_VERSION:-}}}"
+BUILD_NUMBER="${THUMBLE_MAC_BUILD_NUMBER:-${THUMBLE_BUILD_NUMBER:-${THUMBCONSOLE_MAC_BUILD_NUMBER:-${THUMBCONSOLE_BUILD_NUMBER:-${POCKETPAD_MAC_BUILD_NUMBER:-${POCKETPAD_BUILD_NUMBER:-}}}}}}"
+RELEASE_NOTES="${THUMBLE_RELEASE_NOTES:-${THUMBCONSOLE_RELEASE_NOTES:-${POCKETPAD_RELEASE_NOTES:-}}}"
 RELEASE_NOTES_FILE=""
 SKIP_NOTARIZE=0
 SKIP_UPLOAD=0
@@ -70,14 +71,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-PROJECT="${THUMBCONSOLE_XCODE_PROJECT:-${POCKETPAD_XCODE_PROJECT:-ThumbConsole.xcodeproj}}"
-SCHEME="${THUMBCONSOLE_MAC_SCHEME:-${POCKETPAD_MAC_SCHEME:-ThumbConsoleMac}}"
+PROJECT="${THUMBLE_XCODE_PROJECT:-${THUMBCONSOLE_XCODE_PROJECT:-${POCKETPAD_XCODE_PROJECT:-Thumble.xcodeproj}}}"
+SCHEME="${THUMBLE_MAC_SCHEME:-${THUMBCONSOLE_MAC_SCHEME:-${POCKETPAD_MAC_SCHEME:-ThumbleMac}}}"
 CONFIGURATION="${CONFIGURATION:-Release}"
-TEAM_ID="${THUMBCONSOLE_DEVELOPMENT_TEAM:-${POCKETPAD_DEVELOPMENT_TEAM:-67KC823C9A}}"
-EXPORT_OPTIONS="${THUMBCONSOLE_MAC_EXPORT_OPTIONS:-${POCKETPAD_MAC_EXPORT_OPTIONS:-Config/ExportOptions/Mac-DeveloperID.plist}}"
-ARTIFACT_ROOT="${THUMBCONSOLE_RELEASE_DIR:-${POCKETPAD_RELEASE_DIR:-.release}}"
-BUCKET="${CF_RELEASES_BUCKET:-${THUMBCONSOLE_RELEASES_BUCKET:-${POCKETPAD_RELEASES_BUCKET:-pocketpad-releases}}}"
-WEBSITE_ORIGIN="${THUMBCONSOLE_WEBSITE_ORIGIN:-${POCKETPAD_WEBSITE_ORIGIN:-}}"
+TEAM_ID="${THUMBLE_DEVELOPMENT_TEAM:-${THUMBCONSOLE_DEVELOPMENT_TEAM:-${POCKETPAD_DEVELOPMENT_TEAM:-67KC823C9A}}}"
+EXPORT_OPTIONS="${THUMBLE_MAC_EXPORT_OPTIONS:-${THUMBCONSOLE_MAC_EXPORT_OPTIONS:-${POCKETPAD_MAC_EXPORT_OPTIONS:-Config/ExportOptions/Mac-DeveloperID.plist}}}"
+ARTIFACT_ROOT="${THUMBLE_RELEASE_DIR:-${THUMBCONSOLE_RELEASE_DIR:-${POCKETPAD_RELEASE_DIR:-.release}}}"
+BUCKET="${CF_RELEASES_BUCKET:-${THUMBLE_RELEASES_BUCKET:-${THUMBCONSOLE_RELEASES_BUCKET:-${POCKETPAD_RELEASES_BUCKET:-pocketpad-releases}}}}"
+WEBSITE_ORIGIN="${THUMBLE_WEBSITE_ORIGIN:-${THUMBCONSOLE_WEBSITE_ORIGIN:-${POCKETPAD_WEBSITE_ORIGIN:-}}}"
 
 [[ -d "$PROJECT" ]] || die "missing Xcode project: $PROJECT"
 [[ -f "$EXPORT_OPTIONS" ]] || die "missing export options plist: $EXPORT_OPTIONS"
@@ -134,10 +135,10 @@ print(re.sub(r'[^A-Za-z0-9._-]+', '-', sys.argv[1]).strip('-'))
 PY
 )"
 release_dir="$ARTIFACT_ROOT/macos/$safe_version"
-archive_path="$release_dir/ThumbConsoleMac.xcarchive"
+archive_path="$release_dir/ThumbleMac.xcarchive"
 export_dir="$release_dir/export"
-notary_zip="$release_dir/ThumbConsoleMac-notary.zip"
-final_zip="$release_dir/ThumbConsoleMac-$safe_version.zip"
+notary_zip="$release_dir/ThumbleMac-notary.zip"
+final_zip="$release_dir/ThumbleMac-$safe_version.zip"
 manifest_path="$release_dir/latest.json"
 object_key="macos/$(basename "$final_zip")"
 manifest_key="macos/latest.json"
@@ -220,34 +221,34 @@ else
   download_url="$download_path"
 fi
 
-export THUMBCONSOLE_MANIFEST_VERSION="$VERSION"
-export THUMBCONSOLE_MANIFEST_BUILD="$BUILD_NUMBER"
-export THUMBCONSOLE_MANIFEST_OBJECT_KEY="$object_key"
-export THUMBCONSOLE_MANIFEST_DOWNLOAD_PATH="$download_path"
-export THUMBCONSOLE_MANIFEST_DOWNLOAD_URL="$download_url"
-export THUMBCONSOLE_MANIFEST_SHA256="$checksum"
-export THUMBCONSOLE_MANIFEST_SIZE="$size_bytes"
-export THUMBCONSOLE_MANIFEST_PUBLISHED_AT="$published_at"
-export THUMBCONSOLE_MANIFEST_NOTARIZED="$([[ $SKIP_NOTARIZE -eq 0 ]] && echo true || echo false)"
-export THUMBCONSOLE_MANIFEST_RELEASE_NOTES="$RELEASE_NOTES"
+export THUMBLE_MANIFEST_VERSION="$VERSION"
+export THUMBLE_MANIFEST_BUILD="$BUILD_NUMBER"
+export THUMBLE_MANIFEST_OBJECT_KEY="$object_key"
+export THUMBLE_MANIFEST_DOWNLOAD_PATH="$download_path"
+export THUMBLE_MANIFEST_DOWNLOAD_URL="$download_url"
+export THUMBLE_MANIFEST_SHA256="$checksum"
+export THUMBLE_MANIFEST_SIZE="$size_bytes"
+export THUMBLE_MANIFEST_PUBLISHED_AT="$published_at"
+export THUMBLE_MANIFEST_NOTARIZED="$([[ $SKIP_NOTARIZE -eq 0 ]] && echo true || echo false)"
+export THUMBLE_MANIFEST_RELEASE_NOTES="$RELEASE_NOTES"
 
 python3 - <<'PY' > "$manifest_path"
 import json
 import os
 manifest = {
     "platform": "macOS",
-    "name": "ThumbConsole Mac",
-    "version": os.environ["THUMBCONSOLE_MANIFEST_VERSION"],
-    "buildNumber": os.environ["THUMBCONSOLE_MANIFEST_BUILD"],
+    "name": "Thumble Mac",
+    "version": os.environ["THUMBLE_MANIFEST_VERSION"],
+    "buildNumber": os.environ["THUMBLE_MANIFEST_BUILD"],
     "minimumOS": "14.0",
-    "objectKey": os.environ["THUMBCONSOLE_MANIFEST_OBJECT_KEY"],
-    "downloadPath": os.environ["THUMBCONSOLE_MANIFEST_DOWNLOAD_PATH"],
-    "downloadURL": os.environ["THUMBCONSOLE_MANIFEST_DOWNLOAD_URL"],
-    "sha256": os.environ["THUMBCONSOLE_MANIFEST_SHA256"],
-    "sizeBytes": int(os.environ["THUMBCONSOLE_MANIFEST_SIZE"]),
-    "notarized": os.environ["THUMBCONSOLE_MANIFEST_NOTARIZED"] == "true",
-    "publishedAt": os.environ["THUMBCONSOLE_MANIFEST_PUBLISHED_AT"],
-    "releaseNotes": os.environ.get("THUMBCONSOLE_MANIFEST_RELEASE_NOTES", ""),
+    "objectKey": os.environ["THUMBLE_MANIFEST_OBJECT_KEY"],
+    "downloadPath": os.environ["THUMBLE_MANIFEST_DOWNLOAD_PATH"],
+    "downloadURL": os.environ["THUMBLE_MANIFEST_DOWNLOAD_URL"],
+    "sha256": os.environ["THUMBLE_MANIFEST_SHA256"],
+    "sizeBytes": int(os.environ["THUMBLE_MANIFEST_SIZE"]),
+    "notarized": os.environ["THUMBLE_MANIFEST_NOTARIZED"] == "true",
+    "publishedAt": os.environ["THUMBLE_MANIFEST_PUBLISHED_AT"],
+    "releaseNotes": os.environ.get("THUMBLE_MANIFEST_RELEASE_NOTES", ""),
 }
 print(json.dumps(manifest, indent=2, sort_keys=True))
 PY

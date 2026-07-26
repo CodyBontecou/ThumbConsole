@@ -10,7 +10,7 @@ struct InputLatencySimulationSmokeTests {
         testJSONInputFields()
         testPipelineCaptureFieldsRoundTrip()
 
-        let current = ThumbConsoleInputLatencySimulator.run(
+        let current = ThumbleInputLatencySimulator.run(
             pattern: .hollowKnight,
             mode: .current
         )
@@ -23,11 +23,11 @@ struct InputLatencySimulationSmokeTests {
             "current Hollow Knight path has no frame-budget misses"
         )
 
-        let legacyBurst = ThumbConsoleInputLatencySimulator.run(
+        let legacyBurst = ThumbleInputLatencySimulator.run(
             pattern: .sameButtonBurst,
             mode: .legacyMainActor
         )
-        let currentBurst = ThumbConsoleInputLatencySimulator.run(
+        let currentBurst = ThumbleInputLatencySimulator.run(
             pattern: .sameButtonBurst,
             mode: .current
         )
@@ -36,7 +36,7 @@ struct InputLatencySimulationSmokeTests {
             "legacy main-actor model exposes burst input lag"
         )
 
-        let recovery = ThumbConsoleInputLatencySimulator.run(
+        let recovery = ThumbleInputLatencySimulator.run(
             pattern: .udpRecovery,
             mode: .current
         )
@@ -53,7 +53,7 @@ struct InputLatencySimulationSmokeTests {
             "TCP mirror recovery stays below the strict action-game budget"
         )
 
-        let recoveryBurst = ThumbConsoleInputLatencySimulator.run(
+        let recoveryBurst = ThumbleInputLatencySimulator.run(
             pattern: .udpRecoveryBurst,
             mode: .current
         )
@@ -62,7 +62,7 @@ struct InputLatencySimulationSmokeTests {
             "UDP recovery burst stays below the strict action-game budget"
         )
 
-        let heldRecovery = ThumbConsoleInputLatencySimulator.run(
+        let heldRecovery = ThumbleInputLatencySimulator.run(
             pattern: .heldDirectionHeartbeatRecovery,
             mode: .current
         )
@@ -81,7 +81,7 @@ struct InputLatencySimulationSmokeTests {
             "held direction heartbeat recovery stays below the strict action-game budget"
         )
 
-        let verification = ThumbConsoleInputLatencySimulator.verifyCurrentPath()
+        let verification = ThumbleInputLatencySimulator.verifyCurrentPath()
         expect(
             verification.passed,
             "strict latency verification passes every current-path pattern"
@@ -182,7 +182,7 @@ struct InputLatencySimulationSmokeTests {
     }
 
     private static func testPipelineCaptureFieldsRoundTrip() {
-        let event = ThumbConsoleCaptureEvent(
+        let event = ThumbleCaptureEvent(
             schemaVersion: 3,
             kind: "input_pipeline",
             source: "iPhone UDP",
@@ -200,7 +200,7 @@ struct InputLatencySimulationSmokeTests {
         )
         do {
             let data = try JSONEncoder().encode(event)
-            let decoded = try JSONDecoder().decode(ThumbConsoleCaptureEvent.self, from: data)
+            let decoded = try JSONDecoder().decode(ThumbleCaptureEvent.self, from: data)
             expect(decoded.inputGeneration == 77, "pipeline capture preserves generation")
             expect(decoded.inputSequence == 88, "pipeline capture preserves input sequence")
             expect(decoded.decodeLatencyMS == 0.125, "pipeline capture preserves decode timing")
@@ -213,7 +213,7 @@ struct InputLatencySimulationSmokeTests {
             expect(decoded.outputDeferred == false, "pipeline capture preserves deferred-output state")
 
             let legacyData = Data(#"{"schemaVersion":2,"recordedAt":1,"kind":"input_pipeline","decodeLatencyMS":0.1}"#.utf8)
-            let legacy = try JSONDecoder().decode(ThumbConsoleCaptureEvent.self, from: legacyData)
+            let legacy = try JSONDecoder().decode(ThumbleCaptureEvent.self, from: legacyData)
             expect(legacy.outputInjectionMS == nil, "legacy pipeline capture remains decodable without output stages")
             expect(legacy.outputDeferred == nil, "legacy pipeline capture has no deferred-output state")
         } catch {

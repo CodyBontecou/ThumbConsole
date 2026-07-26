@@ -27,7 +27,7 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var pendingPairingClientName: String?
     @Published private(set) var clientName: String = "No client"
     @Published private(set) var clientDeviceInfo: ControllerClientDeviceInfo?
-    @Published private(set) var editorDeliveryState: ThumbConsoleEditorDeliveryState = .offline
+    @Published private(set) var editorDeliveryState: ThumbleEditorDeliveryState = .offline
     @Published private(set) var editorDeliveryDetail = "No iPhone connected"
     @Published private(set) var editorDeliveryUpdatedAt = Date.currentMilliseconds
     private(set) var lastHeartbeat: Date? {
@@ -126,8 +126,8 @@ final class MacControllerServer: ObservableObject {
     }
 
     private struct KeypadConfigurationExportEnvelope: Codable {
-        var schema = ThumbConsoleKeypadConfigurationExport.schemaIdentifier
-        var version = ThumbConsoleKeypadConfigurationExport.currentVersion
+        var schema = ThumbleKeypadConfigurationExport.schemaIdentifier
+        var version = ThumbleKeypadConfigurationExport.currentVersion
         var exportedAt = Date.currentMilliseconds
         var profiles: [GamepadConfigurationProfile]
         var activeProfileID: UUID?
@@ -151,13 +151,13 @@ final class MacControllerServer: ObservableObject {
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            schema = try container.decodeIfPresent(String.self, forKey: .schema) ?? ThumbConsoleKeypadConfigurationExport.schemaIdentifier
-            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? ThumbConsoleKeypadConfigurationExport.currentVersion
-            guard schema == ThumbConsoleKeypadConfigurationExport.schemaIdentifier else {
-                throw DecodingError.dataCorruptedError(forKey: .schema, in: container, debugDescription: "Unsupported ThumbConsole keypad configuration schema: \(schema)")
+            schema = try container.decodeIfPresent(String.self, forKey: .schema) ?? ThumbleKeypadConfigurationExport.schemaIdentifier
+            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? ThumbleKeypadConfigurationExport.currentVersion
+            guard schema == ThumbleKeypadConfigurationExport.schemaIdentifier else {
+                throw DecodingError.dataCorruptedError(forKey: .schema, in: container, debugDescription: "Unsupported Thumble keypad configuration schema: \(schema)")
             }
-            guard version >= 1 && version <= ThumbConsoleKeypadConfigurationExport.currentVersion else {
-                throw DecodingError.dataCorruptedError(forKey: .version, in: container, debugDescription: "Unsupported ThumbConsole keypad configuration version: \(version)")
+            guard version >= 1 && version <= ThumbleKeypadConfigurationExport.currentVersion else {
+                throw DecodingError.dataCorruptedError(forKey: .version, in: container, debugDescription: "Unsupported Thumble keypad configuration version: \(version)")
             }
             exportedAt = try container.decodeIfPresent(Int64.self, forKey: .exportedAt) ?? Date.currentMilliseconds
             profiles = try container.decode([GamepadConfigurationProfile].self, forKey: .profiles)
@@ -171,17 +171,17 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private let networkQueue = DispatchQueue(label: "ThumbConsole.NetworkServer", qos: .userInteractive)
+    private let networkQueue = DispatchQueue(label: "Thumble.NetworkServer", qos: .userInteractive)
     private let networkQueueKey = DispatchSpecificKey<Bool>()
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     private let injector = KeyboardInjector()
     private let pointerInjector = PointerInjector()
     private let virtualGamepadInjector = VirtualGamepadInjector()
-    private let debugLogURL = URL(fileURLWithPath: "/tmp/thumbconsole-mac-events.log")
-    private let captureLogURL = URL(fileURLWithPath: ThumbConsoleMacIPC.captureLogPath)
-    private let logQueue = DispatchQueue(label: "ThumbConsole.DebugLog", qos: .utility)
-    private let captureLogQueue = DispatchQueue(label: "ThumbConsole.CaptureLog", qos: .utility)
+    private let debugLogURL = URL(fileURLWithPath: "/tmp/thumble-mac-events.log")
+    private let captureLogURL = URL(fileURLWithPath: ThumbleMacIPC.captureLogPath)
+    private let logQueue = DispatchQueue(label: "Thumble.DebugLog", qos: .utility)
+    private let captureLogQueue = DispatchQueue(label: "Thumble.CaptureLog", qos: .utility)
     private static let preferredPort: UInt16 = 8765
     private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
     private static let legacyKeyBindingsDefaultsKey = "PocketPadMac.keyBindings.v1"
@@ -505,7 +505,7 @@ final class MacControllerServer: ObservableObject {
         refreshAccessibilityStatus()
         localURLs = Self.localIPv4Addresses().map { "ws://\($0):\(port)" }
         cliCommandObserver = DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name(ThumbConsoleMacIPC.commandNotificationName),
+            forName: Notification.Name(ThumbleMacIPC.commandNotificationName),
             object: nil,
             queue: .main
         ) { [weak self] notification in
@@ -701,7 +701,7 @@ final class MacControllerServer: ObservableObject {
     private func handleCLICommandNotification(_ notification: Notification) {
         guard let commandData = Self.notificationData(
             from: notification.userInfo,
-            key: ThumbConsoleMacIPC.commandDataKey
+            key: ThumbleMacIPC.commandDataKey
         ) else {
             lastReceivedEvent = "Ignored CLI command: missing payload"
             publishRuntimeStatus(synchronize: true)
@@ -710,7 +710,7 @@ final class MacControllerServer: ObservableObject {
         }
 
         do {
-            let payload = try JSONDecoder().decode(ThumbConsoleMacCLICommandPayload.self, from: commandData)
+            let payload = try JSONDecoder().decode(ThumbleMacCLICommandPayload.self, from: commandData)
             handleCLICommand(payload)
         } catch {
             lastReceivedEvent = "Ignored CLI command: invalid payload"
@@ -719,7 +719,7 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func handleCLICommand(_ payload: ThumbConsoleMacCLICommandPayload) {
+    private func handleCLICommand(_ payload: ThumbleMacCLICommandPayload) {
         defer { publishRuntimeStatus(synchronize: true) }
 
         switch payload.command {
@@ -900,7 +900,7 @@ final class MacControllerServer: ObservableObject {
             importedActiveProfileID = profile.id
             importedDefaultProfileID = nil
         } else {
-            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "This file is not a supported ThumbConsole setup, configuration, or customization JSON file."])
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "This file is not a supported Thumble setup, configuration, or customization JSON file."])
         }
 
         guard !importedProfiles.isEmpty else {
@@ -2172,7 +2172,7 @@ final class MacControllerServer: ObservableObject {
             rejectionDetail: detail,
             recordSample: false
         )
-        appendCaptureEvent(ThumbConsoleCaptureEvent(
+        appendCaptureEvent(ThumbleCaptureEvent(
             kind: "rejected_input_generation",
             source: source,
             messageType: message.type,
@@ -2863,7 +2863,7 @@ final class MacControllerServer: ObservableObject {
         send(
             .init(
                 type: .pairingChallenge,
-                message: "Pairing request accepted. Enter the code shown on ThumbConsole Mac."
+                message: "Pairing request accepted. Enter the code shown on Thumble Mac."
             ),
             on: connection
         )
@@ -3081,7 +3081,7 @@ final class MacControllerServer: ObservableObject {
             let deltaY = message.deltaY ?? 0
             pointerInjector.moveBy(deltaX: deltaX, deltaY: deltaY)
             didApplyInput = true
-            appendCaptureEvent(ThumbConsoleCaptureEvent(
+            appendCaptureEvent(ThumbleCaptureEvent(
                 kind: "pointer",
                 source: source,
                 messageType: .pointer,
@@ -3100,7 +3100,7 @@ final class MacControllerServer: ObservableObject {
             let deltaY = message.deltaY ?? 0
             pointerInjector.scrollBy(deltaX: deltaX, deltaY: deltaY)
             didApplyInput = true
-            appendCaptureEvent(ThumbConsoleCaptureEvent(
+            appendCaptureEvent(ThumbleCaptureEvent(
                 kind: "pointer",
                 source: source,
                 messageType: .pointer,
@@ -3142,7 +3142,7 @@ final class MacControllerServer: ObservableObject {
                 pointerInjector.setButton(pointerButton, pressed: false)
             }
             didApplyInput = true
-            appendCaptureEvent(ThumbConsoleCaptureEvent(
+            appendCaptureEvent(ThumbleCaptureEvent(
                 kind: "pointer",
                 source: source,
                 messageType: .pointer,
@@ -3204,7 +3204,7 @@ final class MacControllerServer: ObservableObject {
             }
             virtualGamepadInjector.setStick(stick, x: x, y: y)
             didApplyInput = true
-            appendCaptureEvent(ThumbConsoleCaptureEvent(
+            appendCaptureEvent(ThumbleCaptureEvent(
                 kind: "gamepad_analog",
                 source: source,
                 messageType: .gamepadAnalog,
@@ -3233,7 +3233,7 @@ final class MacControllerServer: ObservableObject {
             }
             virtualGamepadInjector.setTrigger(trigger, value: value)
             didApplyInput = true
-            appendCaptureEvent(ThumbConsoleCaptureEvent(
+            appendCaptureEvent(ThumbleCaptureEvent(
                 kind: "gamepad_analog",
                 source: source,
                 messageType: .gamepadAnalog,
@@ -3458,7 +3458,7 @@ final class MacControllerServer: ObservableObject {
                     )
                     return true
                 } else {
-                    appendCaptureEvent(ThumbConsoleCaptureEvent(
+                    appendCaptureEvent(ThumbleCaptureEvent(
                         kind: "ignored_element_input_edge",
                         source: source,
                         messageType: .elementInput,
@@ -4694,7 +4694,7 @@ final class MacControllerServer: ObservableObject {
         let totalIgnoredButtonEdges = ignoredButtonEdgeCount
         let event = "Ignored \(button.rawValue) \(state.rawValue) (\(reason)); total ignored \(totalIgnoredButtonEdges)"
         publishIgnoredButtonEdge(totalIgnoredButtonEdges: totalIgnoredButtonEdges, event: event)
-        appendCaptureEvent(ThumbConsoleCaptureEvent(
+        appendCaptureEvent(ThumbleCaptureEvent(
             kind: "ignored_button_edge",
             button: button,
             state: state,
@@ -4725,7 +4725,7 @@ final class MacControllerServer: ObservableObject {
         let totalRecoveredButtonEdges = recoveredButtonEdgeCount
         let event = "Recovered \(button.rawValue) \(state.rawValue) (\(reason)); total recovered \(totalRecoveredButtonEdges)"
         publishRecoveredButtonEdge(totalRecoveredButtonEdges: totalRecoveredButtonEdges, event: event)
-        appendCaptureEvent(ThumbConsoleCaptureEvent(
+        appendCaptureEvent(ThumbleCaptureEvent(
             kind: "recovered_button_edge",
             button: button,
             state: state,
@@ -4858,7 +4858,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func updateEditorDelivery(
-        _ state: ThumbConsoleEditorDeliveryState,
+        _ state: ThumbleEditorDeliveryState,
         revision: UInt64,
         detail: String
     ) {
@@ -4927,7 +4927,7 @@ final class MacControllerServer: ObservableObject {
             return
         }
         let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
-        let context = NWConnection.ContentContext(identifier: "ThumbConsoleMessage", metadata: [metadata])
+        let context = NWConnection.ContentContext(identifier: "ThumbleMessage", metadata: [metadata])
         connection.send(
             content: data,
             contentContext: context,
@@ -5228,7 +5228,7 @@ final class MacControllerServer: ObservableObject {
         guard backgroundActivity == nil else { return }
         backgroundActivity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
-            reason: "ThumbConsole is forwarding keypad input to the Mac"
+            reason: "Thumble is forwarding keypad input to the Mac"
         )
     }
 
@@ -5566,7 +5566,7 @@ final class MacControllerServer: ObservableObject {
         runtimeStatusPublishTask = nil
         let snapshot = runtimeStatusSnapshot()
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        UserDefaults.standard.set(data, forKey: ThumbConsoleMacIPC.runtimeStatusDefaultsKey)
+        UserDefaults.standard.set(data, forKey: ThumbleMacIPC.runtimeStatusDefaultsKey)
         lastRuntimeStatusPublishUptime = DispatchTime.now().uptimeNanoseconds
         if synchronize {
             UserDefaults.standard.synchronize()
@@ -5613,13 +5613,13 @@ final class MacControllerServer: ObservableObject {
         }
     }
 
-    private func runtimeStatusSnapshot() -> ThumbConsoleMacRuntimeStatus {
+    private func runtimeStatusSnapshot() -> ThumbleMacRuntimeStatus {
         let virtualGamepadStatus = virtualGamepadInjector.status()
         let inputDiagnostics = inputDiagnosticsSnapshot()
         let pressedElementInputs = syncOnNetworkQueue {
             mirroredPressedElementInputs.sorted { $0.storageKey < $1.storageKey }
         }
-        return ThumbConsoleMacRuntimeStatus(
+        return ThumbleMacRuntimeStatus(
             updatedAt: Date.currentMilliseconds,
             statusText: statusText,
             isRunning: isRunning,
@@ -5823,7 +5823,7 @@ final class MacControllerServer: ObservableObject {
             }
         }
 
-        appendCaptureEvent(ThumbConsoleCaptureEvent(
+        appendCaptureEvent(ThumbleCaptureEvent(
             schemaVersion: 3,
             kind: "input_pipeline",
             source: source,
@@ -5854,7 +5854,7 @@ final class MacControllerServer: ObservableObject {
         activePointerButtons.sorted { $0.rawValue < $1.rawValue }
     }
 
-    private func appendCaptureEvent(_ event: ThumbConsoleCaptureEvent) {
+    private func appendCaptureEvent(_ event: ThumbleCaptureEvent) {
         var stampedEvent = event
         stampedEvent.recordedAt = Date.currentMilliseconds
         stampedEvent.uptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
@@ -5894,7 +5894,7 @@ final class MacControllerServer: ObservableObject {
         messageTimestamp: Int64? = nil,
         detail: String? = nil
     ) {
-        appendCaptureEvent(ThumbConsoleCaptureEvent(
+        appendCaptureEvent(ThumbleCaptureEvent(
             kind: "button",
             source: source,
             messageType: .button,
@@ -5926,7 +5926,7 @@ final class MacControllerServer: ObservableObject {
         messageTimestamp: Int64? = nil,
         detail: String? = nil
     ) {
-        appendCaptureEvent(ThumbConsoleCaptureEvent(
+        appendCaptureEvent(ThumbleCaptureEvent(
             kind: "element_input",
             source: source,
             messageType: .elementInput,
@@ -5949,7 +5949,7 @@ final class MacControllerServer: ObservableObject {
     }
 
     private func captureSystemEventOnNetworkQueue(kind: String, source: String? = nil, detail: String? = nil) {
-        appendCaptureEvent(ThumbConsoleCaptureEvent(
+        appendCaptureEvent(ThumbleCaptureEvent(
             kind: kind,
             source: source,
             pressedButtons: capturePressedButtonsSnapshotOnNetworkQueue(),
@@ -6328,7 +6328,7 @@ final class MacControllerServer: ObservableObject {
     private static func defaultBonjourServiceName() -> String {
         let hostName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
         let trimmedHostName = hostName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedHostName.isEmpty ? "ThumbConsole Mac" : "ThumbConsole on \(trimmedHostName)"
+        return trimmedHostName.isEmpty ? "Thumble Mac" : "Thumble on \(trimmedHostName)"
     }
 
     private static func generatePairingCode() -> String {

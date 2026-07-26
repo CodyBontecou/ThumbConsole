@@ -5,9 +5,9 @@
 Inspect canonical artboards before drawing:
 
 ```bash
-thumbconsole skin artboard list
-thumbconsole skin artboard show showcase-controller-v1 --json
-thumbconsole skin artboard export showcase-controller-v1 -o /tmp/showcase-profile.json
+thumble skin artboard list
+thumble skin artboard show showcase-controller-v1 --json
+thumble skin artboard export showcase-controller-v1 -o /tmp/showcase-profile.json
 ```
 
 An artboard is a geometry contract: canvas dimensions, safe areas, semantic control roles, and normalized frames. A template-aligned skin may still apply semantic materials to another layout, but aligned canvas artwork is hidden when compatibility is degraded or incompatible.
@@ -15,7 +15,7 @@ An artboard is a geometry contract: canvas dimensions, safe areas, semantic cont
 ## 2. Scaffold editable source
 
 ```bash
-thumbconsole skin scaffold "Name" \
+thumble skin scaffold "Name" \
   --identifier com.creator.name \
   --artboard showcase-controller-v1 \
   -o Website/skins/sources/name
@@ -67,10 +67,10 @@ Artwork remains passive. Native controls render state and preserve accessibility
 ## 5. Compile and inspect
 
 ```bash
-thumbconsole skin compile SOURCE -o SOURCE/build/name.pocketpad --clean
-thumbconsole skin validate SOURCE/build/name.pocketpad --strict
-thumbconsole skin quality SOURCE --strict
-thumbconsole skin preview SOURCE \
+thumble skin compile SOURCE -o SOURCE/build/name.pocketpad --clean
+thumble skin validate SOURCE/build/name.pocketpad --strict
+thumble skin quality SOURCE --strict
+thumble skin preview SOURCE \
   -o SOURCE/reviews/contact-sheet-1.png \
   --all-variants --all-states --native-renderer --contact-sheet
 ```
@@ -98,8 +98,8 @@ QA recompiles twice to separate directories and compares package hashes, then va
 Recommended determinism check:
 
 ```bash
-thumbconsole skin compile SOURCE --build-directory /tmp/skin-a -o /tmp/a.pocketpad --clean
-thumbconsole skin compile SOURCE --build-directory /tmp/skin-b -o /tmp/b.pocketpad --clean
+thumble skin compile SOURCE --build-directory /tmp/skin-a -o /tmp/a.pocketpad --clean
+thumble skin compile SOURCE --build-directory /tmp/skin-b -o /tmp/b.pocketpad --clean
 cmp /tmp/a.pocketpad /tmp/b.pocketpad
 shasum -a 256 /tmp/a.pocketpad
 ```

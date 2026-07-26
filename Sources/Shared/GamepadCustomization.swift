@@ -4535,7 +4535,7 @@ public enum GamepadProfileOutputMode: String, Codable, CaseIterable, Identifiabl
         case .keyboard:
             "Send this keypad as Mac keyboard shortcuts. Virtual controller output stays off for this setup."
         case .controller:
-            "Send this keypad as a virtual Xbox-style controller using ThumbConsole’s default controller map."
+            "Send this keypad as a virtual Xbox-style controller using Thumble’s default controller map."
         case .custom:
             "Use per-element output bindings. This can mix keyboard shortcuts and virtual controller buttons."
         }
@@ -9399,7 +9399,7 @@ private enum GamepadEditorFirstKeypadStep: Int, CaseIterable, Identifiable, Equa
     var message: String {
         switch self {
         case .setups:
-            "ThumbConsole starts new users with a practical Mac keypad. You can rename it, duplicate it, start blank, or add gaming and one-handed templates whenever you need them."
+            "Thumble starts new users with a practical Mac keypad. You can rename it, duplicate it, start blank, or add gaming and one-handed templates whenever you need them."
         case .canvas:
             "This iPhone canvas is where your controls will live. Use the starter card to show default controls, add a joystick, or switch into draw mode for a custom button."
         case .toolbar:
@@ -9488,7 +9488,7 @@ struct GamepadCustomizationEditor: View {
     private static let deviceFrameMotionSettleDelay: TimeInterval = 0.12
     private static let externalCommitDebounceDelay: TimeInterval = 0.20
     private static let profileDragUTType = UTType(exportedAs: "com.codybontecou.pocketpad.profile-selection")
-    private static let layerDragUTType = UTType(exportedAs: "com.codybontecou.thumbconsole.layer-selection")
+    private static let layerDragUTType = UTType(exportedAs: "com.codybontecou.thumble.layer-selection")
 
     @State private var selectedControlID: GamepadControlIdentity
     @State private var selectedControlIDs: Set<GamepadControlIdentity>
@@ -9571,8 +9571,8 @@ struct GamepadCustomizationEditor: View {
     @FocusState private var isProfileNameFieldFocused: Bool
     @FocusState private var isElementLabelFieldFocused: Bool
     @AccessibilityFocusState private var isLayoutIssueAccessibilityFocused: Bool
-    @AppStorage(ThumbConsoleMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey) private var hasCompletedFirstKeypadOnboarding = false
-    @AppStorage(ThumbConsoleMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey) private var isFirstKeypadOnboardingReplayRequested = false
+    @AppStorage(ThumbleMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey) private var hasCompletedFirstKeypadOnboarding = false
+    @AppStorage(ThumbleMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey) private var isFirstKeypadOnboardingReplayRequested = false
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarWidth") private var configurationSidebarWidthValue: Double = 236
     @AppStorage("PocketPad.GamepadEditor.inspectorSidebarWidth") private var inspectorSidebarWidthValue: Double = 340
     @AppStorage("PocketPad.GamepadEditor.configurationSidebarVisible") private var isConfigurationSidebarVisible = true
@@ -9919,7 +9919,7 @@ struct GamepadCustomizationEditor: View {
             isPresented: $isStyleLibraryExporterPresented,
             document: styleLibraryExportDocument,
             contentType: .json,
-            defaultFilename: "ThumbConsole-Styles.json"
+            defaultFilename: "Thumble-Styles.json"
         ) { result in
             if case .failure(let error) = result,
                (error as? CocoaError)?.code != .userCancelled {
@@ -11180,7 +11180,7 @@ struct GamepadCustomizationEditor: View {
             .menuStyle(.button)
             .geistButtonStyle(.secondary, size: .small)
             .accessibilityLabel("Import keypad setups")
-            .help("Import ThumbConsole setup or customization JSON")
+            .help("Import Thumble setup or customization JSON")
         }
     }
 
@@ -11236,7 +11236,7 @@ struct GamepadCustomizationEditor: View {
             .menuStyle(.button)
             .geistButtonStyle(.secondary, size: .small)
             .accessibilityLabel("Export keypad setups")
-            .help("Export the current setup or all setups as ThumbConsole JSON")
+            .help("Export the current setup or all setups as Thumble JSON")
         }
     }
 
@@ -12670,7 +12670,7 @@ struct GamepadCustomizationEditor: View {
                         .font(.system(size: 34))
                     Text("No \(orientation.displayName.lowercased()) layout yet")
                         .geistTypography(.heading16)
-                    Text("Copy the other orientation or let ThumbConsole create a rotated first pass.")
+                    Text("Copy the other orientation or let Thumble create a rotated first pass.")
                         .geistTypography(.copy13)
                         .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
                         .multilineTextAlignment(.center)
@@ -14467,7 +14467,7 @@ struct GamepadCustomizationEditor: View {
                     )
                 }
             } else {
-                Text("Using PocketPad’s 10 pt runtime expansion on every edge.")
+                Text("Using Thumble’s 10 pt runtime expansion on every edge.")
                     .geistTypography(.copy13)
                     .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
             }

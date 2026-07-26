@@ -4,7 +4,7 @@ Editable handcrafted PocketPad skin workspace targeting canonical artboard `show
 
 Pale Cavern is an original quiet mineral ecology: offset moonstone laminae, recessed semantic control wells, one restrained cold-spring cyan seam, and a sparse silt constellation. Landscape is a low overlapping two-lamina composition. Portrait is separately composed as upper and lower chambers joined by a narrow mineral bridge. Light and dark use separately authored limestone and subterranean material logic.
 
-The SVG artwork is passive appearance only. ThumbConsole retains native control geometry, hit testing, labels, bindings, interaction states, haptics, and accessibility. This workspace contains no executable mappings and must not alter installed profiles or user defaults.
+The SVG artwork is passive appearance only. Thumble retains native control geometry, hit testing, labels, bindings, interaction states, haptics, and accessibility. This workspace contains no executable mappings and must not alter installed profiles or user defaults.
 
 ## Source hierarchy
 
@@ -15,10 +15,10 @@ The SVG artwork is passive appearance only. ThumbConsole retains native control 
 - `build/` — generated working package output; never edit by hand.
 
 ```bash
-thumbconsole skin compile . -o build/pale-cavern-1.0.0.pocketpad --clean --strict
-thumbconsole skin validate build/pale-cavern-1.0.0.pocketpad --strict
-thumbconsole skin quality . --artboard showcase-controller-v1 --strict
-thumbconsole skin preview . -o reviews/contact-sheet-1.png \
+thumble skin compile . -o build/pale-cavern-1.0.0.pocketpad --clean --strict
+thumble skin validate build/pale-cavern-1.0.0.pocketpad --strict
+thumble skin quality . --artboard showcase-controller-v1 --strict
+thumble skin preview . -o reviews/contact-sheet-1.png \
   --all-variants --all-states --native-renderer --contact-sheet --columns 4
 ```
 

@@ -1,10 +1,10 @@
-# Submit a skin to the ThumbConsole directory
+# Submit a skin to the Thumble directory
 
 The public directory is a reviewed static registry. It accepts appearance-only `.pocketpad` skin packages; it does not accept full keypad profiles, keyboard shortcuts, pointer actions, controller bindings, launch targets, scripts, or executable files.
 
 ## Before submitting
 
-1. Choose a canonical artboard and create editable source with `thumbconsole skin scaffold`; keep original SVG under `sources/`.
+1. Choose a canonical artboard and create editable source with `thumble skin scaffold`; keep original SVG under `sources/`.
 2. Use a stable reverse-DNS identifier that you control and a semantic version such as `1.0.0`.
 3. Include your creator name, a specific art-direction summary, a license, useful tags, and portrait/landscape light/dark previews.
 4. Reference controls by semantic visual role instead of a profile UUID or label. Declare template revision compatibility when canvas artwork is layout-aligned.
@@ -13,16 +13,16 @@ The public directory is a reviewed static registry. It accepts appearance-only `
 7. Confirm you have the right to distribute every visual asset. Do not submit copied console graphics, logos, trade dress, scripts, or executables.
 
 ```bash
-thumbconsole skin compile ./my-skin -o ./my-skin/build/MySkin.pocketpad --clean --strict
-thumbconsole skin validate ./my-skin/build/MySkin.pocketpad --strict
-thumbconsole skin quality ./my-skin --strict
-thumbconsole skin preview ./my-skin -o ./my-skin/reviews/contact-sheet.png \
+thumble skin compile ./my-skin -o ./my-skin/build/MySkin.pocketpad --clean --strict
+thumble skin validate ./my-skin/build/MySkin.pocketpad --strict
+thumble skin quality ./my-skin --strict
+thumble skin preview ./my-skin -o ./my-skin/reviews/contact-sheet.png \
   --all-variants --all-states --native-renderer --contact-sheet
 ```
 
 ## Submit
 
-Open a [skin submission issue](https://github.com/CodyBontecou/PocketPad/issues/new?title=Skin%20submission%3A%20) with:
+Open a [skin submission issue](https://github.com/CodyBontecou/Thumble/issues/new?title=Skin%20submission%3A%20) with:
 
 - the `.pocketpad` package or a stable download URL;
 - a clean native-renderer preview and, for aligned/stateful skins, the all-variant/all-state contact sheet;
@@ -37,7 +37,7 @@ A maintainer will inspect and validate the package, review originality and the r
 After human approval is recorded for the final contact sheet and package SHA-256, add an entry to `Website/skins/catalog.source.json`. A source-backed skin belongs under `Website/skins/sources/<slug>`; first-party skins bundled by the app can use a `bundled` origin. Human-approved deterministic packages may use an `approved-package` origin and must pass the build script’s approval/hash check. Then run:
 
 ```bash
-scripts/build-skin-directory.sh /path/to/thumbconsole
+scripts/build-skin-directory.sh /path/to/thumble
 python3 scripts/verify-skin-directory.py
 ```
 

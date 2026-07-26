@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail Debug builds when stack-sensitive ThumbConsole paths exceed their budgets."""
+"""Fail Debug builds when stack-sensitive Thumble paths exceed their budgets."""
 
 from __future__ import annotations
 
@@ -860,13 +860,13 @@ def validate_call_paths(entries: list[FrameEntry], scope: str) -> list[str]:
 
 def run_self_test() -> None:
     fixture = """
-_$s12ThumbConsole17ControllerPadViewV4bodyQrvp:
+_$s7Thumble17ControllerPadViewV4bodyQrvp:
        0: stp x28, x27, [sp, #-0x30]!
        4: stp x29, x30, [sp, #0x20]
        8: sub sp, sp, #0x48, lsl #12
        c: sub sp, sp, #0xf30
       10: ret
-00000014 <_$s12ThumbConsole7CompareyyF>:
+00000014 <_$s7Thumble7CompareyyF>:
       14: str x28, [sp, #-0x30]!
       18: sub sp, sp, #0x5e, lsl #12
       1c: sub sp, sp, #0x300
@@ -880,8 +880,8 @@ _register:
 """
     frames = parse_disassembly(fixture)
     assert frames == [
-        FunctionFrame("_$s12ThumbConsole17ControllerPadViewV4bodyQrvp", 298_848),
-        FunctionFrame("_$s12ThumbConsole7CompareyyF", 385_840),
+        FunctionFrame("_$s7Thumble17ControllerPadViewV4bodyQrvp", 298_848),
+        FunctionFrame("_$s7Thumble7CompareyyF", 385_840),
         FunctionFrame("_register", 77_856),
     ], frames
     print("stack-frame parser self-test passed")

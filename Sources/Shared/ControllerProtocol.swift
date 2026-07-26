@@ -115,7 +115,7 @@ public struct KeypadElementInputID: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-public enum ThumbConsoleMacIPC {
+public enum ThumbleMacIPC {
     // These identifiers remain stable so existing installs, pairings, and CLI/app IPC survive the rename.
     public static let appDefaultsDomain = "com.codybontecou.PocketPadMac"
     public static let commandNotificationName = "com.codybontecou.PocketPadMac.cliCommand"
@@ -124,11 +124,12 @@ public enum ThumbConsoleMacIPC {
     public static let onboardingCompletedDefaultsKey = "PocketPadMac.onboarding.completed.v1"
     public static let editorFirstKeypadOnboardingCompletedDefaultsKey = "PocketPad.GamepadEditor.firstKeypadOnboardingCompleted.v1"
     public static let editorFirstKeypadOnboardingReplayRequestedDefaultsKey = "PocketPad.GamepadEditor.firstKeypadOnboardingReplayRequested.v1"
-    public static let captureLogPath = "/tmp/thumbconsole-capture.jsonl"
-    public static let legacyCaptureLogPath = "/tmp/pocketpad-capture.jsonl"
+    public static let captureLogPath = "/tmp/thumble-capture.jsonl"
+    public static let legacyThumbConsoleCaptureLogPath = "/tmp/thumbconsole-capture.jsonl"
+    public static let legacyPocketPadCaptureLogPath = "/tmp/pocketpad-capture.jsonl"
 }
 
-public enum ThumbConsoleMacCLICommand: String, Codable, Sendable {
+public enum ThumbleMacCLICommand: String, Codable, Sendable {
     case publishStatus
     case start
     case stop
@@ -142,7 +143,7 @@ public enum ThumbConsoleMacCLICommand: String, Codable, Sendable {
     case testUp
 }
 
-public struct ThumbConsoleCaptureEvent: Codable, Sendable {
+public struct ThumbleCaptureEvent: Codable, Sendable {
     public var schemaVersion: Int
     public var sequence: UInt64?
     public var recordedAt: Int64
@@ -341,14 +342,14 @@ public struct ControllerClientDeviceInfo: Codable, Equatable, Sendable {
     }
 }
 
-public struct ThumbConsoleMacCLICommandPayload: Codable, Sendable {
-    public var command: ThumbConsoleMacCLICommand
+public struct ThumbleMacCLICommandPayload: Codable, Sendable {
+    public var command: ThumbleMacCLICommand
     public var button: GameButton?
     public var elementInput: KeypadElementInputID?
     public var reason: String?
 
     public init(
-        command: ThumbConsoleMacCLICommand,
+        command: ThumbleMacCLICommand,
         button: GameButton? = nil,
         elementInput: KeypadElementInputID? = nil,
         reason: String? = nil
@@ -360,7 +361,7 @@ public struct ThumbConsoleMacCLICommandPayload: Codable, Sendable {
     }
 }
 
-public enum ThumbConsoleEditorDeliveryState: String, Codable, Equatable, Sendable {
+public enum ThumbleEditorDeliveryState: String, Codable, Equatable, Sendable {
     case localSave = "local_save"
     case sending
     case sent
@@ -368,7 +369,7 @@ public enum ThumbConsoleEditorDeliveryState: String, Codable, Equatable, Sendabl
     case failure
 }
 
-public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
+public struct ThumbleMacRuntimeStatus: Codable, Sendable {
     public var updatedAt: Int64
     public var statusText: String
     public var isRunning: Bool
@@ -400,7 +401,7 @@ public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
     public var staleInputGenerationDrops: Int?
     public var pressedButtons: [GameButton]
     public var pressedElementInputs: [KeypadElementInputID]?
-    public var editorDeliveryState: ThumbConsoleEditorDeliveryState?
+    public var editorDeliveryState: ThumbleEditorDeliveryState?
     public var editorDeliveryDetail: String?
     public var editorDeliveryUpdatedAt: Int64?
     public var missedButtonFrames: Int
@@ -456,7 +457,7 @@ public struct ThumbConsoleMacRuntimeStatus: Codable, Sendable {
         staleInputGenerationDrops: Int? = nil,
         pressedButtons: [GameButton],
         pressedElementInputs: [KeypadElementInputID]? = nil,
-        editorDeliveryState: ThumbConsoleEditorDeliveryState? = nil,
+        editorDeliveryState: ThumbleEditorDeliveryState? = nil,
         editorDeliveryDetail: String? = nil,
         editorDeliveryUpdatedAt: Int64? = nil,
         missedButtonFrames: Int,
@@ -944,7 +945,7 @@ public enum ControllerWireCodec {
     ) throws -> Value {
         let job = ControllerCodecExpandedStackJob(operation: operation)
         let thread = Thread { job.run() }
-        thread.name = "ThumbConsole.Codable"
+        thread.name = "Thumble.Codable"
         thread.qualityOfService = .userInteractive
         thread.stackSize = expandedCodableStackSize
         thread.start()

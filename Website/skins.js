@@ -94,7 +94,7 @@
 
     const image = card.querySelector("img");
     image.src = skin.previewPath;
-    image.alt = `${skin.name} skin shown on a ThumbConsole keypad`;
+    image.alt = `${skin.name} skin shown on a Thumble keypad`;
 
     card.querySelector(".skin-card-number").textContent = String(index + 1).padStart(2, "0");
     const featured = card.querySelector(".skin-card-featured");
@@ -130,7 +130,7 @@
     state.activeSkin = skin;
     const image = dialog.querySelector("[data-detail-preview]");
     image.src = skin.previewPath;
-    image.alt = `${skin.name} skin shown on a ThumbConsole keypad`;
+    image.alt = `${skin.name} skin shown on a Thumble keypad`;
     setDetailText("[data-detail-kicker]", `${(skin.modes || []).join(" + ")} / .pocketpad`);
     setDetailText("[data-detail-name]", skin.name);
     setDetailText("[data-detail-description]", skin.description || skin.summary);
@@ -233,11 +233,11 @@
         button.textContent = "opening…";
         try {
           await navigator.share({
-            title: `${skin.name} for ThumbConsole`,
-            text: `Install the ${skin.name} appearance-only skin in ThumbConsole.`,
+            title: `${skin.name} for Thumble`,
+            text: `Install the ${skin.name} appearance-only skin in Thumble.`,
             files: [file]
           });
-          showToast(`${skin.name} is ready—choose ThumbConsole to review and install it.`);
+          showToast(`${skin.name} is ready—choose Thumble to review and install it.`);
           return;
         } catch (error) {
           if (error?.name === "AbortError") {
@@ -249,7 +249,7 @@
       }
 
       downloadBlob(blob, filename);
-      showToast(`${skin.name} downloaded. Open the .pocketpad file in ThumbConsole to review it.`);
+      showToast(`${skin.name} downloaded. Open the .pocketpad file in Thumble to review it.`);
     } catch (error) {
       showToast(error.message || "The skin could not be downloaded safely.", "error");
     } finally {

@@ -6,10 +6,10 @@ cd "$repo_root"
 
 binary="${1:-}"
 if [[ -z "$binary" ]]; then
-  binary="$(find "${HOME}/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Debug/thumbconsole' -type f -perm -111 2>/dev/null | head -1 || true)"
+  binary="$(find "${HOME}/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Debug/thumble' -type f -perm -111 2>/dev/null | head -1 || true)"
 fi
 if [[ -z "$binary" || ! -x "$binary" ]]; then
-  echo "usage: $0 /path/to/thumbconsole" >&2
+  echo "usage: $0 /path/to/thumble" >&2
   exit 2
 fi
 

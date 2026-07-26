@@ -32,5 +32,5 @@ jobs:
 
       - name: Verify stack safety
         env:
-          STACK_SAFETY_DERIVED_DATA_PATH: ${{ runner.temp }}/ThumbConsoleStackSafety
+          STACK_SAFETY_DERIVED_DATA_PATH: ${{ runner.temp }}/ThumbleStackSafety
         run: ./scripts/verify-stack-safety.sh

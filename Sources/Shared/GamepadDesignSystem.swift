@@ -1615,7 +1615,7 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
         tags.insert("dark-fantasy")
         tags.insert("marketable")
         metadata.tags = Array(tags).sorted()
-        metadata.notes = metadata.notes ?? "Styled with ThumbConsole's Cavern Glow showcase theme for streamable, shareable, marketable game keypads."
+        metadata.notes = metadata.notes ?? "Styled with Thumble's Cavern Glow showcase theme for streamable, shareable, marketable game keypads."
         customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
         customization.updatedAt = Date.currentMilliseconds
         customization = customization.normalized
@@ -1668,7 +1668,7 @@ public enum GamepadThemePreset: String, Codable, CaseIterable, Identifiable, Sen
         tags.insert("soft-white")
         tags.insert("neumorphic")
         metadata.tags = Array(tags).sorted()
-        metadata.notes = metadata.notes ?? "Styled with ThumbConsole's Soft White Controller material for layered neumorphic pads inspired by premium white game controllers."
+        metadata.notes = metadata.notes ?? "Styled with Thumble's Soft White Controller material for layered neumorphic pads inspired by premium white game controllers."
         customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
         customization.updatedAt = Date.currentMilliseconds
         customization = customization.normalized

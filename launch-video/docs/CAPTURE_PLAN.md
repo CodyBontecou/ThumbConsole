@@ -7,9 +7,9 @@
 - `baguette`
 - `ffmpeg`
 - A booted iPhone 17 Pro simulator
-- The local ThumbConsole checkout mounted into the VM
+- The local Thumble checkout mounted into the VM
 
-## 1. Build ThumbConsole
+## 1. Build Thumble
 
 ```bash
 launch-video/scripts/build-apps.sh
@@ -37,8 +37,8 @@ tart run --vnc-experimental \
 
 `--vnc-experimental` opens the VM through macOS Screen Sharing and allows a clean, deterministic window recording. The built Mac app and CLI were installed at:
 
-- `/Applications/ThumbConsole Mac.app`
-- `/usr/local/bin/thumbconsole`
+- `/Applications/Thumble Mac.app`
+- `/usr/local/bin/thumble`
 
 The Steam Hollow Knight app was copied to `/Applications/Hollow Knight.app`. It still requires Steam to be authenticated before gameplay can launch.
 
@@ -47,8 +47,8 @@ The Steam Hollow Knight app was copied to `/Applications/Hollow Knight.app`. It 
 Inside the VM:
 
 ```bash
-thumbconsole generate "Hollow Knight"
-thumbconsole pairing payload
+thumble generate "Hollow Knight"
+thumble pairing payload
 ```
 
 The recorded session used:
@@ -56,7 +56,7 @@ The recorded session used:
 - VM address: `192.168.64.4`
 - Port: `8765`
 - Simulator: iPhone 17 Pro
-- Bundle ID: `com.codybontecou.ThumbConsole.iOS`
+- Bundle ID: `com.codybontecou.PocketPad.iOS` (retained for upgrade compatibility)
 
 Pair once in portrait if text entry is easier, then rotate to landscape:
 
@@ -118,8 +118,8 @@ npm run render
 Validate:
 
 ```bash
-ffprobe renders/thumbconsole-launch-4k.mp4
-ffmpeg -i renders/thumbconsole-launch-4k.mp4 -filter_complex ebur128=peak=true -f null -
+ffprobe renders/thumble-launch-4k.mp4
+ffmpeg -i renders/thumble-launch-4k.mp4 -filter_complex ebur128=peak=true -f null -
 ```
 
 Current master verification:

@@ -2,15 +2,16 @@ import CoreGraphics
 import SwiftUI
 import XCTest
 
-final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
+final class ThumbleCLISmokeTestSuite: XCTestCase {
     func testRenamePreservesCompatibilityIdentifiers() {
-        XCTAssertEqual(ThumbConsoleMacIPC.appDefaultsDomain, "com.codybontecou.PocketPadMac")
-        XCTAssertEqual(ThumbConsoleMacIPC.commandNotificationName, "com.codybontecou.PocketPadMac.cliCommand")
+        XCTAssertEqual(ThumbleMacIPC.appDefaultsDomain, "com.codybontecou.PocketPadMac")
+        XCTAssertEqual(ThumbleMacIPC.commandNotificationName, "com.codybontecou.PocketPadMac.cliCommand")
         XCTAssertEqual(PairingPayload.payloadType, "pocketpad-pair")
         XCTAssertEqual(PairingPayload.defaultServiceType, "_pocketpad._tcp")
-        XCTAssertEqual(ThumbConsoleKeypadConfigurationExport.schemaIdentifier, "com.codybontecou.pocketpad.keypad-configuration")
-        XCTAssertEqual(ThumbConsoleMacIPC.captureLogPath, "/tmp/thumbconsole-capture.jsonl")
-        XCTAssertEqual(ThumbConsoleMacIPC.legacyCaptureLogPath, "/tmp/pocketpad-capture.jsonl")
+        XCTAssertEqual(ThumbleKeypadConfigurationExport.schemaIdentifier, "com.codybontecou.pocketpad.keypad-configuration")
+        XCTAssertEqual(ThumbleMacIPC.captureLogPath, "/tmp/thumble-capture.jsonl")
+        XCTAssertEqual(ThumbleMacIPC.legacyThumbConsoleCaptureLogPath, "/tmp/thumbconsole-capture.jsonl")
+        XCTAssertEqual(ThumbleMacIPC.legacyPocketPadCaptureLogPath, "/tmp/pocketpad-capture.jsonl")
     }
 
     func testKeypadConfigurationExportSchemaRoundTrip() throws {
@@ -18,7 +19,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         customization.accentStyle = .blue
         customization.labelOverrides[.jump] = "Fire"
         let profile = GamepadConfigurationProfile(name: "Arcade Test", customization: customization)
-        let export = ThumbConsoleKeypadConfigurationExport(
+        let export = ThumbleKeypadConfigurationExport(
             exportedAt: 123_456,
             profiles: [profile],
             activeProfileID: profile.id,
@@ -29,12 +30,12 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(export)
         let json = String(decoding: data, as: UTF8.self)
-        XCTAssertTrue(json.contains("\"schema\":\"\(ThumbConsoleKeypadConfigurationExport.schemaIdentifier)\""))
-        XCTAssertTrue(json.contains("\"version\":\(ThumbConsoleKeypadConfigurationExport.currentVersion)"))
+        XCTAssertTrue(json.contains("\"schema\":\"\(ThumbleKeypadConfigurationExport.schemaIdentifier)\""))
+        XCTAssertTrue(json.contains("\"version\":\(ThumbleKeypadConfigurationExport.currentVersion)"))
 
-        let decoded = try JSONDecoder().decode(ThumbConsoleKeypadConfigurationExport.self, from: data)
-        XCTAssertEqual(decoded.schema, ThumbConsoleKeypadConfigurationExport.schemaIdentifier)
-        XCTAssertEqual(decoded.version, ThumbConsoleKeypadConfigurationExport.currentVersion)
+        let decoded = try JSONDecoder().decode(ThumbleKeypadConfigurationExport.self, from: data)
+        XCTAssertEqual(decoded.schema, ThumbleKeypadConfigurationExport.schemaIdentifier)
+        XCTAssertEqual(decoded.version, ThumbleKeypadConfigurationExport.currentVersion)
         XCTAssertEqual(decoded.exportedAt, 123_456)
         XCTAssertEqual(decoded.profiles.map(\.normalized), [profile.normalized])
         XCTAssertEqual(decoded.activeProfileID, profile.id)
@@ -161,7 +162,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
             gamepadProfileID: profile.id,
             defaultGamepadProfileID: profile.id
         )
-        let queue = DispatchQueue(label: "ThumbConsole.Tests.NetworkStack")
+        let queue = DispatchQueue(label: "Thumble.Tests.NetworkStack")
         let data = try queue.sync {
             try ControllerWireCodec.encode(message, using: JSONEncoder())
         }
@@ -188,7 +189,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
     }
 
     func testCaptureEventRoundTripsThroughJSONCodec() throws {
-        let event = ThumbConsoleCaptureEvent(
+        let event = ThumbleCaptureEvent(
             sequence: 42,
             recordedAt: 123_456,
             uptimeNanoseconds: 789,
@@ -211,7 +212,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         )
 
         let data = try JSONEncoder().encode(event)
-        let decoded = try JSONDecoder().decode(ThumbConsoleCaptureEvent.self, from: data)
+        let decoded = try JSONDecoder().decode(ThumbleCaptureEvent.self, from: data)
         XCTAssertEqual(decoded.sequence, 42)
         XCTAssertEqual(decoded.kind, "button")
         XCTAssertEqual(decoded.source, "iPhone UDP")
@@ -233,7 +234,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
 
     func testRuntimeStatusOutputStageTelemetryRoundTrips() throws {
         let profileID = UUID(uuidString: "00000000-0000-0000-0000-00000000A111")!
-        let status = ThumbConsoleMacRuntimeStatus(
+        let status = ThumbleMacRuntimeStatus(
             updatedAt: 123,
             statusText: "Connected",
             isRunning: true,
@@ -266,7 +267,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         )
 
         let data = try JSONEncoder().encode(status)
-        let decoded = try JSONDecoder().decode(ThumbConsoleMacRuntimeStatus.self, from: data)
+        let decoded = try JSONDecoder().decode(ThumbleMacRuntimeStatus.self, from: data)
         XCTAssertEqual(decoded.inputProcessingP95MS, 1.5)
         XCTAssertEqual(decoded.bindingLookupP95MS, 0.05)
         XCTAssertEqual(decoded.outputInjectionP50MS, 0.25)
@@ -280,21 +281,21 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
             elementID: UUID(uuidString: "00000000-0000-0000-0000-00000000E2E2")!,
             part: .joystickRight
         )
-        let payload = ThumbConsoleMacCLICommandPayload(
+        let payload = ThumbleMacCLICommandPayload(
             command: .testDown,
             elementInput: input,
             reason: "Editor test"
         )
 
         let data = try JSONEncoder().encode(payload)
-        let decoded = try JSONDecoder().decode(ThumbConsoleMacCLICommandPayload.self, from: data)
+        let decoded = try JSONDecoder().decode(ThumbleMacCLICommandPayload.self, from: data)
         XCTAssertEqual(decoded.command, .testDown)
         XCTAssertEqual(decoded.elementInput, input)
         XCTAssertNil(decoded.button)
         XCTAssertEqual(decoded.reason, "Editor test")
 
         let legacyData = Data(#"{"command":"testUp","button":"jump","reason":"Legacy test"}"#.utf8)
-        let legacy = try JSONDecoder().decode(ThumbConsoleMacCLICommandPayload.self, from: legacyData)
+        let legacy = try JSONDecoder().decode(ThumbleMacCLICommandPayload.self, from: legacyData)
         XCTAssertEqual(legacy.command, .testUp)
         XCTAssertEqual(legacy.button, .jump)
         XCTAssertNil(legacy.elementInput)
@@ -318,7 +319,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
             elementID: UUID(uuidString: "00000000-0000-0000-0000-00000000E3E3")!,
             part: .triggerDigital
         )
-        let status = ThumbConsoleMacRuntimeStatus(
+        let status = ThumbleMacRuntimeStatus(
             updatedAt: 456,
             statusText: "Connected",
             isRunning: true,
@@ -346,7 +347,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         )
 
         let data = try JSONEncoder().encode(status)
-        let decoded = try JSONDecoder().decode(ThumbConsoleMacRuntimeStatus.self, from: data)
+        let decoded = try JSONDecoder().decode(ThumbleMacRuntimeStatus.self, from: data)
         XCTAssertEqual(decoded.pressedElementInputs, [input])
         XCTAssertEqual(decoded.editorDeliveryState, .sent)
         XCTAssertEqual(decoded.editorDeliveryDetail, "Keypad layout sent to the connected iPhone")
@@ -358,7 +359,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         legacyObject["editorDeliveryDetail"] = nil
         legacyObject["editorDeliveryUpdatedAt"] = nil
         let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
-        let legacyDecoded = try JSONDecoder().decode(ThumbConsoleMacRuntimeStatus.self, from: legacyData)
+        let legacyDecoded = try JSONDecoder().decode(ThumbleMacRuntimeStatus.self, from: legacyData)
         XCTAssertNil(legacyDecoded.pressedElementInputs)
         XCTAssertNil(legacyDecoded.editorDeliveryState)
         XCTAssertNil(legacyDecoded.editorDeliveryDetail)
@@ -366,9 +367,9 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
     }
 
     func testEditorDeliveryStatesRoundTrip() throws {
-        for state in [ThumbConsoleEditorDeliveryState.localSave, .sending, .sent, .offline, .failure] {
+        for state in [ThumbleEditorDeliveryState.localSave, .sending, .sent, .offline, .failure] {
             let data = try JSONEncoder().encode(state)
-            XCTAssertEqual(try JSONDecoder().decode(ThumbConsoleEditorDeliveryState.self, from: data), state)
+            XCTAssertEqual(try JSONDecoder().decode(ThumbleEditorDeliveryState.self, from: data), state)
         }
     }
 
@@ -502,20 +503,20 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
 
     func testKeypadConfigurationExportFilenameSanitizesProfileNames() {
         XCTAssertEqual(
-            ThumbConsoleKeypadConfigurationExport.suggestedFilename(activeProfileName: "My Arcade / Setup"),
-            "ThumbConsole-My-Arcade-Setup.json"
+            ThumbleKeypadConfigurationExport.suggestedFilename(activeProfileName: "My Arcade / Setup"),
+            "Thumble-My-Arcade-Setup.json"
         )
     }
 
     func testKeypadConfigurationExportRejectsEmptyProfileLists() {
         let json = """
         {
-          "schema": "\(ThumbConsoleKeypadConfigurationExport.schemaIdentifier)",
+          "schema": "\(ThumbleKeypadConfigurationExport.schemaIdentifier)",
           "version": 1,
           "profiles": []
         }
         """
-        XCTAssertThrowsError(try JSONDecoder().decode(ThumbConsoleKeypadConfigurationExport.self, from: Data(json.utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(ThumbleKeypadConfigurationExport.self, from: Data(json.utf8)))
     }
 
     func testCornerRadiiPreserveValuesBeyondRenderedBounds() {
@@ -1203,7 +1204,7 @@ final class ThumbConsoleCLISmokeTestSuite: XCTestCase {
         let generated = try XCTUnwrap(GameKeypadGenerator.generate(for: "Hollow Knight"))
         let customization = generated.profile.customization.normalized
 
-        XCTAssertEqual(generated.source, "Built-in Hollow Knight default keyboard template with ThumbConsole's Cavern Glow showcase theme")
+        XCTAssertEqual(generated.source, "Built-in Hollow Knight default keyboard template with Thumble's Cavern Glow showcase theme")
         XCTAssertEqual(customization.colorSchemePreference, .dark)
         XCTAssertEqual(customization.buttonCustomization(for: .focus).styleID, "cavern-soul")
         XCTAssertEqual(customization.buttonCustomization(for: .attack).styleID, "cavern-nail")

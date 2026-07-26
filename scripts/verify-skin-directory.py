@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the deployable ThumbConsole web skin directory without third-party packages."""
+"""Verify the deployable Thumble web skin directory without third-party packages."""
 
 from __future__ import annotations
 

@@ -1,8 +1,8 @@
 import UIKit
 
 @MainActor
-final class ThumbConsoleApplicationDelegate: NSObject, UIApplicationDelegate {
-    private var supportedOrientationMask: UIInterfaceOrientationMask = ThumbConsoleApplicationDelegate.automaticMask
+final class ThumbleApplicationDelegate: NSObject, UIApplicationDelegate {
+    private var supportedOrientationMask: UIInterfaceOrientationMask = ThumbleApplicationDelegate.automaticMask
 
     func application(
         _ application: UIApplication,
@@ -34,7 +34,7 @@ final class GamepadOrientationCoordinator: ObservableObject {
         lastRequestedPreference = preference
 
         let mask = interfaceOrientationMask(for: preference)
-        (UIApplication.shared.delegate as? ThumbConsoleApplicationDelegate)?
+        (UIApplication.shared.delegate as? ThumbleApplicationDelegate)?
             .setSupportedOrientationMask(mask)
 
         guard let scene = activeWindowScene else { return }
@@ -53,7 +53,7 @@ final class GamepadOrientationCoordinator: ObservableObject {
         for preference: GamepadProfileOrientationPreference
     ) -> UIInterfaceOrientationMask {
         switch GamepadSupportedOrientationSet(preference) {
-        case .automatic: ThumbConsoleApplicationDelegate.automaticMask
+        case .automatic: ThumbleApplicationDelegate.automaticMask
         case .portrait: .portrait
         case .landscape: .landscape
         }

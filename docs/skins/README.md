@@ -1,6 +1,6 @@
-# PocketPad skins
+# Thumble skins
 
-PocketPad skins are shareable, appearance-only packages. They follow Delta’s convenient “one file you can AirDrop or open from Files” model while keeping PocketPad controls native and accessible.
+Thumble skins are shareable, appearance-only packages. They use the established `.pocketpad` compatibility format and follow Delta’s convenient “one file you can AirDrop or open from Files” model while keeping Thumble controls native and accessible.
 
 A skin **cannot** change keyboard shortcuts, controller mappings, launch targets, labels, control geometry, or accessibility behavior. Those stay in the user’s keypad profile.
 
@@ -31,9 +31,9 @@ A minimal package source is in [`starter/`](starter/). Published handcrafted exa
 
 ## Appearance cascade
 
-At render time, PocketPad resolves:
+At render time, Thumble resolves:
 
-1. PocketPad defaults
+1. Thumble defaults
 2. skin base appearance
 3. matching orientation variant
 4. matching light/dark variant
@@ -49,21 +49,21 @@ Geometry, bindings, labels, and independent touch insets never come from a skin.
 Use editable `skin-source.json` plus SVG rather than hand-editing generated package JSON:
 
 ```bash
-thumbconsole skin artboard list
-thumbconsole skin artboard show showcase-controller-v1 --json
-thumbconsole skin scaffold "Indigo Pocket" \
+thumble skin artboard list
+thumble skin artboard show showcase-controller-v1 --json
+thumble skin scaffold "Indigo Pocket" \
   --identifier com.creator.indigo-pocket \
   --artboard showcase-controller-v1 \
   -o ./IndigoPocket
 
 # Sanitizes/rasterizes SVG and emits a deterministic package.
-thumbconsole skin compile ./IndigoPocket \
+thumble skin compile ./IndigoPocket \
   -o ./IndigoPocket/build/indigo-pocket-1.0.0.pocketpad \
   --clean --strict
 
-thumbconsole skin validate ./IndigoPocket/build/indigo-pocket-1.0.0.pocketpad --strict
-thumbconsole skin quality ./IndigoPocket --artboard showcase-controller-v1 --strict
-thumbconsole skin preview ./IndigoPocket \
+thumble skin validate ./IndigoPocket/build/indigo-pocket-1.0.0.pocketpad --strict
+thumble skin quality ./IndigoPocket --artboard showcase-controller-v1 --strict
+thumble skin preview ./IndigoPocket \
   -o ./IndigoPocket/reviews/contact-sheet.png \
   --all-variants --all-states --native-renderer --contact-sheet
 ```
@@ -79,9 +79,9 @@ The project `pocketpad-skin-author` skill defines the required art-director → 
 For low-level package maintenance, `skin pack`, `unpack`, `inspect`, and `validate` remain available. Installation and application still preserve bindings and geometry:
 
 ```bash
-thumbconsole skin import IndigoPocket/build/indigo-pocket-1.0.0.pocketpad
-thumbconsole skin apply com.creator.indigo-pocket --profile "My Keypad"
-thumbconsole skin export com.creator.indigo-pocket -o IndigoPocket.pocketpad
+thumble skin import IndigoPocket/build/indigo-pocket-1.0.0.pocketpad
+thumble skin apply com.creator.indigo-pocket --profile "My Keypad"
+thumble skin export com.creator.indigo-pocket -o IndigoPocket.pocketpad
 ```
 
 ## Semantic roles
@@ -100,13 +100,13 @@ Prefer role rules over profile UUIDs or labels:
 | `trigger` | Shoulder/trigger controls |
 | `trackpad` | Pointer surfaces |
 | `decoration` | Non-interactive artwork |
-| `system` | PocketPad chrome |
+| `system` | Thumble chrome |
 
 Users and creators can assign explicit roles in the Mac inspector or CLI:
 
 ```bash
-thumbconsole element set jump --skin-role primary-action
-thumbconsole element set "Pause" --skin-role menu
+thumble element set jump --skin-role primary-action
+thumble element set "Pause" --skin-role menu
 ```
 
 ## Compatibility and passive layers
@@ -119,7 +119,7 @@ Profile-level text elements are also passive native layers, but they remain edit
 
 ## Assets and nine-slice media
 
-Each asset has a normalized ID and a path under `assets/`. Reference the ID from an image fill, artwork layer, or asset icon—never an absolute path. PocketPad materializes package resources into its native asset library when rendering or customizing a skin.
+Each asset has a normalized ID and a path under `assets/`. Reference the ID from an image fill, artwork layer, or asset icon—never an absolute path. Thumble materializes package resources into its native asset library when rendering or customizing a skin.
 
 Image fills support scale, tile, nine-slice stretch, and nine-slice tile modes. Nine-slice cap insets are normalized fractions from 0–0.49 and must leave a non-empty center. Keep editable SVG outside the archive; compilation sanitizes and rasterizes it to PNG.
 
@@ -131,10 +131,10 @@ Touch expansion belongs to the keypad profile, not the skin. It can be edited in
 
 ```bash
 # all edges
-thumbconsole element set jump --hit-insets 16
+thumble element set jump --hit-insets 16
 
 # top, leading, bottom, trailing
-thumbconsole element set jump --hit-insets 10,18,14,18
+thumble element set jump --hit-insets 10,18,14,18
 ```
 
 The Mac editor and iPhone skin preview can display dashed touch-target overlays.

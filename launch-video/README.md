@@ -1,21 +1,21 @@
-# ThumbConsole launch video
+# Thumble launch video
 
 A 45-second, text-led launch film built with Remotion, real iOS Simulator footage, and macOS footage captured from the `pocketpad-capture` Tart VM.
 
 ## Deliverables
 
-- **4K master:** `renders/thumbconsole-launch-4k.mp4`
-- **1080p share copy:** `renders/thumbconsole-launch-1080p.mp4`
-- **Quick preview:** `renders/thumbconsole-launch-preview.mp4`
-- **Hero poster:** `renders/thumbconsole-launch-poster.png`
-- **Customization poster:** `renders/thumbconsole-launch-customize-poster.png`
-- **Final contact sheet:** `renders/thumbconsole-launch-contact.jpg`
-- **Editable composition:** `src/ThumbConsoleLaunch.tsx`
+- **4K master:** `renders/thumble-launch-4k.mp4`
+- **1080p share copy:** `renders/thumble-launch-1080p.mp4`
+- **Quick preview:** `renders/thumble-launch-preview.mp4`
+- **Hero poster:** `renders/thumble-launch-poster.png`
+- **Customization poster:** `renders/thumble-launch-customize-poster.png`
+- **Final contact sheet:** `renders/thumble-launch-contact.jpg`
+- **Editable composition:** `src/ThumbleLaunch.tsx`
 - **Reusable components:** `src/components.tsx`
 - **Processed source clips:** `public/captures/`
 - **Raw source recordings/contact sheets:** `assets/captures/`
 
-The 4K master is also copied to `~/Downloads/ThumbConsole-Launch-4K.mp4`.
+The 4K master is also copied to `~/Downloads/Thumble-Launch-4K.mp4`.
 
 ## Output specification
 
@@ -47,9 +47,9 @@ npm run still    # poster frame
 | 0:19–0:28 | Play | Built for multitouch. Tuned for the game. |
 | 0:27–0:36 | Customize | Move it. Resize it. Make it yours. |
 | 0:35–0:41 | Sync | Designed on Mac. Synced to iPhone. |
-| 0:40–0:45 | Close | ThumbConsole / Build yours / Coming soon |
+| 0:40–0:45 | Close | Thumble / Build yours / Coming soon |
 
-Scene starts overlap intentionally for short Vercel-style crossfades. Edit copy, durations, and sequence starts near the bottom of `src/ThumbConsoleLaunch.tsx`.
+Scene starts overlap intentionally for short Vercel-style crossfades. Edit copy, durations, and sequence starts near the bottom of `src/ThumbleLaunch.tsx`.
 
 ## Capture sources
 
@@ -57,7 +57,7 @@ Scene starts overlap intentionally for short Vercel-style crossfades. Edit copy,
 
 - Device: iPhone 17 Pro, iOS 26.3
 - Orientation: landscape-left
-- Bundle ID: `com.codybontecou.ThumbConsole.iOS`
+- Bundle ID: `com.codybontecou.PocketPad.iOS` (retained for upgrade compatibility)
 - Processed clips:
   - `public/captures/ios-controller-actions.mp4`
   - `public/captures/ios-customization.mp4`
@@ -66,7 +66,7 @@ Scene starts overlap intentionally for short Vercel-style crossfades. Edit copy,
 The phone was paired with the Mac helper at `ws://192.168.64.4:8765`. The Hollow Knight profile came from the real command:
 
 ```bash
-thumbconsole generate "Hollow Knight"
+thumble generate "Hollow Knight"
 ```
 
 ### Tart macOS VM
@@ -79,11 +79,11 @@ thumbconsole generate "Hollow Knight"
   - `public/captures/mac-cli-tart.mp4`
   - `public/captures/mac-app-tart.mp4`
 
-The terminal sequence executes the real ThumbConsole CLI and then presents a concise, staged summary so it remains readable on video.
+The terminal sequence executes the real Thumble CLI and then presents a concise, staged summary so it remains readable on video.
 
 ## Hollow Knight note
 
-The locally owned Steam install was copied into the disposable Tart VM at `/Applications/Hollow Knight.app`. The game itself requires the Steam client to be running and authenticated, so this draft uses ThumbConsole’s built-in Hollow Knight profile rather than game footage. No game bundle or copyrighted game art is included in this directory. To add gameplay later, sign into Steam inside the VM, record a gameplay clip, and place it under `public/captures/`.
+The locally owned Steam install was copied into the disposable Tart VM at `/Applications/Hollow Knight.app`. The game itself requires the Steam client to be running and authenticated, so this draft uses Thumble’s built-in Hollow Knight profile rather than game footage. No game bundle or copyrighted game art is included in this directory. To add gameplay later, sign into Steam inside the VM, record a gameplay clip, and place it under `public/captures/`.
 
 ## Music
 
@@ -98,4 +98,4 @@ The locally owned Steam install was copied into the disposable Tart VM at `/Appl
 - `scripts/vm-terminal-demo.applescript` — Terminal window setup
 - `scripts/capture-ios-controller.sh` — repeatable iOS action/customization capture
 - `scripts/capture-tart-cli.sh` — repeatable Tart/Screen Sharing capture
-- `scripts/build-apps.sh` — rebuild all three ThumbConsole targets
+- `scripts/build-apps.sh` — rebuild all three Thumble targets

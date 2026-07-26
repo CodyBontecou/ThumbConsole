@@ -1,11 +1,11 @@
-# ThumbConsole launch site
+# Thumble launch site
 
-Pixel-art landing page for ThumbConsole with a Cloudflare Pages Function that saves launch-list emails into Cloudflare D1.
+Pixel-art landing page for Thumble with a Cloudflare Pages Function that saves launch-list emails into Cloudflare D1.
 
 ## Files
 
 - `index.html` / `styles.css` / `script.js` — static landing page, screenshot gallery, and launch-list form.
-- `docs.html` — comprehensive ThumbConsole documentation for setup, pairing, skins, editor workflows, outputs, CLI, troubleshooting, and safety behavior.
+- `docs.html` — comprehensive Thumble documentation for setup, pairing, skins, editor workflows, outputs, CLI, troubleshooting, and safety behavior.
 - `skins.html` / `skins.js` — searchable, filterable skin directory with package verification, Web Share installation, direct downloads, and detail deep links.
 - `skins/catalog.source.json` — editorial catalog data; `skins/catalog.json`, packages, and previews are generated deployable assets.
 - `skins/CONTRIBUTING.md` — reviewed community submission workflow.
@@ -87,10 +87,10 @@ Then open the local URL shown by Wrangler. The form endpoint is `/api/subscribe`
 
 ## Build and verify the skin directory
 
-Build the current `thumbconsole` CLI first, then generate versioned packages, clean previews, hashes, and the deployable catalog:
+Build the current `thumble` CLI first, then generate versioned packages, clean previews, hashes, and the deployable catalog:
 
 ```bash
-scripts/build-skin-directory.sh /path/to/thumbconsole
+scripts/build-skin-directory.sh /path/to/thumble
 ```
 
 Production publishes exact human-approved package bytes for Indigo Pocket, Solar Sumi, Tideglass Field, and Foldline Relay. The builder verifies every approval record and package hash, runs strict package and quality validation, creates native-renderer directory previews, and finishes with the dependency-free directory verifier. Run the verifier directly after any hand edit:

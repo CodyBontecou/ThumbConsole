@@ -2,7 +2,7 @@
 
 Handcrafted PocketPad skin source workspace for `arcade-stick-v1` revision 1.
 
-Solar Sumi combines an asymmetric Offset Fiber Deck, one absorbed Carbon Current, and sparse gold Solar Register marks. Landscape carries the eye left-to-right from the joystick island into the action field; portrait is separately composed to rise from the lower joystick pool through a single fork into two action ranks. Light and dark artwork are authored independently. Artwork remains passive: ThumbConsole owns control frames, labels, hit testing, bindings, state rendering, and accessibility.
+Solar Sumi combines an asymmetric Offset Fiber Deck, one absorbed Carbon Current, and sparse gold Solar Register marks. Landscape carries the eye left-to-right from the joystick island into the action field; portrait is separately composed to rise from the lower joystick pool through a single fork into two action ranks. Light and dark artwork are authored independently. Artwork remains passive: Thumble owns control frames, labels, hit testing, bindings, state rendering, and accessibility.
 
 ## Source hierarchy
 
@@ -14,10 +14,10 @@ Solar Sumi combines an asymmetric Offset Fiber Deck, one absorbed Carbon Current
 - `dist/solar-sumi-1.0.0.pocketpad` — exact QA-passed package awaiting human approval.
 
 ```bash
-thumbconsole skin compile . -o build/solar-sumi-1.0.0.pocketpad --clean --strict
-thumbconsole skin validate build/solar-sumi-1.0.0.pocketpad --strict
-thumbconsole skin quality . --artboard arcade-stick-v1 --strict
-thumbconsole skin preview . -o reviews/contact-sheet-4.png \
+thumble skin compile . -o build/solar-sumi-1.0.0.pocketpad --clean --strict
+thumble skin validate build/solar-sumi-1.0.0.pocketpad --strict
+thumble skin quality . --artboard arcade-stick-v1 --strict
+thumble skin preview . -o reviews/contact-sheet-4.png \
   --all-variants --all-states --native-renderer --contact-sheet --columns 4
 ```
 

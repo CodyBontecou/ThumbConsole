@@ -4,8 +4,8 @@ import Foundation
 import SwiftUI
 
 @main
-struct ThumbConsoleCLI {
-    private static let appDefaultsDomain = ThumbConsoleMacIPC.appDefaultsDomain
+struct ThumbleCLI {
+    private static let appDefaultsDomain = ThumbleMacIPC.appDefaultsDomain
     private static let keyBindingsDefaultsKey = "PocketPadMac.keyBindings.v2"
     private static let profileKeyBindingsDefaultsKey = "PocketPadMac.profileKeyBindings.v1"
     private static let outputBindingsDefaultsKey = "PocketPadMac.outputBindings.v1"
@@ -98,8 +98,8 @@ struct ThumbConsoleCLI {
     }
 
     private struct ProfileExportEnvelope: Codable {
-        var schema: String = ThumbConsoleKeypadConfigurationExport.schemaIdentifier
-        var version: Int = ThumbConsoleKeypadConfigurationExport.currentVersion
+        var schema: String = ThumbleKeypadConfigurationExport.schemaIdentifier
+        var version: Int = ThumbleKeypadConfigurationExport.currentVersion
         var exportedAt: Int64 = Date.currentMilliseconds
         var profiles: [GamepadConfigurationProfile]
         var activeProfileID: UUID?
@@ -131,20 +131,20 @@ struct ThumbConsoleCLI {
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            schema = try container.decodeIfPresent(String.self, forKey: .schema) ?? ThumbConsoleKeypadConfigurationExport.schemaIdentifier
-            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? ThumbConsoleKeypadConfigurationExport.currentVersion
-            guard schema == ThumbConsoleKeypadConfigurationExport.schemaIdentifier else {
+            schema = try container.decodeIfPresent(String.self, forKey: .schema) ?? ThumbleKeypadConfigurationExport.schemaIdentifier
+            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? ThumbleKeypadConfigurationExport.currentVersion
+            guard schema == ThumbleKeypadConfigurationExport.schemaIdentifier else {
                 throw DecodingError.dataCorruptedError(
                     forKey: .schema,
                     in: container,
-                    debugDescription: "Unsupported ThumbConsole keypad configuration schema: \(schema)"
+                    debugDescription: "Unsupported Thumble keypad configuration schema: \(schema)"
                 )
             }
-            guard version >= 1 && version <= ThumbConsoleKeypadConfigurationExport.currentVersion else {
+            guard version >= 1 && version <= ThumbleKeypadConfigurationExport.currentVersion else {
                 throw DecodingError.dataCorruptedError(
                     forKey: .version,
                     in: container,
-                    debugDescription: "Unsupported ThumbConsole keypad configuration version: \(version)"
+                    debugDescription: "Unsupported Thumble keypad configuration version: \(version)"
                 )
             }
 
@@ -154,7 +154,7 @@ struct ThumbConsoleCLI {
                 throw DecodingError.dataCorruptedError(
                     forKey: .profiles,
                     in: container,
-                    debugDescription: "ThumbConsole keypad configuration export must contain at least one profile."
+                    debugDescription: "Thumble keypad configuration export must contain at least one profile."
                 )
             }
             let decodedActiveID = try container.decodeIfPresent(UUID.self, forKey: .activeProfileID)
@@ -252,14 +252,15 @@ struct ThumbConsoleCLI {
         } catch CLIError.helpRequested {
             printHelp()
         } catch CLIError.validationFailed(let message) {
-            fputs("thumbconsole: \(message)\n", stderr)
+            fputs("thumble: \(message)\n", stderr)
             exit(1)
         } catch {
-            fputs("thumbconsole: \(error.localizedDescription)\n", stderr)
-            if ProcessInfo.processInfo.environment["THUMBCONSOLE_DEBUG_ERRORS"] == "1" {
+            fputs("thumble: \(error.localizedDescription)\n", stderr)
+            let environment = ProcessInfo.processInfo.environment
+            if environment["THUMBLE_DEBUG_ERRORS"] == "1" || environment["THUMBCONSOLE_DEBUG_ERRORS"] == "1" {
                 fputs("Debug: \(String(reflecting: error))\n", stderr)
             }
-            fputs("Run `thumbconsole --help` for usage.\n", stderr)
+            fputs("Run `thumble --help` for usage.\n", stderr)
             exit(1)
         }
     }
@@ -322,7 +323,7 @@ struct ThumbConsoleCLI {
             try accessibility(arguments: rest)
         case "release-all":
             postRuntimeCommand(.releaseAll, reason: "Release all from CLI")
-            print("Sent release-all to ThumbConsole Mac.")
+            print("Sent release-all to Thumble Mac.")
         case "test":
             try test(arguments: rest)
         case "app":
@@ -343,7 +344,7 @@ struct ThumbConsoleCLI {
         } else if let gameName = options.gameName, let builtInProfile = GameKeypadGenerator.generate(for: gameName) {
             generated = builtInProfile
         } else if let gameName = options.gameName {
-            throw CLIError.message("No built-in template for \"\(gameName)\". Have your agent write a JSON keypad spec and run `thumbconsole generate --spec <file>`.")
+            throw CLIError.message("No built-in template for \"\(gameName)\". Have your agent write a JSON keypad spec and run `thumble generate --spec <file>`.")
         } else {
             throw CLIError.message("Missing game name or --spec <file>")
         }
@@ -523,7 +524,7 @@ struct ThumbConsoleCLI {
             print("Made \"\(profile.name)\" the default profile.")
 
         case "rename":
-            guard rest.count >= 2 else { throw CLIError.message("Usage: thumbconsole profile rename <profile> <new name>") }
+            guard rest.count >= 2 else { throw CLIError.message("Usage: thumble profile rename <profile> <new name>") }
             var store = loadStore()
             let target = rest[0]
             let newName = rest.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -634,7 +635,7 @@ struct ThumbConsoleCLI {
     private static func moveProfiles(arguments: [String]) throws {
         let targets = positionals(in: arguments)
         guard !targets.isEmpty else {
-            throw CLIError.message("Usage: thumbconsole profile move <profile> [profile...] --to INDEX|--before PROFILE|--after PROFILE")
+            throw CLIError.message("Usage: thumble profile move <profile> [profile...] --to INDEX|--before PROFILE|--after PROFILE")
         }
 
         let toText = optionValue("--to", in: arguments)
@@ -984,7 +985,7 @@ struct ThumbConsoleCLI {
             return url.standardizedFileURL
         }
 
-        throw CLIError.message("Usage: thumbconsole profile attach-app [PROFILE|--profile PROFILE] --path /Applications/App.app or --bundle-id com.example.App")
+        throw CLIError.message("Usage: thumble profile attach-app [PROFILE|--profile PROFILE] --path /Applications/App.app or --bundle-id com.example.App")
     }
 
     private static func openLaunchTarget(_ launchTarget: GamepadProfileLaunchTarget) throws {
@@ -998,7 +999,7 @@ struct ThumbConsoleCLI {
             return
         }
 
-        throw CLIError.message("Could not resolve attached application \"\(launchTarget.displayName)\". Reattach it with `thumbconsole profile attach-app`.")
+        throw CLIError.message("Could not resolve attached application \"\(launchTarget.displayName)\". Reattach it with `thumble profile attach-app`.")
     }
 
     // MARK: - Templates
@@ -1053,11 +1054,11 @@ struct ThumbConsoleCLI {
                 }
             }
         case "show":
-            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole theme show <theme-id>") }
+            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble theme show <theme-id>") }
             let preset = try resolveThemePreset(name)
             try printJSON(themeSummary(for: preset))
         case "apply", "set":
-            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole theme apply <theme-id> [--profile PROFILE]") }
+            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble theme apply <theme-id> [--profile PROFILE]") }
             let preset = try resolveThemePreset(name)
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
                 preset.apply(to: &customization)
@@ -1090,7 +1091,7 @@ struct ThumbConsoleCLI {
         switch subcommand {
         case "artboard", "artboards":
             guard let action = rest.first else {
-                throw CLIError.message("Usage: thumbconsole skin artboard list|show|export")
+                throw CLIError.message("Usage: thumble skin artboard list|show|export")
             }
             let artboardArguments = Array(rest.dropFirst())
             switch action {
@@ -1107,7 +1108,7 @@ struct ThumbConsoleCLI {
             case "show", "inspect":
                 guard let value = firstPositional(in: artboardArguments),
                       let artboard = PocketPadSkinArtboardCatalog.resolve(value)
-                else { throw CLIError.message("Usage: thumbconsole skin artboard show ARTBOARD [--json]") }
+                else { throw CLIError.message("Usage: thumble skin artboard show ARTBOARD [--json]") }
                 if artboardArguments.contains("--json") {
                     try printJSON(artboard)
                 } else {
@@ -1121,7 +1122,7 @@ struct ThumbConsoleCLI {
             case "export":
                 guard let value = firstPositional(in: artboardArguments),
                       let profile = PocketPadSkinArtboardCatalog.profile(for: value)
-                else { throw CLIError.message("Usage: thumbconsole skin artboard export ARTBOARD -o profile.json") }
+                else { throw CLIError.message("Usage: thumble skin artboard export ARTBOARD -o profile.json") }
                 guard let output = optionValue("--output", in: artboardArguments) ?? optionValue("-o", in: artboardArguments) else {
                     throw CLIError.message("skin artboard export requires -o <profile.json>")
                 }
@@ -1135,7 +1136,7 @@ struct ThumbConsoleCLI {
 
         case "scaffold", "new":
             guard let name = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin scaffold NAME --identifier REVERSE.DNS.ID [-o DIRECTORY] [--artboard ARTBOARD] [--force]")
+                throw CLIError.message("Usage: thumble skin scaffold NAME --identifier REVERSE.DNS.ID [-o DIRECTORY] [--artboard ARTBOARD] [--force]")
             }
             guard let identifier = optionValue("--identifier", in: rest) else {
                 throw CLIError.message("skin scaffold requires --identifier <reverse.dns.id>")
@@ -1154,7 +1155,7 @@ struct ThumbConsoleCLI {
 
         case "compile", "build":
             guard let input = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin compile SOURCE [-o skin.pocketpad] [--build-directory DIRECTORY] [--clean] [--strict] [--json]")
+                throw CLIError.message("Usage: thumble skin compile SOURCE [-o skin.pocketpad] [--build-directory DIRECTORY] [--clean] [--strict] [--json]")
             }
             let buildDirectory = optionValue("--build-directory", in: rest).map { URL(fileURLWithPath: $0) }
             let output = (optionValue("--output", in: rest) ?? optionValue("-o", in: rest)).map { URL(fileURLWithPath: $0) }
@@ -1196,7 +1197,7 @@ struct ThumbConsoleCLI {
             if rest.contains("--json") {
                 try printJSON(rows)
             } else if rows.isEmpty {
-                print("No PocketPad skins are installed.")
+                print("No Thumble skins are installed.")
             } else {
                 for row in rows {
                     let badge = row.isBundled ? "built-in" : "installed"
@@ -1206,7 +1207,7 @@ struct ThumbConsoleCLI {
 
         case "inspect", "show":
             guard let target = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin inspect <package-path|identifier[@version]>")
+                throw CLIError.message("Usage: thumble skin inspect <package-path|identifier[@version]>")
             }
             let package = try resolveSkinPackage(target).package
             let summary = skinInspectionSummary(package)
@@ -1218,7 +1219,7 @@ struct ThumbConsoleCLI {
 
         case "validate", "check":
             guard let target = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin validate <package-path|directory> [--strict] [--json]")
+                throw CLIError.message("Usage: thumble skin validate <package-path|directory> [--strict] [--json]")
             }
             let package = try resolveSkinPackage(target).package
             let report = PocketPadSkinPackageValidator.validate(package)
@@ -1236,7 +1237,7 @@ struct ThumbConsoleCLI {
 
         case "quality", "qa":
             guard let target = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin quality SOURCE|PACKAGE [--artboard ARTBOARD] [--strict] [--json]")
+                throw CLIError.message("Usage: thumble skin quality SOURCE|PACKAGE [--artboard ARTBOARD] [--strict] [--json]")
             }
             let targetURL = URL(fileURLWithPath: target)
             let workspace: PocketPadSkinWorkspace?
@@ -1280,7 +1281,7 @@ struct ThumbConsoleCLI {
 
         case "import", "install":
             guard let target = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin import <package-path|directory> [--replace|--allow-downgrade]")
+                throw CLIError.message("Usage: thumble skin import <package-path|directory> [--replace|--allow-downgrade]")
             }
             let resolved = try resolveSkinPackage(target, requiresInstalledLookup: false)
             let packageData = try resolved.data ?? PocketPadSkinPackageCodec.encode(resolved.package)
@@ -1295,7 +1296,7 @@ struct ThumbConsoleCLI {
 
         case "apply", "set":
             guard let target = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin apply <package-path|identifier[@version]> [--profile PROFILE] [--appearance light|dark]")
+                throw CLIError.message("Usage: thumble skin apply <package-path|identifier[@version]> [--profile PROFILE] [--appearance light|dark]")
             }
             let resolved = try resolveSkinPackage(target)
             let skinStore = try PocketPadSkinStore()
@@ -1339,7 +1340,7 @@ struct ThumbConsoleCLI {
 
         case "remove", "delete", "rm":
             guard let target = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin remove <identifier[@version]>")
+                throw CLIError.message("Usage: thumble skin remove <identifier[@version]>")
             }
             let resolved = try resolveSkinPackage(target)
             let reference = PocketPadSkinReference(
@@ -1351,7 +1352,7 @@ struct ThumbConsoleCLI {
                 throw CLIError.message("Built-in skins cannot be removed.")
             }
             if let profile = loadStore().profiles.first(where: { $0.skinReference == reference }) {
-                throw CLIError.message("Skin is still used by profile \"\(profile.name)\". Run `thumbconsole skin detach --profile \"\(profile.name)\"` first.")
+                throw CLIError.message("Skin is still used by profile \"\(profile.name)\". Run `thumble skin detach --profile \"\(profile.name)\"` first.")
             }
             try store.remove(reference)
             notifySkinStoreChanged()
@@ -1359,7 +1360,7 @@ struct ThumbConsoleCLI {
 
         case "export", "share":
             guard let target = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin export <identifier[@version]> -o skin.pocketpad")
+                throw CLIError.message("Usage: thumble skin export <identifier[@version]> -o skin.pocketpad")
             }
             let resolved = try resolveSkinPackage(target)
             let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest)
@@ -1370,7 +1371,7 @@ struct ThumbConsoleCLI {
 
         case "pack":
             guard let input = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin pack <directory|manifest.json> -o skin.pocketpad")
+                throw CLIError.message("Usage: thumble skin pack <directory|manifest.json> -o skin.pocketpad")
             }
             guard let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest) else {
                 throw CLIError.message("skin pack requires -o <file.pocketpad>")
@@ -1379,7 +1380,7 @@ struct ThumbConsoleCLI {
             let sourceCandidate = PocketPadSkinCompiler.sourceURL(for: inputURL)
             if sourceCandidate.lastPathComponent == PocketPadSkinScaffolder.sourceFileName,
                FileManager.default.fileExists(atPath: sourceCandidate.path) {
-                throw CLIError.message("Editable skin sources must be compiled first. Run `thumbconsole skin compile \(input) -o \(output)`.")
+                throw CLIError.message("Editable skin sources must be compiled first. Run `thumble skin compile \(input) -o \(output)`.")
             }
             let package = try loadSkinPackageDirectory(at: inputURL)
             let data = try PocketPadSkinPackageCodec.encode(package)
@@ -1388,7 +1389,7 @@ struct ThumbConsoleCLI {
 
         case "unpack":
             guard let input = firstPositional(in: rest) else {
-                throw CLIError.message("Usage: thumbconsole skin unpack <skin.pocketpad> -o <directory> [--force]")
+                throw CLIError.message("Usage: thumble skin unpack <skin.pocketpad> -o <directory> [--force]")
             }
             guard let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest) else {
                 throw CLIError.message("skin unpack requires -o <directory>")
@@ -1408,7 +1409,7 @@ struct ThumbConsoleCLI {
 
     private static func renderSkinPreview(command: String, arguments: [String]) throws {
         guard let target = firstPositional(in: arguments) else {
-            throw CLIError.message("Usage: thumbconsole skin preview SOURCE|PACKAGE -o OUTPUT [--all-variants] [--all-states] [--contact-sheet]")
+            throw CLIError.message("Usage: thumble skin preview SOURCE|PACKAGE -o OUTPUT [--all-variants] [--all-states] [--contact-sheet]")
         }
         guard let output = optionValue("--output", in: arguments) ?? optionValue("-o", in: arguments) else {
             throw CLIError.message("skin \(command) requires -o <preview.png|frames-directory>")
@@ -2204,8 +2205,8 @@ struct ThumbConsoleCLI {
             ?? (subcommand == "arrange" ? positional.first : positional.dropFirst().first)
         guard let destinationText else {
             let usage = subcommand == "arrange"
-                ? "thumbconsole orientation arrange <destination> [--from source] [--profile PROFILE]"
-                : "thumbconsole orientation copy <source> <destination> [--profile PROFILE]"
+                ? "thumble orientation arrange <destination> [--from source] [--profile PROFILE]"
+                : "thumble orientation copy <source> <destination> [--profile PROFILE]"
             throw CLIError.message("Usage: \(usage)")
         }
         let destination = try parseProfileLayoutVariant(destinationText)
@@ -2372,7 +2373,7 @@ struct ThumbConsoleCLI {
         let profile = try resolveProfile(layoutProfileTarget(in: arguments), in: store)
         let resolvedCustomization = try customization(for: profile, arguments: arguments)
         let canvasSize = try parseLayoutCanvasSize(arguments, fallback: resolvedCustomization.deviceCanvas.editorDeviceFrame.screenRect.size)
-        let outputPath = optionValue("--output", in: arguments) ?? optionValue("-o", in: arguments) ?? optionValue("--path", in: arguments) ?? "thumbconsole-layout-preview.png"
+        let outputPath = optionValue("--output", in: arguments) ?? optionValue("-o", in: arguments) ?? optionValue("--path", in: arguments) ?? "thumble-layout-preview.png"
         let scale = try parsePreviewScale(arguments)
 
 #if os(macOS)
@@ -2473,7 +2474,7 @@ struct ThumbConsoleCLI {
             }
         }
         guard !shouldFail else {
-            throw CLIError.validationFailed("Layout validation failed for \"\(report.profileName ?? "profile")\". Run `thumbconsole layout validate --profile \"\(report.profileName ?? "active")\"` or `thumbconsole layout preview -o preview.png` for details.")
+            throw CLIError.validationFailed("Layout validation failed for \"\(report.profileName ?? "profile")\". Run `thumble layout validate --profile \"\(report.profileName ?? "active")\"` or `thumble layout preview -o preview.png` for details.")
         }
     }
 
@@ -2549,13 +2550,13 @@ struct ThumbConsoleCLI {
                 for style in styles { print("\(style.id)\t\(style.name)") }
             }
         case "show":
-            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole style show <style-id>") }
+            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style show <style-id>") }
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
             guard let token = profile.customization.styleLibrary.style(id: id) else { throw CLIError.message("Style not found: \(id)") }
             try printJSON(token)
         case "create", "new", "set":
-            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole style create <name> [--id ID] [--fill #RRGGBB]") }
+            guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style create <name> [--id ID] [--fill #RRGGBB]") }
             let id = optionValue("--id", in: rest) ?? slug(name)
             let token = try makeStyleToken(id: id, name: name, arguments: rest)
             try mutateProfileResources(profileTarget: optionValue("--profile", in: rest)) { customization in
@@ -2567,7 +2568,7 @@ struct ThumbConsoleCLI {
             print("Saved style \"\(token.name)\" (\(token.id)).")
         case "rename":
             let positional = positionals(in: rest)
-            guard positional.count >= 2 else { throw CLIError.message("Usage: thumbconsole style rename <style-id> <new name>") }
+            guard positional.count >= 2 else { throw CLIError.message("Usage: thumble style rename <style-id> <new name>") }
             let id = positional[0]
             let newName = positional.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !newName.isEmpty else { throw CLIError.message("Style name cannot be empty") }
@@ -2582,7 +2583,7 @@ struct ThumbConsoleCLI {
             print("Renamed style \"\(id)\" to \"\(newName)\".")
         case "apply":
             let positional = positionals(in: rest)
-            guard positional.count >= 2 else { throw CLIError.message("Usage: thumbconsole style apply <style-id> <element>") }
+            guard positional.count >= 2 else { throw CLIError.message("Usage: thumble style apply <style-id> <element>") }
             let styleID = positional[0]
             let targetText = positional[1]
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
@@ -2594,7 +2595,7 @@ struct ThumbConsoleCLI {
             }
             print("Applied style \"\(styleID)\" to \"\(targetText)\".")
         case "detach", "clear":
-            guard let targetText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole style detach <element>") }
+            guard let targetText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style detach <element>") }
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
                 let target = try resolveElementTarget(targetText, in: customization)
                 try mutateLayout(for: target, in: &customization) { layout in
@@ -2603,7 +2604,7 @@ struct ThumbConsoleCLI {
             }
             print("Detached style from \"\(targetText)\".")
         case "delete", "rm":
-            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole style delete <style-id>") }
+            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style delete <style-id>") }
             try mutateProfileResources(profileTarget: optionValue("--profile", in: rest)) { customization in
                 customization.styleLibrary.styles.removeAll { $0.id == id }
                 for button in GameButton.allCases {
@@ -2633,7 +2634,7 @@ struct ThumbConsoleCLI {
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
             try writeJSON(profile.customization.styleLibrary.normalized, to: optionValue("--output", in: rest) ?? optionValue("-o", in: rest))
         case "import":
-            guard let path = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole style import <style-library.json> [--merge]") }
+            guard let path = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style import <style-library.json> [--merge]") }
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
             let library = try JSONDecoder().decode(GamepadStyleLibrary.self, from: data).normalized
             try mutateProfileResources(profileTarget: optionValue("--profile", in: rest)) { customization in
@@ -2675,7 +2676,7 @@ struct ThumbConsoleCLI {
             }
         case "move":
             let positional = positionals(in: rest)
-            guard let targetText = positional.first else { throw CLIError.message("Usage: thumbconsole layer move <element> --to INDEX") }
+            guard let targetText = positional.first else { throw CLIError.message("Usage: thumble layer move <element> --to INDEX") }
             let toIndex = try optionValue("--to", in: rest).map(parseInteger)
             let beforeText = optionValue("--before", in: rest)
             let afterText = optionValue("--after", in: rest)
@@ -2734,7 +2735,7 @@ struct ThumbConsoleCLI {
             }
         case "create", "new":
             let positional = positionals(in: rest)
-            guard let name = positional.first, positional.count >= 2 else { throw CLIError.message("Usage: thumbconsole group create <name> <element>...") }
+            guard let name = positional.first, positional.count >= 2 else { throw CLIError.message("Usage: thumble group create <name> <element>...") }
             let targets = Array(positional.dropFirst())
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 let children = try targets.map { identity(for: try resolveElementTarget($0, in: customization)) }
@@ -2752,7 +2753,7 @@ struct ThumbConsoleCLI {
             print("Created group \"\(name)\".")
         case "rename":
             let positional = positionals(in: rest)
-            guard positional.count >= 2 else { throw CLIError.message("Usage: thumbconsole group rename <group-name-or-id> <new name>") }
+            guard positional.count >= 2 else { throw CLIError.message("Usage: thumble group rename <group-name-or-id> <new name>") }
             let target = positional[0]
             let newName = positional.dropFirst().joined(separator: " ")
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
@@ -2761,7 +2762,7 @@ struct ThumbConsoleCLI {
             }
             print("Renamed group \"\(target)\" to \"\(newName)\".")
         case "duplicate", "copy":
-            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole group duplicate <group-name-or-id> [--name NAME] [--offset 0.025]") }
+            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble group duplicate <group-name-or-id> [--name NAME] [--offset 0.025]") }
             let requestedName = optionValue("--name", in: rest)
             let offset = try parseDuplicateOffset(rest)
             var duplicatedGroup: GamepadLayerGroup?
@@ -2772,7 +2773,7 @@ struct ThumbConsoleCLI {
             }
             print("Duplicated group \"\(target)\" as \"\(duplicatedGroup?.name ?? requestedName ?? "Copy")\".")
         case "ungroup", "delete", "rm":
-            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole group ungroup <group-name-or-id>") }
+            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble group ungroup <group-name-or-id>") }
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 var metadata = customization.designMetadata ?? .empty
                 metadata.groups.removeAll { groupMatches($0, target: target) }
@@ -2780,7 +2781,7 @@ struct ThumbConsoleCLI {
             }
             print("Removed group \"\(target)\".")
         case "hide", "show", "lock", "unlock":
-            guard let targetName = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole group \(subcommand) <group-name-or-id>") }
+            guard let targetName = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble group \(subcommand) <group-name-or-id>") }
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 var metadata = customization.designMetadata ?? .empty
                 guard let index = metadata.groups.firstIndex(where: { groupMatches($0, target: targetName) }) else { throw CLIError.message("Group not found: \(targetName)") }
@@ -2834,13 +2835,13 @@ struct ThumbConsoleCLI {
             let assets = profile.customization.assetLibrary.normalized.assets
             if rest.contains("--json") { try printJSON(assets) } else { assets.forEach { print("\($0.id)\t\($0.name)\t\($0.role.rawValue)\t\($0.byteCount) bytes") } }
         case "show":
-            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole asset show <asset-id>") }
+            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble asset show <asset-id>") }
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
             guard let asset = profile.customization.assetLibrary.asset(id: id) else { throw CLIError.message("Asset not found: \(id)") }
             try printJSON(asset)
         case "import":
-            guard let path = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole asset import <path> [--name NAME] [--role background|icon|texture]") }
+            guard let path = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble asset import <path> [--name NAME] [--role background|icon|texture]") }
             let url = URL(fileURLWithPath: path)
             let data = try Data(contentsOf: url)
             guard data.count <= GamepadAsset.maximumStoredBytes else { throw CLIError.message("Assets must be under \(GamepadAsset.maximumStoredBytes) bytes") }
@@ -2856,7 +2857,7 @@ struct ThumbConsoleCLI {
             print("Imported asset \"\(name)\".")
         case "set", "edit", "rename":
             let positional = positionals(in: rest)
-            guard let id = positional.first else { throw CLIError.message("Usage: thumbconsole asset set <asset-id> [--name NAME] [--role ROLE]") }
+            guard let id = positional.first else { throw CLIError.message("Usage: thumble asset set <asset-id> [--name NAME] [--role ROLE]") }
             let positionalName = subcommand == "rename" ? positional.dropFirst().joined(separator: " ") : ""
             let requestedName = (optionValue("--name", in: rest) ?? (positionalName.isEmpty ? nil : positionalName))?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2874,7 +2875,7 @@ struct ThumbConsoleCLI {
             }
             print("Updated asset \"\(id)\".")
         case "remove", "delete", "rm":
-            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole asset remove <asset-id>") }
+            guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble asset remove <asset-id>") }
             try mutateProfileResources(profileTarget: optionValue("--profile", in: rest)) { customization in
                 customization.assetLibrary.assets.removeAll { $0.id == id }
             }
@@ -2999,7 +3000,7 @@ struct ThumbConsoleCLI {
     private static func nudgeGroup(arguments: [String]) throws {
         let positional = positionals(in: arguments)
         guard let targetText = positional.first else {
-            throw CLIError.message("Usage: thumbconsole group nudge <group-name-or-id> <left|right|up|down> [--step 1|10]")
+            throw CLIError.message("Usage: thumble group nudge <group-name-or-id> <left|right|up|down> [--step 1|10]")
         }
         let directionText = positional.dropFirst().first
         let translation = try parseNudgeTranslation(arguments: arguments, directionText: directionText)
@@ -3216,7 +3217,7 @@ struct ThumbConsoleCLI {
                 print("Frame style: \(frame.frameStyle.displayName)")
             }
         case "set", "select", "use":
-            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole device set <device-or-frame-id|custom|WIDTHxHEIGHT> [--orientation landscape|portrait] [--profile PROFILE]") }
+            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble device set <device-or-frame-id|custom|WIDTHxHEIGHT> [--orientation landscape|portrait] [--profile PROFILE]") }
             let orientationText = optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)
             let orientation = try orientationText.map(parseDeviceOrientation)
             let frame = try resolveDeviceFrameTarget(target, arguments: rest, preferredOrientation: orientation)
@@ -3248,7 +3249,7 @@ struct ThumbConsoleCLI {
 
     private static func resolveDeviceFrame(_ target: String, preferredOrientation: GamepadEditorDeviceOrientation?) throws -> GamepadEditorDeviceFrame {
         guard let frame = GamepadEditorDeviceCatalog.frame(matching: target, preferredOrientation: preferredOrientation) else {
-            throw CLIError.message("Unknown iPhone device frame: \(target). Run `thumbconsole device list` to see supported frames or use WIDTHxHEIGHT for a custom canvas.")
+            throw CLIError.message("Unknown iPhone device frame: \(target). Run `thumble device list` to see supported frames or use WIDTHxHEIGHT for a custom canvas.")
         }
         return frame
     }
@@ -3337,14 +3338,14 @@ struct ThumbConsoleCLI {
             }
             print("Updated control bar controls.")
         case "add", "append":
-            guard let itemText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole control-bar add <item>") }
+            guard let itemText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble control-bar add <item>") }
             let item = try parseControlBarItem(itemText)
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 customization.addControlBarItem(item)
             }
             print("Added \(item.displayName) to the control bar.")
         case "remove", "rm", "delete", "hide":
-            guard let itemText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumbconsole control-bar remove <item>") }
+            guard let itemText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble control-bar remove <item>") }
             let item = try parseControlBarItem(itemText)
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
                 customization.removeControlBarItem(item)
@@ -3352,7 +3353,7 @@ struct ThumbConsoleCLI {
             print("Removed \(item.displayName) from the control bar.")
         case "move":
             let positional = positionals(in: rest)
-            guard positional.count >= 2 else { throw CLIError.message("Usage: thumbconsole control-bar move <item> <up|down>") }
+            guard positional.count >= 2 else { throw CLIError.message("Usage: thumble control-bar move <item> <up|down>") }
             let item = try parseControlBarItem(positional[0])
             let direction = normalizedLookup(positional[1])
             let offset: Int
@@ -3397,7 +3398,7 @@ struct ThumbConsoleCLI {
     private static func controlBarItem(arguments: [String]) throws {
         let positional = positionals(in: arguments)
         guard positional.count >= 2 else {
-            throw CLIError.message("Usage: thumbconsole control-bar item <show|set|reset> <item> [appearance options]")
+            throw CLIError.message("Usage: thumble control-bar item <show|set|reset> <item> [appearance options]")
         }
         let action = normalizedLookup(positional[0])
         let item = try parseControlBarItem(positional[1])
@@ -3453,7 +3454,7 @@ struct ThumbConsoleCLI {
         let parts = itemText
             .split { $0 == "," || $0 == ";" || $0.isWhitespace }
             .map(String.init)
-        guard !parts.isEmpty else { throw CLIError.message("Usage: thumbconsole control-bar set status,profiles,spacer,edit,settings,home,connection") }
+        guard !parts.isEmpty else { throw CLIError.message("Usage: thumble control-bar set status,profiles,spacer,edit,settings,home,connection") }
         return GamepadCustomization.normalizedControlBarItems(try parts.map(parseControlBarItem))
     }
 
@@ -3521,7 +3522,7 @@ struct ThumbConsoleCLI {
     private static func duplicateElements(arguments: [String]) throws {
         let targetTexts = positionals(in: arguments)
         guard !targetTexts.isEmpty else {
-            throw CLIError.message("Usage: thumbconsole element duplicate <element> [element...] [--offset 0.025]")
+            throw CLIError.message("Usage: thumble element duplicate <element> [element...] [--offset 0.025]")
         }
         let offset = try parseDuplicateOffset(arguments)
         var result: GamepadElementDuplicationResult?
@@ -3537,7 +3538,7 @@ struct ThumbConsoleCLI {
     private static func alignElements(arguments: [String]) throws {
         let positional = positionals(in: arguments)
         guard positional.count >= 3 else {
-            throw CLIError.message("Usage: thumbconsole element align <left|horizontal-centers|right|top|vertical-centers|bottom> <element> <element>...")
+            throw CLIError.message("Usage: thumble element align <left|horizontal-centers|right|top|vertical-centers|bottom> <element> <element>...")
         }
         let alignment = try parseControlAlignment(positional[0])
         let targetTexts = Array(positional.dropFirst())
@@ -3552,7 +3553,7 @@ struct ThumbConsoleCLI {
     private static func distributeElements(arguments: [String]) throws {
         let positional = positionals(in: arguments)
         guard positional.count >= 4 else {
-            throw CLIError.message("Usage: thumbconsole element distribute <horizontal-centers|vertical-centers|horizontal-spacing|vertical-spacing> <element> <element> <element>...")
+            throw CLIError.message("Usage: thumble element distribute <horizontal-centers|vertical-centers|horizontal-spacing|vertical-spacing> <element> <element> <element>...")
         }
         let distribution = try parseControlDistribution(positional[0])
         let targetTexts = Array(positional.dropFirst())
@@ -3600,7 +3601,7 @@ struct ThumbConsoleCLI {
     }
 
     private static func addElement(arguments: [String]) throws {
-        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: thumbconsole element add <button|joystick|trigger|trackpad|text|decoration> [options]") }
+        guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: thumble element add <button|joystick|trigger|trackpad|text|decoration> [options]") }
         let kind = try parseCustomControlKind(kindText)
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             guard customization.customButtons.count < GamepadCustomization.maximumCustomButtons else { throw CLIError.message("Maximum custom element count reached") }
@@ -3880,7 +3881,7 @@ struct ThumbConsoleCLI {
     private static func nudgeElement(arguments: [String]) throws {
         let positional = positionals(in: arguments)
         guard let targetText = positional.first else {
-            throw CLIError.message("Usage: thumbconsole element nudge <element> <left|right|up|down> [--step 1|10]")
+            throw CLIError.message("Usage: thumble element nudge <element> <left|right|up|down> [--step 1|10]")
         }
         let directionText = positional.dropFirst().first
         let translation = try parseNudgeTranslation(arguments: arguments, directionText: directionText)
@@ -4497,14 +4498,14 @@ struct ThumbConsoleCLI {
 
         let rest = arguments.first == "simulate" ? Array(arguments.dropFirst()) : arguments
         let options = try parseLatencyOptions(rest)
-        let modes: [ThumbConsoleLatencySimulationMode]
+        let modes: [ThumbleLatencySimulationMode]
         if let mode = options.mode {
             modes = [mode]
         } else {
             modes = [.current, .legacyMainActor]
         }
         let reports = modes.map {
-            ThumbConsoleInputLatencySimulator.run(pattern: options.pattern, mode: $0)
+            ThumbleInputLatencySimulator.run(pattern: options.pattern, mode: $0)
         }
 
         if let logPath = options.logPath {
@@ -4520,7 +4521,7 @@ struct ThumbConsoleCLI {
 
     private static func verifyLatency(arguments: [String]) throws {
         let options = try parseLatencyVerificationOptions(arguments)
-        let report = ThumbConsoleInputLatencySimulator.verifyCurrentPath(
+        let report = ThumbleInputLatencySimulator.verifyCurrentPath(
             maxAllowedMilliseconds: options.maxAllowedMilliseconds,
             p95AllowedMilliseconds: options.p95AllowedMilliseconds
         )
@@ -4541,8 +4542,8 @@ struct ThumbConsoleCLI {
     }
 
     private struct LatencyOptions {
-        var pattern: ThumbConsoleLatencySimulationPattern = .hollowKnight
-        var mode: ThumbConsoleLatencySimulationMode?
+        var pattern: ThumbleLatencySimulationPattern = .hollowKnight
+        var mode: ThumbleLatencySimulationMode?
         var printJSON = false
         var logPath: String?
     }
@@ -4567,7 +4568,7 @@ struct ThumbConsoleCLI {
             case "--pattern":
                 index += 1
                 guard index < arguments.count else { throw CLIError.message("Missing value for --pattern") }
-                guard let pattern = ThumbConsoleLatencySimulationPattern(rawValue: arguments[index]) else {
+                guard let pattern = ThumbleLatencySimulationPattern(rawValue: arguments[index]) else {
                     throw CLIError.message("Unsupported latency pattern: \(arguments[index])")
                 }
                 options.pattern = pattern
@@ -4578,7 +4579,7 @@ struct ThumbConsoleCLI {
                 let value = arguments[index]
                 if value == "compare" {
                     options.mode = nil
-                } else if let mode = ThumbConsoleLatencySimulationMode(rawValue: value) {
+                } else if let mode = ThumbleLatencySimulationMode(rawValue: value) {
                     options.mode = mode
                 } else {
                     throw CLIError.message("Unsupported latency mode: \(value)")
@@ -4590,7 +4591,7 @@ struct ThumbConsoleCLI {
                 options.logPath = arguments[index]
 
             case "--help", "-h", "help":
-                throw CLIError.message("Usage: thumbconsole latency simulate [--pattern hollow-knight|same-button-burst|udp-recovery|udp-recovery-burst|held-direction-heartbeat-recovery] [--mode current|legacy-main-actor|compare] [--json] [--log file.json]")
+                throw CLIError.message("Usage: thumble latency simulate [--pattern hollow-knight|same-button-burst|udp-recovery|udp-recovery-burst|held-direction-heartbeat-recovery] [--mode current|legacy-main-actor|compare] [--json] [--log file.json]")
 
             default:
                 throw CLIError.message("Unknown latency option: \(argument)")
@@ -4636,7 +4637,7 @@ struct ThumbConsoleCLI {
                 options.logPath = arguments[index]
 
             case "--help", "-h", "help":
-                throw CLIError.message("Usage: thumbconsole latency verify [--max-ms 4] [--p95-ms 4] [--json] [--log file.json]")
+                throw CLIError.message("Usage: thumble latency verify [--max-ms 4] [--p95-ms 4] [--json] [--log file.json]")
 
             default:
                 throw CLIError.message("Unknown latency verify option: \(argument)")
@@ -4649,7 +4650,7 @@ struct ThumbConsoleCLI {
     }
 
     private static func printLatencyVerificationReport(
-        _ report: ThumbConsoleLatencyVerificationReport,
+        _ report: ThumbleLatencyVerificationReport,
         logPath: String?
     ) {
         print(report.passed ? "Synthetic latency-model verification passed" : "Synthetic latency-model verification failed")
@@ -4677,7 +4678,7 @@ struct ThumbConsoleCLI {
     }
 
     private static func printLatencyReports(
-        _ reports: [ThumbConsoleLatencySimulationReport],
+        _ reports: [ThumbleLatencySimulationReport],
         logPath: String?
     ) {
         guard let first = reports.first else { return }
@@ -4734,15 +4735,15 @@ struct ThumbConsoleCLI {
         switch subcommand {
         case "open", "launch":
             try openApp()
-            print("Opened ThumbConsole Mac.")
+            print("Opened Thumble Mac.")
         case "quit":
             try quitApp()
-            print("Requested ThumbConsole Mac quit.")
+            print("Requested Thumble Mac quit.")
         case "screenshot", "capture-window":
             try captureAppScreenshot(arguments: rest)
         case "replay-onboarding", "onboarding", "reset-onboarding":
             try replayOnboarding()
-            print("Reset onboarding and opened ThumbConsole Mac.")
+            print("Reset onboarding and opened Thumble Mac.")
         default:
             throw CLIError.message("Unknown app subcommand: \(subcommand)")
         }
@@ -4752,11 +4753,11 @@ struct ThumbConsoleCLI {
         let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: appDefaultsDomain)
             .filter { !$0.isTerminated }
         guard !runningApps.isEmpty else {
-            throw CLIError.message("ThumbConsole Mac is not running. Ask the user to open it, or run `thumbconsole app open` only with their permission, then retry.")
+            throw CLIError.message("Thumble Mac is not running. Ask the user to open it, or run `thumble app open` only with their permission, then retry.")
         }
         guard CGPreflightScreenCaptureAccess() else {
             throw CLIError.message(
-                "Screen Recording access is not available. Grant it to the terminal or agent host in System Settings > Privacy & Security > Screen & System Audio Recording, then retry. This command does not activate ThumbConsole or send input events."
+                "Screen Recording access is not available. Grant it to the terminal or agent host in System Settings > Privacy & Security > Screen & System Audio Recording, then retry. This command does not activate Thumble or send input events."
             )
         }
 
@@ -4767,7 +4768,7 @@ struct ThumbConsoleCLI {
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
         ) as? [[String: Any]] else {
-            throw CLIError.message("Could not enumerate ThumbConsole Mac windows.")
+            throw CLIError.message("Could not enumerate Thumble Mac windows.")
         }
 
         let windows = windowInfo.compactMap { info -> AppWindowDescriptor? in
@@ -4804,14 +4805,14 @@ struct ThumbConsoleCLI {
             if let requestedTitle, !requestedTitle.isEmpty {
                 let availableTitles = windows.compactMap(\.title).sorted().joined(separator: ", ")
                 let suffix = availableTitles.isEmpty ? "" : " Available window titles: \(availableTitles)."
-                throw CLIError.message("No visible ThumbConsole Mac window matched \"\(requestedTitle)\".\(suffix)")
+                throw CLIError.message("No visible Thumble Mac window matched \"\(requestedTitle)\".\(suffix)")
             }
-            throw CLIError.message("No visible ThumbConsole Mac window was found. Restore its window and retry.")
+            throw CLIError.message("No visible Thumble Mac window was found. Restore its window and retry.")
         }
 
         let rawOutputPath = optionValue("--output", in: arguments)
             ?? optionValue("-o", in: arguments)
-            ?? "thumbconsole-app-screenshot.png"
+            ?? "thumble-app-screenshot.png"
         let expandedOutputPath = (rawOutputPath as NSString).expandingTildeInPath
         let outputURL = URL(fileURLWithPath: expandedOutputPath).standardizedFileURL
         try FileManager.default.createDirectory(
@@ -4828,7 +4829,7 @@ struct ThumbConsoleCLI {
             !imageData.isEmpty,
             let representation = NSBitmapImageRep(data: imageData)
         else {
-            throw CLIError.message("ThumbConsole window capture did not produce a readable PNG at \(outputURL.path).")
+            throw CLIError.message("Thumble window capture did not produce a readable PNG at \(outputURL.path).")
         }
 
         let result = AppScreenshotResult(
@@ -4843,7 +4844,7 @@ struct ThumbConsoleCLI {
             try printJSON(result)
         } else {
             let title = target.title.map { " \"\($0)\"" } ?? ""
-            print("Captured ThumbConsole Mac\(title) to \(outputURL.path) (\(result.pixelWidth)x\(result.pixelHeight)).")
+            print("Captured Thumble Mac\(title) to \(outputURL.path) (\(result.pixelWidth)x\(result.pixelHeight)).")
         }
     }
 
@@ -4854,10 +4855,14 @@ struct ThumbConsoleCLI {
             logPath = pathOverride
         } else if let status = try? readFreshRuntimeStatus(), let path = status.captureLogPath, !path.isEmpty {
             logPath = path
-        } else if FileManager.default.fileExists(atPath: ThumbConsoleMacIPC.legacyCaptureLogPath) {
-            logPath = ThumbConsoleMacIPC.legacyCaptureLogPath
+        } else if FileManager.default.fileExists(atPath: ThumbleMacIPC.captureLogPath) {
+            logPath = ThumbleMacIPC.captureLogPath
+        } else if FileManager.default.fileExists(atPath: ThumbleMacIPC.legacyThumbConsoleCaptureLogPath) {
+            logPath = ThumbleMacIPC.legacyThumbConsoleCaptureLogPath
+        } else if FileManager.default.fileExists(atPath: ThumbleMacIPC.legacyPocketPadCaptureLogPath) {
+            logPath = ThumbleMacIPC.legacyPocketPadCaptureLogPath
         } else {
-            logPath = ThumbConsoleMacIPC.captureLogPath
+            logPath = ThumbleMacIPC.captureLogPath
         }
 
         if options.printPath {
@@ -4880,7 +4885,7 @@ struct ThumbConsoleCLI {
         let startedAt = Date()
 
         if !options.jsonLines {
-            fputs("Streaming ThumbConsole capture from \(logPath)\n", stderr)
+            fputs("Streaming Thumble capture from \(logPath)\n", stderr)
             fputs("Press Ctrl-C to stop. Use --jsonl for raw JSON lines.\n", stderr)
         }
 
@@ -4947,7 +4952,7 @@ struct ThumbConsoleCLI {
                 }
                 options.pollInterval = value
             case "--help", "-h":
-                throw CLIError.message("Usage: thumbconsole monitor [--jsonl] [--clear] [--from-start] [--duration seconds] [--file capture.jsonl] [--path]")
+                throw CLIError.message("Usage: thumble monitor [--jsonl] [--clear] [--from-start] [--duration seconds] [--file capture.jsonl] [--path]")
             default:
                 throw CLIError.message("Unknown monitor option: \(argument)")
             }
@@ -4973,14 +4978,14 @@ struct ThumbConsoleCLI {
                     print(text)
                 }
             } else {
-                let event = try JSONDecoder().decode(ThumbConsoleCaptureEvent.self, from: Data(line))
+                let event = try JSONDecoder().decode(ThumbleCaptureEvent.self, from: Data(line))
                 print(formatCaptureEvent(event))
             }
             fflush(stdout)
         }
     }
 
-    private static func formatCaptureEvent(_ event: ThumbConsoleCaptureEvent) -> String {
+    private static func formatCaptureEvent(_ event: ThumbleCaptureEvent) -> String {
         let sequence = event.sequence.map { "#\($0)" } ?? "#?"
         let timestamp = formatCaptureTimestamp(event.recordedAt)
         let latency = event.latencyMS.map { " latency=\($0)ms" } ?? ""
@@ -5057,12 +5062,12 @@ struct ThumbConsoleCLI {
     }
 
     private static func postRuntimeCommand(
-        _ command: ThumbConsoleMacCLICommand,
+        _ command: ThumbleMacCLICommand,
         button: GameButton? = nil,
         elementInput: KeypadElementInputID? = nil,
         reason: String? = nil
     ) {
-        let payload = ThumbConsoleMacCLICommandPayload(
+        let payload = ThumbleMacCLICommandPayload(
             command: command,
             button: button,
             elementInput: elementInput,
@@ -5070,20 +5075,20 @@ struct ThumbConsoleCLI {
         )
         guard let data = try? JSONEncoder().encode(payload) else { return }
         DistributedNotificationCenter.default().postNotificationName(
-            Notification.Name(ThumbConsoleMacIPC.commandNotificationName),
+            Notification.Name(ThumbleMacIPC.commandNotificationName),
             object: nil,
-            userInfo: [ThumbConsoleMacIPC.commandDataKey: data],
+            userInfo: [ThumbleMacIPC.commandDataKey: data],
             deliverImmediately: true
         )
     }
 
-    private static func readFreshRuntimeStatus() throws -> ThumbConsoleMacRuntimeStatus {
+    private static func readFreshRuntimeStatus() throws -> ThumbleMacRuntimeStatus {
         postRuntimeCommand(.publishStatus)
         Thread.sleep(forTimeInterval: 0.12)
-        guard let data = dataValue(loadAppDomain()[ThumbConsoleMacIPC.runtimeStatusDefaultsKey]),
-              let status = try? JSONDecoder().decode(ThumbConsoleMacRuntimeStatus.self, from: data)
+        guard let data = dataValue(loadAppDomain()[ThumbleMacIPC.runtimeStatusDefaultsKey]),
+              let status = try? JSONDecoder().decode(ThumbleMacRuntimeStatus.self, from: data)
         else {
-            throw CLIError.message("No runtime status found. Open ThumbConsole Mac first with `thumbconsole app open`.")
+            throw CLIError.message("No runtime status found. Open Thumble Mac first with `thumble app open`.")
         }
         return status
     }
@@ -6016,7 +6021,7 @@ struct ThumbConsoleCLI {
             case .system(let control):
                 return .system(control)
             case .controlBarItem:
-                throw CLIError.message("Control bar items are managed with `thumbconsole control-bar item`")
+                throw CLIError.message("Control bar items are managed with `thumble control-bar item`")
             default:
                 break
             }
@@ -6275,9 +6280,9 @@ struct ThumbConsoleCLI {
 
     private static func resetOnboardingDefaults() {
         var domain = loadAppDomain()
-        domain[ThumbConsoleMacIPC.onboardingCompletedDefaultsKey] = false
-        domain[ThumbConsoleMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey] = false
-        domain[ThumbConsoleMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey] = true
+        domain[ThumbleMacIPC.onboardingCompletedDefaultsKey] = false
+        domain[ThumbleMacIPC.editorFirstKeypadOnboardingCompletedDefaultsKey] = false
+        domain[ThumbleMacIPC.editorFirstKeypadOnboardingReplayRequestedDefaultsKey] = true
         UserDefaults.standard.setPersistentDomain(domain, forName: appDefaultsDomain)
         UserDefaults.standard.synchronize()
     }
@@ -6308,7 +6313,7 @@ struct ThumbConsoleCLI {
         let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: appDefaultsDomain)
             .filter { !$0.isTerminated }
         for runningApp in runningApps where !runningApp.terminate() {
-            throw CLIError.message("Could not request ThumbConsole Mac to quit.")
+            throw CLIError.message("Could not request Thumble Mac to quit.")
         }
     }
 
@@ -6323,153 +6328,153 @@ struct ThumbConsoleCLI {
 
     private static func printHelp() {
         print("""
-        thumbconsole — configure and control ThumbConsole Mac from the command line
+        thumble — configure and control Thumble Mac from the command line
 
         Generation:
-          thumbconsole generate "Hollow Knight" [--json] [--dry-run]
-          thumbconsole generate --spec agent-keypad.json [--layout-preview preview.png]
-          thumbconsole install-spec agent-keypad.json
+          thumble generate "Hollow Knight" [--json] [--dry-run]
+          thumble generate --spec agent-keypad.json [--layout-preview preview.png]
+          thumble install-spec agent-keypad.json
 
         Profiles:
-          thumbconsole profile list [--ids|--json]
-          thumbconsole profile show [active|default|NAME|UUID] [--json]
-          thumbconsole profile create NAME [--blank|--template TEMPLATE|--from PROFILE]
-          thumbconsole profile select NAME|UUID
-          thumbconsole profile default NAME|UUID
-          thumbconsole profile rename NAME|UUID NEW_NAME
-          thumbconsole profile duplicate [NAME|UUID] [NEW_NAME]
-          thumbconsole profile delete NAME|UUID [NAME|UUID ...]
-          thumbconsole profile move NAME|UUID [NAME|UUID ...] --to INDEX|--before PROFILE|--after PROFILE
-          thumbconsole profile reset [NAME|UUID]
-          thumbconsole profile attach-app [NAME|UUID|--profile PROFILE] --path /Applications/App.app
-          thumbconsole profile attach-app [NAME|UUID|--profile PROFILE] --bundle-id com.example.App
-          thumbconsole profile detach-app [NAME|UUID|--profile PROFILE]
-          thumbconsole profile launch [NAME|UUID|--profile PROFILE]
-          thumbconsole profile export [NAME|UUID|--all] [-o file.json]
-          thumbconsole profile import file.json [--default] [--append]
+          thumble profile list [--ids|--json]
+          thumble profile show [active|default|NAME|UUID] [--json]
+          thumble profile create NAME [--blank|--template TEMPLATE|--from PROFILE]
+          thumble profile select NAME|UUID
+          thumble profile default NAME|UUID
+          thumble profile rename NAME|UUID NEW_NAME
+          thumble profile duplicate [NAME|UUID] [NEW_NAME]
+          thumble profile delete NAME|UUID [NAME|UUID ...]
+          thumble profile move NAME|UUID [NAME|UUID ...] --to INDEX|--before PROFILE|--after PROFILE
+          thumble profile reset [NAME|UUID]
+          thumble profile attach-app [NAME|UUID|--profile PROFILE] --path /Applications/App.app
+          thumble profile attach-app [NAME|UUID|--profile PROFILE] --bundle-id com.example.App
+          thumble profile detach-app [NAME|UUID|--profile PROFILE]
+          thumble profile launch [NAME|UUID|--profile PROFILE]
+          thumble profile export [NAME|UUID|--all] [-o file.json]
+          thumble profile import file.json [--default] [--append]
 
         Templates:
-          thumbconsole template list
-          thumbconsole template install nes [--name "My NES"] [--default]
-          thumbconsole template install softWhite [--name "Soft Pad"]
+          thumble template list
+          thumble template install nes [--name "My NES"] [--default]
+          thumble template install softWhite [--name "Soft Pad"]
 
         Themes:
-          thumbconsole theme list
-          thumbconsole theme show cavern-glow
-          thumbconsole theme apply cavern-glow [--profile PROFILE]
-          thumbconsole theme apply soft-white-controller [--profile PROFILE]
+          thumble theme list
+          thumble theme show cavern-glow
+          thumble theme apply cavern-glow [--profile PROFILE]
+          thumble theme apply soft-white-controller [--profile PROFILE]
 
         Shareable skins and authoring (.pocketpad):
-          thumbconsole skin artboard list [--json]
-          thumbconsole skin artboard show ARTBOARD [--json]
-          thumbconsole skin artboard export ARTBOARD -o profile.json
-          thumbconsole skin scaffold NAME --identifier REVERSE.DNS.ID [--artboard ARTBOARD] [-o DIRECTORY] [--force]
-          thumbconsole skin compile SOURCE [-o skin.pocketpad] [--build-directory DIRECTORY] [--clean] [--strict] [--json]
-          thumbconsole skin preview SOURCE|PACKAGE -o OUTPUT [--artboard ARTBOARD] [--all-variants] [--all-states] [--orientation all|portrait|landscape] [--appearance all|light|dark] [--state all|normal|pressed|active|disabled] [--native-renderer] [--contact-sheet] [--columns N] [--render-scale 0.5...4]
-          thumbconsole skin quality SOURCE|PACKAGE [--artboard ARTBOARD] [--strict] [--json]
-          thumbconsole skin list [--json]
-          thumbconsole skin inspect PACKAGE|IDENTIFIER[@VERSION] [--json]
-          thumbconsole skin validate PACKAGE|DIRECTORY [--strict] [--json]
-          thumbconsole skin import PACKAGE|DIRECTORY [--replace|--allow-downgrade]
-          thumbconsole skin apply PACKAGE|IDENTIFIER[@VERSION] [--profile PROFILE] [--appearance light|dark]
-          thumbconsole skin detach [PROFILE|--profile PROFILE]
-          thumbconsole skin remove IDENTIFIER[@VERSION]
-          thumbconsole skin export IDENTIFIER[@VERSION] -o skin.pocketpad
-          thumbconsole skin pack DIRECTORY -o skin.pocketpad
-          thumbconsole skin unpack skin.pocketpad -o DIRECTORY [--force]
-          thumbconsole skin render SOURCE|PACKAGE -o OUTPUT [same options as skin preview]
+          thumble skin artboard list [--json]
+          thumble skin artboard show ARTBOARD [--json]
+          thumble skin artboard export ARTBOARD -o profile.json
+          thumble skin scaffold NAME --identifier REVERSE.DNS.ID [--artboard ARTBOARD] [-o DIRECTORY] [--force]
+          thumble skin compile SOURCE [-o skin.pocketpad] [--build-directory DIRECTORY] [--clean] [--strict] [--json]
+          thumble skin preview SOURCE|PACKAGE -o OUTPUT [--artboard ARTBOARD] [--all-variants] [--all-states] [--orientation all|portrait|landscape] [--appearance all|light|dark] [--state all|normal|pressed|active|disabled] [--native-renderer] [--contact-sheet] [--columns N] [--render-scale 0.5...4]
+          thumble skin quality SOURCE|PACKAGE [--artboard ARTBOARD] [--strict] [--json]
+          thumble skin list [--json]
+          thumble skin inspect PACKAGE|IDENTIFIER[@VERSION] [--json]
+          thumble skin validate PACKAGE|DIRECTORY [--strict] [--json]
+          thumble skin import PACKAGE|DIRECTORY [--replace|--allow-downgrade]
+          thumble skin apply PACKAGE|IDENTIFIER[@VERSION] [--profile PROFILE] [--appearance light|dark]
+          thumble skin detach [PROFILE|--profile PROFILE]
+          thumble skin remove IDENTIFIER[@VERSION]
+          thumble skin export IDENTIFIER[@VERSION] -o skin.pocketpad
+          thumble skin pack DIRECTORY -o skin.pocketpad
+          thumble skin unpack skin.pocketpad -o DIRECTORY [--force]
+          thumble skin render SOURCE|PACKAGE -o OUTPUT [same options as skin preview]
 
         Bindings:
-          thumbconsole binding list [--profile PROFILE]
-          thumbconsole binding display [--profile PROFILE] [--json]
-          thumbconsole binding set jump Return
-          thumbconsole binding set focus --sequence 'Control+B,H'
-          thumbconsole binding reset jump
-          thumbconsole binding reset-all
-          thumbconsole output list [--profile PROFILE]
-          thumbconsole output mode keyboard|controller|custom [--profile PROFILE]
-          thumbconsole output set jump --keyboard Space --gamepad south
-          thumbconsole output set custom5 --clear-keyboard --gamepad leftTriggerButton
+          thumble binding list [--profile PROFILE]
+          thumble binding display [--profile PROFILE] [--json]
+          thumble binding set jump Return
+          thumble binding set focus --sequence 'Control+B,H'
+          thumble binding reset jump
+          thumble binding reset-all
+          thumble output list [--profile PROFILE]
+          thumble output mode keyboard|controller|custom [--profile PROFILE]
+          thumble output set jump --keyboard Space --gamepad south
+          thumble output set custom5 --clear-keyboard --gamepad leftTriggerButton
 
         Customization:
-          thumbconsole customization set --appearance dark --device iphone-17-pro --background '#101014'
-          thumbconsole customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
-          thumbconsole customization set --device iphone-17-pro --orientation landscape
-          thumbconsole customization set --variant portrait --device iphone-17-pro --orientation portrait
-          thumbconsole customization export -o customization.json [--variant portrait|landscape]
-          thumbconsole orientation get [--profile PROFILE] [--json]
-          thumbconsole orientation set automatic|portrait|landscape [--profile PROFILE]
-          thumbconsole orientation copy landscape portrait [--profile PROFILE] [--no-arrange]
-          thumbconsole orientation arrange portrait [--from landscape] [--profile PROFILE]
-          thumbconsole layout validate [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--json|--strict]
-          thumbconsole layout fix|repair|autofix [all|small-control|control-overlap|expanded-hit-overlap|edge-hugging-control|thumb-reach|coverage] [--repair hit-targets|ergonomic] [--profile PROFILE] [--variant portrait|landscape] [--unlock] [--json]
-          thumbconsole layout preview [PROFILE|--profile PROFILE] -o preview.png [--variant portrait|landscape] [--canvas iphone-17-pro-landscape]
-          thumbconsole device list
-          thumbconsole device set iphone-17-pro --orientation landscape
-          thumbconsole device set custom --size 844x390
-          thumbconsole control-bar list
-          thumbconsole control-bar set status,profiles,spacer,edit,settings,home,connection
-          thumbconsole control-bar remove home
-          thumbconsole control-bar item set settings --icon sf:slider.horizontal.3 --fill '#111827' --corner 12
-          thumbconsole control-bar item set connection --width 1.25 --height 1.1
-          thumbconsole control-bar item reset settings
-          thumbconsole element list
-          thumbconsole element add button --label Fire --keyboard Space --gamepad south --x 0.5 --y 0.8 --light-fill '#6B7280' --dark-fill '#374151'
-          thumbconsole element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --part up --keyboard W
-          thumbconsole element add joystick --label Nub --thumbstick --target right-stick --no-digital-directions --x 0.5 --y 0.58
-          thumbconsole element add trigger --target left --orientation horizontal --sensitivity 1.2
-          thumbconsole element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
-          thumbconsole element add text --text Z --x 0.5 --y 0.5 --width 1.2 --height 0.8 --text-color '#FFFFFF'
-          thumbconsole element add decoration --label Shell --material soft-white-plate --x 0.5 --y 0.5 --width 3.2 --height 1.5 --shape rounded_rectangle
-          thumbconsole element set jump --keyboard Space --gamepad south --hide-integrated-label
-          thumbconsole element set "Text" --text Jump --text-color '#FFFFFF'
-          thumbconsole element set jump --clear-label
-          thumbconsole element set jump --skin-role primary-action --hit-insets 16
-          thumbconsole element set "Menu" --visual-role menu --hit-insets 10,18,14,18
-          thumbconsole element set jump --clear-visual-role --clear-hit-insets
-          thumbconsole element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
-          thumbconsole element set "Right Stick" --thumb-fill '#22C55E'
-          thumbconsole element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
-          thumbconsole element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
-          thumbconsole element set jump --fill-image ./button-texture.png --image-mode fill
-          thumbconsole element set focus --icon sf:sparkles --haptic medium --haptic-pattern double --haptic-intensity 75% --haptic-duration 70ms --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9'
-          thumbconsole element set jump --text-color '#7C61A8' --inner-shadow '#B8B2C2' --inner-shadow-radius 5 --highlight '#FFFFFF' --highlight-opacity 45% --highlight-x -4 --highlight-y -4 --bevel-width 1.5
-          thumbconsole element set jump --material soft-white --shadow-layers '#FFFFFF,14,-7,-7,96%;#9B91AA,20,8,9,24%'
-          thumbconsole element set control-bar --x 0.2 --y 0.08 --width 1.4 --height 1.1
-          thumbconsole element duplicate builtin.jump [--offset 0.025] [--profile PROFILE] [--variant portrait]
-          thumbconsole element align top jump attack dash
-          thumbconsole element distribute horizontal-spacing jump attack dash focus
-          thumbconsole element nudge jump right --step 10 --canvas iphone-17-pro-landscape
-          thumbconsole style create SoftWhite --material soft-white --fill '#F8F6F7' --text-color '#7C61A8'
-          thumbconsole style create Soul --fill '#F8FAFC' --stroke '#38BDF8' --pressed-fill '#0EA5E9' --icon sf:sparkles
-          thumbconsole style rename soul "Soul Button"
-          thumbconsole style import styles.json --merge
-          thumbconsole style apply soul focus
-          thumbconsole layer list
-          thumbconsole layer front focus
-          thumbconsole group create Actions jump attack dash focus
-          thumbconsole group list --tree
-          thumbconsole group rename Actions "Face Buttons" [--profile PROFILE] [--variant landscape]
-          thumbconsole group duplicate Actions --name "Actions Copy" --offset 0.025
-          thumbconsole group nudge Actions right --step 10 --canvas iphone-17-pro-landscape
-          thumbconsole group front Actions
-          thumbconsole asset import ./icon.png --role icon --name SoulOrb
-          thumbconsole asset show ASSET_ID
-          thumbconsole asset set ASSET_ID --name "Soul Orb" --role texture
+          thumble customization set --appearance dark --device iphone-17-pro --background '#101014'
+          thumble customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
+          thumble customization set --device iphone-17-pro --orientation landscape
+          thumble customization set --variant portrait --device iphone-17-pro --orientation portrait
+          thumble customization export -o customization.json [--variant portrait|landscape]
+          thumble orientation get [--profile PROFILE] [--json]
+          thumble orientation set automatic|portrait|landscape [--profile PROFILE]
+          thumble orientation copy landscape portrait [--profile PROFILE] [--no-arrange]
+          thumble orientation arrange portrait [--from landscape] [--profile PROFILE]
+          thumble layout validate [PROFILE|--profile PROFILE] [--variant portrait|landscape] [--json|--strict]
+          thumble layout fix|repair|autofix [all|small-control|control-overlap|expanded-hit-overlap|edge-hugging-control|thumb-reach|coverage] [--repair hit-targets|ergonomic] [--profile PROFILE] [--variant portrait|landscape] [--unlock] [--json]
+          thumble layout preview [PROFILE|--profile PROFILE] -o preview.png [--variant portrait|landscape] [--canvas iphone-17-pro-landscape]
+          thumble device list
+          thumble device set iphone-17-pro --orientation landscape
+          thumble device set custom --size 844x390
+          thumble control-bar list
+          thumble control-bar set status,profiles,spacer,edit,settings,home,connection
+          thumble control-bar remove home
+          thumble control-bar item set settings --icon sf:slider.horizontal.3 --fill '#111827' --corner 12
+          thumble control-bar item set connection --width 1.25 --height 1.1
+          thumble control-bar item reset settings
+          thumble element list
+          thumble element add button --label Fire --keyboard Space --gamepad south --x 0.5 --y 0.8 --light-fill '#6B7280' --dark-fill '#374151'
+          thumble element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --part up --keyboard W
+          thumble element add joystick --label Nub --thumbstick --target right-stick --no-digital-directions --x 0.5 --y 0.58
+          thumble element add trigger --target left --orientation horizontal --sensitivity 1.2
+          thumble element add trackpad --label Trackpad --x 0.5 --y 0.58 --width 1.4 --sensitivity 1.2 --tap-to-click true
+          thumble element add text --text Z --x 0.5 --y 0.5 --width 1.2 --height 0.8 --text-color '#FFFFFF'
+          thumble element add decoration --label Shell --material soft-white-plate --x 0.5 --y 0.5 --width 3.2 --height 1.5 --shape rounded_rectangle
+          thumble element set jump --keyboard Space --gamepad south --hide-integrated-label
+          thumble element set "Text" --text Jump --text-color '#FFFFFF'
+          thumble element set jump --clear-label
+          thumble element set jump --skin-role primary-action --hit-insets 16
+          thumble element set "Menu" --visual-role menu --hit-insets 10,18,14,18
+          thumble element set jump --clear-visual-role --clear-hit-insets
+          thumble element set jump --variant portrait --label A --light-fill '#7C3AED' --dark-fill '#C4B5FD' --shape circle --width 1.2 --height 1.2 --z-index 10
+          thumble element set "Right Stick" --thumb-fill '#22C55E'
+          thumble element set jump --fill-gradient '#000000,#666666' --gradient-angle 0
+          thumble element set jump --fill-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
+          thumble element set jump --fill-image ./button-texture.png --image-mode fill
+          thumble element set focus --icon sf:sparkles --haptic medium --haptic-pattern double --haptic-intensity 75% --haptic-duration 70ms --stroke '#38BDF8' --pressed-fill '#0EA5E9' --glow '#0EA5E9'
+          thumble element set jump --text-color '#7C61A8' --inner-shadow '#B8B2C2' --inner-shadow-radius 5 --highlight '#FFFFFF' --highlight-opacity 45% --highlight-x -4 --highlight-y -4 --bevel-width 1.5
+          thumble element set jump --material soft-white --shadow-layers '#FFFFFF,14,-7,-7,96%;#9B91AA,20,8,9,24%'
+          thumble element set control-bar --x 0.2 --y 0.08 --width 1.4 --height 1.1
+          thumble element duplicate builtin.jump [--offset 0.025] [--profile PROFILE] [--variant portrait]
+          thumble element align top jump attack dash
+          thumble element distribute horizontal-spacing jump attack dash focus
+          thumble element nudge jump right --step 10 --canvas iphone-17-pro-landscape
+          thumble style create SoftWhite --material soft-white --fill '#F8F6F7' --text-color '#7C61A8'
+          thumble style create Soul --fill '#F8FAFC' --stroke '#38BDF8' --pressed-fill '#0EA5E9' --icon sf:sparkles
+          thumble style rename soul "Soul Button"
+          thumble style import styles.json --merge
+          thumble style apply soul focus
+          thumble layer list
+          thumble layer front focus
+          thumble group create Actions jump attack dash focus
+          thumble group list --tree
+          thumble group rename Actions "Face Buttons" [--profile PROFILE] [--variant landscape]
+          thumble group duplicate Actions --name "Actions Copy" --offset 0.025
+          thumble group nudge Actions right --step 10 --canvas iphone-17-pro-landscape
+          thumble group front Actions
+          thumble asset import ./icon.png --role icon --name SoulOrb
+          thumble asset show ASSET_ID
+          thumble asset set ASSET_ID --name "Soul Orb" --role texture
 
         Runtime:
-          thumbconsole app open|quit|replay-onboarding
-          thumbconsole app screenshot [-o thumbconsole.png] [--window-title TITLE] [--json]
-          thumbconsole status [--json]
-          thumbconsole monitor [--jsonl] [--clear] [--from-start] [--duration seconds]
-          thumbconsole latency simulate [--pattern hollow-knight] [--mode compare] [--log report.json]
-          thumbconsole latency verify [--max-ms 4] [--p95-ms 4] [--log report.json]
-          thumbconsole server start|stop|restart|addresses
-          thumbconsole pairing code|payload|cancel
-          thumbconsole accessibility status|prompt|open|refresh
-          thumbconsole test tap jump
-          thumbconsole test tap --element UUID[#part] [--hold-ms 120]
-          thumbconsole release-all
+          thumble app open|quit|replay-onboarding
+          thumble app screenshot [-o thumble.png] [--window-title TITLE] [--json]
+          thumble status [--json]
+          thumble monitor [--jsonl] [--clear] [--from-start] [--duration seconds]
+          thumble latency simulate [--pattern hollow-knight] [--mode compare] [--log report.json]
+          thumble latency verify [--max-ms 4] [--p95-ms 4] [--log report.json]
+          thumble server start|stop|restart|addresses
+          thumble pairing code|payload|cancel
+          thumble accessibility status|prompt|open|refresh
+          thumble test tap jump
+          thumble test tap --element UUID[#part] [--hold-ms 120]
+          thumble release-all
         """)
     }
 }

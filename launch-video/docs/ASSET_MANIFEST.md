@@ -4,21 +4,21 @@
 
 | File | Purpose |
 | --- | --- |
-| `renders/thumbconsole-launch-4k.mp4` | 4K 30 fps master |
-| `renders/thumbconsole-launch-1080p.mp4` | Compressed 1080p share copy |
-| `renders/thumbconsole-launch-preview.mp4` | Lightweight review render |
-| `renders/thumbconsole-launch-poster.png` | Hero poster |
-| `renders/thumbconsole-launch-customize-poster.png` | Customization poster |
-| `renders/thumbconsole-launch-contact.jpg` | Final QA contact sheet |
-| `renders/thumbconsole-launch-4k.ffprobe.json` | Technical verification |
-| `renders/thumbconsole-launch-loudness.txt` | Audio loudness verification |
+| `renders/thumble-launch-4k.mp4` | 4K 30 fps master |
+| `renders/thumble-launch-1080p.mp4` | Compressed 1080p share copy |
+| `renders/thumble-launch-preview.mp4` | Lightweight review render |
+| `renders/thumble-launch-poster.png` | Hero poster |
+| `renders/thumble-launch-customize-poster.png` | Customization poster |
+| `renders/thumble-launch-contact.jpg` | Final QA contact sheet |
+| `renders/thumble-launch-4k.ffprobe.json` | Technical verification |
+| `renders/thumble-launch-loudness.txt` | Audio loudness verification |
 | `renders/SHA256SUMS.txt` | Checksums for the three MP4 deliverables |
 
 ## Remotion source
 
 | File | Purpose |
 | --- | --- |
-| `src/ThumbConsoleLaunch.tsx` | Timeline, copy, scenes, music |
+| `src/ThumbleLaunch.tsx` | Timeline, copy, scenes, music |
 | `src/components.tsx` | Grid, typography, phone frame, chips, media frames |
 | `src/Root.tsx` | 3840×2160 / 30 fps / 45-second composition |
 | `src/styles.css` | Geist font imports and global styles |
@@ -29,12 +29,12 @@
 | File | Source |
 | --- | --- |
 | `public/captures/mac-cli-tart.mp4` | Terminal inside the Tart VM, captured through Screen Sharing |
-| `public/captures/mac-app-tart.mp4` | ThumbConsole Mac helper inside the Tart VM |
+| `public/captures/mac-app-tart.mp4` | Thumble Mac helper inside the Tart VM |
 | `public/captures/ios-controller-actions.mp4` | iPhone 17 Pro simulator button presses |
 | `public/captures/ios-customization.mp4` | iPhone 17 Pro simulator drag/resize flow |
 | `public/captures/ios-controller-clean.png` | Clean generated Hollow Knight controller |
-| `public/captures/keypad-editor.png` | Existing real ThumbConsole Mac editor screenshot |
-| `public/brand/app-icon.png` | ThumbConsole app icon |
+| `public/captures/keypad-editor.png` | Existing real Thumble Mac editor screenshot |
+| `public/brand/app-icon.png` | Thumble app icon |
 | `public/brand/iphone-frame-landscape.png` | Reusable iPhone 17 Pro landscape frame artwork |
 | `public/music/technotronic.ogg` | Attributed launch music |
 
