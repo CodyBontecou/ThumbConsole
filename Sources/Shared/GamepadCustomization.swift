@@ -11573,94 +11573,11 @@ struct GamepadCustomizationEditor: View {
 
     private func layerGroupRow(_ group: GamepadEditorLayerGroupItem) -> some View {
         let isSelected = isLayerGroupSelected(group)
-        let primaryTextColor = group.isHidden
-            ? Geist.color(.gray900, scheme: colorScheme).opacity(0.58)
-            : Geist.color(.gray1000, scheme: colorScheme)
-        let secondaryTextColor = group.isHidden
-            ? Geist.color(.gray900, scheme: colorScheme).opacity(0.48)
-            : Geist.color(.gray900, scheme: colorScheme)
 
         return HStack(spacing: Geist.Spacing.s1) {
-            Button {
-                toggleLayerGroupExpansion(group.id)
-            } label: {
-                Image(systemName: isLayerGroupExpanded(group.id) ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
-                    .frame(width: 18, height: 30)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(isLayerGroupExpanded(group.id) ? "Collapse" : "Expand") \(group.name) group")
-
-            Button {
-                handleSidebarGroupClick(group)
-            } label: {
-                HStack(spacing: Geist.Spacing.s2) {
-                    Image(systemName: "rectangle.3.group")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(primaryTextColor)
-                        .frame(width: 14)
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(group.name)
-                            .geistTypography(.label13)
-                            .foregroundStyle(primaryTextColor)
-                            .lineLimit(1)
-                        Text("Group • \(group.children.count) layer\(group.children.count == 1 ? "" : "s")")
-                            .geistTypography(.label12)
-                            .foregroundStyle(secondaryTextColor)
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: Geist.Spacing.s1)
-                }
-                .padding(.trailing, Geist.Spacing.s1)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(group.name) group")
-            .accessibilityValue("\(isSelected ? "Selected, " : "")\(group.isHidden ? "Hidden, " : "Visible, ")\(group.isLocationLocked ? "Locked" : "Unlocked"), \(group.children.count) layers")
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .accessibilityAction(named: Text(group.isLocationLocked ? "Unlock Group" : "Lock Group")) {
-                setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
-            }
-            .accessibilityAction(named: Text(group.isHidden ? "Show Group" : "Hide Group")) {
-                setLayerGroupHidden(!group.isHidden, groupID: group.id)
-            }
-            .accessibilityAction(named: Text("Duplicate Group")) {
-                selectLayerGroup(group)
-                _ = duplicateSelectedControls()
-            }
-            .accessibilityAction(named: Text("Bring Group to Front")) {
-                update(actionName: "Bring Group To Front") { $0.bringLayersToFront(group.childIdentitySet) }
-            }
-            .accessibilityAction(named: Text("Send Group to Back")) {
-                update(actionName: "Send Group To Back") { $0.sendLayersToBack(group.childIdentitySet) }
-            }
-            .accessibilityAction(named: Text("Ungroup")) { ungroupLayerGroup(group.id) }
-            .help("Select the group to move or resize all nested layers together")
-
-            HStack(spacing: Geist.Spacing.s1) {
-                componentIconButton(
-                    systemImage: group.isLocationLocked ? "lock.fill" : "lock.open",
-                    accessibilityLabel: group.isLocationLocked ? "Unlock \(group.name) group" : "Lock \(group.name) group",
-                    help: group.isLocationLocked ? "Unlock group" : "Lock group"
-                ) {
-                    setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
-                }
-
-                componentIconButton(
-                    systemImage: group.isHidden ? "eye.slash.fill" : "eye",
-                    accessibilityLabel: group.isHidden ? "Show \(group.name) group" : "Hide \(group.name) group",
-                    help: group.isHidden ? "Show group" : "Hide group"
-                ) {
-                    setLayerGroupHidden(!group.isHidden, groupID: group.id)
-                }
-            }
-            .opacity(1)
-            .allowsHitTesting(true)
+            layerGroupDisclosureButton(group)
+            layerGroupSelectionButton(group, isSelected: isSelected)
+            layerGroupActionButtons(group)
         }
         .padding(.leading, Geist.Spacing.s1)
         .padding(.trailing, Geist.Spacing.s1)
@@ -11729,6 +11646,103 @@ struct GamepadCustomizationEditor: View {
                 onDropEnded: finishLayerDrag
             )
         )
+    }
+
+    private func layerGroupDisclosureButton(_ group: GamepadEditorLayerGroupItem) -> some View {
+        Button {
+            toggleLayerGroupExpansion(group.id)
+        } label: {
+            Image(systemName: isLayerGroupExpanded(group.id) ? "chevron.down" : "chevron.right")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Geist.color(.gray900, scheme: colorScheme))
+                .frame(width: 18, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(isLayerGroupExpanded(group.id) ? "Collapse" : "Expand") \(group.name) group")
+    }
+
+    private func layerGroupSelectionButton(
+        _ group: GamepadEditorLayerGroupItem,
+        isSelected: Bool
+    ) -> some View {
+        let primaryTextColor = group.isHidden
+            ? Geist.color(.gray900, scheme: colorScheme).opacity(0.58)
+            : Geist.color(.gray1000, scheme: colorScheme)
+        let secondaryTextColor = group.isHidden
+            ? Geist.color(.gray900, scheme: colorScheme).opacity(0.48)
+            : Geist.color(.gray900, scheme: colorScheme)
+
+        return Button {
+            handleSidebarGroupClick(group)
+        } label: {
+            HStack(spacing: Geist.Spacing.s2) {
+                Image(systemName: "rectangle.3.group")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(primaryTextColor)
+                    .frame(width: 14)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(group.name)
+                        .geistTypography(.label13)
+                        .foregroundStyle(primaryTextColor)
+                        .lineLimit(1)
+                    Text("Group • \(group.children.count) layer\(group.children.count == 1 ? "" : "s")")
+                        .geistTypography(.label12)
+                        .foregroundStyle(secondaryTextColor)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: Geist.Spacing.s1)
+            }
+            .padding(.trailing, Geist.Spacing.s1)
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(group.name) group")
+        .accessibilityValue("\(isSelected ? "Selected, " : "")\(group.isHidden ? "Hidden, " : "Visible, ")\(group.isLocationLocked ? "Locked" : "Unlocked"), \(group.children.count) layers")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityAction(named: Text(group.isLocationLocked ? "Unlock Group" : "Lock Group")) {
+            setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
+        }
+        .accessibilityAction(named: Text(group.isHidden ? "Show Group" : "Hide Group")) {
+            setLayerGroupHidden(!group.isHidden, groupID: group.id)
+        }
+        .accessibilityAction(named: Text("Duplicate Group")) {
+            selectLayerGroup(group)
+            _ = duplicateSelectedControls()
+        }
+        .accessibilityAction(named: Text("Bring Group to Front")) {
+            update(actionName: "Bring Group To Front") { $0.bringLayersToFront(group.childIdentitySet) }
+        }
+        .accessibilityAction(named: Text("Send Group to Back")) {
+            update(actionName: "Send Group To Back") { $0.sendLayersToBack(group.childIdentitySet) }
+        }
+        .accessibilityAction(named: Text("Ungroup")) { ungroupLayerGroup(group.id) }
+        .help("Select the group to move or resize all nested layers together")
+    }
+
+    private func layerGroupActionButtons(_ group: GamepadEditorLayerGroupItem) -> some View {
+        HStack(spacing: Geist.Spacing.s1) {
+            componentIconButton(
+                systemImage: group.isLocationLocked ? "lock.fill" : "lock.open",
+                accessibilityLabel: group.isLocationLocked ? "Unlock \(group.name) group" : "Lock \(group.name) group",
+                help: group.isLocationLocked ? "Unlock group" : "Lock group"
+            ) {
+                setLayerGroupLocked(!group.isLocationLocked, groupID: group.id)
+            }
+
+            componentIconButton(
+                systemImage: group.isHidden ? "eye.slash.fill" : "eye",
+                accessibilityLabel: group.isHidden ? "Show \(group.name) group" : "Hide \(group.name) group",
+                help: group.isHidden ? "Show group" : "Hide group"
+            ) {
+                setLayerGroupHidden(!group.isHidden, groupID: group.id)
+            }
+        }
+        .opacity(1)
+        .allowsHitTesting(true)
     }
 
     private func componentRow(_ item: GamepadEditorComponentItem, indentation: CGFloat = 0) -> some View {

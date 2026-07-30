@@ -1328,16 +1328,21 @@ fn map_changed_only_at(
     )
 }
 
+// Swift encodes [GameButton: Layout] as an alternating key/value JSON array.
 fn saved_button_layout_value<'a>(
     customization: &'a Map<String, Value>,
     button: &str,
 ) -> Option<&'a Value> {
-    customization
-        .get("buttonCustomizations")?
-        .as_array()?
-        .iter()
-        .find(|entry| entry.get("button").and_then(Value::as_str) == Some(button))?
-        .get("customization")
+    let values = customization.get("buttonCustomizations")?.as_array()?;
+    if values.len() % 2 != 0 {
+        return None;
+    }
+    values.chunks_exact(2).find_map(|pair| {
+        pair[0]
+            .as_str()
+            .filter(|candidate| candidate.eq_ignore_ascii_case(button))
+            .and_then(|_| pair[1].is_object().then_some(&pair[1]))
+    })
 }
 
 fn button_customization_siblings_equal(
@@ -1345,20 +1350,30 @@ fn button_customization_siblings_equal(
     after: &Map<String, Value>,
     target: &str,
 ) -> bool {
-    fn siblings(customization: &Map<String, Value>, target: &str) -> Vec<Value> {
-        customization
-            .get("buttonCustomizations")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|entry| entry.get("button").and_then(Value::as_str) != Some(target))
-            .cloned()
-            .collect()
+    fn siblings(customization: &Map<String, Value>, target: &str) -> Option<Vec<Value>> {
+        let Some(values) = customization.get("buttonCustomizations") else {
+            return Some(Vec::new());
+        };
+        let values = values.as_array()?;
+        if values.len() % 2 != 0 {
+            return None;
+        }
+        let mut result = Vec::with_capacity(values.len());
+        for pair in values.chunks_exact(2) {
+            let button = pair[0].as_str()?;
+            if !pair[1].is_object() {
+                return None;
+            }
+            if !button.eq_ignore_ascii_case(target) {
+                result.extend_from_slice(pair);
+            }
+        }
+        Some(result)
     }
-    json_semantically_equal(
-        &Value::Array(siblings(before, target)),
-        &Value::Array(siblings(after, target)),
-    )
+    let (Some(before), Some(after)) = (siblings(before, target), siblings(after, target)) else {
+        return false;
+    };
+    json_semantically_equal(&Value::Array(before), &Value::Array(after))
 }
 
 fn target_changed_keys_allowed(
@@ -10083,5 +10098,84 @@ print(json.dumps({"schemaVersion":1,"document":request["document"],"changed":Tru
         assert!(single_line(b"{}").is_err());
         assert!(single_line(b"{}\n{}\n").is_err());
         assert!(single_line(b"\n").is_err());
+    }
+
+    #[test]
+    fn element_set_delta_accepts_compact_builtin_layout_storage() {
+        use crate::draft_operation::{ConfigurationVariant, ElementChanges};
+
+        let mut before = ConfigurationDocument::from_state(
+            &thumble_core::PersistentState::minimal("server").unwrap(),
+        )
+        .unwrap();
+        let profile_id = before.active_profile_id.clone();
+        let jump_layout = serde_json::json!({
+            "centerX":0.8,"centerY":0.6,"widthScale":1,"heightScale":1,
+            "rotationDegrees":0,"zIndex":0,"shadowStrength":1,
+            "isLocationLocked":false,"isHidden":false
+        });
+        let pause_layout = serde_json::json!({
+            "centerX":0.5,"centerY":0.55,"widthScale":1,"heightScale":1,
+            "rotationDegrees":0,"zIndex":0,"shadowStrength":1,
+            "isLocationLocked":false,"isHidden":false
+        });
+        let customization = serde_json::json!({
+            "buttonCustomizations":[
+                "jump",jump_layout,
+                "pause",pause_layout
+            ],
+            "customButtons":[],
+            "elements":[
+                {
+                    "id":"00000000-0000-0000-0000-000000000105",
+                    "builtInButton":"jump","label":"A","kind":"button",
+                    "layout":jump_layout,"partOutputs":[]
+                },
+                {
+                    "id":"00000000-0000-0000-0000-000000000110",
+                    "builtInButton":"pause","label":"Start","kind":"button",
+                    "layout":pause_layout,"partOutputs":[]
+                }
+            ]
+        });
+        before.profiles[0]["customization"] = customization.clone();
+        before.profiles[0]
+            .as_object_mut()
+            .unwrap()
+            .remove("landscapeCustomization");
+        before.profiles[0]
+            .as_object_mut()
+            .unwrap()
+            .remove("portraitCustomization");
+
+        let mut changed = customization;
+        changed["buttonCustomizations"][3]["centerY"] = Value::from(0.54);
+        changed["elements"][1]["layout"]["centerY"] = Value::from(0.54);
+        let mut after = before.clone();
+        after.profiles[0]["customization"] = changed.clone();
+        after.profiles[0]["landscapeCustomization"] = changed;
+        after.profiles[0]["updatedAt"] = Value::from(123);
+        let operation = ConfigurationOperation::ElementSet {
+            profile_id,
+            variant: ConfigurationVariant::Primary,
+            element_id: "00000000-0000-0000-0000-000000000110".to_owned(),
+            changes: Box::new(ElementChanges {
+                center_x: Some(0.5),
+                center_y: Some(0.54),
+                ..ElementChanges::default()
+            }),
+        };
+        assert!(valid_operation_delta(&before, &after, &operation));
+
+        let mut sibling_injection = after;
+        sibling_injection.profiles[0]["customization"]["buttonCustomizations"][1]["centerY"] =
+            Value::from(0.2);
+        sibling_injection.profiles[0]["landscapeCustomization"] =
+            sibling_injection.profiles[0]["customization"].clone();
+        assert!(!valid_operation_delta(
+            &before,
+            &sibling_injection,
+            &operation
+        ));
     }
 }

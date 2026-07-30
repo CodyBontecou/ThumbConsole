@@ -5669,6 +5669,8 @@ mod tests {
             "discard_configuration_draft",
             "expectedDraftRevision",
             "expectedConfigurationRevision",
+            "configuration_revision_conflict",
+            "configuration_bridge_failed",
         ] {
             assert!(editor_html.contains(required));
         }
