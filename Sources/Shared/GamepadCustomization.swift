@@ -5249,6 +5249,36 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         launchTarget = launchTarget?.normalized
     }
 
+    private final class CustomizationResolutionWorkspace {
+        private var resolvedBox: GamepadProfileCustomizationBox
+        private let primaryColorSchemePreference: GamepadColorSchemePreference
+
+        init(
+            selectedBox: GamepadProfileCustomizationBox,
+            primaryColorSchemePreference: GamepadColorSchemePreference
+        ) {
+            resolvedBox = selectedBox
+            self.primaryColorSchemePreference = primaryColorSchemePreference
+        }
+
+        func resolve() -> GamepadCustomization {
+            normalizeSelectedCustomization()
+            applyPrimaryColorSchemePreference()
+            return resolvedBox.value
+        }
+
+        private func normalizeSelectedCustomization() {
+            resolvedBox = GamepadProfileCustomizationBox(resolvedBox.value.normalized)
+        }
+
+        private func applyPrimaryColorSchemePreference() {
+            var resolved = resolvedBox.value
+            // Saved Mode is a setup-level preference, not a per-orientation design choice.
+            resolved.colorSchemePreference = primaryColorSchemePreference
+            resolvedBox = GamepadProfileCustomizationBox(resolved)
+        }
+    }
+
     func customization(for orientation: GamepadEditorDeviceOrientation) -> GamepadCustomization {
         let selectedBox: GamepadProfileCustomizationBox
         switch orientation {
@@ -5257,10 +5287,10 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         case .portrait:
             selectedBox = storedPortraitCustomization ?? storedCustomization
         }
-        var resolved = selectedBox.value.normalized
-        // Saved Mode is a setup-level preference, not a per-orientation design choice.
-        resolved.colorSchemePreference = storedCustomization.value.colorSchemePreference
-        return resolved
+        return CustomizationResolutionWorkspace(
+            selectedBox: selectedBox,
+            primaryColorSchemePreference: storedCustomization.value.colorSchemePreference
+        ).resolve()
     }
 
     func skinBaseline(for orientation: GamepadEditorDeviceOrientation) -> GamepadCustomization? {
@@ -5978,28 +6008,103 @@ enum GamepadControllerTemplate: String, CaseIterable, Identifiable {
         )
     }
 
+    private final class TemplateMetadataTaggingWorkspace {
+        private let templateID: String
+        private let revision: Int
+        private var customizationBox: GamepadProfileCustomizationBox
+        private var metadata = GamepadDesignMetadata.empty
+        private var availableControls: [GamepadControlIdentity] = []
+
+        init(source: GamepadCustomization, templateID: String, revision: Int) {
+            customizationBox = GamepadProfileCustomizationBox(source)
+            self.templateID = templateID
+            self.revision = revision
+        }
+
+        func tag() -> GamepadCustomization {
+            loadMetadata()
+            stampTemplateIdentity()
+            captureAvailableControls()
+            assignNormalizedMetadata()
+            normalizeCustomization()
+            return customizationBox.value
+        }
+
+        private func loadMetadata() {
+            metadata = customizationBox.value.designMetadata ?? .empty
+        }
+
+        private func stampTemplateIdentity() {
+            metadata.sourceTemplateID = templateID
+            metadata.sourceTemplateRevision = max(1, revision)
+        }
+
+        private func captureAvailableControls() {
+            availableControls = customizationBox.value.allControlIdentitiesForDesign
+        }
+
+        private func assignNormalizedMetadata() {
+            var customization = customizationBox.value
+            customization.designMetadata = metadata.normalized(
+                availableControls: availableControls
+            )
+            customizationBox = GamepadProfileCustomizationBox(customization)
+        }
+
+        private func normalizeCustomization() {
+            customizationBox = GamepadProfileCustomizationBox(customizationBox.value.normalized)
+        }
+    }
+
     private static func taggedWithTemplateMetadata(
         _ source: GamepadCustomization,
         templateID: String,
         revision: Int
     ) -> GamepadCustomization {
-        var customization = source
-        var metadata = customization.designMetadata ?? .empty
-        metadata.sourceTemplateID = templateID
-        metadata.sourceTemplateRevision = max(1, revision)
-        customization.designMetadata = metadata.normalized(
-            availableControls: customization.allControlIdentitiesForDesign
-        )
-        return customization.normalized
+        TemplateMetadataTaggingWorkspace(
+            source: source,
+            templateID: templateID,
+            revision: revision
+        ).tag()
     }
 
-    private static func baseCustomization(accentStyle: GamepadAccentStyle, controlScale: GamepadControlScale = .compact) -> GamepadCustomization {
-        var customization = GamepadCustomization.blankCanvas
-        customization.layoutMode = .standard
-        customization.controlScale = controlScale
-        customization.accentStyle = accentStyle
-        customization.showsButtonLabels = true
-        return customization
+    private final class BaseCustomizationWorkspace {
+        private var customizationBox = GamepadProfileCustomizationBox(.defaultValue)
+
+        func make(
+            accentStyle: GamepadAccentStyle,
+            controlScale: GamepadControlScale
+        ) -> GamepadCustomization {
+            loadBlankCanvas()
+            applyBaseSettings(accentStyle: accentStyle, controlScale: controlScale)
+            return customizationBox.value
+        }
+
+        private func loadBlankCanvas() {
+            customizationBox = GamepadProfileCustomizationBox(.blankCanvas)
+        }
+
+        private func applyBaseSettings(
+            accentStyle: GamepadAccentStyle,
+            controlScale: GamepadControlScale
+        ) {
+            var customization = customizationBox.value
+            customization.layoutMode = .standard
+            customization.controlScale = controlScale
+            customization.accentStyle = accentStyle
+            customization.showsButtonLabels = true
+            customizationBox = GamepadProfileCustomizationBox(customization)
+        }
+    }
+
+    private static func baseCustomization(
+        accentStyle: GamepadAccentStyle,
+        controlScale: GamepadControlScale = .compact
+    ) -> GamepadCustomization {
+        BaseCustomizationWorkspace().make(
+            accentStyle: accentStyle,
+            controlScale: controlScale
+        )
     }
 
     private static func productivityStarterCustomization(isPortrait: Bool) -> GamepadCustomization {

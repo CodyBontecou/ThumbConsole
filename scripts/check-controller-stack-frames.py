@@ -192,6 +192,7 @@ def is_shared_runtime_symbol(name: str) -> bool:
                 ".customization.setter",
                 ".Customization.setter",
                 ".customization(for:",
+                ".(CustomizationResolutionWorkspace",
                 ".skinBaseline(for:",
                 ".resolvedCustomization(",
                 ".hasCustomizationVariant(",
@@ -225,6 +226,8 @@ def is_shared_runtime_symbol(name: str) -> bool:
                 ".makeProfile(",
                 ".(make",
                 ".(tag",
+                ".(TemplateMetadataTaggingWorkspace",
+                ".(BaseCustomizationWorkspace",
                 "Customization in ",
             )
         )
@@ -415,11 +418,14 @@ def required_sentinels(scope: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
         ("profile field encode", ("GamepadConfigurationProfile.(encode",)),
         ("profile normalization", ("GamepadConfigurationProfile.normalized.getter",)),
         ("profile variant resolution", ("GamepadConfigurationProfile.customization(for:",)),
+        ("profile variant resolution phase", ("GamepadConfigurationProfile.(CustomizationResolutionWorkspace",)),
         ("profile mutation", ("GamepadConfigurationProfile.setCustomization(",)),
         ("profile mutation phase", ("GamepadConfigurationProfile.(CustomizationMutationWorkspace",)),
         ("profile persistence load", ("GamepadConfigurationProfilePersistence.load(",)),
         ("profile persistence save", ("GamepadConfigurationProfilePersistence.save(",)),
         ("default profile construction", ("GamepadControllerTemplate.makeProfile(",)),
+        ("template metadata tagging phase", ("GamepadControllerTemplate.(TemplateMetadataTaggingWorkspace",)),
+        ("template base customization phase", ("GamepadControllerTemplate.(BaseCustomizationWorkspace",)),
         ("presentation comparison", ("GamepadCustomization.hasSamePresentation",)),
     )
     if scope in ("network", "mac-network"):

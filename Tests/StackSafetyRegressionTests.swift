@@ -11,6 +11,7 @@ final class StackSafetyRegressionTests: XCTestCase {
         case skinApplicationFailed
         case bundledSkinInstallationFailed
         case profileCodableMismatch
+        case templateResolutionFailed
         case persistenceStartupFailed
         case reconciliationFailed
     }
@@ -160,6 +161,97 @@ final class StackSafetyRegressionTests: XCTestCase {
             guard decoded == [profile, profile] else {
                 throw StackTestError.profileCodableMismatch
             }
+        }
+    }
+
+    private final class TemplateResolutionJob: @unchecked Sendable {
+        private var template: GamepadControllerTemplate?
+        private var profile: GamepadConfigurationProfile?
+        private var decodedProfile: GamepadConfigurationProfile?
+        private var encodedProfile = Data()
+        private var primaryColorSchemePreference = GamepadColorSchemePreference.system
+
+        func run() throws {
+            for template in GamepadControllerTemplate.allCases {
+                prepare(template)
+                try validatePrimaryMetadata()
+                try validateLandscapeMetadata()
+                try validatePortraitMetadata()
+                try validateResolvedCustomization(for: .landscape)
+                try validateResolvedCustomization(for: .portrait)
+                try encodeProfile()
+                try decodeProfile()
+                try validateRoundTrip()
+                clearIteration()
+            }
+        }
+
+        private func prepare(_ template: GamepadControllerTemplate) {
+            self.template = template
+            profile = template.makeProfile()
+            primaryColorSchemePreference = profile?.customization.colorSchemePreference ?? .system
+        }
+
+        private func validatePrimaryMetadata() throws {
+            guard let customization = profile?.customization else {
+                throw StackTestError.templateResolutionFailed
+            }
+            try validateMetadata(in: customization)
+        }
+
+        private func validateLandscapeMetadata() throws {
+            guard let customization = profile?.landscapeCustomization else { return }
+            try validateMetadata(in: customization)
+        }
+
+        private func validatePortraitMetadata() throws {
+            guard let customization = profile?.portraitCustomization else { return }
+            try validateMetadata(in: customization)
+        }
+
+        private func validateMetadata(in customization: GamepadCustomization) throws {
+            guard let template,
+                  customization.designMetadata?.sourceTemplateID == template.rawValue.lowercased(),
+                  customization.designMetadata?.sourceTemplateRevision == max(1, template.templateRevision)
+            else {
+                throw StackTestError.templateResolutionFailed
+            }
+        }
+
+        private func validateResolvedCustomization(
+            for orientation: GamepadEditorDeviceOrientation
+        ) throws {
+            guard let resolved = profile?.customization(for: orientation),
+                  resolved.colorSchemePreference == primaryColorSchemePreference
+            else {
+                throw StackTestError.templateResolutionFailed
+            }
+        }
+
+        private func encodeProfile() throws {
+            guard let profile else { throw StackTestError.templateResolutionFailed }
+            encodedProfile = try JSONEncoder().encode(profile)
+            guard !encodedProfile.isEmpty else { throw StackTestError.emptyEncodedPayload }
+        }
+
+        private func decodeProfile() throws {
+            decodedProfile = try JSONDecoder().decode(
+                GamepadConfigurationProfile.self,
+                from: encodedProfile
+            )
+        }
+
+        private func validateRoundTrip() throws {
+            guard decodedProfile == profile else {
+                throw StackTestError.profileCodableMismatch
+            }
+        }
+
+        private func clearIteration() {
+            template = nil
+            profile = nil
+            decodedProfile = nil
+            encodedProfile.removeAll(keepingCapacity: true)
         }
     }
 
@@ -346,6 +438,14 @@ final class StackSafetyRegressionTests: XCTestCase {
         let job = ProfileCodableJob(profile: profile)
 
         try runOnThread(stackSize: 512 * 1024) {
+            try job.run()
+        }
+    }
+
+    func testTemplateConstructionAndResolutionRunOn512KiBStack() throws {
+        let job = TemplateResolutionJob()
+
+        try runOnThread(stackSize: 512 * 1024, timeout: 30) {
             try job.run()
         }
     }

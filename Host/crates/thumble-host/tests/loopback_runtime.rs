@@ -485,6 +485,7 @@ async fn current_ios_loopback_pairs_reconnects_records_input_and_releases_on_shu
         ))
         .await
         .unwrap();
+    assert_ping_round_trip(&mut first, 54).await;
 
     // A trusted same-token hello on a second socket replaces the first active
     // connection and exercises the current iOS authenticated reconnect path.
@@ -559,7 +560,7 @@ async fn current_ios_loopback_pairs_reconnects_records_input_and_releases_on_shu
         ))
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_ping_round_trip(&mut second, 56).await;
     let active_status = wait_for_status(&paths).await;
     assert!(active_status.core.paired);
     assert_eq!(active_status.core.pressed_buttons, vec![GameButton::Jump]);
@@ -622,6 +623,16 @@ fn successful(response: ControlResponse) -> ControlResponse {
 }
 
 type ClientSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn assert_ping_round_trip(socket: &mut ClientSocket, timestamp: i64) {
+    let ping = ControllerMessage::new(ControllerMessageType::Ping, timestamp);
+    socket
+        .send(Message::Text(serde_json::to_string(&ping).unwrap().into()))
+        .await
+        .unwrap();
+    let pong = receive_type(socket, ControllerMessageType::Pong).await;
+    assert_eq!(pong.timestamp, timestamp);
+}
 
 async fn receive_type(
     socket: &mut ClientSocket,
