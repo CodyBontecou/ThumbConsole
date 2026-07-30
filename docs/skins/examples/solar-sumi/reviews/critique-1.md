@@ -1,6 +1,6 @@
 # Solar Sumi — Independent Visual Critique 1
 
-- **Reviewer:** `pocketpad-visual-critic`
+- **Reviewer:** `thumble-visual-critic`
 - **Date:** 2026-07-17
 - **Evidence:** `docs/skins/examples/solar-sumi/reviews/contact-sheet-1.png` (2176 × 1714)
 - **Art direction:** `docs/skins/examples/solar-sumi/reviews/art-direction.md`

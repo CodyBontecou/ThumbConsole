@@ -1,0 +1,4031 @@
+{
+  "$defs": {
+    "ConfigurationAccentStyleInput": {
+      "enum": [
+        "monochrome",
+        "blue",
+        "green",
+        "purple",
+        "pink",
+        "amber"
+      ],
+      "type": "string"
+    },
+    "ConfigurationBackgroundEditInput": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "keep",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "clear",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "set",
+              "type": "string"
+            },
+            "color": {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            "scope": {
+              "$ref": "#/$defs/ConfigurationBackgroundScopeInput"
+            }
+          },
+          "required": [
+            "action",
+            "scope",
+            "color"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ConfigurationBackgroundScopeInput": {
+      "enum": [
+        "all",
+        "light",
+        "dark"
+      ],
+      "type": "string"
+    },
+    "ConfigurationColorSchemeInput": {
+      "enum": [
+        "system",
+        "light",
+        "dark"
+      ],
+      "type": "string"
+    },
+    "ConfigurationControlBarItemInput": {
+      "enum": [
+        "status",
+        "profile_menu",
+        "launch_target",
+        "spacer",
+        "edit_layout",
+        "settings",
+        "home",
+        "connection"
+      ],
+      "type": "string"
+    },
+    "ConfigurationControlScaleInput": {
+      "enum": [
+        "compact",
+        "standard",
+        "large"
+      ],
+      "type": "string"
+    },
+    "ConfigurationGamepadButtonInput": {
+      "enum": [
+        "south",
+        "east",
+        "west",
+        "north",
+        "leftShoulder",
+        "rightShoulder",
+        "leftTriggerButton",
+        "rightTriggerButton",
+        "select",
+        "start",
+        "home",
+        "leftStickPress",
+        "rightStickPress",
+        "dpadUp",
+        "dpadDown",
+        "dpadLeft",
+        "dpadRight"
+      ],
+      "type": "string"
+    },
+    "ConfigurationLayoutModeInput": {
+      "enum": [
+        "standard",
+        "southpaw"
+      ],
+      "type": "string"
+    },
+    "ConfigurationOrientationPreferenceInput": {
+      "enum": [
+        "automatic",
+        "portrait",
+        "landscape"
+      ],
+      "type": "string"
+    },
+    "ConfigurationOutputModeInput": {
+      "enum": [
+        "keyboard",
+        "controller",
+        "custom"
+      ],
+      "type": "string"
+    },
+    "ConfigurationRgbaColorInput": {
+      "additionalProperties": false,
+      "properties": {
+        "alpha": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "blue": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "green": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "red": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "red",
+        "green",
+        "blue",
+        "alpha"
+      ],
+      "type": "object"
+    },
+    "ConfigurationVariantInput": {
+      "enum": [
+        "primary",
+        "portrait",
+        "landscape"
+      ],
+      "type": "string"
+    },
+    "ControlAlignmentInput": {
+      "enum": [
+        "left",
+        "horizontal-centers",
+        "right",
+        "top",
+        "vertical-centers",
+        "bottom"
+      ],
+      "type": "string"
+    },
+    "ControlBarItemChangesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "accentStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationAccentStyleInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "appearance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleAppearanceInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearDarkFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearHaptic": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearIcon": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearLightFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearStyle": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cornerRadii": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementCornerRadiiInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cornerRadius": {
+          "format": "double",
+          "maximum": 1024.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "darkFill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementFillInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "darkFillOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementFillInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fillOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "haptic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleHapticInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heightScale": {
+          "format": "double",
+          "maximum": 12.0,
+          "minimum": 0.001,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleIconInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "isHidden": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "lightFill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementFillInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lightFillOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shadowStrength": {
+          "format": "double",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shape": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementShapeInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "styleID": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "widthScale": {
+          "format": "double",
+          "maximum": 12.0,
+          "minimum": 0.001,
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ControlBarMoveDirectionInput": {
+      "enum": [
+        "up",
+        "down"
+      ],
+      "type": "string"
+    },
+    "ControlDistributionInput": {
+      "enum": [
+        "horizontal-centers",
+        "vertical-centers",
+        "horizontal-spacing",
+        "vertical-spacing"
+      ],
+      "type": "string"
+    },
+    "ControllerTemplateInput": {
+      "enum": [
+        "productivityStarter",
+        "productivityOneHandedLeft",
+        "productivityOneHandedRight",
+        "nes",
+        "snes",
+        "nintendo64",
+        "gameCube",
+        "gameBoy",
+        "gameBoyAdvance",
+        "genesisSixButton",
+        "saturn",
+        "dreamcast",
+        "arcadeStick",
+        "psp",
+        "playStation",
+        "xbox",
+        "softWhite"
+      ],
+      "type": "string"
+    },
+    "CustomizationChangesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "accentStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationAccentStyleInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backgroundEdit": {
+          "$ref": "#/$defs/ConfigurationBackgroundEditInput"
+        },
+        "colorScheme": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationColorSchemeInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "controlScale": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationControlScaleInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layoutMode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationLayoutModeInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "showsButtonLabels": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "backgroundEdit"
+      ],
+      "type": "object"
+    },
+    "ElementChangesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "appearance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleAppearanceInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "centerX": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "centerY": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "clearDarkFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearDarkThumbFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearHaptic": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearHitInsets": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearIcon": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearLabel": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearLightFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearLightThumbFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearStyle": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearThumbFill": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clearVisualRole": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cornerRadii": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementCornerRadiiInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cornerRadius": {
+          "format": "double",
+          "maximum": 1024.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "darkFill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementFillInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "darkFillOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "darkThumbFill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "darkThumbOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementFillInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fillOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "haptic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleHapticInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heightScale": {
+          "format": "double",
+          "maximum": 12.0,
+          "minimum": 0.001,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "hitInsets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementHitInsetsInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleIconInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "isHidden": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "isLocationLocked": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "joystickMapping": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementJoystickMappingInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "joystickSettings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementJoystickSettingsInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "joystickVisualStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementJoystickVisualStyleInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementKindInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "maxLength": 64,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lightFill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementFillInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lightFillOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lightThumbFill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lightThumbOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mappedButton": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GameButtonInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementOutputChangesInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rotationDegrees": {
+          "format": "double",
+          "maximum": 36000.0,
+          "minimum": -36000.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shadowStrength": {
+          "format": "double",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shape": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementShapeInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "showsIntegratedLabel": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "styleID": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thumbFill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thumbOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "trackpadSettings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementTrackpadSettingsInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "triggerSettings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementTriggerSettingsInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visualRole": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementVisualRoleInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "widthScale": {
+          "format": "double",
+          "maximum": 12.0,
+          "minimum": 0.001,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "zIndex": {
+          "format": "int32",
+          "maximum": 100,
+          "minimum": -100,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ElementCornerRadiiInput": {
+      "additionalProperties": false,
+      "properties": {
+        "bottomLeading": {
+          "format": "double",
+          "maximum": 1024.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "bottomTrailing": {
+          "format": "double",
+          "maximum": 1024.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "topLeading": {
+          "format": "double",
+          "maximum": 1024.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "topTrailing": {
+          "format": "double",
+          "maximum": 1024.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "topLeading",
+        "topTrailing",
+        "bottomTrailing",
+        "bottomLeading"
+      ],
+      "type": "object"
+    },
+    "ElementFillInput": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "color": {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            "kind": {
+              "const": "solid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "color"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "angleDegrees": {
+              "format": "double",
+              "maximum": 36000.0,
+              "minimum": -36000.0,
+              "type": "number"
+            },
+            "kind": {
+              "const": "gradient",
+              "type": "string"
+            },
+            "stops": {
+              "items": {
+                "$ref": "#/$defs/ElementGradientStopInput"
+              },
+              "maxItems": 8,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": {
+              "$ref": "#/$defs/ElementGradientTypeInput"
+            }
+          },
+          "required": [
+            "kind",
+            "type",
+            "angleDegrees",
+            "stops"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "$ref": "#/$defs/ElementTileAlignmentInput"
+            },
+            "backgroundColor": {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            "foregroundColor": {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            "kind": {
+              "const": "tile",
+              "type": "string"
+            },
+            "opacity": {
+              "format": "double",
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            "pattern": {
+              "$ref": "#/$defs/ElementTilePatternInput"
+            },
+            "scale": {
+              "format": "double",
+              "maximum": 4.0,
+              "minimum": 0.25,
+              "type": "number"
+            },
+            "spacingX": {
+              "format": "double",
+              "maximum": 2.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            "spacingY": {
+              "format": "double",
+              "maximum": 2.0,
+              "minimum": 0.0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "pattern",
+            "foregroundColor",
+            "backgroundColor",
+            "scale",
+            "spacingX",
+            "spacingY",
+            "alignment",
+            "opacity"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ElementGradientStopInput": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/ConfigurationRgbaColorInput"
+        },
+        "offset": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "offset",
+        "color"
+      ],
+      "type": "object"
+    },
+    "ElementGradientTypeInput": {
+      "enum": [
+        "linear",
+        "radial"
+      ],
+      "type": "string"
+    },
+    "ElementHitInsetsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "bottom": {
+          "format": "double",
+          "maximum": 96.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "leading": {
+          "format": "double",
+          "maximum": 96.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "top": {
+          "format": "double",
+          "maximum": 96.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "trailing": {
+          "format": "double",
+          "maximum": 96.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "top",
+        "leading",
+        "bottom",
+        "trailing"
+      ],
+      "type": "object"
+    },
+    "ElementInputPartInput": {
+      "enum": [
+        "primary",
+        "joystick_up",
+        "joystick_down",
+        "joystick_left",
+        "joystick_right",
+        "trigger_digital"
+      ],
+      "type": "string"
+    },
+    "ElementJoystickAnalogTargetInput": {
+      "enum": [
+        "none",
+        "left_stick",
+        "right_stick"
+      ],
+      "type": "string"
+    },
+    "ElementJoystickMappingInput": {
+      "additionalProperties": false,
+      "properties": {
+        "down": {
+          "$ref": "#/$defs/GameButtonInput"
+        },
+        "left": {
+          "$ref": "#/$defs/GameButtonInput"
+        },
+        "right": {
+          "$ref": "#/$defs/GameButtonInput"
+        },
+        "up": {
+          "$ref": "#/$defs/GameButtonInput"
+        }
+      },
+      "required": [
+        "up",
+        "down",
+        "left",
+        "right"
+      ],
+      "type": "object"
+    },
+    "ElementJoystickSettingsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "analogTarget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementJoystickAnalogTargetInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deadZone": {
+          "format": "double",
+          "maximum": 0.85,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "invertX": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "invertY": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sendsDigitalDirections": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sensitivity": {
+          "format": "double",
+          "maximum": 3.0,
+          "minimum": 0.2,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "snapToCardinal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ElementJoystickVisualStyleInput": {
+      "enum": [
+        "pad",
+        "thumbstick"
+      ],
+      "type": "string"
+    },
+    "ElementKindInput": {
+      "enum": [
+        "button",
+        "joystick",
+        "trigger",
+        "trackpad",
+        "text",
+        "decoration"
+      ],
+      "type": "string"
+    },
+    "ElementOutputChangesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "gamepadEdit": {
+          "$ref": "#/$defs/GamepadOutputEditInput"
+        },
+        "keyboardEdit": {
+          "$ref": "#/$defs/KeyboardOutputEditInput"
+        },
+        "part": {
+          "$ref": "#/$defs/ElementInputPartInput"
+        }
+      },
+      "required": [
+        "part",
+        "keyboardEdit",
+        "gamepadEdit"
+      ],
+      "type": "object"
+    },
+    "ElementShapeInput": {
+      "enum": [
+        "rounded_rectangle",
+        "rectangle",
+        "capsule",
+        "circle",
+        "ellipse",
+        "polygon",
+        "star"
+      ],
+      "type": "string"
+    },
+    "ElementTileAlignmentInput": {
+      "enum": [
+        "topLeading",
+        "top",
+        "topTrailing",
+        "leading",
+        "center",
+        "trailing",
+        "bottomLeading",
+        "bottom",
+        "bottomTrailing"
+      ],
+      "type": "string"
+    },
+    "ElementTilePatternInput": {
+      "enum": [
+        "dots",
+        "grid",
+        "checker",
+        "diagonal"
+      ],
+      "type": "string"
+    },
+    "ElementTrackpadSettingsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "naturalScrolling": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "scrollSensitivity": {
+          "format": "double",
+          "maximum": 4.0,
+          "minimum": 0.1,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sensitivity": {
+          "format": "double",
+          "maximum": 4.0,
+          "minimum": 0.2,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tapToClick": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "twoFingerScroll": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ElementTriggerOrientationInput": {
+      "enum": [
+        "vertical",
+        "horizontal"
+      ],
+      "type": "string"
+    },
+    "ElementTriggerSettingsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "deadZone": {
+          "format": "double",
+          "maximum": 0.85,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "digitalThreshold": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.01,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "orientation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementTriggerOrientationInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sendsDigitalButton": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sensitivity": {
+          "format": "double",
+          "maximum": 3.0,
+          "minimum": 0.2,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementTriggerTargetInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ElementTriggerTargetInput": {
+      "enum": [
+        "left",
+        "right"
+      ],
+      "type": "string"
+    },
+    "ElementVisualRoleInput": {
+      "enum": [
+        "movement",
+        "primary_action",
+        "secondary_action",
+        "utility",
+        "menu",
+        "custom",
+        "joystick",
+        "trigger",
+        "trackpad",
+        "decoration",
+        "system"
+      ],
+      "type": "string"
+    },
+    "GameButtonInput": {
+      "enum": [
+        "up",
+        "down",
+        "left",
+        "right",
+        "jump",
+        "attack",
+        "dash",
+        "focus",
+        "map",
+        "pause",
+        "custom1",
+        "custom2",
+        "custom3",
+        "custom4",
+        "custom5",
+        "custom6",
+        "custom7",
+        "custom8"
+      ],
+      "type": "string"
+    },
+    "GamepadOutputEditInput": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "keep",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "clear",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "set",
+              "type": "string"
+            },
+            "button": {
+              "$ref": "#/$defs/ConfigurationGamepadButtonInput"
+            }
+          },
+          "required": [
+            "action",
+            "button"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GeneratedProfileDestinationInput": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "create",
+              "type": "string"
+            },
+            "newProfileID": {
+              "description": "Caller-generated profile UUID; must not already exist.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "newProfileID"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "replace",
+              "type": "string"
+            },
+            "profileID": {
+              "description": "Exact existing profile UUID whose current name matches the generated profile name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "profileID"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GenerationPresetInput": {
+      "enum": [
+        "hollow-knight"
+      ],
+      "type": "string"
+    },
+    "KeyboardOutputEditInput": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "keep",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "clear",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "set",
+              "type": "string"
+            },
+            "sequence": {
+              "items": {
+                "$ref": "#/$defs/SemanticKeyStrokeInput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "action",
+            "sequence"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "LayerMoveDestinationInput": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "index",
+              "type": "string"
+            },
+            "index": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "action",
+            "index"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "before",
+              "type": "string"
+            },
+            "elementID": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "elementID"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "after",
+              "type": "string"
+            },
+            "elementID": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "elementID"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "LayoutRepairCanvasInput": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "const": "stored",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "frameID": {
+              "$ref": "#/$defs/deviceFrameID",
+              "description": "Exact checked-in frame ID returned by query_catalog(device-frames)."
+            },
+            "source": {
+              "const": "frame",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "frameID"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "height": {
+              "format": "double",
+              "maximum": 1800.0,
+              "minimum": 240.0,
+              "type": "number"
+            },
+            "source": {
+              "const": "size",
+              "type": "string"
+            },
+            "width": {
+              "format": "double",
+              "maximum": 1800.0,
+              "minimum": 240.0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "source",
+            "width",
+            "height"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "LayoutRepairKindInput": {
+      "enum": [
+        "show-default-controls",
+        "move-inside-safe-area",
+        "minimum-touch-target",
+        "resolve-overlap",
+        "auto-arrange",
+        "separate-expanded-hit-targets",
+        "ergonomic-auto-arrange"
+      ],
+      "type": "string"
+    },
+    "LayoutRepairTargetInput": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "all",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "repair",
+              "type": "string"
+            },
+            "repair": {
+              "$ref": "#/$defs/LayoutRepairKindInput"
+            }
+          },
+          "required": [
+            "kind",
+            "repair"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OrientationVariantInput": {
+      "enum": [
+        "portrait",
+        "landscape"
+      ],
+      "type": "string"
+    },
+    "SemanticKeyStrokeInput": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "Allowlisted semantic key name such as A, Space, Return, or LeftArrow.",
+          "type": "string"
+        },
+        "modifiers": {
+          "items": {
+            "$ref": "#/$defs/SemanticModifierInput"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "modifiers"
+      ],
+      "type": "object"
+    },
+    "SemanticModifierInput": {
+      "enum": [
+        "command",
+        "shift",
+        "option",
+        "control"
+      ],
+      "type": "string"
+    },
+    "StyleAppearanceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "bevelHighlightColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bevelShadowColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bevelWidth": {
+          "format": "double",
+          "maximum": 24.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fillColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "foregroundColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "glowColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "glowRadius": {
+          "format": "double",
+          "maximum": 64.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "haptic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleHapticInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "highlightColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "highlightOpacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "highlightRadius": {
+          "format": "double",
+          "maximum": 64.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "highlightX": {
+          "format": "double",
+          "maximum": 64.0,
+          "minimum": -64.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "highlightY": {
+          "format": "double",
+          "maximum": 64.0,
+          "minimum": -64.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleIconInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "innerShadowColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "innerShadowRadius": {
+          "format": "double",
+          "maximum": 64.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "innerShadowX": {
+          "format": "double",
+          "maximum": 64.0,
+          "minimum": -64.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "innerShadowY": {
+          "format": "double",
+          "maximum": 64.0,
+          "minimum": -64.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "materialPreset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleMaterialPresetInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opacity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pressedFillColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pressedScale": {
+          "format": "double",
+          "maximum": 1.5,
+          "minimum": 0.5,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shadows": {
+          "items": {
+            "$ref": "#/$defs/StyleShadowInput"
+          },
+          "maxItems": 8,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "strokeColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigurationRgbaColorInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "strokeWidth": {
+          "format": "double",
+          "maximum": 12.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "StyleHapticInput": {
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "format": "double",
+          "maximum": 0.3,
+          "minimum": 0.02,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "intensity": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleHapticPatternInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sharpness": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleHapticKindInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "StyleHapticKindInput": {
+      "enum": [
+        "none",
+        "light",
+        "medium",
+        "heavy",
+        "soft",
+        "rigid"
+      ],
+      "type": "string"
+    },
+    "StyleHapticPatternInput": {
+      "enum": [
+        "single",
+        "double",
+        "pulse",
+        "buzz"
+      ],
+      "type": "string"
+    },
+    "StyleIconInput": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/StyleIconSourceInput"
+        },
+        "value": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "value"
+      ],
+      "type": "object"
+    },
+    "StyleIconSourceInput": {
+      "enum": [
+        "sf_symbol",
+        "text"
+      ],
+      "type": "string"
+    },
+    "StyleMaterialPresetInput": {
+      "enum": [
+        "soft-white-raised",
+        "soft-white-inset",
+        "soft-white-plate"
+      ],
+      "type": "string"
+    },
+    "StyleShadowInput": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/ConfigurationRgbaColorInput"
+        },
+        "opacity": {
+          "default": 1.0,
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "radius": {
+          "format": "double",
+          "maximum": 96.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "x": {
+          "format": "double",
+          "maximum": 96.0,
+          "minimum": -96.0,
+          "type": "number"
+        },
+        "y": {
+          "format": "double",
+          "maximum": 96.0,
+          "minimum": -96.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "color",
+        "radius",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "deviceFrameID": {
+      "enum": [
+        "iphone-17-pro-landscape",
+        "iphone-17-pro-portrait",
+        "iphone-17-pro-max-landscape",
+        "iphone-17-pro-max-portrait",
+        "iphone-17e-landscape",
+        "iphone-17e-portrait",
+        "iphone-air-landscape",
+        "iphone-air-portrait",
+        "iphone-17-landscape",
+        "iphone-17-portrait",
+        "iphone-16-pro-landscape",
+        "iphone-16-pro-portrait",
+        "iphone-16-pro-max-landscape",
+        "iphone-16-pro-max-portrait",
+        "iphone-16e-landscape",
+        "iphone-16e-portrait",
+        "iphone-16-landscape",
+        "iphone-16-portrait",
+        "iphone-16-plus-landscape",
+        "iphone-16-plus-portrait",
+        "iphone-15-pro-landscape",
+        "iphone-15-pro-portrait",
+        "iphone-15-pro-max-landscape",
+        "iphone-15-pro-max-portrait",
+        "iphone-15-landscape",
+        "iphone-15-portrait",
+        "iphone-15-plus-landscape",
+        "iphone-15-plus-portrait",
+        "iphone-14-pro-landscape",
+        "iphone-14-pro-portrait",
+        "iphone-14-pro-max-landscape",
+        "iphone-14-pro-max-portrait",
+        "iphone-14-landscape",
+        "iphone-14-portrait",
+        "iphone-14-plus-landscape",
+        "iphone-14-plus-portrait",
+        "iphone-se-3-landscape",
+        "iphone-se-3-portrait",
+        "iphone-13-pro-landscape",
+        "iphone-13-pro-portrait",
+        "iphone-13-pro-max-landscape",
+        "iphone-13-pro-max-portrait",
+        "iphone-13-landscape",
+        "iphone-13-portrait",
+        "iphone-13-mini-landscape",
+        "iphone-13-mini-portrait",
+        "iphone-12-pro-landscape",
+        "iphone-12-pro-portrait",
+        "iphone-12-pro-max-landscape",
+        "iphone-12-pro-max-portrait",
+        "iphone-12-landscape",
+        "iphone-12-portrait",
+        "iphone-12-mini-landscape",
+        "iphone-12-mini-portrait",
+        "iphone-se-2-landscape",
+        "iphone-se-2-portrait",
+        "iphone-11-pro-landscape",
+        "iphone-11-pro-portrait",
+        "iphone-11-pro-max-landscape",
+        "iphone-11-pro-max-portrait",
+        "iphone-11-landscape",
+        "iphone-11-portrait",
+        "iphone-xr-landscape",
+        "iphone-xr-portrait",
+        "iphone-xs-landscape",
+        "iphone-xs-portrait",
+        "iphone-xs-max-landscape",
+        "iphone-xs-max-portrait"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "https://codybontecou.com/thumble/schemas/configuration-operation-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Strict revision-safe configuration operations. Customization fix accepts only stored/catalog/bounded-size canvases; control-bar item set and element add/set expose only bounded non-file values. Images, bytes, paths, raw key codes, modifier masks, asset IDs, raw JSON, launch targets, argv, credentials, and unknown fields are rejected.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "New display name, limited to 256 characters.",
+          "type": "string"
+        },
+        "profileID": {
+          "description": "Exact profile UUID from list_profiles or the draft summary.",
+          "type": "string"
+        },
+        "type": {
+          "const": "profile.rename",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "$ref": "#/$defs/ElementChangesInput"
+        },
+        "elementID": {
+          "description": "Caller-generated UUID for deterministic retries and synchronized mirrors.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ElementKindInput"
+        },
+        "mappedButton": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GameButtonInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "element.add",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID",
+        "kind",
+        "changes"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "$ref": "#/$defs/ElementChangesInput"
+        },
+        "elementID": {
+          "description": "Exact element ID returned by a controller preview.",
+          "type": "string"
+        },
+        "profileID": {
+          "description": "Exact profile UUID containing the element.",
+          "type": "string"
+        },
+        "type": {
+          "const": "element.set",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID",
+        "changes"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "$ref": "#/$defs/GameButtonInput"
+        },
+        "profileID": {
+          "description": "Exact profile UUID whose semantic button binding will change.",
+          "type": "string"
+        },
+        "sequence": {
+          "description": "One through 32 semantic key strokes. Numeric key codes are rejected.",
+          "items": {
+            "$ref": "#/$defs/SemanticKeyStrokeInput"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "binding.set",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "button",
+        "sequence"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "$ref": "#/$defs/GameButtonInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "binding.clear",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "button"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "$ref": "#/$defs/GameButtonInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "binding.reset",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "button"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "binding.reset-all",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/ConfigurationOutputModeInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "output.mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "mode"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "$ref": "#/$defs/GameButtonInput"
+        },
+        "gamepadEdit": {
+          "$ref": "#/$defs/GamepadOutputEditInput"
+        },
+        "keyboardEdit": {
+          "$ref": "#/$defs/KeyboardOutputEditInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "output.set",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "button",
+        "keyboardEdit",
+        "gamepadEdit"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "$ref": "#/$defs/GameButtonInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "output.reset",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "button"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "output.reset-all",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "profile.reset",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "$ref": "#/$defs/CustomizationChangesInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "customization.set",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "changes"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "customization.reset",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "canvas": {
+          "$ref": "#/$defs/LayoutRepairCanvasInput",
+          "description": "Exactly one safe canvas source: stored, checked-in frame, or bounded size."
+        },
+        "includeLocked": {
+          "description": "Matches CLI --unlock/--include-locked.",
+          "type": "boolean"
+        },
+        "profileID": {
+          "description": "Exact profile UUID containing the layout variant to repair.",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/LayoutRepairTargetInput",
+          "description": "Deterministic suggested/all orchestration or one canonical repair."
+        },
+        "type": {
+          "const": "customization.fix",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "target",
+        "canvas",
+        "includeLocked"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "preference": {
+          "$ref": "#/$defs/ConfigurationOrientationPreferenceInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "orientation.set",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "preference"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "frameID": {
+          "$ref": "#/$defs/deviceFrameID",
+          "description": "Exact frame ID returned by query_catalog(device-frames); custom dimensions are rejected."
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "device.set",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "frameID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ConfigurationControlBarItemInput"
+          },
+          "type": "array"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "control-bar.set",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "items"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ConfigurationControlBarItemInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "control-bar.add",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "item"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ConfigurationControlBarItemInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "control-bar.remove",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "item"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/ControlBarMoveDirectionInput"
+        },
+        "item": {
+          "$ref": "#/$defs/ConfigurationControlBarItemInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "control-bar.move",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "item",
+        "direction"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "$ref": "#/$defs/ControlBarItemChangesInput",
+          "description": "Nonempty, bounded, rendering-effective non-file appearance changes."
+        },
+        "item": {
+          "$ref": "#/$defs/ConfigurationControlBarItemInput",
+          "description": "One of the eight canonical control-bar items; it must already be present."
+        },
+        "profileID": {
+          "description": "Exact profile UUID containing the selected control-bar variant.",
+          "type": "string"
+        },
+        "type": {
+          "const": "control-bar.item.set",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "item",
+        "changes"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "appearance": {
+          "$ref": "#/$defs/StyleAppearanceInput",
+          "description": "Complete typed non-file appearance. Raw style JSON and asset icons are rejected."
+        },
+        "name": {
+          "description": "Bounded display name.",
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "styleID": {
+          "description": "Canonical reusable style identifier using only letters, digits, dash, underscore, and period.",
+          "type": "string"
+        },
+        "type": {
+          "const": "style.create",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "styleID",
+        "name",
+        "appearance"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "styleID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "style.rename",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "styleID",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementID": {
+          "description": "Exact preview element ID or stable built-in/custom/system control ID.",
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "styleID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "style.apply",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "styleID",
+        "elementID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "style.detach",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "styleID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "style.delete",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "styleID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/LayerMoveDestinationInput"
+        },
+        "elementID": {
+          "description": "Exact preview element ID or stable built-in/custom/system control ID.",
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "layer.move",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID",
+        "destination"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "layer.forward",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "layer.backward",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "layer.front",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "layer.back",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementIDs": {
+          "description": "Unique exact targets from the draft preview layer list.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "groupID": {
+          "description": "Caller-generated group UUID for deterministic retries.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.create",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID",
+        "name",
+        "elementIDs"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.rename",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "name": {
+          "description": "Optional duplicate name; defaults to the source name plus “Copy”.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "newElementIDs": {
+          "description": "Caller-generated UUIDs in exact source-child order, one for every child.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "newGroupID": {
+          "description": "Caller-generated UUID for the new group.",
+          "type": "string"
+        },
+        "offsetX": {
+          "description": "Optional normalized horizontal offset (-1 through 1), default 0.025.",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "offsetY": {
+          "description": "Optional normalized vertical offset (-1 through 1), default 0.025.",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.duplicate",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID",
+        "newGroupID",
+        "newElementIDs"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.ungroup",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.hide",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.show",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.lock",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.unlock",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "canvasFrameID": {
+          "description": "Optional exact frame ID from query_catalog(device-frames). Defaults to the standalone CLI's iPhone 17 Pro landscape canvas.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deltaX": {
+          "description": "Requested horizontal movement in device-canvas points (-1000 through 1000).",
+          "format": "double",
+          "maximum": 1000.0,
+          "minimum": -1000.0,
+          "type": "number"
+        },
+        "deltaY": {
+          "description": "Requested vertical movement in device-canvas points (-1000 through 1000).",
+          "format": "double",
+          "maximum": 1000.0,
+          "minimum": -1000.0,
+          "type": "number"
+        },
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.nudge",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID",
+        "deltaX",
+        "deltaY"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.forward",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.backward",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.front",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "groupID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "group.back",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "groupID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "control-bar.reset",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ConfigurationControlBarItemInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "control-bar.item.reset",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "item"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/GeneratedProfileDestinationInput"
+        },
+        "makeDefault": {
+          "type": "boolean"
+        },
+        "newElementIDs": {
+          "description": "Exactly four unique caller-generated UUIDs for Hollow Knight custom controls.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preset": {
+          "$ref": "#/$defs/GenerationPresetInput",
+          "description": "Canonical built-in generation preset."
+        },
+        "presetRevision": {
+          "description": "Exact installed preset revision. Hollow Knight is revision 1.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "select": {
+          "type": "boolean"
+        },
+        "type": {
+          "const": "generation.generate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "preset",
+        "presetRevision",
+        "destination",
+        "newElementIDs",
+        "select",
+        "makeDefault"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/GeneratedProfileDestinationInput"
+        },
+        "makeDefault": {
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Optional bounded override for the installed profile display name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "newElementIDs": {
+          "description": "Exact caller-generated UUID list required by this template.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "select": {
+          "type": "boolean"
+        },
+        "template": {
+          "$ref": "#/$defs/ControllerTemplateInput"
+        },
+        "templateRevision": {
+          "description": "Exact installed template revision. SNES is revision 2; all others are revision 1.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "template.install",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "template",
+        "templateRevision",
+        "destination",
+        "newElementIDs",
+        "select",
+        "makeDefault"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "profile.select",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "profile.default",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "newProfileID": {
+          "description": "Caller-generated UUID for deterministic retry behavior.",
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "profile.duplicate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "newProfileID",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileID": {
+          "type": "string"
+        },
+        "replacementProfileID": {
+          "description": "Caller-generated UUID required only when deleting the final profile.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "profile.delete",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "profile.move",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "index"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "makeDefault": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "newProfileID": {
+          "description": "Caller-generated UUID for deterministic retry behavior.",
+          "type": "string"
+        },
+        "select": {
+          "type": "boolean"
+        },
+        "sourceProfileID": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "profile.create",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "newProfileID",
+        "select",
+        "makeDefault"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "preset": {
+          "description": "Allowlisted built-in theme name or alias.",
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "theme.apply",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "preset"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "automaticallyArrange": {
+          "type": "boolean"
+        },
+        "destination": {
+          "$ref": "#/$defs/OrientationVariantInput"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/OrientationVariantInput"
+        },
+        "type": {
+          "const": "orientation.copy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "source",
+        "destination",
+        "automaticallyArrange"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementIDs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "newElementIDs": {
+          "description": "Caller-generated UUIDs, one per source element, for deterministic retries.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "offsetX": {
+          "format": "double",
+          "type": "number"
+        },
+        "offsetY": {
+          "format": "double",
+          "type": "number"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "element.duplicate",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementIDs",
+        "newElementIDs",
+        "offsetX",
+        "offsetY"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "$ref": "#/$defs/ControlAlignmentInput"
+        },
+        "elementIDs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "element.align",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementIDs",
+        "alignment"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "distribution": {
+          "$ref": "#/$defs/ControlDistributionInput"
+        },
+        "elementIDs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "element.distribute",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementIDs",
+        "distribution"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "deltaX": {
+          "format": "double",
+          "type": "number"
+        },
+        "deltaY": {
+          "format": "double",
+          "type": "number"
+        },
+        "elementIDs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "element.nudge",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementIDs",
+        "deltaX",
+        "deltaY"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "element.delete",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "elementID": {
+          "type": "string"
+        },
+        "profileID": {
+          "type": "string"
+        },
+        "type": {
+          "const": "element.reset",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/ConfigurationVariantInput"
+        }
+      },
+      "required": [
+        "type",
+        "profileID",
+        "variant",
+        "elementID"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Thumble Configuration Draft Operation v1"
+}

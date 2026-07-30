@@ -137,7 +137,7 @@ struct IOSContentView: View {
 
     private func openSharedSkinURL(_ url: URL) {
         guard url.isFileURL,
-              [PocketPadSkinStore.packageExtension, "zip"].contains(url.pathExtension.lowercased())
+              [ThumbleSkinStore.packageExtension, "zip"].contains(url.pathExtension.lowercased())
         else { return }
         do {
             pendingSharedSkinImport = try IOSPendingSkinImport.load(from: url)
@@ -147,7 +147,7 @@ struct IOSContentView: View {
         }
     }
 
-    private func sharedSkinPreview(for package: PocketPadSkinPackage) -> GamepadCustomization {
+    private func sharedSkinPreview(for package: ThumbleSkinPackage) -> GamepadCustomization {
         let source = client.selectedGamepadProfile?.customization ?? client.gamepadCustomization
         let orientation = source.deviceCanvas.editorDeviceFrame.orientation
         return source.applying(
@@ -158,7 +158,7 @@ struct IOSContentView: View {
         )
     }
 
-    private var colorSchemeForSharedImport: PocketPadSkinColorScheme {
+    private var colorSchemeForSharedImport: ThumbleSkinColorScheme {
         colorScheme == .dark ? .dark : .light
     }
 

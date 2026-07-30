@@ -107,16 +107,33 @@ extension Set where Element == VirtualGamepadButton {
 }
 
 extension GamepadControllerTemplate {
-    /// Templates whose visible actions promise the standard Mac productivity
-    /// shortcuts must install those bindings atomically with the profile rather
-    /// than inheriting whichever profile happened to be active.
+    /// Templates install a complete, predictable keyboard map atomically with
+    /// the profile rather than inheriting whichever profile happened to be active.
     var recommendedMacOutputBindings: [GameButton: MacControlOutputBinding]? {
         switch self {
         case .productivityStarter, .productivityOneHandedLeft, .productivityOneHandedRight:
             DefaultMacControlOutputMap.defaultBindings
-        default:
-            nil
+        case .nes, .snes, .nintendo64, .gameCube, .gameBoy, .gameBoyAdvance,
+             .genesisSixButton, .saturn, .dreamcast, .arcadeStick, .psp,
+             .playStation, .xbox, .softWhite:
+            DefaultMacControlOutputMap.gamingKeyboardBindings
         }
+    }
+}
+
+extension GamepadConfigurationProfile {
+    /// Restores defaults appropriate to the template that created this setup.
+    /// Untagged/custom profiles retain the general-purpose keypad defaults.
+    var recommendedMacOutputBindings: [GameButton: MacControlOutputBinding] {
+        guard let templateID = customization.designMetadata?.sourceTemplateID,
+              let template = GamepadControllerTemplate.allCases.first(where: {
+                  $0.rawValue.caseInsensitiveCompare(templateID) == .orderedSame
+              }),
+              let bindings = template.recommendedMacOutputBindings
+        else {
+            return DefaultMacControlOutputMap.defaultBindings
+        }
+        return bindings
     }
 }
 
@@ -130,6 +147,29 @@ enum DefaultMacControlOutputMap {
     static func defaultBinding(for button: GameButton) -> MacControlOutputBinding? {
         defaultBindings[button]
     }
+
+    /// A usable keyboard fallback for controller-shaped templates. Games vary,
+    /// but this covers every legacy slot so a new setup works before tailoring.
+    static let gamingKeyboardBindings: [GameButton: MacControlOutputBinding] = [
+        .up: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.w)),
+        .down: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.s)),
+        .left: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.a)),
+        .right: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.d)),
+        .jump: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.space)),
+        .attack: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.j)),
+        .dash: .keyboard(.shiftKey),
+        .focus: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.e)),
+        .map: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.tab)),
+        .pause: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.escape)),
+        .custom1: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.upArrow)),
+        .custom2: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.downArrow)),
+        .custom3: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.leftArrow)),
+        .custom4: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.rightArrow)),
+        .custom5: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.q)),
+        .custom6: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.r)),
+        .custom7: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.z)),
+        .custom8: .keyboard(MacKeyBinding(keyCode: MacVirtualKey.x))
+    ]
 
     static let xboxStyleBindings: [GameButton: MacControlOutputBinding] = [
         .up: .gamepadButton(.dpadUp),

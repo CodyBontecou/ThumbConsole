@@ -13,7 +13,7 @@ struct MacSkinLibraryView: View {
     @State private var pendingImport: MacPendingSkinImport?
     @State private var libraryError: String?
     @State private var isExportingSkin = false
-    @State private var exportDocument = PocketPadSkinPackageDocument(package: PocketPadBundledSkins.packages[0])
+    @State private var exportDocument = ThumbleSkinPackageDocument(package: ThumbleBundledSkins.packages[0])
     @State private var exportFilename = "Thumble-Skin.pocketpad"
 
     private let grid = [GridItem(.adaptive(minimum: 300, maximum: 440), spacing: Geist.Spacing.s4)]
@@ -32,14 +32,14 @@ struct MacSkinLibraryView: View {
         .geistScreenBackground()
         .fileImporter(
             isPresented: $isImporting,
-            allowedContentTypes: [.pocketPadSkinPackage, .zip],
+            allowedContentTypes: [.thumbleSkinPackage, .zip],
             allowsMultipleSelection: false,
             onCompletion: handleImportSelection
         )
         .fileExporter(
             isPresented: $isExportingSkin,
             document: exportDocument,
-            contentType: .pocketPadSkinPackage,
+            contentType: .thumbleSkinPackage,
             defaultFilename: exportFilename
         ) { result in
             if case .failure(let error) = result,
@@ -235,7 +235,7 @@ struct MacSkinLibraryView: View {
         .menuStyle(.button)
     }
 
-    private func skinCard(_ installed: PocketPadInstalledSkin) -> some View {
+    private func skinCard(_ installed: ThumbleInstalledSkin) -> some View {
         let package = try? server.skinPackage(for: installed.reference)
         return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
             if let package {
@@ -291,7 +291,7 @@ struct MacSkinLibraryView: View {
     }
 
     @ViewBuilder
-    private func skinActions(_ installed: PocketPadInstalledSkin, package: PocketPadSkinPackage?) -> some View {
+    private func skinActions(_ installed: ThumbleInstalledSkin, package: ThumbleSkinPackage?) -> some View {
         Button {
             apply(installed.reference, customize: false)
         } label: {
@@ -309,7 +309,7 @@ struct MacSkinLibraryView: View {
         Menu {
             Button {
                 guard let package else { return }
-                exportDocument = PocketPadSkinPackageDocument(package: package)
+                exportDocument = ThumbleSkinPackageDocument(package: package)
                 exportFilename = suggestedFilename(for: installed.manifest)
                 isExportingSkin = true
             } label: {
@@ -348,7 +348,7 @@ struct MacSkinLibraryView: View {
         )
     }
 
-    private func previewCustomization(for package: PocketPadSkinPackage) -> GamepadCustomization {
+    private func previewCustomization(for package: ThumbleSkinPackage) -> GamepadCustomization {
         let source = server.gamepadProfiles
             .first(where: { $0.id == server.activeGamepadProfileID })?
             .customization(for: .landscape) ?? server.gamepadCustomization
@@ -360,7 +360,7 @@ struct MacSkinLibraryView: View {
         )
     }
 
-    private func apply(_ reference: PocketPadSkinReference, customize: Bool) {
+    private func apply(_ reference: ThumbleSkinReference, customize: Bool) {
         do {
             try server.applySkin(
                 reference,
@@ -379,12 +379,12 @@ struct MacSkinLibraryView: View {
             let didAccess = url.startAccessingSecurityScopedResource()
             defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
             let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-            let package = try PocketPadSkinPackageCodec.decode(data)
-            guard package.skin != nil else { throw PocketPadSkinStoreError.packageHasNoSkin }
+            let package = try ThumbleSkinPackageCodec.decode(data)
+            guard package.skin != nil else { throw ThumbleSkinStoreError.packageHasNoSkin }
             pendingImport = MacPendingSkinImport(
                 data: data,
                 package: package,
-                report: PocketPadSkinPackageValidator.validate(package)
+                report: ThumbleSkinPackageValidator.validate(package)
             )
         } catch let error as CocoaError where error.code == .userCancelled {
             return
@@ -403,20 +403,20 @@ struct MacSkinLibraryView: View {
         }
     }
 
-    private func suggestedFilename(for manifest: PocketPadSkinManifest) -> String {
+    private func suggestedFilename(for manifest: ThumbleSkinManifest) -> String {
         let base = manifest.name
             .lowercased()
             .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return "\(base.isEmpty ? "pocketpad-skin" : base)-\(manifest.version).pocketpad"
+        return "\(base.isEmpty ? "thumble-skin" : base)-\(manifest.version).pocketpad"
     }
 }
 
 private struct MacPendingSkinImport: Identifiable {
     let id = UUID()
     let data: Data
-    let package: PocketPadSkinPackage
-    let report: PocketPadSkinValidationReport
+    let package: ThumbleSkinPackage
+    let report: ThumbleSkinValidationReport
 }
 
 private struct MacSkinImportReviewSheet: View {
@@ -426,11 +426,11 @@ private struct MacSkinImportReviewSheet: View {
     let onCancel: () -> Void
     let onInstall: () -> Void
 
-    private var compatibility: PocketPadSkinCompatibilityEvaluation {
-        let orientation: PocketPadSkinOrientation = previewCustomization.deviceCanvas.editorDeviceFrame.orientation == .portrait
+    private var compatibility: ThumbleSkinCompatibilityEvaluation {
+        let orientation: ThumbleSkinOrientation = previewCustomization.deviceCanvas.editorDeviceFrame.orientation == .portrait
             ? .portrait
             : .landscape
-        return PocketPadSkinCompatibilityEvaluator.evaluate(
+        return ThumbleSkinCompatibilityEvaluator.evaluate(
             pending.package.manifest.compatibility,
             customization: previewCustomization,
             orientation: orientation

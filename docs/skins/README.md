@@ -74,7 +74,7 @@ Material tokens may opt into exact native state output while older schema-v1 sou
 
 The strict quality gate checks source depth, role coverage, contrast, canonical alignment, safe areas, variant/state completeness, actual image dimensions, compatibility, and package budgets. It complements—rather than replaces—independent visual critique.
 
-The project `pocketpad-skin-author` skill defines the required art-director → designer → critic → QA sequence. Agents retain versioned contact sheets and may never grant human approval or publish autonomously.
+The project `thumble-skin-author` skill defines the required art-director → designer → critic → QA sequence. Agents retain versioned contact sheets and may never grant human approval or publish autonomously.
 
 For low-level package maintenance, `skin pack`, `unpack`, `inspect`, and `validate` remain available. Installation and application still preserve bindings and geometry:
 

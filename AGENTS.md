@@ -10,4 +10,4 @@ Changes to shared models, Codable paths, profile synchronization, skins, or app 
 
 ## Handcrafted skin authoring
 
-When creating, redesigning, critiquing, or preparing a community PocketPad skin, load and follow the project `pocketpad-skin-author` skill. Use the separate art-director, designer, visual-critic, and QA agents in sequence. Preserve editable SVG source and native-renderer review evidence. Never publish a skin or mark human approval without the user's explicit approval of the exact contact sheet and package hash.
+When creating, redesigning, critiquing, or preparing a community Thumble skin, load and follow the project `thumble-skin-author` skill. Use the separate art-director, designer, visual-critic, and QA agents in sequence. Preserve editable SVG source and native-renderer review evidence. Never publish a skin or mark human approval without the user's explicit approval of the exact contact sheet and package hash.

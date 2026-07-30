@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pocketpad.app/schemas/pocketpad-manifest.schema.json",
-  "title": "PocketPad package manifest",
+  "title": "Thumble package manifest",
   "type": "object",
   "required": [
     "schema",

@@ -5,7 +5,7 @@
 - **Evidence dimensions:** 2176 × 1714 px
 - **Inspection scales:** exact PNG at full resolution, source-pixel panel crops, and a 25% overview at 544 × 429 px
 - **Art direction:** `reviews/art-direction.md`
-- **Quality bar:** PocketPad visual quality bar
+- **Quality bar:** Thumble visual quality bar
 - **Verdict:** `revise`
 
 Contact sheet 2 retains all 16 native-renderer combinations. Relative to pass 1, the raised landscape folio no longer runs to the lower boundary, portrait has gained an oblique crown fold, route endpoints now relate to the source cluster and system tag, and the dark fold planes separate at 25%. Those are real corrections. The sheet still cannot pass: row-four native shadows continue into the landscape crop, the folio/tab mass still resolves as a keypad at 25%, the controls remain digitally shaded rather than matte, long legends remain undersized or muddy, and disabled, active-Escape, and pressed behavior still miss the state contract.

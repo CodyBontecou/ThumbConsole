@@ -5,7 +5,7 @@
 - **Evidence dimensions:** 2176 × 1714 px
 - **Panel count:** 16 — portrait and landscape, light and dark, normal, pressed, active, and disabled
 - **Inspection scales:** exact PNG at full resolution, source-pixel panel crops, and a 25% overview at 544 × 429 px
-- **Criteria:** `reviews/art-direction.md` and the PocketPad visual quality bar
+- **Criteria:** `reviews/art-direction.md` and the Thumble visual quality bar
 - **Verdict:** `revise`
 
 All 16 native-renderer combinations are present, native frames stay fixed between states, labels remain readable at full sheet resolution, and no prohibited game, character, logo, or hardware motif is visible. Portrait is genuinely recomposed rather than rotated. The result is not ready for a visual pass: the portrait bridge replaces the requested cavern air with a broad blank spine, custom/system landings create cramped hardware-like compound contours, the mineral-lamina idea becomes a generic flat controller deck at thumbnail size, pressed controls look radially shaded rather than physically depressed, dark active action boundaries disappear into their tint, and disabled face contrast is compressed beyond the specified range.

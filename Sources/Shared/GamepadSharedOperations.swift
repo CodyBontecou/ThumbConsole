@@ -6,8 +6,12 @@ public enum GamepadSharedOperationError: LocalizedError, Equatable, Sendable {
     case controlNotFound(String)
     case customControlLimitReached
     case specializedControlLimitReached(GamepadCustomControlKind)
+    case duplicateElementID(UUID)
+    case passiveControlOutput
+    case unsupportedInputPart(KeypadElementInputPart, GamepadCustomControlKind)
     case insufficientControls(required: Int)
     case groupNotFound(String)
+    case duplicateGroupID(String)
     case emptyGroupName
 
     public var errorDescription: String? {
@@ -20,10 +24,18 @@ public enum GamepadSharedOperationError: LocalizedError, Equatable, Sendable {
             return "Maximum custom element count reached"
         case .specializedControlLimitReached(let kind):
             return "Maximum \(kind.rawValue) count reached"
+        case .duplicateElementID(let id):
+            return "Element ID already exists: \(id.uuidString)"
+        case .passiveControlOutput:
+            return "Text and decoration elements do not send output"
+        case .unsupportedInputPart(let part, let kind):
+            return "\(part.rawValue) output is not supported by \(kind.rawValue) elements"
         case .insufficientControls(let required):
             return "Select at least \(required) controls"
         case .groupNotFound(let value):
             return "Group not found: \(value)"
+        case .duplicateGroupID(let value):
+            return "Group ID already exists: \(value)"
         case .emptyGroupName:
             return "Group name cannot be empty"
         }
@@ -61,6 +73,73 @@ public extension GamepadControlIdentity {
             self = .controlBarItem(item)
         } else {
             return nil
+        }
+    }
+}
+
+public extension GamepadCustomization {
+    mutating func upsertReusableStyle(_ token: GamepadStyleToken) {
+        guard let token = token.normalized else { return }
+        var library = styleLibrary.normalized
+        library.styles.removeAll { $0.id == token.id }
+        library.styles.append(token)
+        styleLibrary = library.normalized
+    }
+
+    @discardableResult
+    mutating func renameReusableStyle(id: String, name: String) -> Bool {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              let index = styleLibrary.styles.firstIndex(where: { $0.id == id })
+        else { return false }
+        styleLibrary.styles[index].name = name
+        return true
+    }
+
+    mutating func deleteReusableStyle(id: String) {
+        styleLibrary.styles.removeAll { $0.id == id }
+        for button in GameButton.allCases {
+            var layout = buttonCustomization(for: button)
+            if layout.styleID == id {
+                layout.styleID = nil
+                setButtonCustomization(layout, for: button)
+            }
+        }
+        for index in customButtons.indices where customButtons[index].layout.styleID == id {
+            customButtons[index].layout.styleID = nil
+        }
+        if topBarActivationRegion.styleID == id {
+            topBarActivationRegion.styleID = nil
+        }
+        for item in controlBarItems {
+            var appearance = controlBarItemCustomization(for: item)
+            if appearance.styleID == id {
+                appearance.styleID = nil
+                setControlBarItemCustomization(appearance, for: item)
+            }
+        }
+    }
+
+    @discardableResult
+    mutating func setReusableStyleID(
+        _ styleID: String?,
+        for identity: GamepadControlIdentity
+    ) -> Bool {
+        switch identity {
+        case .builtin(let button):
+            var layout = buttonCustomization(for: button)
+            layout.styleID = styleID
+            setButtonCustomization(layout, for: button)
+            return true
+        case .custom(let id):
+            guard let index = customButtons.firstIndex(where: { $0.id == id }) else { return false }
+            customButtons[index].layout.styleID = styleID
+            return true
+        case .system(.topBarActivation):
+            topBarActivationRegion.styleID = styleID
+            return true
+        case .controlBarItem:
+            return false
         }
     }
 }
@@ -115,20 +194,206 @@ public struct GamepadLayerGroupDuplicationResult: Equatable, Sendable {
     }
 }
 
+public extension GamepadCustomControlKind {
+    var defaultElementLabel: String {
+        switch self {
+        case .button: "Shape"
+        case .joystick: "Joystick"
+        case .trigger: "Trigger"
+        case .trackpad: "Trackpad"
+        case .text: "Text"
+        case .decoration: "Decoration"
+        }
+    }
+}
+
 public extension GamepadCustomization {
+    /// Installs one fully-formed custom control using the same capacity and mirror
+    /// semantics as the standalone CLI. The caller owns deterministic UUID choice.
+    mutating func addStandaloneCustomControl(_ input: GamepadCustomButton) throws {
+        let control = input.normalized
+        guard !customButtons.contains(where: { $0.id == control.id }),
+              !elements.contains(where: { $0.id == control.id })
+        else { throw GamepadSharedOperationError.duplicateElementID(control.id) }
+        try validateDuplicationCapacity([control.controlKind])
+        customButtons.append(control)
+        self = normalized
+    }
+
+    /// Updates both legacy custom-control storage and the synchronized element
+    /// mirror. Output metadata already stored on the element survives the overlay.
+    mutating func mutateStandaloneCustomControl(
+        id: UUID,
+        mutate: (inout GamepadCustomButton) throws -> Void
+    ) throws {
+        guard let index = customButtons.firstIndex(where: { $0.id == id }) else {
+            throw GamepadSharedOperationError.controlNotFound(id.uuidString)
+        }
+        let oldKind = customButtons[index].normalized.controlKind
+        var control = customButtons[index]
+        try mutate(&control)
+        let nextKind = control.normalized.controlKind
+        if nextKind != oldKind {
+            var withoutSource = self
+            withoutSource.customButtons.remove(at: index)
+            try withoutSource.validateDuplicationCapacity([nextKind])
+        }
+        customButtons[index] = control
+        self = normalized
+    }
+
+    mutating func setStandaloneElementOutput(
+        _ binding: KeypadElementOutputBinding?,
+        for identity: GamepadControlIdentity,
+        part: KeypadElementInputPart
+    ) throws {
+        let normalizedCustomization = normalized
+        guard let elementID = normalizedCustomization.elementID(for: identity),
+              let elementIndex = normalizedCustomization.elements.firstIndex(where: { $0.id == elementID })
+        else { throw GamepadSharedOperationError.controlNotFound(identity.id) }
+        let kind = normalizedCustomization.elements[elementIndex].kind
+        if kind == .text || kind == .decoration {
+            throw GamepadSharedOperationError.passiveControlOutput
+        }
+        let validPart = switch (kind, part) {
+        case (_, .primary): true
+        case (.joystick, .joystickUp), (.joystick, .joystickDown),
+             (.joystick, .joystickLeft), (.joystick, .joystickRight),
+             (.trigger, .triggerDigital): true
+        default: false
+        }
+        guard validPart else { throw GamepadSharedOperationError.unsupportedInputPart(part, kind) }
+        var next = normalizedCustomization
+        next.elements[elementIndex].setOutputBinding(binding, for: part)
+        self = next.normalized
+    }
+
+    /// Restores one installed control to the same type-specific defaults used by
+    /// the standalone CLI while preserving the control's stable identity.
+    mutating func resetControl(_ identity: GamepadControlIdentity) throws {
+        switch identity {
+        case .builtin(let button):
+            setButtonCustomization(.defaultValue, for: button)
+            setLabel("", for: button)
+        case .custom(let id):
+            guard let index = customButtons.firstIndex(where: { $0.id == id }) else {
+                throw GamepadSharedOperationError.controlNotFound(identity.id)
+            }
+            let kind = customButtons[index].normalized.controlKind
+            customButtons[index].label = kind.defaultElementLabel
+            switch kind {
+            case .joystick:
+                customButtons[index].layout = GamepadButtonCustomization(
+                    centerX: 0.5,
+                    centerY: 0.5,
+                    widthScale: 1.35,
+                    heightScale: 1.35,
+                    shape: .circle
+                )
+                customButtons[index].joystickMapping = customButtons[index].joystickMapping ?? .movement
+                customButtons[index].joystickOutputSettings = customButtons[index].joystickOutputSettings ?? .defaultValue
+                customButtons[index].triggerSettings = nil
+                customButtons[index].trackpadSettings = nil
+            case .trackpad:
+                customButtons[index].layout = GamepadButtonCustomization(
+                    centerX: 0.5,
+                    centerY: 0.58,
+                    widthScale: 1.25,
+                    heightScale: 1.0,
+                    shape: .roundedRectangle,
+                    cornerRadius: 18
+                )
+                customButtons[index].joystickMapping = nil
+                customButtons[index].trackpadSettings = .defaultValue
+                customButtons[index].triggerSettings = nil
+            case .trigger:
+                let target = (customButtons[index].triggerSettings ?? .defaultValue).normalized.target
+                customButtons[index].layout = GamepadButtonCustomization(
+                    centerX: target == .left ? 0.20 : 0.80,
+                    centerY: 0.14,
+                    widthScale: 1.08,
+                    heightScale: 0.42,
+                    shape: .capsule,
+                    accentStyle: .monochrome
+                )
+                customButtons[index].joystickMapping = nil
+                customButtons[index].trackpadSettings = nil
+                customButtons[index].triggerSettings = GamepadTriggerSettings(
+                    target: target,
+                    orientation: .horizontal
+                )
+            case .button:
+                customButtons[index].layout = GamepadButtonCustomization(
+                    centerX: 0.5,
+                    centerY: 0.5,
+                    widthScale: 1.0,
+                    heightScale: 1.0,
+                    shape: .roundedRectangle,
+                    showsIntegratedLabel: false
+                )
+                customButtons[index].joystickMapping = nil
+                customButtons[index].trackpadSettings = nil
+            case .text:
+                customButtons[index].layout = GamepadButtonCustomization(
+                    centerX: 0.5,
+                    centerY: 0.5,
+                    widthScale: 1.4,
+                    heightScale: 0.7,
+                    shape: .rectangle,
+                    shadowStrength: 0,
+                    showsIntegratedLabel: false
+                )
+                customButtons[index].joystickMapping = nil
+                customButtons[index].joystickOutputSettings = nil
+                customButtons[index].triggerSettings = nil
+                customButtons[index].trackpadSettings = nil
+            case .decoration:
+                customButtons[index].layout = GamepadButtonCustomization(
+                    centerX: 0.5,
+                    centerY: 0.5,
+                    widthScale: 2.2,
+                    heightScale: 1.2,
+                    shape: .roundedRectangle,
+                    fillColor: GamepadRGBAColor(hexString: "#F2EEF5"),
+                    visualStyle: .softWhitePlate(),
+                    cornerRadius: 28,
+                    shadowStrength: 0
+                )
+                customButtons[index].joystickMapping = nil
+                customButtons[index].joystickOutputSettings = nil
+                customButtons[index].triggerSettings = nil
+                customButtons[index].trackpadSettings = nil
+            }
+        case .system(.topBarActivation):
+            topBarActivationRegion = Self.defaultTopBarActivationRegion
+        case .controlBarItem:
+            throw GamepadSharedOperationError.unsupportedControl(identity.id)
+        }
+    }
+
     /// Duplicates built-in or custom controls as new custom controls. Element-level
     /// output and part-output bindings are cloned with the visual/control settings.
     @discardableResult
     mutating func duplicateControls(
         _ identities: [GamepadControlIdentity],
         normalizedOffset: CGSize = CGSize(width: 0.025, height: 0.025),
-        canvasSize: CGSize? = nil
+        canvasSize: CGSize? = nil,
+        newElementIDs: [UUID]? = nil
     ) throws -> GamepadElementDuplicationResult {
         let source = normalized
         var seen = Set<GamepadControlIdentity>()
         let requested = identities.filter { seen.insert($0).inserted }
         guard !requested.isEmpty else {
             throw GamepadSharedOperationError.insufficientControls(required: 1)
+        }
+        if let newElementIDs {
+            let existingIDs = Set(source.elements.map(\.id)).union(source.customButtons.map(\.id))
+            guard newElementIDs.count == requested.count,
+                  Set(newElementIDs).count == newElementIDs.count,
+                  existingIDs.isDisjoint(with: newElementIDs)
+            else {
+                throw GamepadSharedOperationError.controlNotFound("invalid duplicate element IDs")
+            }
         }
 
         var sourceButtons: [(GamepadControlIdentity, GamepadCustomButton, KeypadElement?)] = []
@@ -171,8 +436,9 @@ public extension GamepadCustomization {
 
         var next = source
         var identityMap: [GamepadControlIdentity: GamepadControlIdentity] = [:]
-        for (sourceIdentity, sourceButton, sourceElement) in sourceButtons {
-            let newID = UUID()
+        for (index, sourceTuple) in sourceButtons.enumerated() {
+            let (sourceIdentity, sourceButton, sourceElement) = sourceTuple
+            let newID = newElementIDs?[index] ?? UUID()
             let newIdentity = GamepadControlIdentity.custom(newID)
             var duplicate = sourceButton
             duplicate.id = newID
@@ -314,6 +580,126 @@ public extension GamepadCustomization {
     }
 
     @discardableResult
+    mutating func createLayerGroup(
+        id: UUID,
+        name: String,
+        children: [GamepadControlIdentity]
+    ) throws -> GamepadLayerGroup {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw GamepadSharedOperationError.emptyGroupName }
+        var seen = Set<GamepadControlIdentity>()
+        let available = Set(allControlIdentitiesForDesign)
+        let normalizedChildren = children.filter {
+            available.contains($0) && seen.insert($0).inserted
+        }
+        guard !normalizedChildren.isEmpty else {
+            throw GamepadSharedOperationError.insufficientControls(required: 1)
+        }
+        var metadata = designMetadata ?? .empty
+        guard !metadata.groups.contains(where: { $0.id == id }) else {
+            throw GamepadSharedOperationError.duplicateGroupID(id.uuidString)
+        }
+        let childSet = Set(normalizedChildren)
+        for index in metadata.groups.indices {
+            metadata.groups[index].children.removeAll { childSet.contains($0) }
+        }
+        metadata.groups.removeAll { $0.children.isEmpty }
+        metadata.groups.append(GamepadLayerGroup(
+            id: id,
+            name: String(trimmed.prefix(48)),
+            children: normalizedChildren
+        ))
+        let order = orderedControlIdentitiesForDesign
+        let insertionIndex = order.indices.first(where: { childSet.contains(order[$0]) }) ?? order.count
+        moveLayers(childSet, to: insertionIndex)
+        metadata.layerOrder = orderedControlIdentitiesForDesign
+        designMetadata = metadata.normalized(availableControls: allControlIdentitiesForDesign)
+        guard let group = designMetadata?.groups.first(where: { $0.id == id }) else {
+            throw GamepadSharedOperationError.groupNotFound(id.uuidString)
+        }
+        return group
+    }
+
+    @discardableResult
+    mutating func removeLayerGroup(id: UUID) throws -> GamepadLayerGroup {
+        var metadata = designMetadata ?? .empty
+        guard let index = metadata.groups.firstIndex(where: { $0.id == id }) else {
+            throw GamepadSharedOperationError.groupNotFound(id.uuidString)
+        }
+        let removed = metadata.groups.remove(at: index)
+        designMetadata = metadata.normalized(availableControls: allControlIdentitiesForDesign)
+        return removed
+    }
+
+    @discardableResult
+    mutating func setLayerGroupHidden(id: UUID, isHidden: Bool) throws -> GamepadLayerGroup {
+        var metadata = designMetadata ?? .empty
+        guard let index = metadata.groups.firstIndex(where: { $0.id == id }) else {
+            throw GamepadSharedOperationError.groupNotFound(id.uuidString)
+        }
+        let children = metadata.groups[index].children
+        metadata.groups[index].isHidden = isHidden
+        designMetadata = metadata.normalized(availableControls: allControlIdentitiesForDesign)
+        for child in children {
+            switch child {
+            case .builtin(let button):
+                var layout = buttonCustomization(for: button)
+                layout.isHidden = isHidden
+                setButtonCustomization(layout, for: button)
+            case .custom(let id):
+                guard let index = customButtons.firstIndex(where: { $0.id == id }) else { continue }
+                customButtons[index].layout.isHidden = isHidden
+                if let elementIndex = elements.firstIndex(where: { $0.id == id }) {
+                    elements[elementIndex].layout.isHidden = isHidden
+                }
+            case .system(.topBarActivation):
+                topBarActivationRegion.isHidden = isHidden
+            case .controlBarItem:
+                continue
+            }
+        }
+        self = normalized
+        guard let group = designMetadata?.groups.first(where: { $0.id == id }) else {
+            throw GamepadSharedOperationError.groupNotFound(id.uuidString)
+        }
+        return group
+    }
+
+    @discardableResult
+    mutating func setLayerGroupLocked(id: UUID, isLocked: Bool) throws -> GamepadLayerGroup {
+        var metadata = designMetadata ?? .empty
+        guard let index = metadata.groups.firstIndex(where: { $0.id == id }) else {
+            throw GamepadSharedOperationError.groupNotFound(id.uuidString)
+        }
+        let children = metadata.groups[index].children
+        metadata.groups[index].isLocked = isLocked
+        designMetadata = metadata.normalized(availableControls: allControlIdentitiesForDesign)
+        for child in children {
+            switch child {
+            case .builtin(let button):
+                var layout = buttonCustomization(for: button)
+                layout.isLocationLocked = isLocked
+                setButtonCustomization(layout, for: button)
+            case .custom(let id):
+                guard let index = customButtons.firstIndex(where: { $0.id == id }) else { continue }
+                customButtons[index].layout.isLocationLocked = isLocked
+                if let elementIndex = elements.firstIndex(where: { $0.id == id }) {
+                    elements[elementIndex].layout.isLocationLocked = isLocked
+                }
+            case .system(.topBarActivation):
+                topBarActivationRegion.isLocationLocked = isLocked
+            case .controlBarItem:
+                continue
+            }
+        }
+        self = normalized
+        guard let group = designMetadata?.groups.first(where: { $0.id == id }) else {
+            throw GamepadSharedOperationError.groupNotFound(id.uuidString)
+        }
+        return group
+    }
+
+    @discardableResult
     mutating func renameLayerGroup(id: UUID, to name: String) throws -> GamepadLayerGroup {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw GamepadSharedOperationError.emptyGroupName }
@@ -334,16 +720,28 @@ public extension GamepadCustomization {
         id: UUID,
         name: String? = nil,
         normalizedOffset: CGSize = CGSize(width: 0.025, height: 0.025),
-        canvasSize: CGSize? = nil
+        canvasSize: CGSize? = nil,
+        newGroupID: UUID? = nil,
+        newElementIDs: [UUID]? = nil
     ) throws -> GamepadLayerGroupDuplicationResult {
         guard let sourceGroup = designMetadata?.normalized(availableControls: allControlIdentitiesForDesign)?.groups.first(where: { $0.id == id }) else {
             throw GamepadSharedOperationError.groupNotFound(id.uuidString)
         }
         let requestedName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let requestedName, requestedName.isEmpty { throw GamepadSharedOperationError.emptyGroupName }
-        let elements = try duplicateControls(sourceGroup.children, normalizedOffset: normalizedOffset, canvasSize: canvasSize)
+        if let newGroupID,
+           designMetadata?.groups.contains(where: { $0.id == newGroupID }) == true {
+            throw GamepadSharedOperationError.duplicateGroupID(newGroupID.uuidString)
+        }
+        let elements = try duplicateControls(
+            sourceGroup.children,
+            normalizedOffset: normalizedOffset,
+            canvasSize: canvasSize,
+            newElementIDs: newElementIDs
+        )
         let duplicatedChildren = sourceGroup.children.compactMap { elements.identityMap[$0] }
         let duplicate = GamepadLayerGroup(
+            id: newGroupID ?? UUID(),
             name: requestedName ?? "\(sourceGroup.name) Copy",
             children: duplicatedChildren,
             isLocked: sourceGroup.isLocked,
@@ -641,7 +1039,80 @@ struct GamepadLayoutRepairResult: Codable, Equatable {
     var didChange: Bool { !changedControlIDs.isEmpty }
 }
 
+enum GamepadLayoutRepairTarget: Equatable, Sendable {
+    case all
+    case repair(GamepadLayoutRepairKind)
+}
+
+/// Heap-backed orchestration state keeps the three-pass quality workspace off
+/// constrained callers' stacks while preserving the standalone CLI's ordering.
+private final class GamepadLayoutRepairWorkspace {
+    var results: [GamepadLayoutRepairResult] = []
+}
+
 extension GamepadCustomization {
+    /// Canonical deterministic repair entry point shared by the standalone CLI
+    /// and constrained configuration bridge. Issue-specific CLI aliases remain
+    /// a CLI-only convenience and are intentionally not part of this contract.
+    @discardableResult
+    mutating func applyLayoutRepairs(
+        target: GamepadLayoutRepairTarget,
+        canvasSize: CGSize? = nil,
+        respectingLocks: Bool = true
+    ) -> [GamepadLayoutRepairResult] {
+        let effectiveCanvasSize = canvasSize ?? deviceCanvas.editorDeviceFrame.screenRect.size
+        let workspace = GamepadLayoutRepairWorkspace()
+        switch target {
+        case .repair(let repair):
+            workspace.results.append(applyLayoutRepair(
+                repair,
+                issue: nil,
+                canvasSize: effectiveCanvasSize,
+                respectingLocks: respectingLocks
+            ))
+        case .all:
+            for _ in 0..<3 {
+                let currentReport = layoutQualityReport(canvasSize: effectiveCanvasSize)
+                let orderedIssues = currentReport.issues.enumerated().sorted { lhs, rhs in
+                    let lhsPriority = Self.layoutRepairPriority(for: lhs.element.code)
+                    let rhsPriority = Self.layoutRepairPriority(for: rhs.element.code)
+                    return lhsPriority == rhsPriority ? lhs.offset < rhs.offset : lhsPriority < rhsPriority
+                }.map(\.element)
+                var changedThisPass = false
+                var appliedAutoArrange = false
+                for issue in orderedIssues {
+                    guard let repair = issue.suggestedRepairs.first else { continue }
+                    if repair == .autoArrange {
+                        guard !appliedAutoArrange else { continue }
+                        appliedAutoArrange = true
+                    }
+                    let result = applyLayoutRepair(
+                        repair,
+                        issue: repair == .autoArrange ? nil : issue,
+                        canvasSize: effectiveCanvasSize,
+                        respectingLocks: respectingLocks
+                    )
+                    workspace.results.append(result)
+                    changedThisPass = changedThisPass || result.didChange
+                }
+                if !changedThisPass { break }
+            }
+        }
+        return workspace.results
+    }
+
+    private static func layoutRepairPriority(for issueCode: String) -> Int {
+        switch issueCode {
+        case "no-visible-controls": 0
+        case "small-control": 1
+        case "layout-displacement", "edge-hugging-control": 2
+        case "control-overlap", "expanded-hit-overlap", "hit-region-z-order-ambiguous", "hit-region-z-order-mismatch": 3
+        case "primary-control-too-high", "primary-control-too-central", "primary-control-out-of-reach", "portrait-primary-action-distribution", "portrait-dead-space": 4
+        case "underused-bottom-space", "low-vertical-coverage", "low-horizontal-coverage": 5
+        default: 6
+        }
+    }
+
     @discardableResult
     mutating func applyLayoutRepair(
         _ repair: GamepadLayoutRepairKind,

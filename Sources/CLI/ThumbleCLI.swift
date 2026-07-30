@@ -64,6 +64,7 @@ struct ThumbleCLI {
         var validateLayout = true
         var strictLayoutValidation = false
         var previewOutputPath: String?
+        var invocationID: UUID?
     }
 
     private struct InstallOptions {
@@ -185,23 +186,24 @@ struct ThumbleCLI {
         var name: String
         var author: String
         var license: String
-        var kind: PocketPadPackageKind
+        var kind: ThumblePackageKind
         var isBundled: Bool
         var path: String
     }
 
     private struct SkinInspectionSummary: Codable {
-        var manifest: PocketPadSkinManifest
-        var validation: PocketPadSkinValidationReport
+        var manifest: ThumbleSkinManifest
+        var validation: ThumbleSkinValidationReport
         var variantIDs: [String]
         var assetIDs: [String]
         var previewIDs: [String]
     }
 
     private struct OrientationPreferenceSummary: Codable {
+        var configurationRevision: UInt64
         var profileID: UUID
         var profileName: String
-        var orientation: GamepadProfileOrientationPreference
+        var orientation: ThumbleCLIProfileBackend.OrientationPreference
     }
 
     private struct ElementSummary: Codable {
@@ -232,12 +234,16 @@ struct ThumbleCLI {
     }
 
     private struct ControlBarItemSummary: Codable {
+        var configurationRevision: UInt64
+        var profileID: UUID
+        var profileName: String
+        var variant: ThumbleCLIProfileBackend.ConfigurationVariant
         var order: Int
         var id: String
         var title: String
         var description: String
         var systemImage: String
-        var appearance: GamepadButtonCustomization
+        var appearance: ThumbleCLIProfileBackend.SafeControlBarItemAppearance
     }
 
     private enum ElementTarget: Equatable {
@@ -371,8 +377,42 @@ struct ThumbleCLI {
         }
 
         if options.install {
-            try install(profile: generated.profile, macBindings: macBindings, select: options.select, makeDefault: options.makeDefault)
-            printSummary(generated: generated, macBindings: macBindings, installed: true, selected: options.select)
+            if options.specPath != nil {
+                try requireExplicitUnmigratedProfileAccess(
+                    operation: "generation spec install",
+                    artifactRequired: true
+                )
+                try install(
+                    profile: generated.profile,
+                    macBindings: macBindings,
+                    select: options.select,
+                    makeDefault: options.makeDefault
+                )
+                printSummary(
+                    generated: generated,
+                    macBindings: macBindings,
+                    installed: true,
+                    selected: options.select
+                )
+            } else {
+                let response = try profileBackend().perform(
+                    .generationGenerate(
+                        select: options.select,
+                        makeDefault: options.makeDefault
+                    ),
+                    invocationID: options.invocationID
+                )
+                guard response.outcome?.profileNames.first == "Hollow Knight" else {
+                    throw CLIError.message("Rust profile authority returned no generated-profile outcome")
+                }
+                printSummary(
+                    generated: generated,
+                    macBindings: macBindings,
+                    installed: true,
+                    selected: options.select
+                )
+                printProfileInvocation(response)
+            }
         } else if !options.printJSON {
             printSummary(generated: generated, macBindings: macBindings, installed: false, selected: false)
         }
@@ -413,6 +453,12 @@ struct ThumbleCLI {
                 index += 1
                 guard index < arguments.count else { throw CLIError.message("Missing path after \(argument)") }
                 options.previewOutputPath = arguments[index]
+            case "--invocation-id":
+                index += 1
+                guard index < arguments.count,
+                      let invocationID = UUID(uuidString: arguments[index])
+                else { throw CLIError.message("--invocation-id must be an exact UUID") }
+                options.invocationID = invocationID
             case "--help", "-h":
                 throw CLIError.helpRequested
             default:
@@ -460,10 +506,66 @@ struct ThumbleCLI {
         if select { store.activeProfileID = profile.id }
         if makeDefault { store.defaultProfileID = profile.id }
         store.profileKeyBindings[profile.id.uuidString] = rawBindings(macBindings)
+        store.profileOutputBindings[profile.id.uuidString] = rawOutputBindings(
+            outputBindings(from: macBindings)
+        )
         try persistStore(store)
     }
 
     // MARK: - Profiles
+
+    private static func profileBackend() throws -> ThumbleCLIProfileBackend {
+        try ThumbleCLIProfileBackend()
+    }
+
+    private static func profileInvocationID(in arguments: [String]) throws -> UUID? {
+        guard let value = optionValue("--invocation-id", in: arguments) else { return nil }
+        guard let id = UUID(uuidString: value) else {
+            throw CLIError.message("--invocation-id must be an exact UUID")
+        }
+        return id
+    }
+
+    private static func removingProfileInvocationID(from arguments: [String]) throws -> [String] {
+        var result = arguments
+        let indexes = result.indices.filter { result[$0] == "--invocation-id" }
+        guard indexes.count <= 1 else {
+            throw CLIError.message("--invocation-id may be provided only once")
+        }
+        guard let index = indexes.first else { return result }
+        guard index + 1 < result.count else {
+            throw CLIError.message("Missing UUID after --invocation-id")
+        }
+        result.removeSubrange(index ... index + 1)
+        return result
+    }
+
+    private static func printProfileInvocation(_ response: ThumbleCLIProfileBackend.Response) {
+        fputs("Invocation ID: \(response.invocationID.uuidString)\n", stderr)
+    }
+
+    private static func requireExplicitUnmigratedProfileAccess(
+        operation: String,
+        artifactRequired: Bool = false
+    ) throws {
+        do {
+            try profileBackend().requireLegacyPersistenceAllowed(operation: operation)
+        } catch ThumbleCLIProfileBackend.BackendError.remote(let failure, let invocationID)
+            where artifactRequired && failure.code == "operation_not_migrated" {
+            throw ThumbleCLIProfileBackend.BackendError.remote(
+                .init(
+                    code: "artifact_required",
+                    message: "\(operation) requires a future bounded artifact transaction and is not available while Rust authority artifacts exist.",
+                    expectedRevision: failure.expectedRevision,
+                    actualRevision: failure.actualRevision,
+                    draftID: failure.draftID,
+                    draftRevision: failure.draftRevision,
+                    conflictPaths: failure.conflictPaths
+                ),
+                invocationID
+            )
+        }
+    }
 
     private static func profile(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing profile subcommand") }
@@ -473,19 +575,26 @@ struct ThumbleCLI {
         case "list", "ls":
             let json = rest.contains("--json")
             let showIDs = rest.contains("--ids") || json
-            let store = loadStore()
+            let response = try profileBackend().perform(
+                .list,
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let catalog = response.catalog else {
+                throw CLIError.message("Rust profile authority returned no revision-tagged catalog")
+            }
             if json {
-                try printJSON(ProfileExportEnvelope(profiles: store.profiles, activeProfileID: store.activeProfileID, defaultProfileID: store.defaultProfileID, profileKeyBindings: store.profileKeyBindings, profileOutputBindings: store.profileOutputBindings))
+                try printJSON(catalog)
             } else {
-                for profile in store.profiles {
-                    let activeMarker = profile.id == store.activeProfileID ? "*" : " "
-                    let defaultMarker = profile.id == store.defaultProfileID ? " default" : ""
-                    let idText = showIDs ? " [\(profile.id.uuidString)]" : ""
+                for profile in catalog.profiles {
+                    let activeMarker = profile.active ? "*" : " "
+                    let defaultMarker = profile.default ? " default" : ""
+                    let idText = showIDs ? " [\(profile.profileID.uuidString)]" : ""
                     print("\(activeMarker) \(profile.name)\(defaultMarker)\(idText)")
                 }
             }
 
         case "show":
+            try requireExplicitUnmigratedProfileAccess(operation: "profile show", artifactRequired: true)
             let json = rest.contains("--json")
             let target = firstPositional(in: rest)
             let store = loadStore()
@@ -509,122 +618,137 @@ struct ThumbleCLI {
 
         case "select", "use":
             guard let target = firstPositional(in: rest) else { throw CLIError.message("Missing profile name or id") }
-            var store = loadStore()
-            let profile = try resolveProfile(target, in: store)
-            store.activeProfileID = profile.id
-            try persistStore(store)
-            print("Selected profile \"\(profile.name)\".")
+            let response = try profileBackend().perform(
+                .select(.init(target)),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let outcome = response.outcome, let profileName = outcome.profileNames.first else {
+                throw CLIError.message("Rust profile authority returned no selection outcome")
+            }
+            print("Selected profile \"\(profileName)\".")
+            printProfileInvocation(response)
 
         case "default", "set-default":
             guard let target = firstPositional(in: rest) else { throw CLIError.message("Missing profile name or id") }
-            var store = loadStore()
-            let profile = try resolveProfile(target, in: store)
-            store.defaultProfileID = profile.id
-            try persistStore(store)
-            print("Made \"\(profile.name)\" the default profile.")
+            let response = try profileBackend().perform(
+                .setDefault(.init(target)),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let outcome = response.outcome, let profileName = outcome.profileNames.first else {
+                throw CLIError.message("Rust profile authority returned no default-profile outcome")
+            }
+            print("Made \"\(profileName)\" the default profile.")
+            printProfileInvocation(response)
 
         case "rename":
-            guard rest.count >= 2 else { throw CLIError.message("Usage: thumble profile rename <profile> <new name>") }
-            var store = loadStore()
-            let target = rest[0]
-            let newName = rest.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            let values = positionals(in: rest)
+            guard values.count >= 2 else { throw CLIError.message("Usage: thumble profile rename <profile> <new name>") }
+            let target = values[0]
+            let newName = values.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !newName.isEmpty else { throw CLIError.message("New profile name cannot be empty") }
-            let index = try resolveProfileIndex(target, in: store)
-            store.profiles[index].name = newName
-            store.profiles[index].updatedAt = Date.currentMilliseconds
-            try persistStore(store)
+            let response = try profileBackend().perform(
+                .rename(.init(target), newName),
+                invocationID: try profileInvocationID(in: rest)
+            )
             print("Renamed profile to \"\(newName)\".")
+            printProfileInvocation(response)
 
         case "duplicate", "copy":
-            var mutableRest = rest
-            let target = mutableRest.first.map { $0.hasPrefix("-") ? nil : $0 } ?? nil
-            if target != nil { mutableRest.removeFirst() }
-            let name = optionValue("--name", in: mutableRest) ?? mutableRest.filter { !$0.hasPrefix("-") }.joined(separator: " ")
-            var store = loadStore()
-            let source = try resolveProfile(target, in: store)
-            let duplicateName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "\(source.name) Copy" : name
-            var duplicate = source.normalized
-            duplicate.id = UUID()
-            duplicate.name = duplicateName
-            duplicate.updatedAt = Date.currentMilliseconds
-            store.profiles.append(duplicate)
-            store.activeProfileID = duplicate.id
-            store.profileKeyBindings[duplicate.id.uuidString] = store.profileKeyBindings[source.id.uuidString] ?? rawBindings(DefaultKeypadKeyMap.defaultBindings)
-            store.profileOutputBindings[duplicate.id.uuidString] = store.profileOutputBindings[source.id.uuidString] ?? rawOutputBindings(DefaultMacControlOutputMap.defaultBindings)
-            try persistStore(store)
-            print("Duplicated \"\(source.name)\" as \"\(duplicate.name)\".")
+            let values = positionals(in: rest)
+            let target = values.first
+            let positionalName = values.count > 1 ? values.dropFirst().joined(separator: " ") : nil
+            let requestedName = optionValue("--name", in: rest) ?? positionalName
+            let response = try profileBackend().perform(
+                .duplicate(target.map(ThumbleCLIProfileBackend.ProfileSelector.init), requestedName),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let names = response.outcome?.profileNames, names.count >= 2 else {
+                throw CLIError.message("Rust profile authority returned no duplicate outcome")
+            }
+            print("Duplicated \"\(names[0])\" as \"\(names[1])\".")
+            printProfileInvocation(response)
 
         case "delete", "rm":
             let targets = positionals(in: rest)
             guard !targets.isEmpty else { throw CLIError.message("Missing profile name or id") }
-            var store = loadStore()
-            let indexes = try resolveProfileIndexes(targets, in: store)
-            let removedEveryProfile = indexes.count == store.profiles.count
-            let removedIndexSet = Set(indexes)
-            let removedProfiles = indexes.map { store.profiles[$0] }
-            let removedIDs = Set(removedProfiles.map(\.id))
-            let firstRemovedIndex = indexes.min() ?? 0
-            let removedActiveIndex = indexes.first { store.profiles[$0].id == store.activeProfileID } ?? firstRemovedIndex
-            store.profiles.removeAll { removedIDs.contains($0.id) }
-            for removed in removedProfiles {
-                store.profileKeyBindings[removed.id.uuidString] = nil
-                store.profileOutputBindings[removed.id.uuidString] = nil
+            let response = try profileBackend().perform(
+                .delete(targets.map(ThumbleCLIProfileBackend.ProfileSelector.init)),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let outcome = response.outcome else {
+                throw CLIError.message("Rust profile authority returned no delete outcome")
             }
-            if removedEveryProfile {
-                let replacementProfile = GamepadConfigurationProfile(
-                    name: "Setup 1",
-                    primaryCustomization: GamepadCustomization.blankCanvas
-                )
-                store.profiles = [replacementProfile]
-                store.activeProfileID = replacementProfile.id
-                store.defaultProfileID = replacementProfile.id
-                store.profileKeyBindings[replacementProfile.id.uuidString] = rawBindings(DefaultKeypadKeyMap.defaultBindings)
-                store.profileOutputBindings[replacementProfile.id.uuidString] = rawOutputBindings(outputBindings(from: DefaultKeypadKeyMap.defaultBindings))
+            let suffix = outcome.removedEveryProfile ? " Created a new blank setup." : ""
+            if outcome.profileNames.count == 1, let removed = outcome.profileNames.first {
+                print("Deleted profile \"\(removed)\".\(suffix)")
             } else {
-                if removedIDs.contains(store.activeProfileID) {
-                    store.activeProfileID = store.profiles[min(removedActiveIndex, store.profiles.count - 1)].id
-                }
-                if removedIDs.contains(store.defaultProfileID) { store.defaultProfileID = store.activeProfileID }
+                print("Deleted \(outcome.profileNames.count) profiles: \(outcome.profileNames.joined(separator: ", ")).\(suffix)")
             }
-            try persistStore(store)
-            if removedProfiles.count == 1, let removed = removedProfiles.first {
-                let suffix = removedEveryProfile ? " Created a new blank setup." : ""
-                print("Deleted profile \"\(removed.name)\".\(suffix)")
-            } else {
-                let suffix = removedEveryProfile ? " Created a new blank setup." : ""
-                print("Deleted \(removedIndexSet.count) profiles: \(removedProfiles.map(\.name).joined(separator: ", ")).\(suffix)")
-            }
+            printProfileInvocation(response)
 
         case "move", "reorder":
             try moveProfiles(arguments: rest)
 
         case "reset":
             let target = firstPositional(in: rest)
-            var store = loadStore()
-            let index = try resolveProfileIndex(target, in: store)
-            store.profiles[index].customization = GamepadCustomization.defaultValue
-            store.profiles[index].landscapeCustomization = nil
-            store.profiles[index].portraitCustomization = nil
-            store.profiles[index].updatedAt = Date.currentMilliseconds
-            try persistStore(store)
-            print("Reset profile \"\(store.profiles[index].name)\" to the default keypad layout.")
+            let response = try profileBackend().perform(
+                .reset(target.map(ThumbleCLIProfileBackend.ProfileSelector.init)),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let name = response.outcome?.profileNames.first else {
+                throw CLIError.message("Rust profile authority returned no reset outcome")
+            }
+            print("Reset profile \"\(name)\" to the default keypad layout.")
+            printProfileInvocation(response)
 
         case "new", "create":
-            try createProfile(arguments: rest)
+            if let templateName = optionValue("--template", in: rest) {
+                let template = try resolveTemplate(templateName)
+                guard let authorityTemplate = ThumbleCLIProfileBackend.ControllerTemplate(
+                    rawValue: template.rawValue
+                ) else {
+                    throw CLIError.message("Template is unavailable through Rust profile authority")
+                }
+                let requestedName = positionals(in: rest)
+                    .joined(separator: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let response = try profileBackend().perform(
+                    .templateInstall(
+                        authorityTemplate,
+                        name: requestedName.isEmpty ? nil : requestedName,
+                        select: !rest.contains("--no-select"),
+                        makeDefault: rest.contains("--default") && !rest.contains("--no-default")
+                    ),
+                    invocationID: try profileInvocationID(in: rest)
+                )
+                guard let installedName = response.outcome?.profileNames.first else {
+                    throw CLIError.message("Rust profile authority returned no template-install outcome")
+                }
+                print("Created profile \"\(installedName)\".")
+                printProfileInvocation(response)
+            } else {
+                try requireExplicitUnmigratedProfileAccess(operation: "profile create")
+                try createProfile(arguments: rest)
+            }
 
         case "export":
+            try requireExplicitUnmigratedProfileAccess(operation: "profile export", artifactRequired: true)
             try exportProfiles(arguments: rest)
 
         case "import":
+            try requireExplicitUnmigratedProfileAccess(operation: "profile import", artifactRequired: true)
             try importProfiles(arguments: rest)
 
         case "attach-app", "attach-application", "app", "application":
+            try requireExplicitUnmigratedProfileAccess(operation: "profile attach-app", artifactRequired: true)
             try attachApplicationToProfile(arguments: rest)
 
         case "detach-app", "detach-application", "clear-app", "remove-app":
+            try requireExplicitUnmigratedProfileAccess(operation: "profile detach-app", artifactRequired: true)
             try detachApplicationFromProfile(arguments: rest)
 
         case "launch", "open-app":
+            try requireExplicitUnmigratedProfileAccess(operation: "profile launch", artifactRequired: true)
             try launchAttachedApplication(arguments: rest)
 
         default:
@@ -646,44 +770,33 @@ struct ThumbleCLI {
             throw CLIError.message("profile move needs exactly one of --to, --before, or --after")
         }
 
-        var store = loadStore()
-        let movingIndexes = try resolveProfileIndexes(targets, in: store)
-        let movingProfiles = movingIndexes.map { store.profiles[$0] }
-        let movingIDs = Set(movingProfiles.map(\.id))
-        var remainingProfiles = store.profiles.filter { !movingIDs.contains($0.id) }
-
-        let insertionIndex: Int
-        let destinationDescription: String
+        let destination: ThumbleCLIProfileBackend.MoveDestination
         if let toText {
             let toIndex = try parseInteger(toText)
-            guard toIndex >= 0 && toIndex <= remainingProfiles.count else {
-                throw CLIError.message("Profile move index must be between 0 and \(remainingProfiles.count)")
+            guard toIndex >= 0 else {
+                throw CLIError.message("Profile move index must be zero or greater")
             }
-            insertionIndex = toIndex
-            destinationDescription = "to index \(toIndex)"
+            destination = .index(toIndex)
         } else if let beforeText {
-            let beforeProfile = try resolveProfile(beforeText, in: store)
-            guard !movingIDs.contains(beforeProfile.id) else { throw CLIError.message("Destination profile cannot be one of the profiles being moved") }
-            insertionIndex = remainingProfiles.firstIndex(where: { $0.id == beforeProfile.id }) ?? 0
-            destinationDescription = "before \"\(beforeProfile.name)\""
+            destination = .before(.init(beforeText))
         } else if let afterText {
-            let afterProfile = try resolveProfile(afterText, in: store)
-            guard !movingIDs.contains(afterProfile.id) else { throw CLIError.message("Destination profile cannot be one of the profiles being moved") }
-            insertionIndex = (remainingProfiles.firstIndex(where: { $0.id == afterProfile.id }) ?? (remainingProfiles.count - 1)) + 1
-            destinationDescription = "after \"\(afterProfile.name)\""
+            destination = .after(.init(afterText))
         } else {
             throw CLIError.message("profile move needs --to, --before, or --after")
         }
-
-        remainingProfiles.insert(contentsOf: movingProfiles, at: insertionIndex)
-        store.profiles = remainingProfiles
-        try persistStore(store)
-
-        if movingProfiles.count == 1, let moved = movingProfiles.first {
-            print("Moved profile \"\(moved.name)\" \(destinationDescription).")
-        } else {
-            print("Moved \(movingProfiles.count) profiles \(destinationDescription): \(movingProfiles.map(\.name).joined(separator: ", ")).")
+        let response = try profileBackend().perform(
+            .move(targets.map(ThumbleCLIProfileBackend.ProfileSelector.init), destination),
+            invocationID: try profileInvocationID(in: arguments)
+        )
+        guard let outcome = response.outcome, let destinationDescription = outcome.destination else {
+            throw CLIError.message("Rust profile authority returned no move outcome")
         }
+        if outcome.profileNames.count == 1, let moved = outcome.profileNames.first {
+            print("Moved profile \"\(moved)\" \(destinationDescription).")
+        } else {
+            print("Moved \(outcome.profileNames.count) profiles \(destinationDescription): \(outcome.profileNames.joined(separator: ", ")).")
+        }
+        printProfileInvocation(response)
     }
 
     private static func createProfile(arguments: [String]) throws {
@@ -1020,15 +1133,28 @@ struct ThumbleCLI {
         case "install", "create", "add":
             guard let name = firstPositional(in: rest) else { throw CLIError.message("Missing template name") }
             let template = try resolveTemplate(name)
-            var profile = template.makeProfile()
-            if let customName = optionValue("--name", in: rest) { profile.name = customName }
+            guard let authorityTemplate = ThumbleCLIProfileBackend.ControllerTemplate(
+                rawValue: template.rawValue
+            ) else {
+                throw CLIError.message("Template is unavailable through Rust profile authority")
+            }
+            let customName = optionValue("--name", in: rest)
             let select = !rest.contains("--no-select")
             let makeDefault = rest.contains("--default") && !rest.contains("--no-default")
-            let store = loadStore()
-            let inheritedBindings = decodedBindings(store.profileKeyBindings[store.activeProfileID.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
-            let templateBindings = template.recommendedMacOutputBindings?.keyboardBindings ?? inheritedBindings
-            try install(profile: profile, macBindings: templateBindings, select: select, makeDefault: makeDefault)
-            print("Installed template \"\(profile.name)\".")
+            let response = try profileBackend().perform(
+                .templateInstall(
+                    authorityTemplate,
+                    name: customName,
+                    select: select,
+                    makeDefault: makeDefault
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let installedName = response.outcome?.profileNames.first else {
+                throw CLIError.message("Rust profile authority returned no template-install outcome")
+            }
+            print("Installed template \"\(installedName)\".")
+            printProfileInvocation(response)
         case "show":
             guard let name = firstPositional(in: rest) else { throw CLIError.message("Missing template name") }
             let template = try resolveTemplate(name)
@@ -1058,6 +1184,7 @@ struct ThumbleCLI {
             let preset = try resolveThemePreset(name)
             try printJSON(themeSummary(for: preset))
         case "apply", "set":
+            try requireExplicitUnmigratedProfileAccess(operation: "theme apply")
             guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble theme apply <theme-id> [--profile PROFILE]") }
             let preset = try resolveThemePreset(name)
             try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
@@ -1096,7 +1223,7 @@ struct ThumbleCLI {
             let artboardArguments = Array(rest.dropFirst())
             switch action {
             case "list", "ls":
-                let artboards = PocketPadSkinArtboardCatalog.all
+                let artboards = ThumbleSkinArtboardCatalog.all
                 if artboardArguments.contains("--json") {
                     try printJSON(artboards)
                 } else {
@@ -1107,7 +1234,7 @@ struct ThumbleCLI {
                 }
             case "show", "inspect":
                 guard let value = firstPositional(in: artboardArguments),
-                      let artboard = PocketPadSkinArtboardCatalog.resolve(value)
+                      let artboard = ThumbleSkinArtboardCatalog.resolve(value)
                 else { throw CLIError.message("Usage: thumble skin artboard show ARTBOARD [--json]") }
                 if artboardArguments.contains("--json") {
                     try printJSON(artboard)
@@ -1121,7 +1248,7 @@ struct ThumbleCLI {
                 }
             case "export":
                 guard let value = firstPositional(in: artboardArguments),
-                      let profile = PocketPadSkinArtboardCatalog.profile(for: value)
+                      let profile = ThumbleSkinArtboardCatalog.profile(for: value)
                 else { throw CLIError.message("Usage: thumble skin artboard export ARTBOARD -o profile.json") }
                 guard let output = optionValue("--output", in: artboardArguments) ?? optionValue("-o", in: artboardArguments) else {
                     throw CLIError.message("skin artboard export requires -o <profile.json>")
@@ -1141,10 +1268,10 @@ struct ThumbleCLI {
             guard let identifier = optionValue("--identifier", in: rest) else {
                 throw CLIError.message("skin scaffold requires --identifier <reverse.dns.id>")
             }
-            let artboardID = optionValue("--artboard", in: rest) ?? PocketPadSkinArtboardCatalog.defaultID
+            let artboardID = optionValue("--artboard", in: rest) ?? ThumbleSkinArtboardCatalog.defaultID
             let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest)
                 ?? name.replacingOccurrences(of: " ", with: "-")
-            _ = try PocketPadSkinScaffolder.write(
+            _ = try ThumbleSkinScaffolder.write(
                 name: name,
                 identifier: identifier,
                 artboardID: artboardID,
@@ -1160,7 +1287,7 @@ struct ThumbleCLI {
             let buildDirectory = optionValue("--build-directory", in: rest).map { URL(fileURLWithPath: $0) }
             let output = (optionValue("--output", in: rest) ?? optionValue("-o", in: rest)).map { URL(fileURLWithPath: $0) }
             let result = try MainActor.assumeIsolated {
-                try PocketPadSkinCompiler.compile(
+                try ThumbleSkinCompiler.compile(
                     source: URL(fileURLWithPath: input),
                     buildDirectory: buildDirectory,
                     packageOutputURL: output,
@@ -1180,7 +1307,7 @@ struct ThumbleCLI {
             }
 
         case "list", "ls":
-            let store = try PocketPadSkinStore()
+            let store = try ThumbleSkinStore()
             try store.installBundledSkinsIfNeeded()
             let rows = try store.installedSkins().map { installed in
                 SkinListSummary(
@@ -1222,7 +1349,7 @@ struct ThumbleCLI {
                 throw CLIError.message("Usage: thumble skin validate <package-path|directory> [--strict] [--json]")
             }
             let package = try resolveSkinPackage(target).package
-            let report = PocketPadSkinPackageValidator.validate(package)
+            let report = ThumbleSkinPackageValidator.validate(package)
             if rest.contains("--json") {
                 try printJSON(report)
             } else {
@@ -1240,16 +1367,16 @@ struct ThumbleCLI {
                 throw CLIError.message("Usage: thumble skin quality SOURCE|PACKAGE [--artboard ARTBOARD] [--strict] [--json]")
             }
             let targetURL = URL(fileURLWithPath: target)
-            let workspace: PocketPadSkinWorkspace?
-            let package: PocketPadSkinPackage
-            if PocketPadSkinCompiler.containsWorkspace(at: targetURL) {
-                let loaded = try PocketPadSkinCompiler.loadWorkspace(from: targetURL)
+            let workspace: ThumbleSkinWorkspace?
+            let package: ThumbleSkinPackage
+            if ThumbleSkinCompiler.containsWorkspace(at: targetURL) {
+                let loaded = try ThumbleSkinCompiler.loadWorkspace(from: targetURL)
                 workspace = loaded.workspace
                 let temporary = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("PocketPadSkinQuality-\(UUID().uuidString)", isDirectory: true)
+                    .appendingPathComponent("ThumbleSkinQuality-\(UUID().uuidString)", isDirectory: true)
                 defer { try? FileManager.default.removeItem(at: temporary) }
                 let compiled = try MainActor.assumeIsolated {
-                    try PocketPadSkinCompiler.compile(
+                    try ThumbleSkinCompiler.compile(
                         source: targetURL,
                         buildDirectory: temporary.appendingPathComponent("build", isDirectory: true),
                         packageOutputURL: temporary.appendingPathComponent("quality.pocketpad"),
@@ -1262,7 +1389,7 @@ struct ThumbleCLI {
                 workspace = nil
                 package = try resolveSkinPackage(target).package
             }
-            let report = PocketPadSkinQualityEvaluator.evaluate(
+            let report = ThumbleSkinQualityEvaluator.evaluate(
                 package: package,
                 workspace: workspace,
                 artboardID: optionValue("--artboard", in: rest)
@@ -1284,10 +1411,10 @@ struct ThumbleCLI {
                 throw CLIError.message("Usage: thumble skin import <package-path|directory> [--replace|--allow-downgrade]")
             }
             let resolved = try resolveSkinPackage(target, requiresInstalledLookup: false)
-            let packageData = try resolved.data ?? PocketPadSkinPackageCodec.encode(resolved.package)
-            let store = try PocketPadSkinStore()
+            let packageData = try resolved.data ?? ThumbleSkinPackageCodec.encode(resolved.package)
+            let store = try ThumbleSkinStore()
             try store.installBundledSkinsIfNeeded()
-            let policy: PocketPadSkinInstallPolicy = rest.contains("--allow-downgrade")
+            let policy: ThumbleSkinInstallPolicy = rest.contains("--allow-downgrade")
                 ? .allowDowngrade
                 : (rest.contains("--replace") ? .replaceSameVersion : .newerOnly)
             let result = try store.install(data: packageData, policy: policy)
@@ -1299,12 +1426,12 @@ struct ThumbleCLI {
                 throw CLIError.message("Usage: thumble skin apply <package-path|identifier[@version]> [--profile PROFILE] [--appearance light|dark]")
             }
             let resolved = try resolveSkinPackage(target)
-            let skinStore = try PocketPadSkinStore()
-            let reference = PocketPadSkinReference(
+            let skinStore = try ThumbleSkinStore()
+            let reference = ThumbleSkinReference(
                 identifier: resolved.package.manifest.identifier,
                 version: resolved.package.manifest.version
             )
-            let packageData = try resolved.data ?? PocketPadSkinPackageCodec.encode(resolved.package)
+            let packageData = try resolved.data ?? ThumbleSkinPackageCodec.encode(resolved.package)
             let installedData = try? skinStore.packageData(for: reference)
             if installedData != packageData {
                 _ = try skinStore.install(
@@ -1329,7 +1456,7 @@ struct ThumbleCLI {
                 return
             }
             let scheme = try parseSkinColorScheme(optionValue("--appearance", in: rest) ?? "light")
-            if let package = try? PocketPadSkinStore().package(for: reference) {
+            if let package = try? ThumbleSkinStore().package(for: reference) {
                 profileStore.profiles[profileIndex].detachSkin(resolving: package, colorScheme: scheme)
             } else {
                 profileStore.profiles[profileIndex].detachSkin()
@@ -1343,11 +1470,11 @@ struct ThumbleCLI {
                 throw CLIError.message("Usage: thumble skin remove <identifier[@version]>")
             }
             let resolved = try resolveSkinPackage(target)
-            let reference = PocketPadSkinReference(
+            let reference = ThumbleSkinReference(
                 identifier: resolved.package.manifest.identifier,
                 version: resolved.package.manifest.version
             )
-            let store = try PocketPadSkinStore()
+            let store = try ThumbleSkinStore()
             if (try store.installedSkins().first(where: { $0.reference == reference }))?.isBundled == true {
                 throw CLIError.message("Built-in skins cannot be removed.")
             }
@@ -1365,7 +1492,7 @@ struct ThumbleCLI {
             let resolved = try resolveSkinPackage(target)
             let output = optionValue("--output", in: rest) ?? optionValue("-o", in: rest)
                 ?? suggestedSkinFilename(manifest: resolved.package.manifest)
-            let data = try resolved.data ?? PocketPadSkinPackageCodec.encode(resolved.package)
+            let data = try resolved.data ?? ThumbleSkinPackageCodec.encode(resolved.package)
             try data.write(to: URL(fileURLWithPath: output), options: [.atomic])
             print("Exported \(resolved.package.manifest.name) to \(output).")
 
@@ -1377,13 +1504,13 @@ struct ThumbleCLI {
                 throw CLIError.message("skin pack requires -o <file.pocketpad>")
             }
             let inputURL = URL(fileURLWithPath: input)
-            let sourceCandidate = PocketPadSkinCompiler.sourceURL(for: inputURL)
-            if sourceCandidate.lastPathComponent == PocketPadSkinScaffolder.sourceFileName,
+            let sourceCandidate = ThumbleSkinCompiler.sourceURL(for: inputURL)
+            if sourceCandidate.lastPathComponent == ThumbleSkinScaffolder.sourceFileName,
                FileManager.default.fileExists(atPath: sourceCandidate.path) {
                 throw CLIError.message("Editable skin sources must be compiled first. Run `thumble skin compile \(input) -o \(output)`.")
             }
             let package = try loadSkinPackageDirectory(at: inputURL)
-            let data = try PocketPadSkinPackageCodec.encode(package)
+            let data = try ThumbleSkinPackageCodec.encode(package)
             try data.write(to: URL(fileURLWithPath: output), options: [.atomic])
             print("Packed \(package.manifest.name) to \(output).")
 
@@ -1395,7 +1522,7 @@ struct ThumbleCLI {
                 throw CLIError.message("skin unpack requires -o <directory>")
             }
             let data = try Data(contentsOf: URL(fileURLWithPath: input), options: [.mappedIfSafe])
-            let package = try PocketPadSkinPackageCodec.decode(data)
+            let package = try ThumbleSkinPackageCodec.decode(data)
             try writeSkinPackageDirectory(package, to: URL(fileURLWithPath: output), force: rest.contains("--force"))
             print("Unpacked \(package.manifest.name) to \(output).")
 
@@ -1416,16 +1543,16 @@ struct ThumbleCLI {
         }
 
         let targetURL = URL(fileURLWithPath: target)
-        let workspace: PocketPadSkinWorkspace?
-        let package: PocketPadSkinPackage
-        if PocketPadSkinCompiler.containsWorkspace(at: targetURL) {
-            let loaded = try PocketPadSkinCompiler.loadWorkspace(from: targetURL)
+        let workspace: ThumbleSkinWorkspace?
+        let package: ThumbleSkinPackage
+        if ThumbleSkinCompiler.containsWorkspace(at: targetURL) {
+            let loaded = try ThumbleSkinCompiler.loadWorkspace(from: targetURL)
             workspace = loaded.workspace
             let temporary = FileManager.default.temporaryDirectory
-                .appendingPathComponent("PocketPadSkinPreview-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("ThumbleSkinPreview-\(UUID().uuidString)", isDirectory: true)
             defer { try? FileManager.default.removeItem(at: temporary) }
             let result = try MainActor.assumeIsolated {
-                try PocketPadSkinCompiler.compile(
+                try ThumbleSkinCompiler.compile(
                     source: targetURL,
                     buildDirectory: temporary.appendingPathComponent("build", isDirectory: true),
                     packageOutputURL: temporary.appendingPathComponent("preview.pocketpad"),
@@ -1444,15 +1571,15 @@ struct ThumbleCLI {
         if let requested = optionValue("--profile", in: arguments) {
             profile = try resolveProfile(requested, in: profileStore)
         } else if let requestedArtboard = optionValue("--artboard", in: arguments),
-                  let canonical = PocketPadSkinArtboardCatalog.profile(for: requestedArtboard) {
+                  let canonical = ThumbleSkinArtboardCatalog.profile(for: requestedArtboard) {
             profile = canonical
         } else if let workspace,
-                  let canonical = PocketPadSkinArtboardCatalog.profile(for: workspace.artboardID) {
+                  let canonical = ThumbleSkinArtboardCatalog.profile(for: workspace.artboardID) {
             profile = canonical
         } else if let templateID = package.manifest.compatibility?.templates.first?.templateID,
-                  let canonical = PocketPadSkinArtboardCatalog.profile(for: templateID) {
+                  let canonical = ThumbleSkinArtboardCatalog.profile(for: templateID) {
             profile = canonical
-        } else if let canonical = PocketPadSkinArtboardCatalog.profile(for: PocketPadSkinArtboardCatalog.defaultID) {
+        } else if let canonical = ThumbleSkinArtboardCatalog.profile(for: ThumbleSkinArtboardCatalog.defaultID) {
             profile = canonical
         } else {
             profile = try resolveProfile(nil, in: profileStore)
@@ -1466,18 +1593,18 @@ struct ThumbleCLI {
             ?? optionValue("--scheme", in: arguments)
         let stateValue = optionValue("--state", in: arguments)
         let compatibleOrientations = package.manifest.compatibility?.normalized.orientations ?? []
-        let orientations: [PocketPadSkinOrientation]
+        let orientations: [ThumbleSkinOrientation]
         if requestsAllVariants || orientationValue?.lowercased() == "all" {
-            orientations = compatibleOrientations.isEmpty ? PocketPadSkinOrientation.allCases : compatibleOrientations
+            orientations = compatibleOrientations.isEmpty ? ThumbleSkinOrientation.allCases : compatibleOrientations
         } else if let orientationValue {
             let parsed = try parseDeviceOrientation(orientationValue)
             orientations = [parsed == .portrait ? .portrait : .landscape]
         } else {
             orientations = [profile.customization.deviceCanvas.editorDeviceFrame.orientation == .portrait ? .portrait : .landscape]
         }
-        let schemes: [PocketPadSkinColorScheme]
+        let schemes: [ThumbleSkinColorScheme]
         if requestsAllVariants || appearanceValue?.lowercased() == "all" {
-            schemes = PocketPadSkinColorScheme.allCases
+            schemes = ThumbleSkinColorScheme.allCases
         } else {
             schemes = [try parseSkinColorScheme(appearanceValue ?? "light")]
         }
@@ -1501,7 +1628,7 @@ struct ThumbleCLI {
         }
 
         let preserveOverrides = arguments.contains("--preserve-overrides")
-        var items: [PocketPadNativeSkinPreviewItem] = []
+        var items: [ThumbleNativeSkinPreviewItem] = []
         for orientation in orientations {
             let deviceOrientation: GamepadEditorDeviceOrientation = orientation == .portrait ? .portrait : .landscape
             let source = profile.customization(for: deviceOrientation)
@@ -1514,7 +1641,7 @@ struct ThumbleCLI {
                     overrideBaseline: preserveOverrides ? profile.skinBaseline(for: deviceOrientation) : nil
                 )
                 for state in states {
-                    items.append(PocketPadNativeSkinPreviewItem(
+                    items.append(ThumbleNativeSkinPreviewItem(
                         title: "\(orientation.rawValue) · \(scheme.rawValue) · \(state.rawValue)",
                         customization: rendered,
                         colorScheme: scheme,
@@ -1529,7 +1656,7 @@ struct ThumbleCLI {
         if contactSheet {
             let columns = Int(optionValue("--columns", in: arguments) ?? "4") ?? 4
             try MainActor.assumeIsolated {
-                try PocketPadNativeSkinPreviewRenderer.writeContactSheet(
+                try ThumbleNativeSkinPreviewRenderer.writeContactSheet(
                     items: items,
                     skinName: package.manifest.name,
                     outputURL: outputURL,
@@ -1540,7 +1667,7 @@ struct ThumbleCLI {
             print("Rendered \(items.count)-panel native contact sheet to \(output).")
         } else if items.count == 1, let item = items.first {
             try MainActor.assumeIsolated {
-                try PocketPadNativeSkinPreviewRenderer.writePNG(
+                try ThumbleNativeSkinPreviewRenderer.writePNG(
                     item: item,
                     outputURL: outputURL,
                     scale: CGFloat(scale)
@@ -1558,7 +1685,7 @@ struct ThumbleCLI {
                     .replacingOccurrences(of: " ", with: "-")
                     .lowercased() + ".png"
                 try MainActor.assumeIsolated {
-                    try PocketPadNativeSkinPreviewRenderer.writePNG(
+                    try ThumbleNativeSkinPreviewRenderer.writePNG(
                         item: item,
                         outputURL: framesDirectory.appendingPathComponent(filename),
                         scale: CGFloat(scale)
@@ -1569,10 +1696,10 @@ struct ThumbleCLI {
         }
     }
 
-    private static func skinInspectionSummary(_ package: PocketPadSkinPackage) -> SkinInspectionSummary {
+    private static func skinInspectionSummary(_ package: ThumbleSkinPackage) -> SkinInspectionSummary {
         SkinInspectionSummary(
             manifest: package.manifest,
-            validation: PocketPadSkinPackageValidator.validate(package),
+            validation: ThumbleSkinPackageValidator.validate(package),
             variantIDs: package.skin?.normalized.variants.map(\.id) ?? [],
             assetIDs: package.manifest.assets.map(\.id),
             previewIDs: package.manifest.previews.map(\.id)
@@ -1594,7 +1721,7 @@ struct ThumbleCLI {
         printValidationReport(summary.validation)
     }
 
-    private static func printSkinQualityReport(_ report: PocketPadSkinQualityReport) {
+    private static func printSkinQualityReport(_ report: ThumbleSkinQualityReport) {
         let gate = report.isStrictlyPassing ? "publication-ready" : (report.isPassing ? "review required" : "blocked")
         print("Quality: \(gate) · score \(report.score)/100 · \(report.errors.count) error(s), \(report.warnings.count) warning(s)")
         if let artboard = report.checkedArtboardID { print("Artboard: \(artboard)") }
@@ -1604,7 +1731,7 @@ struct ThumbleCLI {
         }
     }
 
-    private static func printValidationReport(_ report: PocketPadSkinValidationReport) {
+    private static func printValidationReport(_ report: ThumbleSkinValidationReport) {
         if report.issues.isEmpty {
             print("Validation: valid with no warnings")
             return
@@ -1619,24 +1746,24 @@ struct ThumbleCLI {
     private static func resolveSkinPackage(
         _ target: String,
         requiresInstalledLookup: Bool = true
-    ) throws -> (package: PocketPadSkinPackage, data: Data?) {
+    ) throws -> (package: ThumbleSkinPackage, data: Data?) {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: target, isDirectory: &isDirectory) {
             let url = URL(fileURLWithPath: target)
             if isDirectory.boolValue || url.lastPathComponent == "manifest.json" {
                 let package = try loadSkinPackageDirectory(at: url)
-                return (package, try PocketPadSkinPackageCodec.encode(package))
+                return (package, try ThumbleSkinPackageCodec.encode(package))
             }
             let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-            return (try PocketPadSkinPackageCodec.decode(data), data)
+            return (try ThumbleSkinPackageCodec.decode(data), data)
         }
         guard requiresInstalledLookup else {
             throw CLIError.message("Skin package not found: \(target)")
         }
 
         let (identifierOrName, requestedVersion) = splitSkinReference(target)
-        let store = try PocketPadSkinStore()
+        let store = try ThumbleSkinStore()
         try store.installBundledSkinsIfNeeded()
         let candidates = try store.installedSkins().filter { installed in
             (installed.reference.identifier.caseInsensitiveCompare(identifierOrName) == .orderedSame
@@ -1645,30 +1772,30 @@ struct ThumbleCLI {
         }
         guard !candidates.isEmpty else { throw CLIError.message("Installed skin not found: \(target)") }
         let selected = candidates.max { lhs, rhs in
-            (PocketPadSemanticVersion(lhs.reference.version) ?? PocketPadSemanticVersion("0.0.0")!)
-                < (PocketPadSemanticVersion(rhs.reference.version) ?? PocketPadSemanticVersion("0.0.0")!)
+            (ThumbleSemanticVersion(lhs.reference.version) ?? ThumbleSemanticVersion("0.0.0")!)
+                < (ThumbleSemanticVersion(rhs.reference.version) ?? ThumbleSemanticVersion("0.0.0")!)
         }!
         let data = try store.packageData(for: selected.reference)
-        return (try PocketPadSkinPackageCodec.decode(data), data)
+        return (try ThumbleSkinPackageCodec.decode(data), data)
     }
 
     private static func splitSkinReference(_ target: String) -> (String, String?) {
         guard let separator = target.lastIndex(of: "@"), separator != target.startIndex else { return (target, nil) }
         let identifier = String(target[..<separator])
         let version = String(target[target.index(after: separator)...])
-        guard PocketPadSemanticVersion(version) != nil else { return (target, nil) }
+        guard ThumbleSemanticVersion(version) != nil else { return (target, nil) }
         return (identifier, version)
     }
 
-    private static func loadSkinPackageDirectory(at inputURL: URL) throws -> PocketPadSkinPackage {
+    private static func loadSkinPackageDirectory(at inputURL: URL) throws -> ThumbleSkinPackage {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: inputURL.path, isDirectory: &isDirectory)
         guard exists else { throw CLIError.message("Skin package source not found: \(inputURL.path)") }
         let root = isDirectory.boolValue ? inputURL : inputURL.deletingLastPathComponent()
         let manifestURL = inputURL.lastPathComponent == "manifest.json" ? inputURL : root.appendingPathComponent("manifest.json")
-        let manifest = try JSONDecoder().decode(PocketPadSkinManifest.self, from: Data(contentsOf: manifestURL)).normalized
+        let manifest = try JSONDecoder().decode(ThumbleSkinManifest.self, from: Data(contentsOf: manifestURL)).normalized
         let skin = try manifest.skinPath.map { path in
-            try JSONDecoder().decode(PocketPadSkin.self, from: Data(contentsOf: try safePackageFileURL(path, root: root)))
+            try JSONDecoder().decode(ThumbleSkin.self, from: Data(contentsOf: try safePackageFileURL(path, root: root)))
         }
         let profile = try manifest.profilePath.map { path in
             try JSONDecoder().decode(GamepadConfigurationProfile.self, from: Data(contentsOf: try safePackageFileURL(path, root: root)))
@@ -1689,7 +1816,7 @@ struct ThumbleCLI {
                 options: [.mappedIfSafe]
             )
         }
-        return PocketPadSkinPackage(
+        return ThumbleSkinPackage(
             manifest: manifest,
             skin: skin,
             profile: profile,
@@ -1699,7 +1826,7 @@ struct ThumbleCLI {
     }
 
     private static func safePackageFileURL(_ path: String, root: URL) throws -> URL {
-        guard PocketPadSkinPackageCodec.isSafePackagePath(path) else {
+        guard ThumbleSkinPackageCodec.isSafePackagePath(path) else {
             throw CLIError.message("Unsafe package path: \(path)")
         }
         let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
@@ -1711,7 +1838,7 @@ struct ThumbleCLI {
     }
 
     private static func writeSkinPackageDirectory(
-        _ package: PocketPadSkinPackage,
+        _ package: ThumbleSkinPackage,
         to root: URL,
         force: Bool
     ) throws {
@@ -1749,7 +1876,7 @@ struct ThumbleCLI {
         try data.write(to: url, options: [.atomic])
     }
 
-    private static func parseSkinColorScheme(_ value: String) throws -> PocketPadSkinColorScheme {
+    private static func parseSkinColorScheme(_ value: String) throws -> ThumbleSkinColorScheme {
         switch value.lowercased() {
         case "light": .light
         case "dark": .dark
@@ -1757,11 +1884,11 @@ struct ThumbleCLI {
         }
     }
 
-    private static func suggestedSkinFilename(manifest: PocketPadSkinManifest) -> String {
+    private static func suggestedSkinFilename(manifest: ThumbleSkinManifest) -> String {
         let base = manifest.name.lowercased()
             .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return "\(base.isEmpty ? "pocketpad-skin" : base)-\(manifest.version).pocketpad"
+        return "\(base.isEmpty ? "thumble-skin" : base)-\(manifest.version).pocketpad"
     }
 
     private static func notifySkinStoreChanged() {
@@ -1773,15 +1900,19 @@ struct ThumbleCLI {
     private static func binding(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing binding subcommand") }
         let rest = Array(arguments.dropFirst())
+        let target = ThumbleCLIProfileBackend.ProfileSelector(optionValue("--profile", in: rest))
+        let invocationID = try profileInvocationID(in: rest)
         switch subcommand {
         case "display":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let presentations = bindingPresentations(for: profile, store: store)
+            let response = try profileBackend().perform(.bindingDisplay(target), invocationID: invocationID)
+            guard let projection = response.projection,
+                  projection.kind == .bindingDisplay
+            else { throw CLIError.message("Rust profile authority returned no binding-display projection") }
+            let presentations = try authorityBindingPresentations(projection)
             if rest.contains("--json") {
                 try printJSON(presentations)
             } else {
-                print("Binding display for \"\(profile.name)\":")
+                print("Binding display for \"\(projection.profileName)\":")
                 for group in presentations {
                     let orientation = group.orientation?.rawValue.capitalized ?? "All orientations"
                     print("\(orientation):")
@@ -1792,46 +1923,39 @@ struct ThumbleCLI {
             }
 
         case "list", "ls":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let bindings = decodedBindings(store.profileKeyBindings[profile.id.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
+            let response = try profileBackend().perform(.bindingList(target), invocationID: invocationID)
+            guard let projection = response.projection,
+                  projection.kind == .bindingList,
+                  let rows = projection.rows
+            else { throw CLIError.message("Rust profile authority returned no binding projection") }
             if rest.contains("--json") {
-                try printJSON(rawBindings(bindings))
+                try printJSON(projection)
             } else {
-                print("Bindings for \"\(profile.name)\":")
-                for button in GameButton.allCases {
-                    print("- \(button.rawValue): \(bindings[button]?.displayName ?? "Unmapped")")
+                print("Bindings for \"\(projection.profileName)\":")
+                for row in rows {
+                    print("- \(row.button.rawValue): \(try authorityOutput(row.output).displayName)")
                 }
             }
 
         case "set":
             try setBinding(arguments: rest)
 
-        case "reset":
+        case "reset", "clear", "unset":
             guard let buttonText = firstPositional(in: rest) else { throw CLIError.message("Missing button") }
             let button = try parseButton(buttonText)
-            try mutateBindings(profileTarget: optionValue("--profile", in: rest)) { bindings in
-                if let defaultBinding = DefaultKeypadKeyMap.defaultBinding(for: button) {
-                    bindings[button] = defaultBinding
-                } else {
-                    bindings[button] = nil
-                }
-            }
-            print("Reset binding for \(button.displayName).")
-
-        case "clear", "unset":
-            guard let buttonText = firstPositional(in: rest) else { throw CLIError.message("Missing button") }
-            let button = try parseButton(buttonText)
-            try mutateBindings(profileTarget: optionValue("--profile", in: rest)) { bindings in
-                bindings[button] = nil
-            }
-            print("Cleared binding for \(button.displayName).")
+            let command: ThumbleCLIProfileBackend.Command = subcommand == "reset"
+                ? .bindingReset(target, button)
+                : .bindingClear(target, button)
+            let response = try profileBackend().perform(command, invocationID: invocationID)
+            guard response.outcome != nil else { throw CLIError.message("Rust profile authority returned no binding outcome") }
+            print(subcommand == "reset" ? "Reset binding for \(button.displayName)." : "Cleared binding for \(button.displayName).")
+            printProfileInvocation(response)
 
         case "reset-all":
-            try mutateBindings(profileTarget: optionValue("--profile", in: rest)) { bindings in
-                bindings = DefaultKeypadKeyMap.defaultBindings
-            }
-            print("Reset all bindings to defaults.")
+            let response = try profileBackend().perform(.bindingResetAll(target), invocationID: invocationID)
+            guard response.outcome != nil else { throw CLIError.message("Rust profile authority returned no binding outcome") }
+            print("Reset all bindings to setup defaults.")
+            printProfileInvocation(response)
 
         default:
             throw CLIError.message("Unknown binding subcommand: \(subcommand)")
@@ -1860,36 +1984,19 @@ struct ThumbleCLI {
             throw CLIError.message("Missing binding. Use `binding set <button> <key>` or `--sequence Control+B,H`.")
         }
 
-        try mutateBindings(profileTarget: optionValue("--profile", in: arguments)) { bindings in
-            bindings[button] = binding
+        let response = try profileBackend().perform(
+            .bindingSet(
+                .init(optionValue("--profile", in: arguments)),
+                button,
+                try authoritySemanticSequence(binding)
+            ),
+            invocationID: try profileInvocationID(in: arguments)
+        )
+        guard response.outcome != nil else {
+            throw CLIError.message("Rust profile authority returned no binding outcome")
         }
         print("Mapped \(button.displayName) to \(binding.displayName).")
-    }
-
-    private static func mutateBindings(profileTarget: String?, mutate: (inout [GameButton: MacKeyBinding]) throws -> Void) throws {
-        var store = loadStore()
-        let profileIndex = try resolveProfileIndex(profileTarget, in: store)
-        let profile = store.profiles[profileIndex]
-        let profileID = profile.id.uuidString
-        var bindings = decodedBindings(store.profileKeyBindings[profileID]) ?? DefaultKeypadKeyMap.defaultBindings
-        try mutate(&bindings)
-        store.profileKeyBindings[profileID] = rawBindings(bindings)
-        var outputs = decodedOutputBindings(store.profileOutputBindings[profileID]) ?? outputBindings(from: bindings)
-        switch profile.outputMode {
-        case .keyboard:
-            outputs = outputBindings(from: bindings)
-        case .controller:
-            outputs = effectiveOutputBindings(for: .controller, keyBindings: bindings, customOutputBindings: outputs)
-        case .custom:
-            for (button, binding) in bindings {
-                var output = outputs[button] ?? MacControlOutputBinding()
-                output.keyboard = binding
-                outputs[button] = output
-            }
-        }
-        syncElementOutputs(in: &store.profiles[profileIndex], outputs: outputs)
-        store.profileOutputBindings[profileID] = rawOutputBindings(outputs)
-        try persistStore(store)
+        printProfileInvocation(response)
     }
 
     // MARK: - Outputs
@@ -1897,20 +2004,23 @@ struct ThumbleCLI {
     private static func output(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing output subcommand") }
         let rest = Array(arguments.dropFirst())
+        let target = ThumbleCLIProfileBackend.ProfileSelector(optionValue("--profile", in: rest))
+        let invocationID = try profileInvocationID(in: rest)
         switch subcommand {
         case "list", "ls":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let keyboardBindings = decodedBindings(store.profileKeyBindings[profile.id.uuidString]) ?? DefaultKeypadKeyMap.defaultBindings
-            let storedOutputs = decodedOutputBindings(store.profileOutputBindings[profile.id.uuidString]) ?? outputBindings(from: keyboardBindings)
-            let outputs = effectiveOutputBindings(for: profile.outputMode, keyBindings: keyboardBindings, customOutputBindings: storedOutputs)
+            let response = try profileBackend().perform(.outputList(target), invocationID: invocationID)
+            guard let projection = response.projection,
+                  projection.kind == .outputList,
+                  let rows = projection.rows,
+                  let mode = projection.outputMode
+            else { throw CLIError.message("Rust profile authority returned no output projection") }
             if rest.contains("--json") {
-                try printJSON(rawOutputBindings(outputs))
+                try printJSON(projection)
             } else {
-                print("Outputs for \"\(profile.name)\":")
-                print("Mode: \(profile.outputMode.displayName)")
-                for button in GameButton.allCases {
-                    print("- \(button.rawValue): \(outputs[button]?.displayName ?? "Unmapped")")
+                print("Outputs for \"\(projection.profileName)\":")
+                print("Mode: \(authorityOutputModeName(mode))")
+                for row in rows {
+                    print("- \(row.button.rawValue): \(try authorityOutput(row.output).displayName)")
                 }
             }
         case "mode", "preset":
@@ -1920,48 +2030,49 @@ struct ThumbleCLI {
         case "reset":
             guard let buttonText = firstPositional(in: rest) else { throw CLIError.message("Missing button") }
             let button = try parseButton(buttonText)
-            try mutateOutputs(profileTarget: optionValue("--profile", in: rest)) { outputs in
-                outputs[button] = DefaultMacControlOutputMap.defaultBinding(for: button)
-            }
+            let response = try profileBackend().perform(.outputReset(target, button), invocationID: invocationID)
+            guard response.outcome != nil else { throw CLIError.message("Rust profile authority returned no output outcome") }
             print("Reset output for \(button.displayName).")
+            printProfileInvocation(response)
         case "reset-all":
-            try mutateOutputs(profileTarget: optionValue("--profile", in: rest), outputMode: .keyboard) { outputs in
-                outputs = DefaultMacControlOutputMap.defaultBindings
-            }
-            print("Reset all outputs to keyboard defaults.")
+            let response = try profileBackend().perform(.outputResetAll(target), invocationID: invocationID)
+            guard response.outcome != nil else { throw CLIError.message("Rust profile authority returned no output outcome") }
+            print("Reset all outputs to setup keyboard defaults.")
+            printProfileInvocation(response)
         default:
             throw CLIError.message("Unknown output subcommand: \(subcommand)")
         }
     }
 
     private static func outputMode(arguments: [String]) throws {
-        var store = loadStore()
-        let profileTarget = optionValue("--profile", in: arguments)
-        let index = try resolveProfileIndex(profileTarget, in: store)
+        let target = ThumbleCLIProfileBackend.ProfileSelector(optionValue("--profile", in: arguments))
         let modeText = firstPositional(in: arguments)
-
-        guard let modeText else {
-            let profile = store.profiles[index]
-            print("\(profile.name): \(profile.outputMode.displayName)")
-            print(profile.outputMode.description)
+        if let modeText {
+            let mode = try parseOutputMode(modeText)
+            guard let typedMode = ThumbleCLIProfileBackend.OutputMode(rawValue: mode.rawValue) else {
+                throw CLIError.message("Unsupported output mode")
+            }
+            let response = try profileBackend().perform(
+                .outputMode(target, typedMode),
+                invocationID: try profileInvocationID(in: arguments)
+            )
+            guard let profileName = response.outcome?.profileNames.first else {
+                throw CLIError.message("Rust profile authority returned no output-mode outcome")
+            }
+            print("Set \"\(profileName)\" output mode to \(mode.displayName).")
+            printProfileInvocation(response)
             return
         }
-
-        let mode = try parseOutputMode(modeText)
-        store.profiles[index].outputMode = mode
-        store.profiles[index].updatedAt = Date.currentMilliseconds
-        let profileID = store.profiles[index].id.uuidString
-        let keyboardBindings = decodedBindings(store.profileKeyBindings[profileID]) ?? DefaultKeypadKeyMap.defaultBindings
-        let storedOutputs = decodedOutputBindings(store.profileOutputBindings[profileID]) ?? outputBindings(from: keyboardBindings)
-        let effectiveOutputs = effectiveOutputBindings(
-            for: mode,
-            keyBindings: keyboardBindings,
-            customOutputBindings: storedOutputs
+        let response = try profileBackend().perform(
+            .outputModeGet(target),
+            invocationID: try profileInvocationID(in: arguments)
         )
-        store.profileOutputBindings[profileID] = rawOutputBindings(effectiveOutputs)
-        syncElementOutputs(in: &store.profiles[index], outputs: effectiveOutputs)
-        try persistStore(store)
-        print("Set \"\(store.profiles[index].name)\" output mode to \(mode.displayName).")
+        guard let projection = response.projection,
+              projection.kind == .outputMode,
+              let mode = projection.outputMode
+        else { throw CLIError.message("Rust profile authority returned no output-mode projection") }
+        print("\(projection.profileName): \(authorityOutputModeName(mode))")
+        print(authorityOutputModeDescription(mode))
     }
 
     private static func setOutput(arguments: [String]) throws {
@@ -1973,102 +2084,152 @@ struct ThumbleCLI {
         let clearKeyboard = arguments.contains("--clear-keyboard")
         let clearGamepad = arguments.contains("--clear-gamepad")
 
-        try mutateOutputs(
-            profileTarget: optionValue("--profile", in: arguments),
-            preserveKeyboardForChangedButtons: !clearKeyboard && keyboardText == nil && sequenceText == nil
-        ) { outputs in
-            var output = outputs[button] ?? MacControlOutputBinding()
-            if clearKeyboard {
-                output.keyboard = nil
+        let keyboardEdit: ThumbleCLIProfileBackend.KeyboardEdit
+        if clearKeyboard {
+            keyboardEdit = .clear
+        } else if let sequenceText {
+            keyboardEdit = .set(try authoritySemanticSequence(parseKeyBindingSequence(sequenceText)))
+        } else if let keyboardText {
+            keyboardEdit = .set(try authoritySemanticSequence(parseKeyBindingSequence(keyboardText)))
+        } else {
+            keyboardEdit = .keep
+        }
+        let gamepadEdit: ThumbleCLIProfileBackend.GamepadEdit
+        if clearGamepad {
+            gamepadEdit = .clear
+        } else if let gamepadButtonText {
+            let normalized = gamepadButtonText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized == "none" || normalized == "clear" || normalized == "off" {
+                gamepadEdit = .clear
+            } else {
+                gamepadEdit = .set(try parseVirtualGamepadButton(gamepadButtonText))
             }
-            if let sequenceText {
-                output.keyboard = try parseKeyBindingSequence(sequenceText)
-            } else if let keyboardText {
-                output.keyboard = try parseKeyBindingSequence(keyboardText)
-            }
-            if clearGamepad {
-                output.gamepadButtons.removeAll()
-            }
-            if let gamepadButtonText {
-                let normalized = gamepadButtonText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if normalized == "none" || normalized == "clear" || normalized == "off" {
-                    output.gamepadButtons.removeAll()
-                } else {
-                    output.setGamepadButton(try parseVirtualGamepadButton(gamepadButtonText))
-                }
-            }
-            outputs[button] = output.isEmpty ? nil : output
+        } else {
+            gamepadEdit = .keep
+        }
+        guard keyboardEdit != .keep || gamepadEdit != .keep else {
+            throw CLIError.message("No output changes requested")
+        }
+        let response = try profileBackend().perform(
+            .outputSet(
+                .init(optionValue("--profile", in: arguments)),
+                button,
+                keyboardEdit,
+                gamepadEdit
+            ),
+            invocationID: try profileInvocationID(in: arguments)
+        )
+        guard response.outcome != nil else {
+            throw CLIError.message("Rust profile authority returned no output outcome")
         }
         print("Updated output for \(button.displayName).")
+        printProfileInvocation(response)
     }
 
-    private static func mutateOutputs(
-        profileTarget: String?,
-        outputMode: GamepadProfileOutputMode = .custom,
-        preserveKeyboardForChangedButtons: Bool = false,
-        mutate: (inout [GameButton: MacControlOutputBinding]) throws -> Void
-    ) throws {
-        var store = loadStore()
-        let profileIndex = try resolveProfileIndex(profileTarget, in: store)
-        let profileID = store.profiles[profileIndex].id.uuidString
-        let keyboardBindings = decodedBindings(store.profileKeyBindings[profileID]) ?? DefaultKeypadKeyMap.defaultBindings
-        var outputs = decodedOutputBindings(store.profileOutputBindings[profileID]) ?? outputBindings(from: keyboardBindings)
-        let originalOutputs = outputs
-        try mutate(&outputs)
-        if preserveKeyboardForChangedButtons {
-            for button in GameButton.allCases where outputs[button] != originalOutputs[button] {
-                guard outputs[button]?.keyboard == nil,
-                      outputs[button]?.gamepadButtons.isEmpty == false,
-                      let keyboard = keyboardBindings[button]
-                else { continue }
-                outputs[button]?.keyboard = keyboard
+    private static func authoritySemanticSequence(
+        _ binding: MacKeyBinding
+    ) throws -> [ThumbleCLIProfileBackend.SemanticKeyStroke] {
+        try binding.strokes.map { stroke in
+            let key = MacVirtualKey.displayName(for: stroke.keyCode)
+            guard MacVirtualKey.keyCode(named: key) == stroke.keyCode else {
+                throw CLIError.message("Binding contains an unsupported semantic key")
             }
+            var modifiers: [ThumbleCLIProfileBackend.SemanticModifier] = []
+            if stroke.modifiers.contains(.command) { modifiers.append(.command) }
+            if stroke.modifiers.contains(.shift) { modifiers.append(.shift) }
+            if stroke.modifiers.contains(.option) { modifiers.append(.option) }
+            if stroke.modifiers.contains(.control) { modifiers.append(.control) }
+            return .init(key: key, modifiers: modifiers)
         }
-        store.profiles[profileIndex].outputMode = outputMode
-        store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
-        syncElementOutputs(in: &store.profiles[profileIndex], outputs: outputs)
-        store.profileOutputBindings[profileID] = rawOutputBindings(outputs)
-        if outputMode == .keyboard {
-            store.profileKeyBindings[profileID] = rawBindings(outputs.keyboardBindings)
-        } else {
-            var nextKeyboardBindings = keyboardBindings
-            for button in GameButton.allCases where outputs[button] != originalOutputs[button] {
-                if let keyboard = outputs[button]?.keyboard {
-                    nextKeyboardBindings[button] = keyboard
-                } else {
-                    nextKeyboardBindings[button] = nil
-                }
-            }
-            store.profileKeyBindings[profileID] = rawBindings(nextKeyboardBindings)
-        }
-        try persistStore(store)
     }
 
-    private static func syncElementOutputs(in profile: inout GamepadConfigurationProfile, outputs: [GameButton: MacControlOutputBinding]) {
-        func update(_ customization: inout GamepadCustomization) {
-            var normalizedCustomization = customization.normalized
-            for button in GameButton.allCases {
-                let matchingCustomIDs = Set(normalizedCustomization.customButtons.filter { $0.mappedButton == button }.map(\.id))
-                let sharedBinding = outputs[button]?.sharedBinding
-                for index in normalizedCustomization.elements.indices {
-                    let element = normalizedCustomization.elements[index]
-                    guard element.builtInButton == button || element.legacySlot == button || matchingCustomIDs.contains(element.id) else { continue }
-                    normalizedCustomization.elements[index].setOutputBinding(sharedBinding, for: .primary)
+    private static func authorityOutput(
+        _ output: ThumbleCLIProfileBackend.SemanticOutput?
+    ) throws -> MacControlOutputBinding {
+        guard let output else { return MacControlOutputBinding() }
+        return MacControlOutputBinding(shared: try authoritySharedOutput(output))
+    }
+
+    private static func authoritySharedOutput(
+        _ output: ThumbleCLIProfileBackend.SemanticOutput
+    ) throws -> KeypadElementOutputBinding {
+        let strokes = try output.keyboard.map { stroke -> KeypadKeyboardStrokeBinding in
+            guard let keyCode = MacVirtualKey.keyCode(named: stroke.key) else {
+                throw CLIError.message("Rust profile authority returned an unsupported semantic key")
+            }
+            var modifiers: MacKeyModifiers = []
+            for modifier in stroke.modifiers {
+                switch modifier {
+                case .command: modifiers.insert(.command)
+                case .shift: modifiers.insert(.shift)
+                case .option: modifiers.insert(.option)
+                case .control: modifiers.insert(.control)
                 }
             }
-            customization = normalizedCustomization.normalized
+            return KeypadKeyboardStrokeBinding(
+                keyCode: UInt16(keyCode),
+                modifiersRawValue: modifiers.rawValue
+            )
         }
+        let keyboard = strokes.first.map { first in
+            KeypadKeyboardBinding(
+                keyCode: first.keyCode,
+                modifiersRawValue: first.modifiersRawValue,
+                sequence: strokes.count > 1 ? strokes : nil
+            )
+        }
+        return KeypadElementOutputBinding(
+            keyboard: keyboard,
+            gamepadButtons: Set(output.gamepadButtons)
+        )
+    }
 
-        update(&profile.customization)
-        if var landscapeCustomization = profile.landscapeCustomization {
-            update(&landscapeCustomization)
-            profile.landscapeCustomization = landscapeCustomization
+    private static func authorityBindingPresentations(
+        _ projection: ThumbleCLIProfileBackend.BindingOutputProjection
+    ) throws -> [GamepadProfileBindingPresentations] {
+        try (projection.displayGroups ?? []).map { group in
+            let orientation = group.orientation.flatMap {
+                GamepadEditorDeviceOrientation(rawValue: $0.rawValue)
+            }
+            let entries = try group.entries.compactMap { entry -> KeypadBindingPresentation? in
+                guard let part = KeypadElementInputPart(rawValue: entry.part.rawValue) else {
+                    throw CLIError.message("Rust profile authority returned an unsupported element input part")
+                }
+                guard let formatted = KeypadBindingFormatter.format(try authoritySharedOutput(entry.output)) else {
+                    return nil
+                }
+                return KeypadBindingPresentation(
+                    input: KeypadElementInputID(elementID: entry.elementID, part: part),
+                    compactText: formatted.compactText,
+                    accessibilityText: formatted.accessibilityText
+                )
+            }
+            return GamepadProfileBindingPresentations(
+                profileID: projection.profileID,
+                orientation: orientation,
+                entries: entries.sorted { $0.input.storageKey < $1.input.storageKey }
+            )
         }
-        if var portraitCustomization = profile.portraitCustomization {
-            update(&portraitCustomization)
-            profile.portraitCustomization = portraitCustomization
+    }
+
+    private static func authorityOutputModeName(
+        _ mode: ThumbleCLIProfileBackend.OutputMode
+    ) -> String {
+        switch mode {
+        case .keyboard: "Keyboard"
+        case .controller: "Controller"
+        case .custom: "Custom"
         }
-        profile.updatedAt = Date.currentMilliseconds
+    }
+
+    private static func authorityOutputModeDescription(
+        _ mode: ThumbleCLIProfileBackend.OutputMode
+    ) -> String {
+        switch mode {
+        case .keyboard: "Send this keypad as Mac keyboard shortcuts. Virtual controller output stays off for this setup."
+        case .controller: "Send this keypad as a virtual Xbox-style controller using Thumble’s default controller map."
+        case .custom: "Use per-element output bindings. This can mix keyboard shortcuts and virtual controller buttons."
+        }
     }
 
     // MARK: - Customization
@@ -2087,6 +2248,10 @@ struct ThumbleCLI {
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
             try writeJSON(customization(for: profile, arguments: rest), to: outputPath)
         case "import":
+            try requireExplicitUnmigratedProfileAccess(
+                operation: "customization import",
+                artifactRequired: true
+            )
             guard let path = firstPositional(in: rest) else { throw CLIError.message("Missing customization JSON path") }
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
             let customization = try JSONDecoder().decode(GamepadCustomization.self, from: data)
@@ -2099,96 +2264,338 @@ struct ThumbleCLI {
         case "preview", "render":
             try previewLayout(arguments: rest)
         case "set":
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                if let layout = optionValue("--layout", in: rest) { customization.layoutMode = try parseLayoutMode(layout) }
-                if let scale = optionValue("--scale", in: rest) ?? optionValue("--control-scale", in: rest) { customization.controlScale = try parseControlScale(scale) }
-                if let appearance = optionValue("--appearance", in: rest) ?? optionValue("--color-scheme", in: rest) ?? optionValue("--scheme", in: rest) { customization.colorSchemePreference = try parseColorSchemePreference(appearance) }
-                if let device = optionValue("--device", in: rest) ?? optionValue("--frame", in: rest) ?? optionValue("--canvas", in: rest) {
-                    let orientation = try (optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)).map(parseDeviceOrientation)
-                    customization.deviceCanvas = GamepadDeviceCanvas(frameID: try resolveDeviceFrameTarget(device, arguments: rest, preferredOrientation: orientation).id)
-                }
-                if let deviceSize = optionValue("--device-size", in: rest) ?? optionValue("--size", in: rest) {
-                    let orientation = try (optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)).map(parseDeviceOrientation)
-                    customization.deviceCanvas = GamepadDeviceCanvas(frameID: try resolveCustomDeviceFrame(sizeText: deviceSize, preferredOrientation: orientation).id)
-                }
-                if let background = optionValue("--background", in: rest) ?? optionValue("--bg", in: rest) {
-                    setBackgroundFillColor(try parseRGBAColor(background), in: &customization)
-                }
-                if let lightBackground = optionValue("--light-background", in: rest) ?? optionValue("--background-light", in: rest) {
-                    setBackgroundFillColor(try parseRGBAColor(lightBackground), isDark: false, in: &customization)
-                }
-                if let darkBackground = optionValue("--dark-background", in: rest) ?? optionValue("--background-dark", in: rest) {
-                    setBackgroundFillColor(try parseRGBAColor(darkBackground), isDark: true, in: &customization)
-                }
-                if let value = optionValue("--background-gradient", in: rest) ?? optionValue("--bg-gradient", in: rest) {
-                    setBackgroundFillStyle(try parseGradientFill(value, arguments: rest), in: &customization)
-                }
-                if let value = optionValue("--background-tile", in: rest) ?? optionValue("--bg-tile", in: rest) {
-                    setBackgroundFillStyle(try parseTileFill(value, arguments: rest), in: &customization)
-                }
-                if let value = optionValue("--background-image", in: rest) ?? optionValue("--bg-image", in: rest) {
-                    setBackgroundFillStyle(try parseImageFill(value, arguments: rest), in: &customization)
-                }
-                if let value = optionValue("--light-background-gradient", in: rest) ?? optionValue("--background-light-gradient", in: rest) {
-                    setBackgroundFillStyle(try parseGradientFill(value, arguments: rest), isDark: false, in: &customization)
-                }
-                if let value = optionValue("--dark-background-gradient", in: rest) ?? optionValue("--background-dark-gradient", in: rest) {
-                    setBackgroundFillStyle(try parseGradientFill(value, arguments: rest), isDark: true, in: &customization)
-                }
-                if let value = optionValue("--light-background-tile", in: rest) ?? optionValue("--background-light-tile", in: rest) {
-                    setBackgroundFillStyle(try parseTileFill(value, arguments: rest), isDark: false, in: &customization)
-                }
-                if let value = optionValue("--dark-background-tile", in: rest) ?? optionValue("--background-dark-tile", in: rest) {
-                    setBackgroundFillStyle(try parseTileFill(value, arguments: rest), isDark: true, in: &customization)
-                }
-                if let value = optionValue("--light-background-image", in: rest) ?? optionValue("--background-light-image", in: rest) {
-                    setBackgroundFillStyle(try parseImageFill(value, arguments: rest), isDark: false, in: &customization)
-                }
-                if let value = optionValue("--dark-background-image", in: rest) ?? optionValue("--background-dark-image", in: rest) {
-                    setBackgroundFillStyle(try parseImageFill(value, arguments: rest), isDark: true, in: &customization)
-                }
-                if rest.contains("--reset-background") {
-                    clearBackgroundFill(in: &customization)
-                }
-                if let accent = optionValue("--accent", in: rest) ?? optionValue("--color", in: rest) { customization.accentStyle = try parseAccentStyle(accent) }
-                if rest.contains("--show-labels") { customization.showsButtonLabels = true }
-                if rest.contains("--hide-labels") { customization.showsButtonLabels = false }
-                if let labels = optionValue("--labels", in: rest) { customization.showsButtonLabels = try parseBool(labels) }
-            }
-            print("Updated customization.")
+            try setCustomization(arguments: rest)
         case "reset":
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { $0 = .defaultValue }
+            try requireExplicitUnmigratedProfileAccess(operation: "customization reset")
+            try mutateCustomization(
+                profileTarget: optionValue("--profile", in: rest),
+                variant: try customizationVariant(in: rest)
+            ) { $0 = .defaultValue }
             print("Reset customization.")
         default:
             throw CLIError.message("Unknown customization subcommand: \(subcommand)")
         }
     }
 
+    private static func setCustomization(arguments: [String]) throws {
+        let richBackgroundOptions = [
+            "--background-gradient", "--bg-gradient", "--background-tile", "--bg-tile",
+            "--light-background-gradient", "--background-light-gradient",
+            "--dark-background-gradient", "--background-dark-gradient",
+            "--light-background-tile", "--background-light-tile",
+            "--dark-background-tile", "--background-dark-tile"
+        ]
+        let imageBackgroundOptions = [
+            "--background-image", "--bg-image", "--light-background-image",
+            "--background-light-image", "--dark-background-image", "--background-dark-image"
+        ]
+        let customDeviceOptions = [
+            "--device-size", "--size", "--device-width", "--device-height"
+        ]
+        let deviceTarget = optionValue("--device", in: arguments)
+            ?? optionValue("--frame", in: arguments)
+            ?? optionValue("--canvas", in: arguments)
+        let requestsCustomDevice = deviceTarget.map { normalizedLookup($0) == "custom" } ?? false
+        if hasAnyOption(richBackgroundOptions, in: arguments)
+            || hasAnyOption(imageBackgroundOptions, in: arguments)
+            || hasAnyOption(customDeviceOptions, in: arguments)
+            || requestsCustomDevice
+        {
+            try requireExplicitUnmigratedProfileAccess(
+                operation: "customization rich background or custom device",
+                artifactRequired: hasAnyOption(imageBackgroundOptions, in: arguments)
+            )
+            try setCustomizationUsingLegacyStore(arguments: arguments)
+            print("Updated customization.")
+            return
+        }
+
+        var scalar = ThumbleCLIProfileBackend.CustomizationChanges()
+        if let value = optionValue("--layout", in: arguments) {
+            let parsed = try parseLayoutMode(value)
+            scalar.layoutMode = .init(rawValue: parsed.rawValue)
+        }
+        if let value = optionValue("--scale", in: arguments)
+            ?? optionValue("--control-scale", in: arguments)
+        {
+            let parsed = try parseControlScale(value)
+            scalar.controlScale = .init(rawValue: parsed.rawValue)
+        }
+        if let value = optionValue("--appearance", in: arguments)
+            ?? optionValue("--color-scheme", in: arguments)
+            ?? optionValue("--scheme", in: arguments)
+        {
+            let parsed = try parseColorSchemePreference(value)
+            scalar.colorScheme = .init(rawValue: parsed.rawValue)
+        }
+        if let value = optionValue("--accent", in: arguments)
+            ?? optionValue("--color", in: arguments)
+        {
+            let parsed = try parseAccentStyle(value)
+            scalar.accentStyle = .init(rawValue: parsed.rawValue)
+        }
+        if arguments.contains("--show-labels") { scalar.showsButtonLabels = true }
+        if arguments.contains("--hide-labels") { scalar.showsButtonLabels = false }
+        if let value = optionValue("--labels", in: arguments) {
+            scalar.showsButtonLabels = try parseBool(value)
+        }
+
+        var changes: [ThumbleCLIProfileBackend.CustomizationChanges] = []
+        if !scalar.isEmpty { changes.append(scalar) }
+        for (scope, value) in [
+            (ThumbleCLIProfileBackend.CustomizationBackgroundScope.all,
+             optionValue("--background", in: arguments) ?? optionValue("--bg", in: arguments)),
+            (.light,
+             optionValue("--light-background", in: arguments)
+                ?? optionValue("--background-light", in: arguments)),
+            (.dark,
+             optionValue("--dark-background", in: arguments)
+                ?? optionValue("--background-dark", in: arguments))
+        ] {
+            guard let value else { continue }
+            var background = ThumbleCLIProfileBackend.CustomizationChanges()
+            background.backgroundEdit = .set(
+                scope,
+                ThumbleCLIProfileBackend.AuthorityColor(try parseRGBAColor(value))
+            )
+            changes.append(background)
+        }
+        if arguments.contains("--reset-background") {
+            var clear = ThumbleCLIProfileBackend.CustomizationChanges()
+            clear.backgroundEdit = .clear
+            changes.append(clear)
+        }
+
+        let frameID: String?
+        if let deviceTarget {
+            let orientation = try (
+                optionValue("--orientation", in: arguments)
+                    ?? optionValue("--device-orientation", in: arguments)
+            ).map(parseDeviceOrientation)
+            frameID = try resolveDeviceFrameTarget(
+                deviceTarget,
+                arguments: arguments,
+                preferredOrientation: orientation
+            ).id
+        } else {
+            frameID = nil
+        }
+        guard !changes.isEmpty || frameID != nil else {
+            throw CLIError.message("No customization changes requested")
+        }
+        let response = try profileBackend().perform(
+            .customizationSet(
+                .init(optionValue("--profile", in: arguments)),
+                try authorityConfigurationVariant(in: arguments),
+                changes,
+                frameID: frameID
+            ),
+            invocationID: try profileInvocationID(in: arguments)
+        )
+        guard response.outcome != nil else {
+            throw CLIError.message("Rust profile authority returned no customization outcome")
+        }
+        print("Updated customization.")
+        printProfileInvocation(response)
+    }
+
+    private static func setCustomizationUsingLegacyStore(arguments: [String]) throws {
+        try mutateCustomization(
+            profileTarget: optionValue("--profile", in: arguments),
+            variant: try customizationVariant(in: arguments)
+        ) { customization in
+            if let layout = optionValue("--layout", in: arguments) {
+                customization.layoutMode = try parseLayoutMode(layout)
+            }
+            if let scale = optionValue("--scale", in: arguments)
+                ?? optionValue("--control-scale", in: arguments)
+            {
+                customization.controlScale = try parseControlScale(scale)
+            }
+            if let appearance = optionValue("--appearance", in: arguments)
+                ?? optionValue("--color-scheme", in: arguments)
+                ?? optionValue("--scheme", in: arguments)
+            {
+                customization.colorSchemePreference = try parseColorSchemePreference(appearance)
+            }
+            if let device = optionValue("--device", in: arguments)
+                ?? optionValue("--frame", in: arguments)
+                ?? optionValue("--canvas", in: arguments)
+            {
+                let orientation = try (
+                    optionValue("--orientation", in: arguments)
+                        ?? optionValue("--device-orientation", in: arguments)
+                ).map(parseDeviceOrientation)
+                customization.deviceCanvas = GamepadDeviceCanvas(
+                    frameID: try resolveDeviceFrameTarget(
+                        device,
+                        arguments: arguments,
+                        preferredOrientation: orientation
+                    ).id
+                )
+            }
+            if let deviceSize = optionValue("--device-size", in: arguments)
+                ?? optionValue("--size", in: arguments)
+            {
+                let orientation = try (
+                    optionValue("--orientation", in: arguments)
+                        ?? optionValue("--device-orientation", in: arguments)
+                ).map(parseDeviceOrientation)
+                customization.deviceCanvas = GamepadDeviceCanvas(
+                    frameID: try resolveCustomDeviceFrame(
+                        sizeText: deviceSize,
+                        preferredOrientation: orientation
+                    ).id
+                )
+            }
+            if let background = optionValue("--background", in: arguments)
+                ?? optionValue("--bg", in: arguments)
+            {
+                setBackgroundFillColor(try parseRGBAColor(background), in: &customization)
+            }
+            if let light = optionValue("--light-background", in: arguments)
+                ?? optionValue("--background-light", in: arguments)
+            {
+                setBackgroundFillColor(
+                    try parseRGBAColor(light), isDark: false, in: &customization
+                )
+            }
+            if let dark = optionValue("--dark-background", in: arguments)
+                ?? optionValue("--background-dark", in: arguments)
+            {
+                setBackgroundFillColor(
+                    try parseRGBAColor(dark), isDark: true, in: &customization
+                )
+            }
+            if let value = optionValue("--background-gradient", in: arguments)
+                ?? optionValue("--bg-gradient", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseGradientFill(value, arguments: arguments), in: &customization
+                )
+            }
+            if let value = optionValue("--background-tile", in: arguments)
+                ?? optionValue("--bg-tile", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseTileFill(value, arguments: arguments), in: &customization
+                )
+            }
+            if let value = optionValue("--background-image", in: arguments)
+                ?? optionValue("--bg-image", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseImageFill(value, arguments: arguments), in: &customization
+                )
+            }
+            if let value = optionValue("--light-background-gradient", in: arguments)
+                ?? optionValue("--background-light-gradient", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseGradientFill(value, arguments: arguments),
+                    isDark: false,
+                    in: &customization
+                )
+            }
+            if let value = optionValue("--dark-background-gradient", in: arguments)
+                ?? optionValue("--background-dark-gradient", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseGradientFill(value, arguments: arguments),
+                    isDark: true,
+                    in: &customization
+                )
+            }
+            if let value = optionValue("--light-background-tile", in: arguments)
+                ?? optionValue("--background-light-tile", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseTileFill(value, arguments: arguments),
+                    isDark: false,
+                    in: &customization
+                )
+            }
+            if let value = optionValue("--dark-background-tile", in: arguments)
+                ?? optionValue("--background-dark-tile", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseTileFill(value, arguments: arguments),
+                    isDark: true,
+                    in: &customization
+                )
+            }
+            if let value = optionValue("--light-background-image", in: arguments)
+                ?? optionValue("--background-light-image", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseImageFill(value, arguments: arguments),
+                    isDark: false,
+                    in: &customization
+                )
+            }
+            if let value = optionValue("--dark-background-image", in: arguments)
+                ?? optionValue("--background-dark-image", in: arguments)
+            {
+                setBackgroundFillStyle(
+                    try parseImageFill(value, arguments: arguments),
+                    isDark: true,
+                    in: &customization
+                )
+            }
+            if arguments.contains("--reset-background") {
+                clearBackgroundFill(in: &customization)
+            }
+            if let accent = optionValue("--accent", in: arguments)
+                ?? optionValue("--color", in: arguments)
+            {
+                customization.accentStyle = try parseAccentStyle(accent)
+            }
+            if arguments.contains("--show-labels") { customization.showsButtonLabels = true }
+            if arguments.contains("--hide-labels") { customization.showsButtonLabels = false }
+            if let labels = optionValue("--labels", in: arguments) {
+                customization.showsButtonLabels = try parseBool(labels)
+            }
+        }
+    }
+
     private static func orientation(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing orientation subcommand") }
         if subcommand == "get" || subcommand == "show" || subcommand == "set" {
-            switch try GamepadProfileOrientationCLIParser.parse(arguments) {
+            switch try GamepadProfileOrientationCLIParser.parse(
+                removingProfileInvocationID(from: arguments)
+            ) {
             case .get(let profileTarget, let json):
-                let store = loadStore()
-                let profile = try resolveProfile(profileTarget, in: store)
+                let response = try profileBackend().perform(
+                    .orientationGet(.init(profileTarget)),
+                    invocationID: try profileInvocationID(in: arguments)
+                )
+                guard let remote = response.orientation else {
+                    throw CLIError.message("Rust profile authority returned no revision-tagged orientation summary")
+                }
                 let summary = OrientationPreferenceSummary(
-                    profileID: profile.id,
-                    profileName: profile.name,
-                    orientation: profile.orientationPreference
+                    configurationRevision: remote.configurationRevision,
+                    profileID: remote.profileID,
+                    profileName: remote.profileName,
+                    orientation: remote.orientation
                 )
                 if json {
                     try printJSON(summary)
                 } else {
-                    print(profile.orientationPreference.rawValue)
+                    print(remote.orientation.rawValue)
                 }
             case .set(let preference, let profileTarget):
-                var store = loadStore()
-                let profileIndex = try resolveProfileIndex(profileTarget, in: store)
-                store.profiles[profileIndex].orientationPreference = preference
-                store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
-                let profileName = store.profiles[profileIndex].name
-                try persistStore(store)
+                guard let typedPreference = ThumbleCLIProfileBackend.OrientationPreference(rawValue: preference.rawValue) else {
+                    throw CLIError.message("Unsupported orientation preference")
+                }
+                let response = try profileBackend().perform(
+                    .orientationSet(.init(profileTarget), typedPreference),
+                    invocationID: try profileInvocationID(in: arguments)
+                )
+                guard let profileName = response.outcome?.profileNames.first else {
+                    throw CLIError.message("Rust profile authority returned no orientation outcome")
+                }
                 print("Set iPhone rotation for \"\(profileName)\" to \(preference.rawValue).")
+                printProfileInvocation(response)
             }
             return
         }
@@ -2216,23 +2623,25 @@ struct ThumbleCLI {
             ?? (destination == .portrait ? .landscape : .portrait)
         guard source != destination else { throw CLIError.message("Source and destination orientation must be different") }
 
-        var store = loadStore()
-        let profileIndex = try resolveProfileIndex(optionValue("--profile", in: rest), in: store)
-        let sourceOrientation = source == .landscape ? GamepadEditorDeviceOrientation.landscape : .portrait
-        let sourceExists = store.profiles[profileIndex].hasCustomizationVariant(for: sourceOrientation)
-            || store.profiles[profileIndex].customization.deviceCanvas.editorDeviceFrame.orientation == sourceOrientation
-        guard sourceExists else {
-            throw CLIError.message("The source \(source.rawValue) layout does not exist for \"\(store.profiles[profileIndex].name)\".")
-        }
-        store.profiles[profileIndex].copyLayoutVariant(
-            from: source,
-            to: destination,
-            automaticallyArrange: !rest.contains("--no-arrange")
+        guard let typedSource = ThumbleCLIProfileBackend.LayoutOrientation(rawValue: source.rawValue),
+              let typedDestination = ThumbleCLIProfileBackend.LayoutOrientation(rawValue: destination.rawValue)
+        else { throw CLIError.message("Unsupported layout orientation") }
+        let automaticallyArrange = !rest.contains("--no-arrange")
+        let response = try profileBackend().perform(
+            .orientationCopy(
+                .init(optionValue("--profile", in: rest)),
+                typedSource,
+                typedDestination,
+                automaticallyArrange
+            ),
+            invocationID: try profileInvocationID(in: rest)
         )
-        let profileName = store.profiles[profileIndex].name
-        try persistStore(store)
-        let action = rest.contains("--no-arrange") ? "Copied" : "Copied and arranged"
+        guard let profileName = response.outcome?.profileNames.first else {
+            throw CLIError.message("Rust profile authority returned no orientation-copy outcome")
+        }
+        let action = automaticallyArrange ? "Copied and arranged" : "Copied"
         print("\(action) \(source.rawValue) as \(destination.rawValue) for \"\(profileName)\".")
+        printProfileInvocation(response)
     }
 
     private static func parseProfileLayoutVariant(_ value: String) throws -> GamepadProfileLayoutVariant {
@@ -2265,6 +2674,41 @@ struct ThumbleCLI {
 
     private static func repairLayout(arguments: [String]) throws {
         let target = (optionValue("--repair", in: arguments) ?? firstPositional(in: arguments)).map(normalizedLookup) ?? "all"
+        let authorityTarget: ThumbleCLIProfileBackend.LayoutRepairTarget?
+        if target == "all" || target == "suggested" {
+            authorityTarget = .all
+        } else if let repair = parseLayoutRepairKind(target),
+                  let typedRepair = ThumbleCLIProfileBackend.LayoutRepairKind(rawValue: repair.rawValue) {
+            authorityTarget = .repair(typedRepair)
+        } else {
+            authorityTarget = nil
+        }
+        if let authorityTarget {
+            let response = try profileBackend().perform(
+                .customizationFix(
+                    .init(optionValue("--profile", in: arguments)),
+                    try authorityConfigurationVariant(in: arguments),
+                    authorityTarget,
+                    try authorityLayoutRepairCanvas(in: arguments),
+                    includeLocked: arguments.contains("--unlock") || arguments.contains("--include-locked")
+                ),
+                invocationID: try profileInvocationID(in: arguments)
+            )
+            guard let outcome = response.outcome else {
+                throw CLIError.message("Rust profile authority returned no layout-repair outcome")
+            }
+            if arguments.contains("--json") {
+                try printJSON(outcome)
+            } else if outcome.changed {
+                print("Repaired layout.")
+            } else {
+                print("Layout did not need this repair.")
+            }
+            printProfileInvocation(response)
+            return
+        }
+
+        try requireExplicitUnmigratedProfileAccess(operation: "customization issue-specific repair")
         let variant = try customizationVariant(in: arguments)
         let profileTarget = optionValue("--profile", in: arguments)
         let respectsLocks = !arguments.contains("--unlock") && !arguments.contains("--include-locked")
@@ -2278,39 +2722,17 @@ struct ThumbleCLI {
             let report = customization.layoutQualityReport(canvasSize: canvasSize)
 
             if target == "all" || target == "suggested" {
-                for _ in 0..<3 {
-                    let currentReport = customization.layoutQualityReport(canvasSize: canvasSize)
-                    let orderedIssues = currentReport.issues.sorted {
-                        layoutRepairPriority(for: $0.code) < layoutRepairPriority(for: $1.code)
-                    }
-                    var changedThisPass = false
-                    var appliedAutoArrange = false
-                    for issue in orderedIssues {
-                        guard let repair = issue.suggestedRepairs.first else { continue }
-                        if repair == .autoArrange {
-                            guard !appliedAutoArrange else { continue }
-                            appliedAutoArrange = true
-                        }
-                        let result = customization.applyLayoutRepair(
-                            repair,
-                            issue: repair == .autoArrange ? nil : issue,
-                            canvasSize: canvasSize,
-                            respectingLocks: respectsLocks
-                        )
-                        results.append(result)
-                        changedThisPass = changedThisPass || result.didChange
-                    }
-                    if !changedThisPass { break }
-                }
+                results.append(contentsOf: customization.applyLayoutRepairs(
+                    target: .all,
+                    canvasSize: canvasSize,
+                    respectingLocks: respectsLocks
+                ))
             } else if let repair = parseLayoutRepairKind(target) {
-                results.append(
-                    customization.applyLayoutRepair(
-                        repair,
-                        issue: nil,
-                        canvasSize: canvasSize,
-                        respectingLocks: respectsLocks
-                    )
-                )
+                results.append(contentsOf: customization.applyLayoutRepairs(
+                    target: .repair(repair),
+                    canvasSize: canvasSize,
+                    respectingLocks: respectsLocks
+                ))
             } else {
                 let matchingIssues = report.issues.filter { normalizedLookup($0.code) == target }
                 guard !matchingIssues.isEmpty else {
@@ -2353,18 +2775,6 @@ struct ThumbleCLI {
         case "hits", "hittargets", "targets", "separateexpandedhittargets": .separateExpandedHitTargets
         case "ergonomic", "ergonomics", "thumbreach", "ergonomicautoarrange": .ergonomicAutoArrange
         default: nil
-        }
-    }
-
-    private static func layoutRepairPriority(for issueCode: String) -> Int {
-        switch issueCode {
-        case "no-visible-controls": 0
-        case "small-control": 1
-        case "layout-displacement", "edge-hugging-control": 2
-        case "control-overlap", "expanded-hit-overlap", "hit-region-z-order-ambiguous", "hit-region-z-order-mismatch": 3
-        case "primary-control-too-high", "primary-control-too-central", "primary-control-out-of-reach", "portrait-primary-action-distribution", "portrait-dead-space": 4
-        case "underused-bottom-space", "low-vertical-coverage", "low-horizontal-coverage": 5
-        default: 6
         }
     }
 
@@ -2427,6 +2837,61 @@ struct ThumbleCLI {
         }
         guard canvasSize.width > 1, canvasSize.height > 1 else { throw CLIError.message("Canvas size must be greater than 1×1") }
         return canvasSize
+    }
+
+    private static func authorityLayoutRepairCanvas(
+        in arguments: [String]
+    ) throws -> ThumbleCLIProfileBackend.LayoutRepairCanvas {
+        var canvas: ThumbleCLIProfileBackend.LayoutRepairCanvas = .stored
+        if let value = optionValue("--canvas", in: arguments)
+            ?? optionValue("--device", in: arguments)
+            ?? optionValue("--frame", in: arguments)
+        {
+            switch normalizedLookup(value) {
+            case "landscape":
+                canvas = try authorityLayoutRepairSize(defaultEditorCanvasSize)
+            case "portrait":
+                canvas = try authorityLayoutRepairSize(portraitEditorCanvasSize)
+            default:
+                if let size = parseCanvasSizeLiteral(value) {
+                    canvas = try authorityLayoutRepairSize(size)
+                } else {
+                    canvas = .frame(try resolveDeviceFrame(value, preferredOrientation: nil).id)
+                }
+            }
+        }
+        if let value = optionValue("--size", in: arguments)
+            ?? optionValue("--device-size", in: arguments)
+        {
+            guard let size = parseCanvasSizeLiteral(value) else {
+                throw CLIError.message("Invalid canvas size: \(value). Use WIDTHxHEIGHT.")
+            }
+            canvas = try authorityLayoutRepairSize(size)
+        }
+        let width = optionValue("--canvas-width", in: arguments)
+        let height = optionValue("--canvas-height", in: arguments)
+        if width != nil || height != nil {
+            guard let width, let height else {
+                throw CLIError.message("Use --canvas-width and --canvas-height together")
+            }
+            canvas = try authorityLayoutRepairSize(
+                CGSize(width: try parsePixels(width), height: try parsePixels(height))
+            )
+        }
+        return canvas
+    }
+
+    private static func authorityLayoutRepairSize(
+        _ size: CGSize
+    ) throws -> ThumbleCLIProfileBackend.LayoutRepairCanvas {
+        let width = Double(size.width)
+        let height = Double(size.height)
+        guard width.isFinite, height.isFinite,
+              (240 ... 1_800).contains(width), (240 ... 1_800).contains(height)
+        else {
+            throw CLIError.message("Layout repair canvas must be between 240×240 and 1800×1800 points")
+        }
+        return .size(width: width, height: height)
     }
 
     private static func parsePreviewScale(_ arguments: [String]) throws -> CGFloat {
@@ -2539,101 +3004,128 @@ struct ThumbleCLI {
         let rest = Array(arguments.dropFirst())
         switch subcommand {
         case "list", "ls":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let styles = profile.customization.styleLibrary.normalized.styles
+            let response = try profileBackend().perform(
+                .styleList(.init(optionValue("--profile", in: rest))),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let projection = response.styles else {
+                throw CLIError.message("Rust profile authority returned no sanitized style projection")
+            }
             if rest.contains("--json") {
-                try printJSON(styles)
-            } else if styles.isEmpty {
-                print("No styles saved for \"\(profile.name)\".")
+                try printJSON(projection.styles)
+            } else if projection.styles.isEmpty {
+                print("No styles saved for \"\(projection.profileName)\".")
             } else {
-                for style in styles { print("\(style.id)\t\(style.name)") }
+                for style in projection.styles { print("\(style.id)\t\(style.name)") }
             }
         case "show":
             guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style show <style-id>") }
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            guard let token = profile.customization.styleLibrary.style(id: id) else { throw CLIError.message("Style not found: \(id)") }
-            try printJSON(token)
+            let response = try profileBackend().perform(
+                .styleShow(.init(optionValue("--profile", in: rest)), styleID: id),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let style = response.styles?.styles.first else {
+                throw CLIError.message("Rust profile authority returned no sanitized style definition")
+            }
+            try printJSON(style)
         case "create", "new", "set":
             guard let name = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style create <name> [--id ID] [--fill #RRGGBB]") }
             let id = optionValue("--id", in: rest) ?? slug(name)
             let token = try makeStyleToken(id: id, name: name, arguments: rest)
-            try mutateProfileResources(profileTarget: optionValue("--profile", in: rest)) { customization in
-                var library = customization.styleLibrary.normalized
-                library.styles.removeAll { $0.id == token.id }
-                library.styles.append(token)
-                customization.styleLibrary = library.normalized
+            let response = try profileBackend().perform(
+                .styleCreate(
+                    .init(optionValue("--profile", in: rest)),
+                    styleID: token.id,
+                    name: token.name,
+                    appearance: try authorityStyleAppearance(from: token)
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard response.outcome != nil else {
+                throw CLIError.message("Rust profile authority returned no style-create outcome")
             }
             print("Saved style \"\(token.name)\" (\(token.id)).")
+            printProfileInvocation(response)
         case "rename":
             let positional = positionals(in: rest)
             guard positional.count >= 2 else { throw CLIError.message("Usage: thumble style rename <style-id> <new name>") }
             let id = positional[0]
             let newName = positional.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !newName.isEmpty else { throw CLIError.message("Style name cannot be empty") }
-            let styleStore = loadStore()
-            let styleProfile = try resolveProfile(optionValue("--profile", in: rest), in: styleStore)
-            guard styleProfile.customization.styleLibrary.style(id: id) != nil else { throw CLIError.message("Style not found: \(id)") }
-            try mutateProfileResources(profileTarget: optionValue("--profile", in: rest)) { customization in
-                if let index = customization.styleLibrary.styles.firstIndex(where: { $0.id == id }) {
-                    customization.styleLibrary.styles[index].name = newName
-                }
+            let response = try profileBackend().perform(
+                .styleRename(
+                    .init(optionValue("--profile", in: rest)),
+                    styleID: id,
+                    name: newName
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard response.outcome != nil else {
+                throw CLIError.message("Rust profile authority returned no style-rename outcome")
             }
             print("Renamed style \"\(id)\" to \"\(newName)\".")
+            printProfileInvocation(response)
         case "apply":
             let positional = positionals(in: rest)
             guard positional.count >= 2 else { throw CLIError.message("Usage: thumble style apply <style-id> <element>") }
             let styleID = positional[0]
             let targetText = positional[1]
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
-                guard customization.styleLibrary.style(id: styleID) != nil else { throw CLIError.message("Style not found: \(styleID)") }
-                let target = try resolveElementTarget(targetText, in: customization)
-                try mutateLayout(for: target, in: &customization) { layout in
-                    layout.styleID = styleID
-                }
+            let response = try profileBackend().perform(
+                .styleApply(
+                    .init(optionValue("--profile", in: rest)),
+                    .primary,
+                    styleID: styleID,
+                    elementID: targetText
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard response.outcome != nil else {
+                throw CLIError.message("Rust profile authority returned no style-apply outcome")
             }
             print("Applied style \"\(styleID)\" to \"\(targetText)\".")
+            printProfileInvocation(response)
         case "detach", "clear":
             guard let targetText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style detach <element>") }
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
-                let target = try resolveElementTarget(targetText, in: customization)
-                try mutateLayout(for: target, in: &customization) { layout in
-                    layout.styleID = nil
-                }
+            let response = try profileBackend().perform(
+                .styleDetach(
+                    .init(optionValue("--profile", in: rest)),
+                    .primary,
+                    elementID: targetText
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard response.outcome != nil else {
+                throw CLIError.message("Rust profile authority returned no style-detach outcome")
             }
             print("Detached style from \"\(targetText)\".")
+            printProfileInvocation(response)
         case "delete", "rm":
             guard let id = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style delete <style-id>") }
-            try mutateProfileResources(profileTarget: optionValue("--profile", in: rest)) { customization in
-                customization.styleLibrary.styles.removeAll { $0.id == id }
-                for button in GameButton.allCases {
-                    var layout = customization.buttonCustomization(for: button)
-                    if layout.styleID == id {
-                        layout.styleID = nil
-                        customization.setButtonCustomization(layout, for: button)
-                    }
-                }
-                for index in customization.customButtons.indices where customization.customButtons[index].layout.styleID == id {
-                    customization.customButtons[index].layout.styleID = nil
-                }
-                if customization.topBarActivationRegion.styleID == id {
-                    customization.topBarActivationRegion.styleID = nil
-                }
-                for item in customization.controlBarItems {
-                    var appearance = customization.controlBarItemCustomization(for: item)
-                    if appearance.styleID == id {
-                        appearance.styleID = nil
-                        customization.setControlBarItemCustomization(appearance, for: item)
-                    }
-                }
+            let response = try profileBackend().perform(
+                .styleDelete(
+                    .init(optionValue("--profile", in: rest)),
+                    styleID: id
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard response.outcome != nil else {
+                throw CLIError.message("Rust profile authority returned no style-delete outcome")
             }
             print("Deleted style \"\(id)\".")
+            printProfileInvocation(response)
         case "export":
+            try requireExplicitUnmigratedProfileAccess(
+                operation: "style export",
+                artifactRequired: true
+            )
             let store = loadStore()
             let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
             try writeJSON(profile.customization.styleLibrary.normalized, to: optionValue("--output", in: rest) ?? optionValue("-o", in: rest))
         case "import":
+            try requireExplicitUnmigratedProfileAccess(
+                operation: "style import",
+                artifactRequired: true
+            )
             guard let path = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble style import <style-library.json> [--merge]") }
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
             let library = try JSONDecoder().decode(GamepadStyleLibrary.self, from: data).normalized
@@ -2663,14 +3155,30 @@ struct ThumbleCLI {
         let rest = Array(arguments.dropFirst())
         switch subcommand {
         case "list", "ls":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let order = profile.customization.zOrderedControlIdentitiesForDesign
+            let response = try profileBackend().perform(
+                .layerList(
+                    .init(optionValue("--profile", in: rest)),
+                    .primary
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let projection = response.layers else {
+                throw CLIError.message("Rust profile authority returned no sanitized layer projection")
+            }
+            let summaries = projection.layers.map {
+                LayerSummary(
+                    id: $0.stableID,
+                    kind: $0.kind,
+                    label: $0.label,
+                    zIndex: $0.zIndex,
+                    isHidden: $0.isHidden,
+                    isLocked: $0.isLocationLocked
+                )
+            }
             if rest.contains("--json") {
-                try printJSON(order.map { layerSummary(identity: $0, customization: profile.customization) })
+                try printJSON(summaries)
             } else {
-                for (index, identity) in order.enumerated() {
-                    let summary = layerSummary(identity: identity, customization: profile.customization)
+                for (index, summary) in summaries.enumerated() {
                     print("\(index)\t\(summary.id)\t\(summary.label)\t\(summary.kind)\tz:\(summary.zIndex)")
                 }
             }
@@ -2680,32 +3188,38 @@ struct ThumbleCLI {
             let toIndex = try optionValue("--to", in: rest).map(parseInteger)
             let beforeText = optionValue("--before", in: rest)
             let afterText = optionValue("--after", in: rest)
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest)) { customization in
-                let target = try resolveElementTarget(targetText, in: customization)
-                let layerIdentity = identity(for: target)
-                if let toIndex {
-                    customization.moveLayer(layerIdentity, to: toIndex)
-                } else if let beforeText {
-                    let before = identity(for: try resolveElementTarget(beforeText, in: customization))
-                    let order = customization.orderedControlIdentitiesForDesign
-                    customization.moveLayer(layerIdentity, to: order.firstIndex(of: before) ?? 0)
-                } else if let afterText {
-                    let after = identity(for: try resolveElementTarget(afterText, in: customization))
-                    let order = customization.orderedControlIdentitiesForDesign
-                    customization.moveLayer(layerIdentity, to: (order.firstIndex(of: after) ?? order.count - 1) + 1)
-                } else {
-                    throw CLIError.message("layer move needs --to, --before, or --after")
+            let destination: ThumbleCLIProfileBackend.LayerMoveDestination
+            if let toIndex {
+                guard (0 ... Int(Int32.max)).contains(toIndex) else {
+                    throw CLIError.message("Layer index must be between 0 and \(Int32.max)")
                 }
+                destination = .index(toIndex)
+            } else if let beforeText {
+                destination = .before(beforeText)
+            } else if let afterText {
+                destination = .after(afterText)
+            } else {
+                throw CLIError.message("layer move needs --to, --before, or --after")
             }
+            let response = try profileBackend().perform(
+                .layerMove(
+                    .init(optionValue("--profile", in: rest)),
+                    elementID: targetText,
+                    destination: destination
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            try requireLayerOutcome(response)
             print("Moved layer \"\(targetText)\".")
+            printProfileInvocation(response)
         case "bring-forward", "forward":
-            try mutateLayer(rest) { $0.bringLayerForward($1) }
+            try mutateLayerThroughAuthority(rest, command: .forward)
         case "send-backward", "backward":
-            try mutateLayer(rest) { $0.sendLayerBackward($1) }
+            try mutateLayerThroughAuthority(rest, command: .backward)
         case "front", "bring-front":
-            try mutateLayer(rest) { $0.bringLayerToFront($1) }
+            try mutateLayerThroughAuthority(rest, command: .front)
         case "back", "send-back":
-            try mutateLayer(rest) { $0.sendLayerToBack($1) }
+            try mutateLayerThroughAuthority(rest, command: .back)
         default:
             throw CLIError.message("Unknown layer subcommand: \(subcommand)")
         }
@@ -2714,112 +3228,136 @@ struct ThumbleCLI {
     private static func group(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing group subcommand") }
         let rest = Array(arguments.dropFirst())
+        let target = ThumbleCLIProfileBackend.ProfileSelector(optionValue("--profile", in: rest))
+        let variant = try authorityConfigurationVariant(in: rest)
         switch subcommand {
         case "list", "ls":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let customization = try customization(for: profile, arguments: rest)
-            let groups = customization.designMetadata?.normalized(availableControls: customization.allControlIdentitiesForDesign)?.groups ?? []
+            let response = try profileBackend().perform(
+                .groupList(target, variant),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let projection = response.groups else {
+                throw CLIError.message("Rust profile authority returned no sanitized group projection")
+            }
             if rest.contains("--json") {
-                try printJSON(groups)
+                try printJSON(projection.groups)
             } else {
-                groups.forEach { group in
-                    print("\(group.id.uuidString)\t\(group.name)\t\(group.children.count) elements")
+                for group in projection.groups {
+                    print("\(group.id)\t\(group.name)\t\(group.childTargetIDs.count) elements")
                     if rest.contains("--tree") {
-                        for child in group.children {
-                            let summary = layerSummary(identity: child, customization: customization)
-                            print("  └─ \(summary.id)\t\(summary.label)\t\(summary.kind)")
+                        for (index, child) in group.childTargetIDs.enumerated() {
+                            let stableID = group.childStableIDs.indices.contains(index)
+                                ? group.childStableIDs[index]
+                                : child
+                            print("  └─ \(stableID)\t\(child)")
                         }
                     }
                 }
             }
         case "create", "new":
             let positional = positionals(in: rest)
-            guard let name = positional.first, positional.count >= 2 else { throw CLIError.message("Usage: thumble group create <name> <element>...") }
-            let targets = Array(positional.dropFirst())
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                let children = try targets.map { identity(for: try resolveElementTarget($0, in: customization)) }
-                let childSet = Set(children)
-                var metadata = customization.designMetadata ?? .empty
-                for index in metadata.groups.indices {
-                    metadata.groups[index].children.removeAll { childSet.contains($0) }
-                }
-                metadata.groups.removeAll { $0.children.isEmpty }
-                metadata.groups.append(GamepadLayerGroup(name: name, children: children))
-                customization.moveLayers(childSet, to: firstLayerIndex(for: childSet, in: customization.orderedControlIdentitiesForDesign))
-                metadata.layerOrder = customization.orderedControlIdentitiesForDesign
-                customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+            guard let name = positional.first, positional.count >= 2 else {
+                throw CLIError.message("Usage: thumble group create <name> <element>...")
             }
+            let response = try profileBackend().perform(
+                .groupCreate(target, variant, name: name, elementIDs: Array(positional.dropFirst())),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            try requireGroupOutcome(response)
             print("Created group \"\(name)\".")
+            printProfileInvocation(response)
         case "rename":
             let positional = positionals(in: rest)
-            guard positional.count >= 2 else { throw CLIError.message("Usage: thumble group rename <group-name-or-id> <new name>") }
-            let target = positional[0]
+            guard positional.count >= 2 else {
+                throw CLIError.message("Usage: thumble group rename <group-name-or-id> <new name>")
+            }
+            let group = positional[0]
             let newName = positional.dropFirst().joined(separator: " ")
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                let group = try resolveLayerGroup(target, in: customization)
-                _ = try customization.renameLayerGroup(id: group.id, to: newName)
-            }
-            print("Renamed group \"\(target)\" to \"\(newName)\".")
+            let response = try profileBackend().perform(
+                .groupRename(target, variant, group: group, name: newName),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            try requireGroupOutcome(response)
+            print("Renamed group \"\(group)\" to \"\(newName)\".")
+            printProfileInvocation(response)
         case "duplicate", "copy":
-            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble group duplicate <group-name-or-id> [--name NAME] [--offset 0.025]") }
-            let requestedName = optionValue("--name", in: rest)
+            guard let group = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumble group duplicate <group-name-or-id> [--name NAME] [--offset 0.025]")
+            }
+            try rejectAuthorityGroupCanvasOverrides(rest, operation: "group duplicate")
             let offset = try parseDuplicateOffset(rest)
-            var duplicatedGroup: GamepadLayerGroup?
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                let group = try resolveLayerGroup(target, in: customization)
-                let canvasSize = try parseLayoutCanvasSize(rest, fallback: customization.deviceCanvas.editorDeviceFrame.screenRect.size)
-                duplicatedGroup = try customization.duplicateLayerGroup(id: group.id, name: requestedName, normalizedOffset: offset, canvasSize: canvasSize).group
-            }
-            print("Duplicated group \"\(target)\" as \"\(duplicatedGroup?.name ?? requestedName ?? "Copy")\".")
+            let requestedName = optionValue("--name", in: rest)
+            let response = try profileBackend().perform(
+                .groupDuplicate(
+                    target,
+                    variant,
+                    group: group,
+                    name: requestedName,
+                    offsetX: Double(offset.width),
+                    offsetY: Double(offset.height)
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            try requireGroupOutcome(response)
+            print("Duplicated group \"\(group)\" as \"\(requestedName ?? "Copy")\".")
+            printProfileInvocation(response)
         case "ungroup", "delete", "rm":
-            guard let target = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble group ungroup <group-name-or-id>") }
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                var metadata = customization.designMetadata ?? .empty
-                metadata.groups.removeAll { groupMatches($0, target: target) }
-                customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
+            guard let group = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumble group ungroup <group-name-or-id>")
             }
-            print("Removed group \"\(target)\".")
+            let response = try profileBackend().perform(
+                .groupUngroup(target, variant, group: group),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            try requireGroupOutcome(response)
+            print("Removed group \"\(group)\".")
+            printProfileInvocation(response)
         case "hide", "show", "lock", "unlock":
-            guard let targetName = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble group \(subcommand) <group-name-or-id>") }
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                var metadata = customization.designMetadata ?? .empty
-                guard let index = metadata.groups.firstIndex(where: { groupMatches($0, target: targetName) }) else { throw CLIError.message("Group not found: \(targetName)") }
-                let children = metadata.groups[index].children
-                switch subcommand {
-                case "hide", "show":
-                    let hidden = subcommand == "hide"
-                    metadata.groups[index].isHidden = hidden
-                    customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
-                    for child in children {
-                        try mutateLayout(for: target(for: child), in: &customization) { layout in
-                            layout.isHidden = hidden
-                        }
-                    }
-                case "lock", "unlock":
-                    let locked = subcommand == "lock"
-                    metadata.groups[index].isLocked = locked
-                    customization.designMetadata = metadata.normalized(availableControls: customization.allControlIdentitiesForDesign)
-                    for child in children {
-                        try mutateLayout(for: target(for: child), in: &customization) { layout in
-                            layout.isLocationLocked = locked
-                        }
-                    }
-                default:
-                    break
-                }
+            guard let group = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumble group \(subcommand) <group-name-or-id>")
             }
-            print("Updated group \"\(targetName)\".")
+            let command: ThumbleCLIProfileBackend.Command = switch subcommand {
+            case "hide": .groupHide(target, variant, group: group)
+            case "show": .groupShow(target, variant, group: group)
+            case "lock": .groupLock(target, variant, group: group)
+            default: .groupUnlock(target, variant, group: group)
+            }
+            let response = try profileBackend().perform(
+                command,
+                invocationID: try profileInvocationID(in: rest)
+            )
+            try requireGroupOutcome(response)
+            print("Updated group \"\(group)\".")
+            printProfileInvocation(response)
         case "nudge", "move":
-            try nudgeGroup(arguments: rest)
-        case "bring-forward", "forward":
-            try mutateGroupLayers(rest, actionDescription: "Brought group forward") { $0.bringLayersForward($1) }
-        case "send-backward", "backward":
-            try mutateGroupLayers(rest, actionDescription: "Sent group backward") { $0.sendLayersBackward($1) }
-        case "front", "bring-front":
-            try mutateGroupLayers(rest, actionDescription: "Brought group to front") { $0.bringLayersToFront($1) }
-        case "back", "send-back":
-            try mutateGroupLayers(rest, actionDescription: "Sent group to back") { $0.sendLayersToBack($1) }
+            try nudgeGroupThroughAuthority(arguments: rest, target: target, variant: variant)
+        case "bring-forward", "forward", "send-backward", "backward", "front", "bring-front", "back", "send-back":
+            guard let group = firstPositional(in: rest) else {
+                throw CLIError.message("Usage: thumble group \(subcommand) <group-name-or-id>")
+            }
+            let command: ThumbleCLIProfileBackend.Command
+            let description: String
+            switch subcommand {
+            case "bring-forward", "forward":
+                command = .groupForward(target, variant, group: group)
+                description = "Brought group forward"
+            case "send-backward", "backward":
+                command = .groupBackward(target, variant, group: group)
+                description = "Sent group backward"
+            case "front", "bring-front":
+                command = .groupFront(target, variant, group: group)
+                description = "Brought group to front"
+            default:
+                command = .groupBack(target, variant, group: group)
+                description = "Sent group to back"
+            }
+            let response = try profileBackend().perform(
+                command,
+                invocationID: try profileInvocationID(in: rest)
+            )
+            try requireGroupOutcome(response)
+            print("\(description) \"\(group)\".")
+            printProfileInvocation(response)
         default:
             throw CLIError.message("Unknown group subcommand: \(subcommand)")
         }
@@ -2933,6 +3471,108 @@ struct ThumbleCLI {
         return token
     }
 
+    private static func authorityStyleAppearance(
+        from token: GamepadStyleToken
+    ) throws -> ThumbleCLIProfileBackend.AuthorityStyleAppearance {
+        guard let style = token.visualStyle.normalized else {
+            throw CLIError.message("Style needs at least one visual property")
+        }
+        let normal = style.normal
+        var appearance = ThumbleCLIProfileBackend.AuthorityStyleAppearance()
+        if let fill = normal.fillStyle {
+            guard case .solid(let color) = fill.normalized else {
+                throw CLIError.message("Reusable style creation accepts only a solid non-file fill")
+            }
+            appearance.fillColor = .init(color)
+        }
+        appearance.foregroundColor = normal.foregroundColor.map(
+            ThumbleCLIProfileBackend.AuthorityColor.init
+        )
+        appearance.strokeColor = normal.strokeColor.map(
+            ThumbleCLIProfileBackend.AuthorityColor.init
+        )
+        appearance.strokeWidth = normal.strokeWidth.map(Double.init)
+        appearance.glowColor = normal.glowColor.map(
+            ThumbleCLIProfileBackend.AuthorityColor.init
+        )
+        appearance.glowRadius = normal.glowRadius.map(Double.init)
+        appearance.innerShadowColor = normal.innerShadowColor.map(
+            ThumbleCLIProfileBackend.AuthorityColor.init
+        )
+        appearance.innerShadowRadius = normal.innerShadowRadius.map(Double.init)
+        appearance.innerShadowX = normal.innerShadowX.map(Double.init)
+        appearance.innerShadowY = normal.innerShadowY.map(Double.init)
+        appearance.highlightColor = normal.highlightColor.map(
+            ThumbleCLIProfileBackend.AuthorityColor.init
+        )
+        appearance.highlightRadius = normal.highlightRadius.map(Double.init)
+        appearance.highlightX = normal.highlightX.map(Double.init)
+        appearance.highlightY = normal.highlightY.map(Double.init)
+        appearance.highlightOpacity = normal.highlightOpacity.map(Double.init)
+        appearance.bevelHighlightColor = normal.bevelHighlightColor.map(
+            ThumbleCLIProfileBackend.AuthorityColor.init
+        )
+        appearance.bevelShadowColor = normal.bevelShadowColor.map(
+            ThumbleCLIProfileBackend.AuthorityColor.init
+        )
+        appearance.bevelWidth = normal.bevelWidth.map(Double.init)
+        appearance.opacity = normal.opacity.map(Double.init)
+        if let shadows = normal.shadows {
+            var safeShadows: [ThumbleCLIProfileBackend.AuthorityShadow] = []
+            safeShadows.reserveCapacity(shadows.count)
+            for shadow in shadows {
+                safeShadows.append(.init(
+                    color: .init(shadow.color),
+                    radius: Double(shadow.radius),
+                    x: Double(shadow.x),
+                    y: Double(shadow.y),
+                    opacity: Double(shadow.opacity)
+                ))
+            }
+            appearance.shadows = safeShadows
+        }
+        if let pressed = style.pressed {
+            if let fill = pressed.fillStyle {
+                guard case .solid(let color) = fill.normalized else {
+                    throw CLIError.message("Reusable pressed styles accept only a solid non-file fill")
+                }
+                appearance.pressedFillColor = .init(color)
+            }
+            appearance.pressedScale = pressed.scale.map(Double.init)
+        }
+        if let icon = style.icon {
+            switch icon.source {
+            case .sfSymbol:
+                appearance.icon = .init(source: .sfSymbol, value: icon.value)
+            case .text:
+                appearance.icon = .init(source: .text, value: icon.value)
+            case .asset:
+                throw CLIError.message("Reusable style asset icons require a future bounded artifact transaction")
+            }
+        }
+        if let feedback = style.hapticFeedback {
+            appearance.haptic = .init(
+                style: feedback.style,
+                pattern: feedback.pattern,
+                intensity: Double(feedback.intensity),
+                sharpness: Double(feedback.sharpness),
+                duration: Double(feedback.duration)
+            )
+        } else if let hapticStyle = style.hapticStyle {
+            appearance.haptic = .init(
+                style: hapticStyle,
+                pattern: nil,
+                intensity: nil,
+                sharpness: nil,
+                duration: nil
+            )
+        }
+        guard !appearance.isEmpty else {
+            throw CLIError.message("Style needs at least one visual property")
+        }
+        return appearance
+    }
+
     private static func applyRichVisualOptions(_ arguments: [String], to layout: inout GamepadButtonCustomization) throws {
         var style = if let material = optionValue("--material", in: arguments) ?? optionValue("--material-preset", in: arguments) {
             try parseMaterialVisualStyle(material)
@@ -2975,72 +3615,123 @@ struct ThumbleCLI {
         layout.visualStyle = style.normalized
     }
 
-    private static func mutateLayer(_ arguments: [String], mutate: (inout GamepadCustomization, GamepadControlIdentity) -> Void) throws {
-        guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing layer element") }
-        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
-            let identity = identity(for: try resolveElementTarget(targetText, in: customization))
-            mutate(&customization, identity)
-        }
-        print("Updated layer \"\(targetText)\".")
+    private enum LayerAuthorityMutation {
+        case forward
+        case backward
+        case front
+        case back
     }
 
-    private static func mutateGroupLayers(
+    private static func mutateLayerThroughAuthority(
         _ arguments: [String],
-        actionDescription: String,
-        mutate: (inout GamepadCustomization, Set<GamepadControlIdentity>) -> Void
+        command: LayerAuthorityMutation
     ) throws {
-        guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing group name or id") }
-        try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
-            let group = try resolveLayerGroup(targetText, in: customization)
-            mutate(&customization, Set(group.children))
+        guard let targetText = firstPositional(in: arguments) else {
+            throw CLIError.message("Missing layer element")
         }
-        print("\(actionDescription) \"\(targetText)\".")
+        let target = ThumbleCLIProfileBackend.ProfileSelector(
+            optionValue("--profile", in: arguments)
+        )
+        let authorityCommand: ThumbleCLIProfileBackend.Command = switch command {
+        case .forward: .layerForward(target, elementID: targetText)
+        case .backward: .layerBackward(target, elementID: targetText)
+        case .front: .layerFront(target, elementID: targetText)
+        case .back: .layerBack(target, elementID: targetText)
+        }
+        let response = try profileBackend().perform(
+            authorityCommand,
+            invocationID: try profileInvocationID(in: arguments)
+        )
+        try requireLayerOutcome(response)
+        print("Updated layer \"\(targetText)\".")
+        printProfileInvocation(response)
     }
 
-    private static func nudgeGroup(arguments: [String]) throws {
+    private static func requireLayerOutcome(
+        _ response: ThumbleCLIProfileBackend.Response
+    ) throws {
+        guard response.outcome != nil else {
+            throw CLIError.message("Rust profile authority returned no layer outcome")
+        }
+    }
+
+    private static func requireGroupOutcome(
+        _ response: ThumbleCLIProfileBackend.Response
+    ) throws {
+        guard response.outcome != nil else {
+            throw CLIError.message("Rust profile authority returned no group outcome")
+        }
+    }
+
+    private static func rejectAuthorityGroupCanvasOverrides(
+        _ arguments: [String],
+        operation: String
+    ) throws {
+        if optionValue("--canvas", in: arguments) != nil
+            || optionValue("--canvas-width", in: arguments) != nil
+            || optionValue("--canvas-height", in: arguments) != nil {
+            throw CLIError.message("\(operation) uses the saved device canvas; custom canvas overrides are not available through Rust authority")
+        }
+    }
+
+    private static func authorityGroupCanvasFrameID(_ arguments: [String]) throws -> String {
+        if optionValue("--canvas-width", in: arguments) != nil
+            || optionValue("--canvas-height", in: arguments) != nil {
+            throw CLIError.message("group nudge accepts only checked-in device frames through Rust authority")
+        }
+        guard let canvas = optionValue("--canvas", in: arguments) else {
+            return GamepadEditorDeviceCatalog.defaultFrameID
+        }
+        switch normalizedLookup(canvas) {
+        case "landscape":
+            return GamepadEditorDeviceCatalog.defaultFrameID
+        case "portrait":
+            return GamepadEditorDeviceFrame(
+                spec: GamepadEditorDeviceCatalog.specs[0],
+                orientation: .portrait
+            ).id
+        default:
+            guard let frame = GamepadEditorDeviceCatalog.frame(
+                matching: canvas,
+                preferredOrientation: nil
+            ), GamepadEditorDeviceCatalog.frames.contains(where: { $0.id == frame.id }) else {
+                throw CLIError.message("group nudge accepts a checked-in device frame id, landscape, or portrait")
+            }
+            return frame.id
+        }
+    }
+
+    private static func nudgeGroupThroughAuthority(
+        arguments: [String],
+        target: ThumbleCLIProfileBackend.ProfileSelector,
+        variant: ThumbleCLIProfileBackend.ConfigurationVariant
+    ) throws {
         let positional = positionals(in: arguments)
-        guard let targetText = positional.first else {
+        guard let group = positional.first else {
             throw CLIError.message("Usage: thumble group nudge <group-name-or-id> <left|right|up|down> [--step 1|10]")
         }
-        let directionText = positional.dropFirst().first
-        let translation = try parseNudgeTranslation(arguments: arguments, directionText: directionText)
-        let canvasSize = try parseNudgeCanvasSize(arguments)
-
-        var store = loadStore()
-        let profileIndex = try resolveProfileIndex(optionValue("--profile", in: arguments), in: store)
-        let variant = try customizationVariant(in: arguments)
-        let sourceCustomization = variant.map { store.profiles[profileIndex].customization(for: $0) } ?? store.profiles[profileIndex].customization
-        let group = try resolveLayerGroup(targetText, in: sourceCustomization)
-
-        guard let nudgedCustomization = sourceCustomization.nudgedControls(Set(group.children), by: translation, in: canvasSize) else {
-            print("Group \"\(targetText)\" could not move.")
-            return
-        }
-
-        let normalizedNudgedCustomization = nudgedCustomization.normalized
-        if let variant {
-            store.profiles[profileIndex].setCustomization(normalizedNudgedCustomization, for: variant)
+        let translation = try parseNudgeTranslation(
+            arguments: arguments,
+            directionText: positional.dropFirst().first
+        )
+        let response = try profileBackend().perform(
+            .groupNudge(
+                target,
+                variant,
+                group: group,
+                canvasFrameID: try authorityGroupCanvasFrameID(arguments),
+                deltaX: Double(translation.width),
+                deltaY: Double(translation.height)
+            ),
+            invocationID: try profileInvocationID(in: arguments)
+        )
+        try requireGroupOutcome(response)
+        if response.outcome?.changed == true {
+            print("Nudged group \"\(group)\" by \(formatPixels(translation.width))px, \(formatPixels(translation.height))px.")
         } else {
-            store.profiles[profileIndex].setCustomization(
-                normalizedNudgedCustomization,
-                for: normalizedNudgedCustomization.deviceCanvas.editorDeviceFrame.orientation
-            )
+            print("Group \"\(group)\" could not move.")
         }
-        store.profiles[profileIndex].updatedAt = Date.currentMilliseconds
-        try persistStore(store)
-        print("Nudged group \"\(targetText)\" by \(formatPixels(translation.width))px, \(formatPixels(translation.height))px.")
-    }
-
-    private static func resolveLayerGroup(_ target: String, in customization: GamepadCustomization) throws -> GamepadLayerGroup {
-        let groups = customization.designMetadata?.normalized(availableControls: customization.allControlIdentitiesForDesign)?.groups ?? []
-        guard let group = groups.first(where: { groupMatches($0, target: target) }) else {
-            throw CLIError.message("Group not found: \(target)")
-        }
-        return group
-    }
-
-    private static func firstLayerIndex(for identities: Set<GamepadControlIdentity>, in order: [GamepadControlIdentity]) -> Int {
-        order.indices.first(where: { identities.contains(order[$0]) }) ?? order.count
+        printProfileInvocation(response)
     }
 
     private static func mutateLayout(for target: ElementTarget, in customization: inout GamepadCustomization, mutate: (inout GamepadButtonCustomization) throws -> Void) throws {
@@ -3062,16 +3753,6 @@ struct ThumbleCLI {
         case .builtin(let button): .builtin(button)
         case .custom(let id): .custom(id)
         case .system(let control): .system(control)
-        }
-    }
-
-    private static func target(for identity: GamepadControlIdentity) throws -> ElementTarget {
-        switch identity {
-        case .builtin(let button): .builtin(button)
-        case .custom(let id): .custom(id)
-        case .system(let control): .system(control)
-        case .controlBarItem:
-            throw CLIError.message("Control-bar items cannot belong to freeform layer groups.")
         }
     }
 
@@ -3203,13 +3884,35 @@ struct ThumbleCLI {
                 }
             }
         case "show", "current":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let frame = try customization(for: profile, arguments: rest).deviceCanvas.editorDeviceFrame
+            let response = try profileBackend().perform(
+                .deviceGet(
+                    .init(optionValue("--profile", in: rest)),
+                    try authorityConfigurationVariant(in: rest)
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let projection = response.device else {
+                throw CLIError.message("Rust profile authority returned no bounded device projection")
+            }
+            let frame: GamepadEditorDeviceFrame?
+            if let frameID = projection.frameID {
+                frame = GamepadEditorDeviceCatalog.frames.first(where: { $0.id == frameID })
+            } else if let width = projection.customWidth, let height = projection.customHeight {
+                frame = GamepadEditorDeviceCatalog.customFrame(
+                    width: CGFloat(width),
+                    height: CGFloat(height),
+                    preferredOrientation: projection.frameOrientation == .landscape ? .landscape : .portrait
+                )
+            } else {
+                frame = nil
+            }
+            guard let frame else {
+                throw CLIError.message("Rust profile authority returned an invalid bounded device projection")
+            }
             if rest.contains("--json") {
                 try printJSON(deviceFrameSummary(frame))
             } else {
-                print("Profile: \(profile.name)")
+                print("Profile: \(projection.profileName)")
                 print("Device frame: \(frame.displayName)")
                 print("ID: \(frame.id)")
                 print("Screen: \(formatSize(frame.screenRect.size)) pt")
@@ -3221,30 +3924,38 @@ struct ThumbleCLI {
             let orientationText = optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)
             let orientation = try orientationText.map(parseDeviceOrientation)
             let frame = try resolveDeviceFrameTarget(target, arguments: rest, preferredOrientation: orientation)
-            try saveEditorDeviceFrame(frame, profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest))
-            print("Selected device frame for profile: \(frame.displayName) (\(formatSize(frame.screenRect.size)) pt)")
+            try setAuthoritativeDeviceFrame(frame, arguments: rest)
         default:
             let orientationText = optionValue("--orientation", in: rest) ?? optionValue("--device-orientation", in: rest)
             let orientation = try orientationText.map(parseDeviceOrientation)
             if let frame = GamepadEditorDeviceCatalog.frame(matching: subcommand, preferredOrientation: orientation) {
-                try saveEditorDeviceFrame(frame, profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest))
-                print("Selected device frame for profile: \(frame.displayName) (\(formatSize(frame.screenRect.size)) pt)")
+                try setAuthoritativeDeviceFrame(frame, arguments: rest)
             } else {
                 throw CLIError.message("Unknown device subcommand: \(subcommand)")
             }
         }
     }
 
-    private static func saveEditorDeviceFrame(_ frame: GamepadEditorDeviceFrame, profileTarget: String?, variant: GamepadEditorDeviceOrientation? = nil) throws {
-        try mutateCustomization(profileTarget: profileTarget, variant: variant) { customization in
-            customization.deviceCanvas = GamepadDeviceCanvas(frameID: frame.id)
+    private static func setAuthoritativeDeviceFrame(
+        _ frame: GamepadEditorDeviceFrame,
+        arguments: [String]
+    ) throws {
+        guard GamepadEditorDeviceCatalog.frames.contains(where: { $0.id == frame.id }) else {
+            throw CLIError.message("Custom device dimensions require a future bounded configuration transaction. Choose a frame from `thumble device list`.")
         }
-
-        var domain = loadAppDomain()
-        domain[GamepadEditorDeviceCatalog.selectedFrameDefaultsKey] = frame.id
-        domain[GamepadEditorDeviceCatalog.didChooseFrameDefaultsKey] = true
-        UserDefaults.standard.setPersistentDomain(domain, forName: appDefaultsDomain)
-        UserDefaults.standard.synchronize()
+        let response = try profileBackend().perform(
+            .deviceSet(
+                .init(optionValue("--profile", in: arguments)),
+                try authorityConfigurationVariant(in: arguments),
+                frame.id
+            ),
+            invocationID: try profileInvocationID(in: arguments)
+        )
+        guard response.outcome != nil else {
+            throw CLIError.message("Rust profile authority returned no device outcome")
+        }
+        print("Selected device frame for profile: \(frame.displayName) (\(formatSize(frame.screenRect.size)) pt)")
+        printProfileInvocation(response)
     }
 
     private static func resolveDeviceFrame(_ target: String, preferredOrientation: GamepadEditorDeviceOrientation?) throws -> GamepadEditorDeviceFrame {
@@ -3316,82 +4027,103 @@ struct ThumbleCLI {
     private static func controlBar(arguments: [String]) throws {
         guard let subcommand = arguments.first else { throw CLIError.message("Missing control-bar subcommand") }
         let rest = Array(arguments.dropFirst())
+        let target = ThumbleCLIProfileBackend.ProfileSelector(optionValue("--profile", in: rest))
+        let variant = try authorityConfigurationVariant(in: rest)
+        let invocationID = try profileInvocationID(in: rest)
         switch subcommand {
         case "list", "ls", "show":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let customization = try customization(for: profile, arguments: rest).normalized
-            let summaries = controlBarItemSummaries(customization)
+            let response = try profileBackend().perform(
+                .controlBarList(target, variant),
+                invocationID: invocationID
+            )
+            guard let projection = response.controlBar else {
+                throw CLIError.message("Rust profile authority returned no control-bar projection")
+            }
             if rest.contains("--json") {
-                try printJSON(summaries)
-            } else if summaries.isEmpty {
-                print("No controls are pinned to the iPhone control bar for \"\(profile.name)\".")
+                try printJSON(projection)
+            } else if projection.items.isEmpty {
+                print("No controls are pinned to the iPhone control bar for \"\(projection.profileName)\".")
             } else {
-                for summary in summaries {
-                    print("\(summary.order).\t\(summary.id)\t\(summary.title)")
+                for summary in projection.items {
+                    print("\(summary.order).\t\(summary.item.rawValue)\t\(summary.item.displayName)")
                 }
             }
         case "set":
             let items = try parseControlBarItems(from: rest)
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                customization.controlBarItems = items
-            }
+            let response = try profileBackend().perform(
+                .controlBarSet(target, variant, items),
+                invocationID: invocationID
+            )
+            try requireControlBarOutcome(response)
             print("Updated control bar controls.")
+            printProfileInvocation(response)
         case "add", "append":
             guard let itemText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble control-bar add <item>") }
             let item = try parseControlBarItem(itemText)
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                customization.addControlBarItem(item)
-            }
+            let response = try profileBackend().perform(
+                .controlBarAdd(target, variant, item),
+                invocationID: invocationID
+            )
+            try requireControlBarOutcome(response)
             print("Added \(item.displayName) to the control bar.")
+            printProfileInvocation(response)
         case "remove", "rm", "delete", "hide":
             guard let itemText = firstPositional(in: rest) else { throw CLIError.message("Usage: thumble control-bar remove <item>") }
             let item = try parseControlBarItem(itemText)
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                customization.removeControlBarItem(item)
-            }
+            let response = try profileBackend().perform(
+                .controlBarRemove(target, variant, item),
+                invocationID: invocationID
+            )
+            try requireControlBarOutcome(response)
             print("Removed \(item.displayName) from the control bar.")
+            printProfileInvocation(response)
         case "move":
             let positional = positionals(in: rest)
             guard positional.count >= 2 else { throw CLIError.message("Usage: thumble control-bar move <item> <up|down>") }
             let item = try parseControlBarItem(positional[0])
-            let direction = normalizedLookup(positional[1])
-            let offset: Int
-            switch direction {
-            case "up", "left", "back", "backward", "earlier": offset = -1
-            case "down", "right", "forward", "later": offset = 1
+            let direction: ThumbleCLIProfileBackend.ControlBarMoveDirection
+            switch normalizedLookup(positional[1]) {
+            case "up", "left", "back", "backward", "earlier": direction = .up
+            case "down", "right", "forward", "later": direction = .down
             default: throw CLIError.message("Unknown move direction: \(positional[1]). Use up or down.")
             }
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                let items = GamepadCustomization.normalizedControlBarItems(customization.controlBarItems)
-                guard let index = items.firstIndex(of: item) else { return }
-                let destination = min(max(index + offset, 0), max(items.count - 1, 0))
-                guard destination != index else { return }
-                customization.moveControlBarItem(item, to: destination)
-            }
+            let response = try profileBackend().perform(
+                .controlBarMove(target, variant, item, direction),
+                invocationID: invocationID
+            )
+            try requireControlBarOutcome(response)
             print("Moved \(item.displayName) \(positional[1]).")
+            printProfileInvocation(response)
         case "item":
             try controlBarItem(arguments: rest)
         case "reset":
-            try mutateCustomization(profileTarget: optionValue("--profile", in: rest), variant: try customizationVariant(in: rest)) { customization in
-                customization.resetControlBar()
-            }
+            let response = try profileBackend().perform(
+                .controlBarReset(target, variant),
+                invocationID: invocationID
+            )
+            try requireControlBarOutcome(response)
             print("Reset control bar controls and item appearances.")
+            printProfileInvocation(response)
         default:
             throw CLIError.message("Unknown control-bar subcommand: \(subcommand)")
         }
     }
 
-    private static func controlBarItemSummaries(_ customization: GamepadCustomization) -> [ControlBarItemSummary] {
-        customization.normalized.controlBarItems.enumerated().map { index, item in
-            ControlBarItemSummary(
-                order: index + 1,
-                id: item.rawValue,
-                title: item.displayName,
-                description: item.subtitle,
-                systemImage: item.systemImage,
-                appearance: customization.controlBarItemCustomization(for: item)
-            )
+    private static func authorityConfigurationVariant(
+        in arguments: [String]
+    ) throws -> ThumbleCLIProfileBackend.ConfigurationVariant {
+        switch try customizationVariant(in: arguments) {
+        case .landscape: .landscape
+        case .portrait: .portrait
+        case nil: .primary
+        }
+    }
+
+    private static func requireControlBarOutcome(
+        _ response: ThumbleCLIProfileBackend.Response
+    ) throws {
+        guard response.outcome != nil else {
+            throw CLIError.message("Rust profile authority returned no control-bar outcome")
         }
     }
 
@@ -3402,24 +4134,29 @@ struct ThumbleCLI {
         }
         let action = normalizedLookup(positional[0])
         let item = try parseControlBarItem(positional[1])
-        let profileTarget = optionValue("--profile", in: arguments)
-        let variant = try customizationVariant(in: arguments)
+        let target = ThumbleCLIProfileBackend.ProfileSelector(optionValue("--profile", in: arguments))
+        let variant = try authorityConfigurationVariant(in: arguments)
 
         switch action {
         case "show", "get", "inspect":
-            let store = loadStore()
-            let profile = try resolveProfile(profileTarget, in: store)
-            let customization = try customization(for: profile, arguments: arguments).normalized
-            guard let index = customization.controlBarItems.firstIndex(of: item) else {
-                throw CLIError.message("\(item.displayName) is not currently in the control bar.")
+            let response = try profileBackend().perform(
+                .controlBarItemShow(target, variant, item),
+                invocationID: try profileInvocationID(in: arguments)
+            )
+            guard let projection = response.controlBarItem else {
+                throw CLIError.message("Rust profile authority returned no control-bar item projection")
             }
             let summary = ControlBarItemSummary(
-                order: index + 1,
+                configurationRevision: projection.configurationRevision,
+                profileID: projection.profileID,
+                profileName: projection.profileName,
+                variant: projection.variant,
+                order: projection.order,
                 id: item.rawValue,
                 title: item.displayName,
                 description: item.subtitle,
                 systemImage: item.systemImage,
-                appearance: customization.controlBarItemCustomization(for: item)
+                appearance: projection.appearance
             )
             if arguments.contains("--json") {
                 try printJSON(summary)
@@ -3428,25 +4165,330 @@ struct ThumbleCLI {
                 print("  icon: \(summary.appearance.icon?.value ?? summary.systemImage)")
                 print("  size: \(summary.appearance.widthScale)x\(summary.appearance.heightScale)")
                 print("  hidden: \(summary.appearance.isHidden)")
+                if summary.appearance.unsupportedContentOmitted {
+                    print("  unsupported content: omitted")
+                }
             }
         case "set", "edit", "style":
-            try mutateCustomization(profileTarget: profileTarget, variant: variant) { customization in
-                guard customization.normalized.controlBarItems.contains(item) else {
-                    throw CLIError.message("\(item.displayName) is not currently in the control bar. Add it first.")
-                }
-                var appearance = customization.controlBarItemCustomization(for: item)
-                try applyLayoutOptions(arguments, to: &appearance)
-                customization.setControlBarItemCustomization(appearance, for: item)
+            let read = try profileBackend().perform(.controlBarItemShow(target, variant, item))
+            guard let projection = read.controlBarItem else {
+                throw CLIError.message("Rust profile authority returned no control-bar item projection")
             }
+            let changes = try authorityControlBarItemChanges(
+                arguments,
+                current: projection.appearance
+            )
+            guard !changes.isEmpty else { throw CLIError.message("No control-bar appearance changes requested") }
+            let response = try profileBackend().perform(
+                .controlBarItemSet(target, variant, item, changes),
+                invocationID: try profileInvocationID(in: arguments),
+                expectedConfigurationRevision: projection.configurationRevision
+            )
+            try requireControlBarOutcome(response)
             print("Updated \(item.displayName) appearance.")
+            printProfileInvocation(response)
         case "reset":
-            try mutateCustomization(profileTarget: profileTarget, variant: variant) { customization in
-                customization.resetControlBarItemAppearance(item)
-            }
+            let response = try profileBackend().perform(
+                .controlBarItemReset(target, variant, item),
+                invocationID: try profileInvocationID(in: arguments)
+            )
+            try requireControlBarOutcome(response)
             print("Reset \(item.displayName) appearance.")
+            printProfileInvocation(response)
         default:
             throw CLIError.message("Unknown control-bar item action: \(positional[0]). Use show, set, or reset.")
         }
+    }
+
+    private static func authorityControlBarItemChanges(
+        _ arguments: [String],
+        current: ThumbleCLIProfileBackend.SafeControlBarItemAppearance
+    ) throws -> ThumbleCLIProfileBackend.ControlBarItemChanges {
+        typealias Backend = ThumbleCLIProfileBackend
+        let changes = Backend.ControlBarItemChanges()
+
+        func finite(_ value: String, option: String) throws -> Double {
+            guard let parsed = Double(value), parsed.isFinite else {
+                throw CLIError.message("Invalid \(option): \(value)")
+            }
+            return parsed
+        }
+        func opacity(_ value: String, option: String) throws -> Double {
+            guard let parsed = parseOpacityIfPresent(value) else {
+                throw CLIError.message("Invalid \(option): \(value)")
+            }
+            return Double(parsed)
+        }
+
+        if let value = optionValue("--width", in: arguments) ?? optionValue("--width-scale", in: arguments) {
+            changes.widthScale = try finite(value, option: "--width")
+        }
+        if let value = optionValue("--height", in: arguments) ?? optionValue("--height-scale", in: arguments) {
+            changes.heightScale = try finite(value, option: "--height")
+        }
+        if let value = optionValue("--shape", in: arguments) {
+            guard let shape = parseShapeStyleIfPresent(value) else {
+                throw CLIError.message("Unknown shape: \(value)")
+            }
+            changes.shape = shape
+        }
+        if let value = optionValue("--accent", in: arguments) {
+            changes.accentStyle = try parseAccentStyle(value)
+        }
+
+        if let value = optionValue("--fill", in: arguments) ?? optionValue("--color", in: arguments) {
+            changes.fill = try Backend.AuthorityFill(.solid(parseRGBAColor(value)))
+        }
+        if arguments.contains("--clear-fill") || arguments.contains("--clear-color") {
+            changes.fill = nil
+            changes.clearFill = true
+        }
+        if let value = optionValue("--fill-gradient", in: arguments) ?? optionValue("--gradient", in: arguments) {
+            changes.fill = try Backend.AuthorityFill(parseGradientFill(value, arguments: arguments))
+            changes.clearFill = false
+        }
+        if let value = optionValue("--fill-tile", in: arguments) ?? optionValue("--tile", in: arguments) {
+            changes.fill = try Backend.AuthorityFill(parseTileFill(value, arguments: arguments))
+            changes.clearFill = false
+        }
+        if optionValue("--fill-image", in: arguments) != nil || optionValue("--image", in: arguments) != nil {
+            throw CLIError.message("Control-bar image fills require a future bounded artifact transaction.")
+        }
+        if arguments.contains("--clear-fill-style") {
+            changes.fill = nil
+            changes.clearFill = true
+        }
+
+        if let value = optionValue("--light-fill", in: arguments)
+            ?? optionValue("--fill-light", in: arguments)
+            ?? optionValue("--light-color", in: arguments) {
+            changes.lightFill = try Backend.AuthorityFill(.solid(parseRGBAColor(value)))
+        }
+        if let value = optionValue("--light-fill-gradient", in: arguments)
+            ?? optionValue("--gradient-light", in: arguments) {
+            changes.lightFill = try Backend.AuthorityFill(parseGradientFill(value, arguments: arguments))
+        }
+        if let value = optionValue("--light-fill-tile", in: arguments)
+            ?? optionValue("--tile-light", in: arguments) {
+            changes.lightFill = try Backend.AuthorityFill(parseTileFill(value, arguments: arguments))
+        }
+        if arguments.contains("--clear-light-fill") || arguments.contains("--clear-light-color") {
+            changes.lightFill = nil
+            changes.clearLightFill = true
+        }
+        if let value = optionValue("--dark-fill", in: arguments)
+            ?? optionValue("--fill-dark", in: arguments)
+            ?? optionValue("--dark-color", in: arguments) {
+            changes.darkFill = try Backend.AuthorityFill(.solid(parseRGBAColor(value)))
+        }
+        if let value = optionValue("--dark-fill-gradient", in: arguments)
+            ?? optionValue("--gradient-dark", in: arguments) {
+            changes.darkFill = try Backend.AuthorityFill(parseGradientFill(value, arguments: arguments))
+        }
+        if let value = optionValue("--dark-fill-tile", in: arguments)
+            ?? optionValue("--tile-dark", in: arguments) {
+            changes.darkFill = try Backend.AuthorityFill(parseTileFill(value, arguments: arguments))
+        }
+        if arguments.contains("--clear-dark-fill") || arguments.contains("--clear-dark-color") {
+            changes.darkFill = nil
+            changes.clearDarkFill = true
+        }
+        if let value = optionValue("--opacity", in: arguments) {
+            changes.fillOpacity = try opacity(value, option: "--opacity")
+        }
+        if let value = optionValue("--light-opacity", in: arguments) {
+            changes.lightFillOpacity = try opacity(value, option: "--light-opacity")
+        }
+        if let value = optionValue("--dark-opacity", in: arguments) {
+            changes.darkFillOpacity = try opacity(value, option: "--dark-opacity")
+        }
+
+        if let styleID = optionValue("--style", in: arguments) ?? optionValue("--style-id", in: arguments) {
+            changes.styleID = styleID
+        }
+        if arguments.contains("--clear-style") || arguments.contains("--detach-style") {
+            changes.styleID = nil
+            changes.clearStyle = true
+        }
+
+        if let icon = try parseIconOption(arguments) {
+            switch icon.source {
+            case .sfSymbol:
+                changes.icon = Backend.AuthorityIcon(source: .sfSymbol, value: icon.value)
+            case .text:
+                changes.icon = Backend.AuthorityIcon(source: .text, value: icon.value)
+            case .asset:
+                throw CLIError.message("Control-bar asset icons require a future bounded artifact transaction.")
+            }
+        }
+        if arguments.contains("--clear-icon") {
+            changes.icon = nil
+            changes.clearIcon = true
+        }
+
+        let hapticStyle = try optionValue("--haptic", in: arguments).map(parseHapticStyle)
+        let hapticPattern = try (
+            optionValue("--haptic-pattern", in: arguments)
+                ?? optionValue("--haptic-rhythm", in: arguments)
+        ).map(parseHapticPattern)
+        let hapticIntensity = try (
+            optionValue("--haptic-intensity", in: arguments)
+                ?? optionValue("--haptic-strength", in: arguments)
+        ).map { Double(try parseHapticUnitInterval($0, option: "--haptic-intensity")) }
+        let hapticSharpness = try optionValue("--haptic-sharpness", in: arguments)
+            .map { Double(try parseHapticUnitInterval($0, option: "--haptic-sharpness")) }
+        let hapticDuration = try (
+            optionValue("--haptic-duration", in: arguments)
+                ?? optionValue("--haptic-duration-ms", in: arguments)
+        ).map { Double(try parseHapticDuration($0)) }
+        if hapticStyle != nil || hapticPattern != nil || hapticIntensity != nil
+            || hapticSharpness != nil || hapticDuration != nil {
+            changes.haptic = Backend.AuthorityHaptic(
+                style: hapticStyle,
+                pattern: hapticPattern,
+                intensity: hapticIntensity,
+                sharpness: hapticSharpness,
+                duration: hapticDuration
+            )
+        }
+        if arguments.contains("--clear-haptic") {
+            changes.haptic = nil
+            changes.clearHaptic = true
+        }
+
+        var appearance = Backend.AuthorityStyleAppearance()
+        if let material = optionValue("--material", in: arguments)
+            ?? optionValue("--material-preset", in: arguments) {
+            switch normalizedLookup(material) {
+            case "softwhite", "softwhiteraised", "raised", "neumorphic", "neumorphicraised":
+                appearance.materialPreset = .softWhiteRaised
+            case "softwhiteinset", "inset", "recessed", "well":
+                appearance.materialPreset = .softWhiteInset
+            case "softwhiteplate", "plate", "panel", "shell":
+                appearance.materialPreset = .softWhitePlate
+            default:
+                throw CLIError.message("Unknown material preset: \(material). Use soft-white, soft-white-inset, or soft-white-plate.")
+            }
+        }
+        if let value = optionValue("--stroke", in: arguments) ?? optionValue("--stroke-color", in: arguments) {
+            appearance.strokeColor = Backend.AuthorityColor(try parseRGBAColor(value))
+        }
+        if let value = optionValue("--foreground", in: arguments)
+            ?? optionValue("--foreground-color", in: arguments)
+            ?? optionValue("--text-color", in: arguments) {
+            appearance.foregroundColor = Backend.AuthorityColor(try parseRGBAColor(value))
+        }
+        if let value = optionValue("--stroke-width", in: arguments) {
+            appearance.strokeWidth = try finite(value, option: "--stroke-width")
+        }
+        if let value = optionValue("--glow", in: arguments) ?? optionValue("--glow-color", in: arguments) {
+            appearance.glowColor = Backend.AuthorityColor(try parseRGBAColor(value))
+        }
+        if let value = optionValue("--glow-radius", in: arguments) {
+            appearance.glowRadius = try finite(value, option: "--glow-radius")
+        }
+        if let value = optionValue("--inner-shadow", in: arguments)
+            ?? optionValue("--inner-shadow-color", in: arguments) {
+            appearance.innerShadowColor = Backend.AuthorityColor(try parseRGBAColor(value))
+        }
+        if let value = optionValue("--inner-shadow-radius", in: arguments) {
+            appearance.innerShadowRadius = try finite(value, option: "--inner-shadow-radius")
+        }
+        if let value = optionValue("--inner-shadow-x", in: arguments) {
+            appearance.innerShadowX = try finite(value, option: "--inner-shadow-x")
+        }
+        if let value = optionValue("--inner-shadow-y", in: arguments) {
+            appearance.innerShadowY = try finite(value, option: "--inner-shadow-y")
+        }
+        if let value = optionValue("--highlight", in: arguments)
+            ?? optionValue("--highlight-color", in: arguments) {
+            appearance.highlightColor = Backend.AuthorityColor(try parseRGBAColor(value))
+        }
+        if let value = optionValue("--highlight-radius", in: arguments) {
+            appearance.highlightRadius = try finite(value, option: "--highlight-radius")
+        }
+        if let value = optionValue("--highlight-x", in: arguments) {
+            appearance.highlightX = try finite(value, option: "--highlight-x")
+        }
+        if let value = optionValue("--highlight-y", in: arguments) {
+            appearance.highlightY = try finite(value, option: "--highlight-y")
+        }
+        if let value = optionValue("--highlight-opacity", in: arguments) {
+            appearance.highlightOpacity = try opacity(value, option: "--highlight-opacity")
+        }
+        if let value = optionValue("--bevel-highlight", in: arguments) {
+            appearance.bevelHighlightColor = Backend.AuthorityColor(try parseRGBAColor(value))
+        }
+        if let value = optionValue("--bevel-shadow", in: arguments) {
+            appearance.bevelShadowColor = Backend.AuthorityColor(try parseRGBAColor(value))
+        }
+        if let value = optionValue("--bevel-width", in: arguments) ?? optionValue("--bevel", in: arguments) {
+            appearance.bevelWidth = try finite(value, option: "--bevel-width")
+        }
+        if let value = optionValue("--opacity", in: arguments) {
+            appearance.opacity = try opacity(value, option: "--opacity")
+        }
+        if let value = optionValue("--shadow-layers", in: arguments) ?? optionValue("--shadows", in: arguments) {
+            appearance.shadows = try parseShadowLayers(value).map {
+                Backend.AuthorityShadow(
+                    color: Backend.AuthorityColor($0.color),
+                    radius: Double($0.radius),
+                    x: Double($0.x),
+                    y: Double($0.y),
+                    opacity: Double($0.opacity)
+                )
+            }
+        }
+        if let value = optionValue("--press-scale", in: arguments)
+            ?? optionValue("--scale-on-press", in: arguments) {
+            appearance.pressedScale = try finite(value, option: "--press-scale")
+        }
+        if let value = optionValue("--pressed-fill", in: arguments)
+            ?? optionValue("--pressed-color", in: arguments) {
+            appearance.pressedFillColor = Backend.AuthorityColor(try parseRGBAColor(value))
+        }
+        if !appearance.isEmpty { changes.appearance = appearance }
+
+        if let value = optionValue("--corner", in: arguments) ?? optionValue("--radius", in: arguments) {
+            changes.cornerRadius = try finite(value, option: "--corner")
+            changes.cornerRadii = nil
+        }
+        let cornerOptions: [(
+            String,
+            WritableKeyPath<ThumbleCLIProfileBackend.AuthorityCornerRadii, Double>
+        )] = [
+            ("--corner-tl", \.topLeading),
+            ("--corner-tr", \.topTrailing),
+            ("--corner-br", \.bottomTrailing),
+            ("--corner-bl", \.bottomLeading)
+        ]
+        if cornerOptions.contains(where: { optionValue($0.0, in: arguments) != nil }) {
+            let base = current.cornerRadii ?? Backend.AuthorityCornerRadii(
+                topLeading: current.cornerRadius ?? 0,
+                topTrailing: current.cornerRadius ?? 0,
+                bottomTrailing: current.cornerRadius ?? 0,
+                bottomLeading: current.cornerRadius ?? 0
+            )
+            var radii = base
+            for (option, keyPath) in cornerOptions {
+                if let value = optionValue(option, in: arguments) {
+                    radii[keyPath: keyPath] = try finite(value, option: option)
+                }
+            }
+            changes.cornerRadius = nil
+            changes.cornerRadii = radii
+        }
+        if let value = optionValue("--shadow", in: arguments)
+            ?? optionValue("--shadow-strength", in: arguments) {
+            changes.shadowStrength = try finite(value, option: "--shadow")
+        }
+        if arguments.contains("--hide") || arguments.contains("--hidden") {
+            changes.isHidden = true
+        }
+        if arguments.contains("--show") || arguments.contains("--visible") {
+            changes.isHidden = false
+        }
+        return changes
     }
 
     private static func parseControlBarItems(from arguments: [String]) throws -> [GamepadControlBarItem] {
@@ -3488,14 +4530,21 @@ struct ThumbleCLI {
         let rest = Array(arguments.dropFirst())
         switch subcommand {
         case "list", "ls":
-            let store = loadStore()
-            let profile = try resolveProfile(optionValue("--profile", in: rest), in: store)
-            let summaries = elementSummaries(for: try customization(for: profile, arguments: rest))
+            let response = try profileBackend().perform(
+                .layerList(
+                    .init(optionValue("--profile", in: rest)),
+                    try authorityConfigurationVariant(in: rest)
+                ),
+                invocationID: try profileInvocationID(in: rest)
+            )
+            guard let projection = response.layers else {
+                throw CLIError.message("Rust profile authority returned no sanitized element projection")
+            }
             if rest.contains("--json") {
-                try printJSON(summaries)
+                try printJSON(projection.layers)
             } else {
-                for item in summaries {
-                    print("\(item.id)\t\(item.kind)\t\(item.label)\t\(item.isHidden ? "hidden" : "visible")\(item.isLocationLocked ? " locked" : "")")
+                for item in projection.layers {
+                    print("\(item.targetID)\t\(item.kind)\t\(item.label)\t\(item.isHidden ? "hidden" : "visible")\(item.isLocationLocked ? " locked" : "")")
                 }
             }
         case "add":
@@ -3520,6 +4569,7 @@ struct ThumbleCLI {
     }
 
     private static func duplicateElements(arguments: [String]) throws {
+        try requireExplicitUnmigratedProfileAccess(operation: "element duplicate")
         let targetTexts = positionals(in: arguments)
         guard !targetTexts.isEmpty else {
             throw CLIError.message("Usage: thumble element duplicate <element> [element...] [--offset 0.025]")
@@ -3536,6 +4586,7 @@ struct ThumbleCLI {
     }
 
     private static func alignElements(arguments: [String]) throws {
+        try requireExplicitUnmigratedProfileAccess(operation: "element align")
         let positional = positionals(in: arguments)
         guard positional.count >= 3 else {
             throw CLIError.message("Usage: thumble element align <left|horizontal-centers|right|top|vertical-centers|bottom> <element> <element>...")
@@ -3551,6 +4602,7 @@ struct ThumbleCLI {
     }
 
     private static func distributeElements(arguments: [String]) throws {
+        try requireExplicitUnmigratedProfileAccess(operation: "element distribute")
         let positional = positionals(in: arguments)
         guard positional.count >= 4 else {
             throw CLIError.message("Usage: thumble element distribute <horizontal-centers|vertical-centers|horizontal-spacing|vertical-spacing> <element> <element> <element>...")
@@ -3601,6 +4653,7 @@ struct ThumbleCLI {
     }
 
     private static func addElement(arguments: [String]) throws {
+        try requireExplicitUnmigratedProfileAccess(operation: "element add")
         guard let kindText = firstPositional(in: arguments) else { throw CLIError.message("Usage: thumble element add <button|joystick|trigger|trackpad|text|decoration> [options]") }
         let kind = try parseCustomControlKind(kindText)
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
@@ -3692,7 +4745,7 @@ struct ThumbleCLI {
                 customButton.triggerSettings = nil
                 customButton.trackpadSettings = nil
             }
-            customization.customButtons.append(customButton)
+            try customization.addStandaloneCustomControl(customButton)
             if !isPassiveLayer && hasAnyOption(elementOutputOptionNames, in: arguments) {
                 try applyElementOutputOptions(arguments, target: .custom(id), to: &customization)
             }
@@ -3701,6 +4754,7 @@ struct ThumbleCLI {
     }
 
     private static func setElement(arguments: [String]) throws {
+        try requireExplicitUnmigratedProfileAccess(operation: "element set")
         guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing element id, button, or label") }
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             let target = try resolveElementTarget(targetText, in: customization)
@@ -3879,6 +4933,7 @@ struct ThumbleCLI {
     }
 
     private static func nudgeElement(arguments: [String]) throws {
+        try requireExplicitUnmigratedProfileAccess(operation: "element nudge")
         let positional = positionals(in: arguments)
         guard let targetText = positional.first else {
             throw CLIError.message("Usage: thumble element nudge <element> <left|right|up|down> [--step 1|10]")
@@ -3918,6 +4973,7 @@ struct ThumbleCLI {
     }
 
     private static func deleteElement(arguments: [String]) throws {
+        try requireExplicitUnmigratedProfileAccess(operation: "element delete")
         guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing element id, button, or label") }
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
             let target = try resolveElementTarget(targetText, in: customization)
@@ -3936,100 +4992,15 @@ struct ThumbleCLI {
     }
 
     private static func resetElement(arguments: [String]) throws {
+        try requireExplicitUnmigratedProfileAccess(operation: "element reset")
         guard let targetText = firstPositional(in: arguments) else { throw CLIError.message("Missing element id, button, or label") }
         try mutateCustomization(profileTarget: optionValue("--profile", in: arguments), variant: try customizationVariant(in: arguments)) { customization in
-            let target = try resolveElementTarget(targetText, in: customization)
-            switch target {
-            case .builtin(let button):
-                customization.setButtonCustomization(.defaultValue, for: button)
-                customization.setLabel("", for: button)
-            case .custom(let id):
-                guard let index = customization.customButtons.firstIndex(where: { $0.id == id }) else { return }
-                let kind = customization.customButtons[index].normalized.controlKind
-                customization.customButtons[index].label = defaultLabel(for: kind)
-                switch kind {
-                case .joystick:
-                    customization.customButtons[index].layout = GamepadButtonCustomization(
-                        centerX: 0.5,
-                        centerY: 0.5,
-                        widthScale: 1.35,
-                        heightScale: 1.35,
-                        shape: .circle
-                    )
-                    customization.customButtons[index].joystickMapping = customization.customButtons[index].joystickMapping ?? .movement
-                    customization.customButtons[index].joystickOutputSettings = customization.customButtons[index].joystickOutputSettings ?? .defaultValue
-                    customization.customButtons[index].triggerSettings = nil
-                    customization.customButtons[index].trackpadSettings = nil
-                case .trackpad:
-                    customization.customButtons[index].layout = GamepadButtonCustomization(
-                        centerX: 0.5,
-                        centerY: 0.58,
-                        widthScale: 1.25,
-                        heightScale: 1.0,
-                        shape: .roundedRectangle,
-                        cornerRadius: 18
-                    )
-                    customization.customButtons[index].joystickMapping = nil
-                    customization.customButtons[index].trackpadSettings = .defaultValue
-                    customization.customButtons[index].triggerSettings = nil
-                case .trigger:
-                    let target = (customization.customButtons[index].triggerSettings ?? .defaultValue).normalized.target
-                    customization.customButtons[index].layout = GamepadButtonCustomization(
-                        centerX: target == .left ? 0.20 : 0.80,
-                        centerY: 0.14,
-                        widthScale: 1.08,
-                        heightScale: 0.42,
-                        shape: .capsule,
-                        accentStyle: .monochrome
-                    )
-                    customization.customButtons[index].joystickMapping = nil
-                    customization.customButtons[index].trackpadSettings = nil
-                    customization.customButtons[index].triggerSettings = GamepadTriggerSettings(target: target, orientation: .horizontal)
-                case .button:
-                    customization.customButtons[index].layout = GamepadButtonCustomization(
-                        centerX: 0.5,
-                        centerY: 0.5,
-                        widthScale: 1.0,
-                        heightScale: 1.0,
-                        shape: .roundedRectangle,
-                        showsIntegratedLabel: false
-                    )
-                    customization.customButtons[index].joystickMapping = nil
-                    customization.customButtons[index].trackpadSettings = nil
-                case .text:
-                    customization.customButtons[index].layout = GamepadButtonCustomization(
-                        centerX: 0.5,
-                        centerY: 0.5,
-                        widthScale: 1.4,
-                        heightScale: 0.7,
-                        shape: .rectangle,
-                        shadowStrength: 0,
-                        showsIntegratedLabel: false
-                    )
-                    customization.customButtons[index].joystickMapping = nil
-                    customization.customButtons[index].joystickOutputSettings = nil
-                    customization.customButtons[index].triggerSettings = nil
-                    customization.customButtons[index].trackpadSettings = nil
-                case .decoration:
-                    customization.customButtons[index].layout = GamepadButtonCustomization(
-                        centerX: 0.5,
-                        centerY: 0.5,
-                        widthScale: 2.2,
-                        heightScale: 1.2,
-                        shape: .roundedRectangle,
-                        fillColor: GamepadRGBAColor(hexString: "#F2EEF5"),
-                        visualStyle: .softWhitePlate(),
-                        cornerRadius: 28,
-                        shadowStrength: 0
-                    )
-                    customization.customButtons[index].joystickMapping = nil
-                    customization.customButtons[index].joystickOutputSettings = nil
-                    customization.customButtons[index].triggerSettings = nil
-                    customization.customButtons[index].trackpadSettings = nil
-                }
-            case .system(.topBarActivation):
-                customization.topBarActivationRegion = GamepadCustomization.defaultTopBarActivationRegion
+            let identity = switch try resolveElementTarget(targetText, in: customization) {
+            case .builtin(let button): GamepadControlIdentity.builtin(button)
+            case .custom(let id): GamepadControlIdentity.custom(id)
+            case .system(let control): GamepadControlIdentity.system(control)
             }
+            try customization.resetControl(identity)
         }
         print("Reset element \"\(targetText)\".")
     }
@@ -4859,8 +5830,8 @@ struct ThumbleCLI {
             logPath = ThumbleMacIPC.captureLogPath
         } else if FileManager.default.fileExists(atPath: ThumbleMacIPC.legacyThumbConsoleCaptureLogPath) {
             logPath = ThumbleMacIPC.legacyThumbConsoleCaptureLogPath
-        } else if FileManager.default.fileExists(atPath: ThumbleMacIPC.legacyPocketPadCaptureLogPath) {
-            logPath = ThumbleMacIPC.legacyPocketPadCaptureLogPath
+        } else if FileManager.default.fileExists(atPath: ThumbleMacIPC.legacyThumbleCaptureLogPath) {
+            logPath = ThumbleMacIPC.legacyThumbleCaptureLogPath
         } else {
             logPath = ThumbleMacIPC.captureLogPath
         }
@@ -5207,6 +6178,7 @@ struct ThumbleCLI {
     }
 
     private static func persistStore(_ inputStore: ProfileStore) throws {
+        try profileBackend().requireLegacyPersistenceAllowed(operation: "legacy configuration write")
         var store = inputStore
         let state = GamepadConfigurationProfilePersistence.normalizedState(
             profiles: store.profiles,
@@ -5312,21 +6284,15 @@ struct ThumbleCLI {
     }
 
     private static func decodedBindings(_ raw: [String: MacKeyBinding]?) -> [GameButton: MacKeyBinding]? {
-        guard let raw else { return nil }
-        return Dictionary(uniqueKeysWithValues: raw.compactMap { key, binding in
-            guard let button = GameButton(rawValue: key) else { return nil }
-            return (button, binding)
-        })
+        MacConfigurationBindings.decodedKeyBindings(raw)
     }
 
     private static func rawBindings(_ bindings: [GameButton: MacKeyBinding]) -> [String: MacKeyBinding] {
-        Dictionary(uniqueKeysWithValues: bindings.map { button, binding in (button.rawValue, binding) })
+        MacConfigurationBindings.rawKeyBindings(bindings)
     }
 
     private static func outputBindings(from keyBindings: [GameButton: MacKeyBinding]) -> [GameButton: MacControlOutputBinding] {
-        Dictionary(uniqueKeysWithValues: keyBindings.map { button, binding in
-            (button, MacControlOutputBinding.keyboard(binding))
-        })
+        MacConfigurationBindings.keyboardOutputs(from: keyBindings)
     }
 
     private static func effectiveOutputBindings(
@@ -5334,14 +6300,11 @@ struct ThumbleCLI {
         keyBindings: [GameButton: MacKeyBinding],
         customOutputBindings: [GameButton: MacControlOutputBinding]
     ) -> [GameButton: MacControlOutputBinding] {
-        switch mode {
-        case .keyboard:
-            return outputBindings(from: keyBindings)
-        case .controller:
-            return DefaultMacControlOutputMap.xboxStyleBindings
-        case .custom:
-            return customOutputBindings.isEmpty ? outputBindings(from: keyBindings) : customOutputBindings
-        }
+        MacConfigurationBindings.effectiveOutputs(
+            for: mode,
+            keyBindings: keyBindings,
+            customOutputs: customOutputBindings
+        )
     }
 
     private static func bindingPresentations(
@@ -5363,15 +6326,11 @@ struct ThumbleCLI {
     }
 
     private static func rawOutputBindings(_ bindings: [GameButton: MacControlOutputBinding]) -> [String: MacControlOutputBinding] {
-        Dictionary(uniqueKeysWithValues: bindings.map { button, binding in (button.rawValue, binding) })
+        MacConfigurationBindings.rawOutputs(bindings)
     }
 
     private static func decodedOutputBindings(_ raw: [String: MacControlOutputBinding]?) -> [GameButton: MacControlOutputBinding]? {
-        guard let raw else { return nil }
-        return Dictionary(uniqueKeysWithValues: raw.compactMap { key, binding in
-            guard let button = GameButton(rawValue: key), !binding.isEmpty else { return nil }
-            return (button, binding)
-        })
+        MacConfigurationBindings.decodedOutputs(raw)
     }
 
     private static func loadProfileOutputBindings(
@@ -5758,14 +6717,7 @@ struct ThumbleCLI {
     }
 
     private static func defaultLabel(for kind: GamepadCustomControlKind) -> String {
-        switch kind {
-        case .button: return "Shape"
-        case .joystick: return "Joystick"
-        case .trigger: return "Trigger"
-        case .trackpad: return "Trackpad"
-        case .text: return "Text"
-        case .decoration: return "Decoration"
-        }
+        kind.defaultElementLabel
     }
 
     private static func triggerSettings(
@@ -6176,7 +7128,7 @@ struct ThumbleCLI {
             "--highlight", "--highlight-color", "--highlight-radius", "--highlight-x", "--highlight-y", "--highlight-opacity",
             "--bevel", "--bevel-highlight", "--bevel-shadow", "--bevel-width", "--pressed-fill", "--pressed-color", "--press-scale", "--scale-on-press",
             "--material", "--material-preset", "--shadow-layers", "--shadows",
-            "--to", "--before", "--after", "--role", "--visual-role", "--skin-role", "--hit-insets", "--hit-top", "--hit-leading", "--hit-bottom", "--hit-trailing",
+            "--to", "--before", "--after", "--invocation-id", "--role", "--visual-role", "--skin-role", "--hit-insets", "--hit-top", "--hit-leading", "--hit-bottom", "--hit-trailing",
             "--items", "--controls", "--offset", "--offset-x", "--offset-y", "--repair"
         ]
         for argument in arguments {

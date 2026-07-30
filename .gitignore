@@ -14,3 +14,6 @@ app-store-output/
 # Node dependencies
 node_modules/
 scripts/app-store-images/node_modules/
+
+# Local Playwright CLI sessions and artifacts
+.playwright-cli/

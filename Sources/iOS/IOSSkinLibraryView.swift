@@ -40,7 +40,7 @@ struct IOSSkinLibraryView: View {
         }
         .fileImporter(
             isPresented: $isImporting,
-            allowedContentTypes: [.pocketPadSkinPackage, .zip],
+            allowedContentTypes: [.thumbleSkinPackage, .zip],
             allowsMultipleSelection: false,
             onCompletion: handleImportSelection
         )
@@ -110,7 +110,7 @@ struct IOSSkinLibraryView: View {
 
             if client.selectedGamepadProfile?.skinReference != nil {
                 Button {
-                    client.detachSkinFromSelectedProfile(colorScheme: pocketPadColorScheme)
+                    client.detachSkinFromSelectedProfile(colorScheme: thumbleColorScheme)
                 } label: {
                     Label("Fork Current Appearance", systemImage: "square.on.square")
                         .frame(maxWidth: .infinity)
@@ -148,7 +148,7 @@ struct IOSSkinLibraryView: View {
         }
     }
 
-    private func skinCard(_ installed: PocketPadInstalledSkin) -> some View {
+    private func skinCard(_ installed: ThumbleInstalledSkin) -> some View {
         let package = client.skinPackage(for: installed.reference)
         let isApplied = client.selectedGamepadProfile?.skinReference == installed.reference
         return VStack(alignment: .leading, spacing: Geist.Spacing.s3) {
@@ -231,7 +231,7 @@ struct IOSSkinLibraryView: View {
         } ?? "Missing skin package"
     }
 
-    private var pocketPadColorScheme: PocketPadSkinColorScheme {
+    private var thumbleColorScheme: ThumbleSkinColorScheme {
         colorScheme == .dark ? .dark : .light
     }
 
@@ -240,25 +240,25 @@ struct IOSSkinLibraryView: View {
         let orientation = profile.customization.deviceCanvas.editorDeviceFrame.orientation
         return profile.resolvedCustomization(
             for: orientation,
-            colorScheme: pocketPadColorScheme,
+            colorScheme: thumbleColorScheme,
             skinPackage: client.skinPackage(for: profile.skinReference)
         )
     }
 
-    private func previewCustomization(for package: PocketPadSkinPackage) -> GamepadCustomization {
+    private func previewCustomization(for package: ThumbleSkinPackage) -> GamepadCustomization {
         let source = client.selectedGamepadProfile?.customization ?? client.gamepadCustomization
         let orientation = source.deviceCanvas.editorDeviceFrame.orientation
         return source.applying(
             skinPackage: package,
             orientation: orientation == .portrait ? .portrait : .landscape,
-            colorScheme: pocketPadColorScheme,
+            colorScheme: thumbleColorScheme,
             options: .replacingAppearance
         )
     }
 
-    private func apply(_ reference: PocketPadSkinReference) {
+    private func apply(_ reference: ThumbleSkinReference) {
         do {
-            try client.applySkinToSelectedProfile(reference, colorScheme: pocketPadColorScheme)
+            try client.applySkinToSelectedProfile(reference, colorScheme: thumbleColorScheme)
             KeypadHapticPlayer.shared.play(.init(style: .medium, pattern: .single, intensity: 0.62))
         } catch {
             operationError = error.localizedDescription
@@ -289,7 +289,7 @@ struct IOSSkinLibraryView: View {
         }
     }
 
-    private func share(_ reference: PocketPadSkinReference, manifest: PocketPadSkinManifest) {
+    private func share(_ reference: ThumbleSkinReference, manifest: ThumbleSkinManifest) {
         do {
             let data = try client.skinPackageData(for: reference)
             let filename = suggestedFilename(for: manifest)
@@ -301,31 +301,31 @@ struct IOSSkinLibraryView: View {
         }
     }
 
-    private func suggestedFilename(for manifest: PocketPadSkinManifest) -> String {
+    private func suggestedFilename(for manifest: ThumbleSkinManifest) -> String {
         let base = manifest.name
             .lowercased()
             .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return "\(base.isEmpty ? "pocketpad-skin" : base)-\(manifest.version).pocketpad"
+        return "\(base.isEmpty ? "thumble-skin" : base)-\(manifest.version).pocketpad"
     }
 }
 
 struct IOSPendingSkinImport: Identifiable {
     let id = UUID()
     let data: Data
-    let package: PocketPadSkinPackage
-    let report: PocketPadSkinValidationReport
+    let package: ThumbleSkinPackage
+    let report: ThumbleSkinValidationReport
 
     static func load(from url: URL) throws -> IOSPendingSkinImport {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
         let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-        let package = try PocketPadSkinPackageCodec.decode(data)
-        guard package.skin != nil else { throw PocketPadSkinStoreError.packageHasNoSkin }
+        let package = try ThumbleSkinPackageCodec.decode(data)
+        guard package.skin != nil else { throw ThumbleSkinStoreError.packageHasNoSkin }
         return IOSPendingSkinImport(
             data: data,
             package: package,
-            report: PocketPadSkinPackageValidator.validate(package)
+            report: ThumbleSkinPackageValidator.validate(package)
         )
     }
 }
@@ -338,11 +338,11 @@ struct IOSSkinImportReviewSheet: View {
     let onCancel: () -> Void
     let onInstall: (Bool) -> Void
 
-    private var compatibility: PocketPadSkinCompatibilityEvaluation {
-        let orientation: PocketPadSkinOrientation = previewCustomization.deviceCanvas.editorDeviceFrame.orientation == .portrait
+    private var compatibility: ThumbleSkinCompatibilityEvaluation {
+        let orientation: ThumbleSkinOrientation = previewCustomization.deviceCanvas.editorDeviceFrame.orientation == .portrait
             ? .portrait
             : .landscape
-        return PocketPadSkinCompatibilityEvaluator.evaluate(
+        return ThumbleSkinCompatibilityEvaluator.evaluate(
             pending.package.manifest.compatibility,
             customization: previewCustomization,
             orientation: orientation

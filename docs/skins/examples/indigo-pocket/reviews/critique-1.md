@@ -3,7 +3,7 @@
 - **Reviewed artifact:** `reviews/contact-sheet-1.png`
 - **Source resolution inspected:** 2176 × 1714 PNG, including all 16 native-renderer panels
 - **Art direction:** `reviews/art-direction.md`
-- **Quality standard:** PocketPad visual quality bar
+- **Quality standard:** Thumble visual quality bar
 - **Review date:** 2026-07-17
 - **Verdict:** **revise**
 

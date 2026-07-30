@@ -1,0 +1,1414 @@
+{
+  "schema": "com.codybontecou.thumble.mcp-cli-capabilities",
+  "version": 1,
+  "authority": {
+    "configuration": "thumble-host",
+    "phoneSync": "thumble-host",
+    "modelOperations": "thumble-bridge",
+    "legacyDefaults": "explicit-legacy-backend-only"
+  },
+  "gates": [
+    "none",
+    "configuration-write",
+    "artifact-write",
+    "input",
+    "system-action",
+    "host-lifecycle",
+    "app-action"
+  ],
+  "families": [
+    {
+      "id": "generation",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved profile synchronizes from host",
+      "operations": [
+        {
+          "id": "generation.generate",
+          "cli": [
+            "generate"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "generation.install-spec",
+          "cli": [
+            "install-spec",
+            "import"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "profile",
+      "executor": "rust-host-and-swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "complete profile state synchronizes from host",
+      "operations": [
+        {
+          "id": "profile.list",
+          "cli": [
+            "profile list",
+            "profile ls"
+          ],
+          "status": "partial",
+          "mcpTool": "list_profiles"
+        },
+        {
+          "id": "profile.show",
+          "cli": [
+            "profile show"
+          ],
+          "status": "planned",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "profile.select",
+          "cli": [
+            "profile select",
+            "profile use"
+          ],
+          "status": "current",
+          "mcpTool": "select_profile"
+        },
+        {
+          "id": "profile.default",
+          "cli": [
+            "profile default",
+            "profile set-default"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.rename",
+          "cli": [
+            "profile rename"
+          ],
+          "status": "foundation",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.duplicate",
+          "cli": [
+            "profile duplicate",
+            "profile copy"
+          ],
+          "status": "partial",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.delete",
+          "cli": [
+            "profile delete",
+            "profile rm"
+          ],
+          "status": "partial",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.move",
+          "cli": [
+            "profile move",
+            "profile reorder"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.reset",
+          "cli": [
+            "profile reset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.create",
+          "cli": [
+            "profile create",
+            "profile new"
+          ],
+          "status": "partial",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.export",
+          "cli": [
+            "profile export"
+          ],
+          "status": "planned",
+          "mcpTool": "export_configuration_draft"
+        },
+        {
+          "id": "profile.import",
+          "cli": [
+            "profile import"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.attach-app",
+          "cli": [
+            "profile attach-app",
+            "profile attach-application",
+            "profile app",
+            "profile application"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.detach-app",
+          "cli": [
+            "profile detach-app",
+            "profile detach-application",
+            "profile clear-app",
+            "profile remove-app"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "profile.launch",
+          "cli": [
+            "profile launch",
+            "profile open-app"
+          ],
+          "status": "planned",
+          "mcpTool": "launch_profile_target",
+          "gate": "app-action"
+        }
+      ]
+    },
+    {
+      "id": "template",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "installed profile synchronizes from host",
+      "operations": [
+        {
+          "id": "template.list",
+          "cli": [
+            "template list",
+            "template ls"
+          ],
+          "status": "current",
+          "mcpTool": "query_catalog"
+        },
+        {
+          "id": "template.install",
+          "cli": [
+            "template install",
+            "template create",
+            "template add"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "template.show",
+          "cli": [
+            "template show"
+          ],
+          "status": "partial",
+          "mcpTool": "query_catalog"
+        }
+      ]
+    },
+    {
+      "id": "theme",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "appearance synchronizes from host",
+      "operations": [
+        {
+          "id": "theme.list",
+          "cli": [
+            "theme list",
+            "theme ls"
+          ],
+          "status": "planned",
+          "mcpTool": "query_catalog"
+        },
+        {
+          "id": "theme.show",
+          "cli": [
+            "theme show"
+          ],
+          "status": "planned",
+          "mcpTool": "query_catalog"
+        },
+        {
+          "id": "theme.apply",
+          "cli": [
+            "theme apply",
+            "theme set"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "skin",
+      "executor": "swift-bridge-workspace",
+      "gate": "artifact-write",
+      "phoneEffect": "selected package synchronizes only after host commit and bounded package transfer",
+      "operations": [
+        {
+          "id": "skin.artboard.list",
+          "cli": [
+            "skin artboard list",
+            "skin artboard ls"
+          ],
+          "status": "planned",
+          "mcpTool": "query_catalog"
+        },
+        {
+          "id": "skin.artboard.show",
+          "cli": [
+            "skin artboard show",
+            "skin artboard inspect"
+          ],
+          "status": "planned",
+          "mcpTool": "query_catalog"
+        },
+        {
+          "id": "skin.artboard.export",
+          "cli": [
+            "skin artboard export"
+          ],
+          "status": "planned",
+          "mcpTool": "export_skin_workspace"
+        },
+        {
+          "id": "skin.scaffold",
+          "cli": [
+            "skin scaffold",
+            "skin new"
+          ],
+          "status": "planned",
+          "mcpTool": "begin_skin_workspace"
+        },
+        {
+          "id": "skin.compile",
+          "cli": [
+            "skin compile",
+            "skin build"
+          ],
+          "status": "planned",
+          "mcpTool": "validate_skin_workspace"
+        },
+        {
+          "id": "skin.list",
+          "cli": [
+            "skin list",
+            "skin ls"
+          ],
+          "status": "planned",
+          "mcpTool": "query_catalog"
+        },
+        {
+          "id": "skin.inspect",
+          "cli": [
+            "skin inspect",
+            "skin show"
+          ],
+          "status": "planned",
+          "mcpTool": "query_catalog"
+        },
+        {
+          "id": "skin.validate",
+          "cli": [
+            "skin validate",
+            "skin check"
+          ],
+          "status": "planned",
+          "mcpTool": "validate_skin_workspace"
+        },
+        {
+          "id": "skin.quality",
+          "cli": [
+            "skin quality",
+            "skin qa"
+          ],
+          "status": "planned",
+          "mcpTool": "validate_skin_workspace"
+        },
+        {
+          "id": "skin.import",
+          "cli": [
+            "skin import",
+            "skin install"
+          ],
+          "status": "planned",
+          "mcpTool": "save_skin_workspace"
+        },
+        {
+          "id": "skin.apply",
+          "cli": [
+            "skin apply",
+            "skin set"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft",
+          "gate": "configuration-write"
+        },
+        {
+          "id": "skin.detach",
+          "cli": [
+            "skin detach",
+            "skin fork"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft",
+          "gate": "configuration-write"
+        },
+        {
+          "id": "skin.remove",
+          "cli": [
+            "skin remove",
+            "skin delete",
+            "skin rm"
+          ],
+          "status": "planned",
+          "mcpTool": "save_skin_workspace"
+        },
+        {
+          "id": "skin.export",
+          "cli": [
+            "skin export",
+            "skin share"
+          ],
+          "status": "planned",
+          "mcpTool": "export_skin_workspace"
+        },
+        {
+          "id": "skin.pack",
+          "cli": [
+            "skin pack"
+          ],
+          "status": "planned",
+          "mcpTool": "export_skin_workspace"
+        },
+        {
+          "id": "skin.unpack",
+          "cli": [
+            "skin unpack"
+          ],
+          "status": "planned",
+          "mcpTool": "begin_skin_workspace"
+        },
+        {
+          "id": "skin.preview",
+          "cli": [
+            "skin preview",
+            "skin render"
+          ],
+          "status": "planned",
+          "mcpTool": "preview_skin_workspace"
+        }
+      ]
+    },
+    {
+      "id": "binding",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "binding presentations and executable mappings synchronize from host",
+      "operations": [
+        {
+          "id": "binding.list",
+          "cli": [
+            "binding list",
+            "binding ls"
+          ],
+          "status": "current",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "binding.display",
+          "cli": [
+            "binding display"
+          ],
+          "status": "current",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "binding.set",
+          "cli": [
+            "binding set"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "binding.reset",
+          "cli": [
+            "binding reset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "binding.clear",
+          "cli": [
+            "binding clear",
+            "binding unset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "binding.reset-all",
+          "cli": [
+            "binding reset-all"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "output",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "executable mappings synchronize from host; unsupported output backends fail validation",
+      "operations": [
+        {
+          "id": "output.list",
+          "cli": [
+            "output list",
+            "output ls"
+          ],
+          "status": "current",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "output.mode",
+          "cli": [
+            "output mode",
+            "output preset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "output.set",
+          "cli": [
+            "output set"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "output.reset",
+          "cli": [
+            "output reset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "output.reset-all",
+          "cli": [
+            "output reset-all"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "customization",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved customization synchronizes from host",
+      "operations": [
+        {
+          "id": "customization.show",
+          "cli": [
+            "customization show"
+          ],
+          "status": "planned",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "customization.export",
+          "cli": [
+            "customization export"
+          ],
+          "status": "planned",
+          "mcpTool": "export_configuration_draft"
+        },
+        {
+          "id": "customization.import",
+          "cli": [
+            "customization import"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "customization.validate",
+          "cli": [
+            "customization validate",
+            "customization check",
+            "customization lint",
+            "layout validate",
+            "layout check",
+            "layout lint"
+          ],
+          "status": "planned",
+          "mcpTool": "validate_configuration_draft"
+        },
+        {
+          "id": "customization.fix",
+          "cli": [
+            "customization fix",
+            "customization repair",
+            "customization autofix",
+            "customization auto-fix",
+            "layout fix",
+            "layout repair",
+            "layout autofix",
+            "layout auto-fix"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "customization.preview",
+          "cli": [
+            "customization preview",
+            "customization render",
+            "layout preview",
+            "layout render"
+          ],
+          "status": "partial",
+          "mcpTool": "preview_configuration_draft"
+        },
+        {
+          "id": "customization.set",
+          "cli": [
+            "customization set",
+            "layout set"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "customization.reset",
+          "cli": [
+            "customization reset",
+            "layout reset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "orientation",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved variants and preference synchronize from host",
+      "operations": [
+        {
+          "id": "orientation.get",
+          "cli": [
+            "orientation get",
+            "orientation show"
+          ],
+          "status": "partial",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "orientation.set",
+          "cli": [
+            "orientation set"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "orientation.copy",
+          "cli": [
+            "orientation copy"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "orientation.arrange",
+          "cli": [
+            "orientation arrange"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "device",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved canvas synchronizes from host",
+      "operations": [
+        {
+          "id": "device.list",
+          "cli": [
+            "device list",
+            "device ls"
+          ],
+          "status": "current",
+          "mcpTool": "query_catalog"
+        },
+        {
+          "id": "device.show",
+          "cli": [
+            "device show",
+            "device current"
+          ],
+          "status": "partial",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "device.set",
+          "cli": [
+            "device set",
+            "device select",
+            "device use"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "control-bar",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved control bar synchronizes from host",
+      "operations": [
+        {
+          "id": "control-bar.list",
+          "cli": [
+            "control-bar list",
+            "control-bar ls",
+            "control-bar show"
+          ],
+          "status": "planned",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "control-bar.set",
+          "cli": [
+            "control-bar set"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "control-bar.add",
+          "cli": [
+            "control-bar add",
+            "control-bar append"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "control-bar.remove",
+          "cli": [
+            "control-bar remove",
+            "control-bar rm",
+            "control-bar delete",
+            "control-bar hide"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "control-bar.move",
+          "cli": [
+            "control-bar move"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "control-bar.item.show",
+          "cli": [
+            "control-bar item show",
+            "control-bar item get",
+            "control-bar item inspect"
+          ],
+          "status": "planned",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "control-bar.item.set",
+          "cli": [
+            "control-bar item set",
+            "control-bar item edit",
+            "control-bar item style"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "control-bar.item.reset",
+          "cli": [
+            "control-bar item reset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "control-bar.reset",
+          "cli": [
+            "control-bar reset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "element",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved controls synchronize from host",
+      "operations": [
+        {
+          "id": "element.list",
+          "cli": [
+            "element list",
+            "element ls"
+          ],
+          "status": "partial",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "element.add",
+          "cli": [
+            "element add"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "element.duplicate",
+          "cli": [
+            "element duplicate",
+            "element copy"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "element.set",
+          "cli": [
+            "element set"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "element.align",
+          "cli": [
+            "element align"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "element.distribute",
+          "cli": [
+            "element distribute"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "element.nudge",
+          "cli": [
+            "element nudge",
+            "element move"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "element.delete",
+          "cli": [
+            "element delete",
+            "element rm"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "element.reset",
+          "cli": [
+            "element reset"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "style",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved style resources synchronize from host",
+      "operations": [
+        {
+          "id": "style.list",
+          "cli": [
+            "style list",
+            "style ls"
+          ],
+          "status": "current",
+          "mcpTool": "preview_configuration_draft"
+        },
+        {
+          "id": "style.show",
+          "cli": [
+            "style show"
+          ],
+          "status": "current",
+          "mcpTool": "preview_configuration_draft"
+        },
+        {
+          "id": "style.create",
+          "cli": [
+            "style create",
+            "style new",
+            "style set"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "style.rename",
+          "cli": [
+            "style rename"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "style.apply",
+          "cli": [
+            "style apply"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "style.detach",
+          "cli": [
+            "style detach",
+            "style clear"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "style.delete",
+          "cli": [
+            "style delete",
+            "style rm"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "style.export",
+          "cli": [
+            "style export"
+          ],
+          "status": "planned",
+          "mcpTool": "export_configuration_draft"
+        },
+        {
+          "id": "style.import",
+          "cli": [
+            "style import"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "layer",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved z-order synchronizes from host",
+      "operations": [
+        {
+          "id": "layer.list",
+          "cli": [
+            "layer list",
+            "layer ls"
+          ],
+          "status": "current",
+          "mcpTool": "preview_configuration_draft"
+        },
+        {
+          "id": "layer.move",
+          "cli": [
+            "layer move"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "layer.forward",
+          "cli": [
+            "layer bring-forward",
+            "layer forward"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "layer.backward",
+          "cli": [
+            "layer send-backward",
+            "layer backward"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "layer.front",
+          "cli": [
+            "layer front",
+            "layer bring-front"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "layer.back",
+          "cli": [
+            "layer back",
+            "layer send-back"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "group",
+      "executor": "swift-bridge",
+      "gate": "configuration-write",
+      "phoneEffect": "saved grouping and child layouts synchronize from host",
+      "operations": [
+        {
+          "id": "group.list",
+          "cli": [
+            "group list",
+            "group ls"
+          ],
+          "status": "current",
+          "mcpTool": "preview_configuration_draft"
+        },
+        {
+          "id": "group.create",
+          "cli": [
+            "group create",
+            "group new"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.rename",
+          "cli": [
+            "group rename"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.duplicate",
+          "cli": [
+            "group duplicate",
+            "group copy"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.ungroup",
+          "cli": [
+            "group ungroup",
+            "group delete",
+            "group rm"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.hide",
+          "cli": [
+            "group hide"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.show",
+          "cli": [
+            "group show"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.lock",
+          "cli": [
+            "group lock"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.unlock",
+          "cli": [
+            "group unlock"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.nudge",
+          "cli": [
+            "group nudge",
+            "group move"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.forward",
+          "cli": [
+            "group bring-forward",
+            "group forward"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.backward",
+          "cli": [
+            "group send-backward",
+            "group backward"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.front",
+          "cli": [
+            "group front",
+            "group bring-front"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "group.back",
+          "cli": [
+            "group back",
+            "group send-back"
+          ],
+          "status": "current",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "asset",
+      "executor": "swift-bridge-workspace",
+      "gate": "artifact-write",
+      "phoneEffect": "saved bounded assets synchronize only with supported transfer",
+      "operations": [
+        {
+          "id": "asset.list",
+          "cli": [
+            "asset list",
+            "asset ls"
+          ],
+          "status": "planned",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "asset.show",
+          "cli": [
+            "asset show"
+          ],
+          "status": "planned",
+          "mcpTool": "get_configuration_draft"
+        },
+        {
+          "id": "asset.import",
+          "cli": [
+            "asset import"
+          ],
+          "status": "planned",
+          "mcpTool": "transfer_artifact"
+        },
+        {
+          "id": "asset.set",
+          "cli": [
+            "asset set",
+            "asset edit",
+            "asset rename"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        },
+        {
+          "id": "asset.remove",
+          "cli": [
+            "asset remove",
+            "asset delete",
+            "asset rm"
+          ],
+          "status": "planned",
+          "mcpTool": "edit_configuration_draft"
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "executor": "rust-host-platform-adapter",
+      "gate": "none",
+      "phoneEffect": "runtime-only unless noted",
+      "operations": [
+        {
+          "id": "runtime.status",
+          "cli": [
+            "status",
+            "diagnostics",
+            "server status"
+          ],
+          "status": "partial",
+          "mcpTool": "host_status"
+        },
+        {
+          "id": "runtime.monitor",
+          "cli": [
+            "monitor",
+            "capture"
+          ],
+          "status": "planned",
+          "mcpTool": "monitor_events"
+        },
+        {
+          "id": "runtime.latency.simulate",
+          "cli": [
+            "latency simulate"
+          ],
+          "status": "planned",
+          "mcpTool": "run_diagnostic"
+        },
+        {
+          "id": "runtime.latency.verify",
+          "cli": [
+            "latency verify"
+          ],
+          "status": "planned",
+          "mcpTool": "run_diagnostic"
+        },
+        {
+          "id": "runtime.server.start",
+          "cli": [
+            "server start"
+          ],
+          "status": "host-cli-only",
+          "mcpTool": "host_lifecycle",
+          "gate": "host-lifecycle"
+        },
+        {
+          "id": "runtime.server.stop",
+          "cli": [
+            "server stop"
+          ],
+          "status": "host-cli-only",
+          "mcpTool": "host_lifecycle",
+          "gate": "host-lifecycle"
+        },
+        {
+          "id": "runtime.server.restart",
+          "cli": [
+            "server restart"
+          ],
+          "status": "host-cli-only",
+          "mcpTool": "host_lifecycle",
+          "gate": "host-lifecycle"
+        },
+        {
+          "id": "runtime.server.addresses",
+          "cli": [
+            "server addresses",
+            "server urls"
+          ],
+          "status": "partial",
+          "mcpTool": "host_status"
+        },
+        {
+          "id": "runtime.pairing.code",
+          "cli": [
+            "pairing code"
+          ],
+          "status": "current",
+          "mcpTool": "pairing_code"
+        },
+        {
+          "id": "runtime.pairing.payload",
+          "cli": [
+            "pairing payload"
+          ],
+          "status": "planned",
+          "mcpTool": "pairing_payload"
+        },
+        {
+          "id": "runtime.pairing.cancel",
+          "cli": [
+            "pairing cancel"
+          ],
+          "status": "planned",
+          "mcpTool": "pairing_cancel"
+        },
+        {
+          "id": "runtime.accessibility.status",
+          "cli": [
+            "accessibility status"
+          ],
+          "status": "current",
+          "mcpTool": "accessibility_status"
+        },
+        {
+          "id": "runtime.accessibility.prompt",
+          "cli": [
+            "accessibility prompt",
+            "accessibility request"
+          ],
+          "status": "host-cli-only",
+          "mcpTool": "accessibility_action",
+          "gate": "system-action"
+        },
+        {
+          "id": "runtime.accessibility.open",
+          "cli": [
+            "accessibility open",
+            "accessibility settings"
+          ],
+          "status": "host-cli-only",
+          "mcpTool": "accessibility_action",
+          "gate": "system-action"
+        },
+        {
+          "id": "runtime.accessibility.refresh",
+          "cli": [
+            "accessibility refresh"
+          ],
+          "status": "planned",
+          "mcpTool": "accessibility_status"
+        },
+        {
+          "id": "runtime.test.down",
+          "cli": [
+            "test down"
+          ],
+          "status": "planned",
+          "mcpTool": "test_control",
+          "gate": "input"
+        },
+        {
+          "id": "runtime.test.up",
+          "cli": [
+            "test up"
+          ],
+          "status": "planned",
+          "mcpTool": "test_control",
+          "gate": "input"
+        },
+        {
+          "id": "runtime.test.tap",
+          "cli": [
+            "test tap"
+          ],
+          "status": "partial",
+          "mcpTool": "press_control",
+          "gate": "input"
+        },
+        {
+          "id": "runtime.release-all",
+          "cli": [
+            "release-all"
+          ],
+          "status": "current",
+          "mcpTool": "release_all"
+        }
+      ]
+    },
+    {
+      "id": "app",
+      "executor": "fixed-platform-adapter",
+      "gate": "app-action",
+      "phoneEffect": "none",
+      "operations": [
+        {
+          "id": "app.open",
+          "cli": [
+            "app open",
+            "app launch"
+          ],
+          "status": "planned",
+          "mcpTool": "legacy_mac_app_action"
+        },
+        {
+          "id": "app.quit",
+          "cli": [
+            "app quit"
+          ],
+          "status": "planned",
+          "mcpTool": "legacy_mac_app_action"
+        },
+        {
+          "id": "app.screenshot",
+          "cli": [
+            "app screenshot",
+            "app capture-window"
+          ],
+          "status": "planned",
+          "mcpTool": "legacy_mac_app_action"
+        },
+        {
+          "id": "app.replay-onboarding",
+          "cli": [
+            "app replay-onboarding",
+            "app onboarding",
+            "app reset-onboarding"
+          ],
+          "status": "planned",
+          "mcpTool": "legacy_mac_app_action"
+        }
+      ]
+    }
+  ]
+}

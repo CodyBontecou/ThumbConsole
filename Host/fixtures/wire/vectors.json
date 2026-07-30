@@ -1,0 +1,79 @@
+{
+  "schema": "com.codybontecou.pocketpad.wire-fixtures",
+  "version": 1,
+  "vectors": [
+    {
+      "name": "v1-attack-up-negative-timestamp",
+      "kind": "compact",
+      "hex": "50500101d6ffffffffffffff0602",
+      "message": {
+        "type": "button",
+        "button": "attack",
+        "state": "up",
+        "timestamp": -42
+      }
+    },
+    {
+      "name": "v1-release-all",
+      "kind": "compact",
+      "hex": "5050010215cd5b0700000000ffff",
+      "message": {
+        "type": "release_all",
+        "timestamp": 123456789
+      }
+    },
+    {
+      "name": "v2-custom8-down-full-width",
+      "kind": "compact",
+      "hex": "5050020112010100080706050403020188776655443322111122334455667788",
+      "message": {
+        "type": "button",
+        "button": "custom8",
+        "state": "down",
+        "timestamp": 0,
+        "inputProtocolVersion": 2,
+        "inputGeneration": 72623859790382856,
+        "inputSequence": 1234605616436508552,
+        "pressIdentifier": 9833440827789222417
+      }
+    },
+    {
+      "name": "json-pairing-request",
+      "kind": "json",
+      "json": {
+        "type": "pairing_request",
+        "timestamp": 0,
+        "clientName": "Fixture iPhone",
+        "clientDeviceInfo": {
+          "deviceName": "Fixture iPhone",
+          "systemName": "iOS",
+          "systemVersion": "26.0",
+          "screenBoundsWidth": 393,
+          "screenBoundsHeight": 852,
+          "nativeBoundsWidth": 1179,
+          "nativeBoundsHeight": 2556,
+          "scale": 3,
+          "nativeScale": 3,
+          "futureField": {
+            "kept": true
+          }
+        }
+      }
+    },
+    {
+      "name": "json-element-input-v2",
+      "kind": "json",
+      "json": {
+        "type": "element_input",
+        "elementID": "00000000-0000-0000-0000-000000000105",
+        "elementPart": "primary",
+        "state": "down",
+        "timestamp": 0,
+        "inputProtocolVersion": 2,
+        "inputGeneration": 91,
+        "inputSequence": 42,
+        "pressIdentifier": 7
+      }
+    }
+  ]
+}

@@ -67,7 +67,7 @@ final class MacControllerServer: ObservableObject {
     @Published private(set) var outputBindings: [GameButton: MacControlOutputBinding]
     @Published private(set) var gamepadCustomization: GamepadCustomization
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
-    @Published private(set) var installedSkins: [PocketPadInstalledSkin]
+    @Published private(set) var installedSkins: [ThumbleInstalledSkin]
     @Published private(set) var activeGamepadProfileID: UUID
     @Published private(set) var defaultGamepadProfileID: UUID
     @Published private(set) var port: UInt16 = MacControllerServer.preferredPort
@@ -222,6 +222,7 @@ final class MacControllerServer: ObservableObject {
     // Editor holds do not receive iPhone heartbeats, but still need a safety release
     // if a CLI process exits or a pointer-up is lost.
     private static let localTestHoldTimeoutNanoseconds: UInt64 = 30_000_000_000
+    private let legacyAuthorityLease: MacLegacyAuthorityLease
     private let serverID: String
     private let bonjourServiceName: String
     private var trustedClients: [String: TrustedClient]
@@ -263,7 +264,7 @@ final class MacControllerServer: ObservableObject {
         var output: MacControlOutputBinding?
     }
     private var resolvedElementInputs: [KeypadElementInputID: ResolvedElementInput] = [:]
-    private let skinStore: PocketPadSkinStore
+    private let skinStore: ThumbleSkinStore
     private var realtimeGamepadProfiles: [GamepadConfigurationProfile]
     private var realtimeSkinPackages: [Data]
     private var realtimeBindingPresentations: [GamepadProfileBindingPresentations]
@@ -417,15 +418,16 @@ final class MacControllerServer: ObservableObject {
         var defaultProfileID: UUID?
     }
 
-    private static func makeSkinStore() -> PocketPadSkinStore {
-        if let store = try? PocketPadSkinStore() { return store }
+    private static func makeSkinStore() -> ThumbleSkinStore {
+        if let store = try? ThumbleSkinStore() { return store }
         let fallback = FileManager.default.temporaryDirectory
             .appendingPathComponent("PocketPad-Skins", isDirectory: true)
         // The temporary fallback is reachable only when Application Support is unavailable.
-        return try! PocketPadSkinStore(rootURL: fallback)
+        return try! ThumbleSkinStore(rootURL: fallback)
     }
 
-    init() {
+    init(legacyAuthorityLease: MacLegacyAuthorityLease) {
+        self.legacyAuthorityLease = legacyAuthorityLease
         serverID = Self.loadOrCreateServerID()
         bonjourServiceName = Self.defaultBonjourServiceName()
         trustedClients = Self.loadTrustedClients()
@@ -1074,8 +1076,9 @@ final class MacControllerServer: ObservableObject {
     }
 
     func isDefaultBinding(for button: GameButton) -> Bool {
-        keyBindings[button] == DefaultKeypadKeyMap.defaultBinding(for: button)
-            && outputBindings[button] == DefaultMacControlOutputMap.defaultBinding(for: button)
+        let recommendedBinding = activeProfileRecommendedOutputBindings[button]
+        return keyBindings[button] == recommendedBinding?.keyboard
+            && outputBindings[button] == recommendedBinding
     }
 
     func setKeyBinding(_ binding: MacKeyBinding, for button: GameButton) {
@@ -1341,13 +1344,18 @@ final class MacControllerServer: ObservableObject {
         gamepadCustomization = gamepadProfiles[activeProfileIndex].customization(for: gamepadCustomization.deviceCanvas.editorDeviceFrame.orientation)
     }
 
+    private var activeProfileRecommendedOutputBindings: [GameButton: MacControlOutputBinding] {
+        gamepadProfiles.first { $0.id == activeGamepadProfileID }?.recommendedMacOutputBindings
+            ?? DefaultMacControlOutputMap.defaultBindings
+    }
+
     func resetKeyBinding(_ button: GameButton) {
-        guard let defaultBinding = DefaultMacControlOutputMap.defaultBinding(for: button) else { return }
+        guard let defaultBinding = activeProfileRecommendedOutputBindings[button] else { return }
         setOutputBinding(defaultBinding, for: button, reason: "Reset output for \(button.displayName)")
     }
 
     func resetAllKeyBindings() {
-        outputBindings = DefaultMacControlOutputMap.defaultBindings
+        outputBindings = activeProfileRecommendedOutputBindings
         keyBindings = outputBindings.keyboardBindings
         setActiveProfileOutputMode(.keyboard)
         for button in GameButton.allCases {
@@ -1496,23 +1504,23 @@ final class MacControllerServer: ObservableObject {
     @discardableResult
     func installSkinPackage(
         data: Data,
-        policy: PocketPadSkinInstallPolicy = .newerOnly
-    ) throws -> PocketPadSkinInstallResult {
+        policy: ThumbleSkinInstallPolicy = .newerOnly
+    ) throws -> ThumbleSkinInstallResult {
         let result = try skinStore.install(data: data, policy: policy)
         refreshInstalledSkinState(sendToClient: true)
         lastReceivedEvent = "Installed skin \(result.reference.identifier)"
         return result
     }
 
-    func skinPackage(for reference: PocketPadSkinReference) throws -> PocketPadSkinPackage {
+    func skinPackage(for reference: ThumbleSkinReference) throws -> ThumbleSkinPackage {
         try skinStore.package(for: reference)
     }
 
-    func skinPackageData(for reference: PocketPadSkinReference) throws -> Data {
+    func skinPackageData(for reference: ThumbleSkinReference) throws -> Data {
         try skinStore.packageData(for: reference)
     }
 
-    func removeSkin(_ reference: PocketPadSkinReference) throws {
+    func removeSkin(_ reference: ThumbleSkinReference) throws {
         if let profile = gamepadProfiles.first(where: { $0.skinReference == reference }) {
             throw SkinLibraryError.skinInUse(profile.name)
         }
@@ -1522,9 +1530,9 @@ final class MacControllerServer: ObservableObject {
     }
 
     func applySkin(
-        _ reference: PocketPadSkinReference,
+        _ reference: ThumbleSkinReference,
         to profileID: UUID,
-        colorScheme: PocketPadSkinColorScheme = .light
+        colorScheme: ThumbleSkinColorScheme = .light
     ) throws {
         guard let index = gamepadProfiles.firstIndex(where: { $0.id == profileID }) else {
             throw SkinLibraryError.profileNotFound
@@ -2054,6 +2062,17 @@ final class MacControllerServer: ObservableObject {
 
     func releaseAll(reason: String = "Release all") {
         releaseAllAndNotifyClient(reason: reason)
+    }
+
+    func prepareForTermination() {
+        releaseAll(reason: "Mac helper quitting")
+        persistGamepadProfileState()
+        GamepadCustomizationPersistence.save(gamepadCustomization)
+        saveKeyBindings()
+        saveProfileKeyBindings()
+        saveOutputBindings()
+        saveProfileOutputBindings()
+        UserDefaults.standard.synchronize()
     }
 
     private func releaseAllAndNotifyClient(reason: String) {
@@ -2823,7 +2842,7 @@ final class MacControllerServer: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 do { try self.removeSkin(reference) }
-                catch PocketPadSkinStoreError.skinNotInstalled(_) { }
+                catch ThumbleSkinStoreError.skinNotInstalled(_) { }
                 catch {
                     self.lastReceivedEvent = "Skin removal failed: \(error.localizedDescription)"
                     self.publishRuntimeStatus()

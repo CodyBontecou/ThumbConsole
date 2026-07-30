@@ -43,9 +43,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "11522B6FC4B97A145BEDED1D"
-               BuildableName = "ThumbleLegacyThumbConsoleCLI"
-               BlueprintName = "ThumbleLegacyThumbConsoleCLI"
+               BlueprintIdentifier = "62D01BE64123912CEA98E345"
+               BuildableName = "ThumbleLegacyCLI"
+               BlueprintName = "ThumbleLegacyCLI"
                ReferencedContainer = "container:Thumble.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -57,9 +57,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "EC6DF635BADF753F73125845"
-               BuildableName = "ThumblePocketPadCLI"
-               BlueprintName = "ThumblePocketPadCLI"
+               BlueprintIdentifier = "11522B6FC4B97A145BEDED1D"
+               BuildableName = "ThumbleLegacyThumbConsoleCLI"
+               BlueprintName = "ThumbleLegacyThumbConsoleCLI"
                ReferencedContainer = "container:Thumble.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>

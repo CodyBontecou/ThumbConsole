@@ -1,0 +1,183 @@
+# Thumble Rust host
+
+The Rust host is a standalone macOS receiver for Thumble. It is designed so the transport, pairing, profile, and input state machine can later be reused by Windows and Linux hosts while output injection and service management remain platform adapters.
+
+## Architecture
+
+```text
+iPhone
+  |  WebSocket control + reliable input
+  |  _pocketpad._tcp mDNS discovery
+  v
+thumble-host
+  |- thumble-protocol: wire-compatible messages and codecs
+  |- thumble-core: pairing, sessions, profiles, bindings, held-input safety
+  |- transport: WebSocket receiver and discovery
+  |- control: local CLI IPC and process lifecycle
+  `- platform/macos: Accessibility and CGEvent keyboard/pointer output
+
+thumble-mcp (local stdio MCP adapter)
+  `- user-only host control socket
+
+thumble-bridge (same-directory constrained Swift helper)
+  `- one bounded JSON transform; no state, paths, argv, credentials, or persistence
+
+thumble CLI
+  `- exact-sibling thumble-cli-bridge -> live control socket or offline authority lock
+
+Thumble Mac UI
+  `- legacy writable backend holds the same authority lock and refuses Rust coexistence
+```
+
+The long-running receiver runs in the logged-in user's session. It must not run as root or as a system daemon because macOS Accessibility approval and input delivery belong to the active GUI session. Future Windows and Linux implementations should follow the same per-user-agent model.
+
+The host owns its portable state under `~/Library/Application Support/ThumbleHost`. On first run it imports the existing Thumble Mac server identity, trusted clients, profiles, standalone customization, and keyboard/output bindings without writing back to the legacy defaults domain. Preserving the server ID and trusted tokens allows an already-paired iPhone to Smart Connect to the Rust host. Migration fails closed and leaves the legacy defaults untouched if a stored critical record cannot be decoded; it never installs a fresh identity over a detected but unreadable store. If a pre-rename Rust-host state directory already exists and the canonical directory does not, Thumble continues using that directory to avoid creating a second server identity.
+
+## MVP scope
+
+The macOS MVP includes:
+
+- the existing unencrypted local WebSocket protocol and 8 MiB payload limit;
+- `_pocketpad._tcp` Bonjour publication with server identity TXT data;
+- six-digit pairing, persisted trusted reconnect tokens, and one active iPhone;
+- profile/customization delivery compatible with the current iOS app;
+- protocol-v2 input over the reliable WebSocket path;
+- keyboard shortcuts, sequences, pointer movement, scrolling, and pointer buttons through CGEvent;
+- reference-counted held outputs, visible rapid/overlapping key pulses, and release-on-disconnect/shutdown safety;
+- a local CLI for foreground/background lifecycle, status, pairing, and Accessibility setup;
+- a local stdio MCP adapter for Claude, OpenAI Codex, and other MCP clients.
+
+Authenticated UDP, virtual gamepad output, skin mutation, launch targets, and Windows/Linux platform backends are intentionally subsequent milestones. The iOS client already falls back to reliable WebSocket input when a pairing response does not advertise a realtime UDP token.
+
+## Developer workflow
+
+From the repository root:
+
+```bash
+cargo fmt --manifest-path Host/Cargo.toml --all --check
+cargo clippy --locked --manifest-path Host/Cargo.toml --workspace --all-targets -- -D warnings
+cargo test --locked --manifest-path Host/Cargo.toml --workspace
+cargo install --locked --path Host/crates/thumble-host
+cargo install --locked --path Host/crates/thumble-mcp
+cargo install --locked --path Host/crates/thumble-cli-bridge
+xcodebuild -project Thumble.xcodeproj -scheme ThumbleBridge -configuration Release -sdk macosx CODE_SIGNING_ALLOWED=NO build
+```
+
+The installed binary exposes:
+
+```bash
+# No arguments also runs the receiver in the foreground.
+thumble-host run
+thumble-host start
+thumble-host stop
+thumble-host restart
+thumble-host status --json
+thumble-host pairing-code
+thumble-host pairing-code --rotate
+thumble-host accessibility status
+thumble-host accessibility prompt
+thumble-host accessibility open
+thumble-host profiles --json
+thumble-host controls --json
+thumble-host select-profile <profile-id>
+thumble-host press-control <opaque-control-id>
+thumble-host release-all
+```
+
+Use `run --port 0 --no-bonjour --no-input` for an isolated development receiver. `start` launches the per-user receiver in the background; the other commands use its user-only Unix control socket. Quit Thumble Mac before using the default port so only one process owns port 8765 and advertises the server identity.
+
+## MCP adapter
+
+`thumble-mcp` is a stateless adapter between a local MCP client and the running host's user-only control socket. It never reads `state.json`, owns the receiver lifecycle, accepts shell commands, or exposes authentication tokens and raw key codes. It implements the stable MCP `2025-11-25` lifecycle using the official Rust SDK and newline-framed stdio transport.
+
+Start `thumble-host` before the MCP client launches the adapter. The server currently exposes twenty tools:
+
+| Tool | Behavior |
+|---|---|
+| `host_status` | Credential-free health, discovery, profile, and held-output summary |
+| `accessibility_status` | Read-only macOS Accessibility state |
+| `pairing_code` | Return the six-digit code; rotation requires `rotate: true` |
+| `configuration_status` | Authoritative configuration revision and bounded draft capability status |
+| `begin_configuration_draft` | Create a private 24-hour draft from an exact configuration revision |
+| `get_configuration_draft` | Read bounded draft metadata without raw profiles or bindings |
+| `edit_configuration_draft` | Apply one idempotent typed profile, theme, orientation, seven-kind layout repair, control-bar appearance, deterministic six-kind non-file element add/set, or semantic-binding operation |
+| `rebase_configuration_draft` | Three-way merge a stale draft onto an exact authoritative revision or return bounded conflict paths |
+| `validate_configuration_draft` | Validate an exact private draft revision |
+| `preview_configuration_draft` | Render bounded draft geometry, message-free layout-quality diagnostics, and ordered safe layer targets without changing the phone |
+| `export_controller_preview` | Return a bounded script-free SVG containing only draft geometry and labels |
+| `save_configuration_draft` | Atomically compare-and-swap a draft into authoritative state |
+| `discard_configuration_draft` | Delete unsaved work using its exact draft revision |
+| `query_catalog` | Bounded built-in controller-template metadata or exact supported device-frame IDs and display geometry |
+| `list_profiles` | Curated installed profile IDs and names plus configuration revision |
+| `list_controls` | Active-profile opaque control IDs; no key codes |
+| `render_controller` | Read-only active-controller geometry plus an interactive SVG MCP App |
+| `select_profile` | Select an exact ID returned by `list_profiles` |
+| `press_control` | Automatically released tap of an exact ID returned by `list_controls` |
+| `release_all` | Unrestricted emergency release of tracked keyboard/pointer state |
+
+Schema-v1 host state is upgraded atomically to a monotonically revisioned schema-v2 state. Drafts are stored separately as user-only `0600` files beneath a `0700` directory, contain no server identity or trusted-client fields, are limited to eight live drafts, and expire after 24 hours. Beginning, editing, validating, previewing, or discarding a draft never changes the authoritative controller or paired phone. Saves require exact draft/configuration revisions and a durable commit UUID, persist before activating the candidate, release tracked input before executable changes, and queue a complete profile snapshot to a paired phone. Typed edits cover deterministic built-in game generation and template installation, profile rename/select/default/duplicate/delete/move/create/reset, safe scalar customization and color backgrounds, all/suggested or one of seven canonical deterministic layout repairs, catalog-only device selection, orientation preference/copy, typed control-bar collections/resets and safe rendering-effective item appearance patches, complete bounded non-file reusable-style creation/rename/assignment/detach/deletion with sanitized style reads, layer ordering and deterministic group creation/duplication/visibility/locking/catalog-canvas nudging/reordering, theme application, deterministic six-kind non-file element creation, complete safe element layout/appearance/behavior edits, semantic element/part outputs, semantic keyboard bindings, and keyboard/controller/custom output modes and resets. Layout repair accepts only the selected profile variant and one stored, checked-in frame, or bounded 240...1800 canvas; it respects locks unless explicitly included and never persists an override frame. Rich profile operations run through the packaged constrained Swift bridge while Rust continues to own documents, revisions, and commits. Rebase uses lossless three-way merging for disjoint and stable-ID collection changes; overlapping scalar edits, delete-versus-edit, and incompatible reorder changes leave the draft unchanged and return bounded conflict paths. Full profile/package export and the remaining Swift operation families remain under active development and are tracked by the machine-readable parity contracts in [`docs/mcp`](mcp/README.md).
+
+Configuration save is independently disabled by default at both layers. Enable it only after explicit user approval by starting the host with `--allow-config-write` and the adapter with either `--allow-config-write` or the exact environment value `THUMBLE_MCP_ALLOW_CONFIG_WRITE=1`. Draft creation/editing remains non-authoritative without this opt-in.
+
+The standalone Swift CLI routes deterministic built-in Hollow Knight installation, all 17 built-in template installs (including `profile create --template`), safe scalar/solid-background customization `set`, all/suggested and seven canonical deterministic customization repairs, sanitized style `list`/`show` plus all five non-file style mutations, sanitized variant-scoped element/layer listing plus layer move/forward/backward/front/back reorders, sanitized variant-scoped group listing plus create/rename/duplicate/ungroup/state/nudge/reorder edits, `profile list`, `select`/`use`, `default`/`set-default`, `rename`, `duplicate`/`copy`, `delete`/`rm`, `reset`, and `move`/`reorder`; `orientation get`/`show`, `set`, `copy`, and `arrange`; every `binding` command; every `output` command; catalog-backed device `show` and `set`; control-bar collection `list`/`show`, `set`, `add`, `remove`, `move`, and `reset`; and rich non-file control-bar item `show`, `set`, and `reset` through `thumble-cli-bridge`. Its one-line schema-v6 request contains only a high-level typed command, a catalog template enum, booleans and a bounded optional name, typed profile/variant selectors, up to five bounded scalar/color customization edits, semantic key/modifier or gamepad values, a checked-in device-frame ID, canonical control-bar item IDs, bounded safe appearance changes, an optional exact read revision, and one invocation UUID. Responses contain only a revision-tagged profile catalog, orientation summary, bounded sanitized style definitions, layer records, and variant-scoped group records, bounded semantic binding/output projection, checked-in device-frame selection, bounded ordered control-bar collection projection, sanitized rendering-effective control-bar item appearance, deterministic draft/commit outcome IDs, or coded resume metadata. Legacy profiles that predate keyed binding maps use the independently reconstructed fixed standalone-CLI fallback until their first transaction materializes exact maps. Responses never contain raw key codes, modifier masks, profile documents, paths, credentials, artifacts, arbitrary device IDs, or raw control-bar appearance payloads. Legacy custom canvases are projected only as bounded typed dimensions and orientation; writes remain limited to the checked-in catalog. The helper relays one typed transaction to a reachable same-user host. If no host owns `runtime.lock`, it acquires that exact lock, loads or migrates state through Rust, runs the same begin/edit/validate/compare-and-swap preparation, atomically persists, and releases the lock. A held lock with an unreachable socket fails closed. Live hosts without configuration-write permission reject profile/template/generation/customization/orientation/binding/output/device/control-bar mutations with `configuration_write_disabled`; their bounded reads remain available, and the helper never substitutes an offline authority. Deterministic UUIDv5 IDs and a persisted request digest make same-invocation retries idempotent and conflicting reuse fail closed. Every migrated write uses one draft and one save. Rust independently reconstructs exact semantic binding/output maps, modes, active mirrors, synchronized element outputs, control-bar membership/order, orientation mirrors, and sparse default-frame behavior before accepting a Swift sibling delta. Orientation copy accepts an explicit saved source or the matching primary layout, copies source unknown fields, mirrors the destination into the primary layout, and is independently checked in Rust for exact frame, guide, visible-control rotation, and portrait control-bar collision behavior. Control-bar item writes preserve the standalone partial-edit semantics through the existing independently reconstructed `ControlBarItemChanges` operation; image fills and asset icons remain artifact-gated. Template and built-in generation installs derive destination/profile/element UUIDs inside Rust, use exact catalog revisions, and replay by invocation UUID. Safe customization writes independently reconstruct scalar, checked-in-frame, and solid-color deltas; rich fills and custom-size frames fail closed. Spec-based generation remains artifact-gated. Non-template profile creation, customization reads/resets and issue-code-specific repair aliases, theme and element writes, style import/export, profile import/export, app attachment, and skin/artifact families remain explicitly unmigrated, and legacy writes are rejected once Rust authority artifacts exist.
+
+Input is disabled by default. Enable `press_control` only after explicit user approval with either `--allow-input` or the exact environment value `THUMBLE_MCP_ALLOW_INPUT=1`. The adapter and host enforce independent rate limits; the host also requires input mode and Accessibility permission. `release_all` remains callable when input is disabled or rate-limited.
+
+`render_controller` attaches `ui://thumble/controller-builder-v1.html` through the standard `_meta.ui.resourceUri` field and serves it through `resources/read` as `text/html;profile=mcp-app`. The HTML is embedded in the Rust binary, performs the MCP Apps `2026-01-26` iframe handshake, and has no network, storage, input-injection, or mutation interface. Its structured result contains only bounded profile identity, orientation, color-scheme/accent/label preferences, sanitized canvas fills, element IDs/labels/kinds/shapes, canonical ordered control-bar item/target IDs and sanitized effective appearance, safe editable layout/appearance/behavior fields, allowlisted semantic outputs, resolved frames, ordered safe layer target/stable IDs, bounded group membership, and message-free layout-quality codes/severity/safe IDs/finite metrics/counts/canonical suggestions. The MCP App and draft editor resolve normal-state native fills, scheme variants, reusable/inline styles, foreground contrast, strokes, corners, shadows, joystick knobs, label visibility, and native polygon/star geometry from that snapshot instead of applying a fixed web palette. Unsupported raw keys/modifiers and asset/image/path-bearing content are omitted and explicitly flagged; launch targets, arbitrary profile fields, free-form diagnostic messages, and credentials never enter the snapshot. Artwork and image-backed fills remain omitted and are identified as such in the preview because local iPhone skin assets are not available to the MCP iframe. Layout diagnostics are pruned before editor targets to preserve the 48 KiB cap. Clients without MCP Apps support still receive structured JSON and a textual fallback.
+
+`preview_configuration_draft` attaches the separate `ui://thumble/controller-editor-v1.html` MCP App. It supports selecting and dragging controls, bounded label/center edits, explicit validation, explicit three-way rebase, explicit save, and discard. Every UI mutation calls the same typed MCP tools with an expected draft revision and fresh operation UUID; drag commits occur at pointer-up rather than every pointer event. Save is never triggered by teardown. The iframe contains no network requests, storage, raw profile JSON, raw key codes, filesystem access, or input-injection calls.
+
+Canonical host overrides are `THUMBLE_HOST_STATE_DIR` and `THUMBLE_HOST_CONTROL_SOCKET`. Pre-rename environment names remain accepted as lower-priority migration aliases; if a canonical variable is present, it always wins.
+
+A packaged local build can be registered with Claude Desktop in `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "thumble": {
+      "command": "/Applications/Thumble Host.app/Contents/MacOS/thumble-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+For an explicitly input-enabled configuration, use `"args": ["--allow-input"]`. OpenAI Codex can use the same stdio binary from its MCP configuration:
+
+```toml
+[mcp_servers.thumble]
+command = "/Applications/Thumble Host.app/Contents/MacOS/thumble-mcp"
+args = []
+```
+
+Codex desktop currently gates third-party MCP Apps UI behind an experimental feature. Add the setting to the existing `[features]` table in `~/.codex/config.toml`, then fully restart Codex:
+
+```toml
+[features]
+enable_mcp_apps = true
+```
+
+The tool remains useful as structured/text output if that experimental renderer is unavailable. Use an absolute binary path because GUI clients often have a restricted `PATH`. The current adapter is intentionally local stdio only. A remote ChatGPT/connector deployment requires a separately authenticated Streamable HTTP transport with TLS and per-tool authorization; do not expose this stdio process or the host control socket over the network.
+
+## Security and permissions
+
+The current iOS-compatible transport is unencrypted `ws://` on the local network. Pairing and trusted reconnect authentication prevent unauthenticated input, but the host should only run on networks you trust. Auth tokens are stored in the host state file with per-user permissions and are never included in status output or logs.
+
+Keyboard and pointer injection requires macOS Accessibility approval for the installed, signed host. Check or request it with the `accessibility` commands above. A stable bundle identifier, signing identity, and install path are important because macOS associates approval with code identity. The release script emits an ad-hoc-signed local development bundle by default; pass a Developer ID identity and notary profile for a distributable build with stable Accessibility identity.
+
+The control socket accepts only same-user peers, limits connections and frame sizes, serializes side effects, and lives in a user-owned `0700` directory with a `0600` socket. A custom `THUMBLE_HOST_CONTROL_SOCKET` parent that is symlinked, owned by another user, or group/world accessible is rejected rather than silently weakened.
+
+## Compatibility rules
+
+Thumble is the product and source/API brand. The old name remains only inside stable compatibility identifiers: existing App Store bundle IDs, defaults and notification keys, `_pocketpad._tcp`, the `pocketpad-pair` payload type, `.pocketpad` skin archives and schemas, legacy environment aliases, and previously created state paths. Changing those values in place would break installed apps, pairing, saved profiles, automation, or published packages.
+
+`Sources/Shared/ControllerProtocol.swift`, `Sources/iOS/ControllerClient.swift`, and `Sources/Mac/MacControllerServer.swift` remain the compatibility reference until the protocol fixtures are authoritative across both languages.
+
+- Keep Swift Codable field names and enum raw values unchanged.
+- Treat profile/customization objects as lossless JSON until portable typed models exist.
+- Never log pairing or realtime tokens.
+- Do not advertise a capability until the host implements its full mutation semantics.
+- Release every held key and pointer button on disconnect, replacement, timeout, generation transition, stop, or process termination.
+- Keep the core free of AppKit/CoreGraphics dependencies. Platform code implements output and permission traits.
+
+Before merging shared-model or startup changes, continue running `./scripts/verify-stack-safety.sh`; the Rust host does not replace the Swift stack-safety gate.

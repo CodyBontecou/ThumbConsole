@@ -11,7 +11,7 @@ final class ThumbleCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(ThumbleKeypadConfigurationExport.schemaIdentifier, "com.codybontecou.pocketpad.keypad-configuration")
         XCTAssertEqual(ThumbleMacIPC.captureLogPath, "/tmp/thumble-capture.jsonl")
         XCTAssertEqual(ThumbleMacIPC.legacyThumbConsoleCaptureLogPath, "/tmp/thumbconsole-capture.jsonl")
-        XCTAssertEqual(ThumbleMacIPC.legacyPocketPadCaptureLogPath, "/tmp/pocketpad-capture.jsonl")
+        XCTAssertEqual(ThumbleMacIPC.legacyThumbleCaptureLogPath, "/tmp/pocketpad-capture.jsonl")
     }
 
     func testKeypadConfigurationExportSchemaRoundTrip() throws {
@@ -972,7 +972,7 @@ final class ThumbleCLISmokeTestSuite: XCTestCase {
         }
     }
 
-    func testProductivityTemplatesSeedTheBindingsTheirActionsPromise() throws {
+    func testTemplatesSeedCompleteBindingsWithoutInheritingTheActiveProfile() throws {
         for template in [
             GamepadControllerTemplate.productivityStarter,
             .productivityOneHandedLeft,
@@ -984,7 +984,24 @@ final class ThumbleCLISmokeTestSuite: XCTestCase {
             XCTAssertEqual(recommended[.focus]?.displayName, "⌃B")
             XCTAssertEqual(recommended[.map]?.displayName, "⇧⌘P")
         }
-        XCTAssertNil(GamepadControllerTemplate.nes.recommendedMacOutputBindings)
+
+        for template in GamepadControllerTemplate.allCases.dropFirst(3) {
+            let recommended = try XCTUnwrap(template.recommendedMacOutputBindings)
+            XCTAssertEqual(recommended, DefaultMacControlOutputMap.gamingKeyboardBindings)
+            XCTAssertEqual(template.makeProfile().recommendedMacOutputBindings, recommended, template.displayName)
+        }
+
+        let xbox = try XCTUnwrap(GamepadControllerTemplate.xbox.recommendedMacOutputBindings)
+        XCTAssertEqual(xbox.count, GameButton.allCases.count)
+        XCTAssertEqual(xbox[.up]?.displayName, "W")
+        XCTAssertEqual(xbox[.down]?.displayName, "S")
+        XCTAssertEqual(xbox[.left]?.displayName, "A")
+        XCTAssertEqual(xbox[.right]?.displayName, "D")
+        XCTAssertEqual(xbox[.jump]?.displayName, "Space")
+        XCTAssertEqual(xbox[.pause]?.displayName, "Esc")
+        for button in [GameButton.custom1, .custom2, .custom3, .custom4, .custom5, .custom6, .custom7, .custom8] {
+            XCTAssertNotNil(xbox[button], button.rawValue)
+        }
     }
 
     func testProductivityStarterHasSeparatelyDesignedOrientationVariants() throws {
@@ -1097,6 +1114,38 @@ final class ThumbleCLISmokeTestSuite: XCTestCase {
         XCTAssertEqual(legacyState.profiles, [legacyProfile.normalized])
         XCTAssertEqual(legacyState.activeProfileID, legacyID)
         XCTAssertEqual(legacyState.defaultProfileID, legacyID)
+    }
+
+    func testProfilePersistenceDoesNotReplaceSavedProfileWithStaleLegacyMirror() {
+        let defaults = UserDefaults.standard
+        let originalData = defaults.data(forKey: GamepadConfigurationProfilePersistence.defaultsKey)
+        defer {
+            if let originalData {
+                defaults.set(originalData, forKey: GamepadConfigurationProfilePersistence.defaultsKey)
+            } else {
+                defaults.removeObject(forKey: GamepadConfigurationProfilePersistence.defaultsKey)
+            }
+        }
+
+        var profile = GamepadControllerTemplate.xbox.makeProfile()
+        var savedCustomization = profile.customization
+        savedCustomization.setLabel("Saved", for: .jump)
+        savedCustomization.updatedAt = 200
+        profile.customization = savedCustomization
+        profile.updatedAt = 200
+        GamepadConfigurationProfilePersistence.save(
+            [profile],
+            activeProfileID: profile.id,
+            defaultProfileID: profile.id
+        )
+
+        var staleMirror = savedCustomization
+        staleMirror.setLabel("Stale", for: .jump)
+        staleMirror.updatedAt = 100
+        let loaded = GamepadConfigurationProfilePersistence.load(activeCustomization: staleMirror)
+
+        XCTAssertEqual(loaded.activeProfile?.customization.visualLabel(for: .jump), "Saved")
+        XCTAssertEqual(loaded.activeProfile?.customization.updatedAt, 200)
     }
 
     func testSoftWhiteThemeAndTemplateSupportDecorationLayers() throws {

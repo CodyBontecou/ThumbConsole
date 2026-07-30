@@ -1,0 +1,23 @@
+{
+  "schema": "com.codybontecou.thumble.controller-templates",
+  "version": 1,
+  "templates": [
+    {"id":"productivityStarter","name":"Productivity Starter","description":"Everyday Mac navigation and shortcuts with tailored landscape and portrait layouts","revision":1,"customElementIDCount":0},
+    {"id":"productivityOneHandedLeft","name":"One-Handed Left","description":"Everyday Mac controls grouped in the lower-left thumb zone","revision":1,"customElementIDCount":0},
+    {"id":"productivityOneHandedRight","name":"One-Handed Right","description":"Everyday Mac controls grouped in the lower-right thumb zone","revision":1,"customElementIDCount":0},
+    {"id":"nes","name":"NES","description":"Classic console pad: D-pad, A/B, Select, Start","revision":1,"customElementIDCount":0},
+    {"id":"snes","name":"Super Nintendo","description":"Super Nintendo pad: D-pad, ABXY, L/R shoulders, Select, Start","revision":2,"customElementIDCount":2},
+    {"id":"nintendo64","name":"Nintendo 64","description":"Three-prong N64 layout with analog stick, Z trigger, and C-buttons","revision":1,"customElementIDCount":8},
+    {"id":"gameCube","name":"GameCube","description":"GameCube layout with oversized A, C-stick, shoulders, and Z","revision":1,"customElementIDCount":5},
+    {"id":"gameBoy","name":"Game Boy","description":"Classic handheld: D-pad, A/B, Select, Start","revision":1,"customElementIDCount":0},
+    {"id":"gameBoyAdvance","name":"Game Boy Advance","description":"GBA handheld: D-pad, A/B, L/R shoulders, Select, Start","revision":1,"customElementIDCount":2},
+    {"id":"genesisSixButton","name":"Genesis 6-Button","description":"Sega Genesis/Mega Drive pad with D-pad, A/B/C, X/Y/Z, Mode, Start","revision":1,"customElementIDCount":2},
+    {"id":"saturn","name":"Sega Saturn","description":"Sega Saturn six-button layout with D-pad, L/R, and Start","revision":1,"customElementIDCount":4},
+    {"id":"dreamcast","name":"Dreamcast","description":"Dreamcast layout with analog stick, D-pad, ABXY, L/R triggers, Start","revision":1,"customElementIDCount":3},
+    {"id":"arcadeStick","name":"Arcade Stick","description":"MAME/fight-stick layout with joystick, 8 buttons, Coin, and Start","revision":1,"customElementIDCount":5},
+    {"id":"psp","name":"PSP","description":"Portable emulator pad with D-pad, nub, shoulders, and face buttons","revision":1,"customElementIDCount":3},
+    {"id":"playStation","name":"PlayStation","description":"Dual-stick layout with PlayStation face symbols and shoulders","revision":1,"customElementIDCount":6},
+    {"id":"xbox","name":"Xbox","description":"Dual-stick Xbox-style layout with ABXY and triggers","revision":1,"customElementIDCount":6},
+    {"id":"softWhite","name":"Soft White Pro","description":"Premium soft-white neumorphic controller with layered shell, rings, plates, dual sticks, D-pad, ABXY, and shoulder controls","revision":1,"customElementIDCount":15}
+  ]
+}

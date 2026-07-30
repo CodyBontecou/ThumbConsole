@@ -1,6 +1,6 @@
 # Foldline Relay
 
-Editable handcrafted PocketPad skin workspace targeting `productivity-one-handed-left-v1`, template `productivityOneHandedLeft` revision 1.
+Editable handcrafted Thumble skin workspace targeting `productivity-one-handed-left-v1`, template `productivityOneHandedLeft` revision 1.
 
 Foldline Relay treats the canvas as an editorial dispatch sheet. Its asymmetric Thumb Folio supports the canonical lower-left native controls while one lightweight Relay Fold and open registration brackets organize the negative field. Landscape is a low packet; portrait is a separately composed tall docket. The SVGs are passive artwork only—Thumble retains control geometry, labels, hit testing, state, bindings, haptics, and accessibility.
 

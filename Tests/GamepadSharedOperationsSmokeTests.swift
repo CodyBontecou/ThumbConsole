@@ -3,6 +3,34 @@ import CoreGraphics
 import XCTest
 
 final class GamepadSharedOperationsSmokeTests: XCTestCase {
+    private func jsonSemanticallyEqual(_ lhs: Any, _ rhs: Any, tolerance: Double = 1e-12) -> Bool {
+        if lhs is NSNull || rhs is NSNull {
+            return lhs is NSNull && rhs is NSNull
+        }
+        if let lhs = lhs as? NSNumber, let rhs = rhs as? NSNumber {
+            let left = lhs.doubleValue
+            let right = rhs.doubleValue
+            return left == right || abs(left - right) <= tolerance
+        }
+        if let lhs = lhs as? String, let rhs = rhs as? String {
+            if let leftUUID = UUID(uuidString: lhs), let rightUUID = UUID(uuidString: rhs) {
+                return leftUUID == rightUUID
+            }
+            return lhs == rhs
+        }
+        if let lhs = lhs as? [Any], let rhs = rhs as? [Any] {
+            return lhs.count == rhs.count
+                && zip(lhs, rhs).allSatisfy { jsonSemanticallyEqual($0, $1, tolerance: tolerance) }
+        }
+        if let lhs = lhs as? [String: Any], let rhs = rhs as? [String: Any] {
+            return lhs.keys == rhs.keys
+                && lhs.allSatisfy { key, value in
+                    rhs[key].map { jsonSemanticallyEqual(value, $0, tolerance: tolerance) } == true
+                }
+        }
+        return false
+    }
+
     func testOptionArrowNudgeRoutesWhileTextFieldHasFocus() {
         let expectedDirections: [(UInt16, GamepadEditorNudgeDirection)] = [
             (123, .left),
@@ -53,6 +81,79 @@ final class GamepadSharedOperationsSmokeTests: XCTestCase {
                 modifierFlags: .option
             )
         )
+    }
+
+    func testCommandBExclusivelyRoutesQuickBind() {
+        XCTAssertTrue(
+            GamepadEditorKeyboardShortcutRouting.isQuickBindShortcut(
+                charactersIgnoringModifiers: "b",
+                modifierFlags: .command,
+                isRepeat: false
+            )
+        )
+        XCTAssertFalse(
+            GamepadEditorKeyboardShortcutRouting.isQuickBindShortcut(
+                charactersIgnoringModifiers: "b",
+                modifierFlags: [.command, .shift],
+                isRepeat: false
+            )
+        )
+        XCTAssertFalse(
+            GamepadEditorKeyboardShortcutRouting.isQuickBindShortcut(
+                charactersIgnoringModifiers: "b",
+                modifierFlags: .command,
+                isRepeat: true
+            )
+        )
+        XCTAssertFalse(
+            GamepadEditorKeyboardShortcutRouting.isQuickBindShortcut(
+                charactersIgnoringModifiers: "d",
+                modifierFlags: .command,
+                isRepeat: false
+            )
+        )
+    }
+
+    func testSharedControlBarAppearancePatchRequiresMembershipAndUsesCanonicalNormalization() throws {
+        var customization = GamepadCustomization.defaultValue
+        customization.controlBarItems = [.settings, .spacer]
+        var patch = GamepadControlBarAppearancePatch(
+            existing: customization.controlBarItemCustomization(for: .settings)
+        )
+        patch.appearance.widthScale = 1.5
+        patch.appearance.heightScale = 1.2
+        patch.appearance.centerX = 0.7
+        patch.appearance.rotationDegrees = 45
+        patch.appearance.zIndex = 10
+        patch.appearance.isLocationLocked = true
+        patch.appearance.icon = .text("S")
+        try customization.applyControlBarAppearancePatch(patch, for: .settings)
+        let result = customization.controlBarItemCustomization(for: .settings)
+        XCTAssertEqual(result.widthScale, 1.5)
+        XCTAssertEqual(result.heightScale, 1.2)
+        XCTAssertNil(result.centerX)
+        XCTAssertEqual(result.rotationDegrees, 0)
+        XCTAssertEqual(result.zIndex, 0)
+        XCTAssertFalse(result.isLocationLocked)
+        XCTAssertEqual(result.icon?.value, "S")
+
+        var spacerPatch = GamepadControlBarAppearancePatch(
+            existing: customization.controlBarItemCustomization(for: .spacer)
+        )
+        spacerPatch.appearance.widthScale = 2
+        spacerPatch.appearance.heightScale = 3
+        spacerPatch.appearance.shape = .circle
+        spacerPatch.appearance.isHidden = true
+        try customization.applyControlBarAppearancePatch(spacerPatch, for: .spacer)
+        let spacer = customization.controlBarItemCustomization(for: .spacer)
+        XCTAssertEqual(spacer.widthScale, 2)
+        XCTAssertEqual(spacer.heightScale, 1)
+        XCTAssertNil(spacer.shape)
+        XCTAssertTrue(spacer.isHidden)
+
+        XCTAssertThrowsError(try customization.applyControlBarAppearancePatch(patch, for: .home)) { error in
+            XCTAssertEqual(error as? GamepadControlBarAppearancePatchError, .itemNotPresent)
+        }
     }
 
     func testStableControlIdentityParsesEveryExistingIDShape() {
@@ -335,6 +436,62 @@ final class GamepadSharedOperationsSmokeTests: XCTestCase {
         XCTAssertFalse(unlocked.frame.intersects(locked.frame))
         XCTAssertTrue(result.changedControlIDs.contains(GamepadControlIdentity.custom(unlockedID).id))
         XCTAssertTrue(result.skippedLockedControlIDs.contains(GamepadControlIdentity.custom(lockedID).id))
+    }
+
+    func testCustomizationFixSharedAPIMatchesCheckedInSwiftGoldens() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("../Host/crates/thumble-host/tests/fixtures/customization-fix-v1.json")
+            .standardizedFileURL
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any]
+        )
+        XCTAssertEqual(root["schema"] as? String, "com.codybontecou.thumble.customization-fix-goldens")
+        let cases = try XCTUnwrap(root["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 12)
+
+        for fixture in cases {
+            let name = fixture["name"] as? String ?? "unnamed"
+            let beforeData = try JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture["before"]))
+            var customization = try JSONDecoder().decode(GamepadCustomization.self, from: beforeData)
+            let targetObject = try XCTUnwrap(fixture["target"] as? [String: Any])
+            let target: GamepadLayoutRepairTarget
+            if targetObject["kind"] as? String == "all" {
+                target = .all
+            } else {
+                let rawRepair = try XCTUnwrap(targetObject["repair"] as? String)
+                target = .repair(try XCTUnwrap(GamepadLayoutRepairKind(rawValue: rawRepair)))
+            }
+            let canvasObject = try XCTUnwrap(fixture["canvas"] as? [String: Any])
+            let canvasSize: CGSize?
+            switch canvasObject["source"] as? String {
+            case "stored":
+                canvasSize = nil
+            case "frame":
+                let frameID = try XCTUnwrap(canvasObject["frameID"] as? String)
+                canvasSize = try XCTUnwrap(GamepadEditorDeviceCatalog.frames.first { $0.id == frameID }).screenRect.size
+            case "size":
+                canvasSize = CGSize(
+                    width: try XCTUnwrap(canvasObject["width"] as? Double),
+                    height: try XCTUnwrap(canvasObject["height"] as? Double)
+                )
+            default:
+                return XCTFail("Unknown canvas in \(name)")
+            }
+            let includeLocked = try XCTUnwrap(fixture["includeLocked"] as? Bool)
+            _ = customization.applyLayoutRepairs(
+                target: target,
+                canvasSize: canvasSize,
+                respectingLocks: !includeLocked
+            )
+
+            let actual = try JSONSerialization.jsonObject(with: JSONEncoder().encode(customization.normalized))
+            let expected = try XCTUnwrap(fixture["after"])
+            XCTAssertTrue(
+                jsonSemanticallyEqual(actual, expected),
+                "Swift golden mismatch beyond numeric tolerance: \(name)"
+            )
+        }
     }
 
     func testGroupRenameAndDuplicateCloneChildrenAndOutputs() throws {

@@ -5,7 +5,7 @@
 - **Evidence dimensions:** 2176 × 1714 px
 - **Inspection scales:** exact full-resolution PNG, source-pixel panel/control crops, and an exact 25% overview at 544 × 429 px
 - **Art direction:** `reviews/art-direction.md`
-- **Quality bar:** PocketPad visual quality bar
+- **Quality bar:** Thumble visual quality bar
 - **Verdict:** `revise`
 
 Contact sheet 3 contains all 16 required native-renderer combinations. The stepped folio silhouette now survives the 25% view, the open brackets remain detectable, dark tiers and route hierarchy have not regressed, and the native faces no longer use the radial spotlight treatment seen in sheets 1–2. Disabled chroma and physical tab depression are also materially clearer. A visual pass is still blocked by three major findings: the landscape lower clearance remains below the explicit source-pixel target, `Command` remains below the required cap height, and active styling replaces secondary/utility role colors while retaining complete selection rings instead of discrete registration indices.

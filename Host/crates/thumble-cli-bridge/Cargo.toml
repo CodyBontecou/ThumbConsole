@@ -1,0 +1,16 @@
+[package]
+name = "thumble-cli-bridge"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "thumble-cli-bridge"
+path = "src/main.rs"
+
+[dependencies]
+libc = "=0.2.175"
+serde_json.workspace = true
+thumble-host = { path = "../thumble-host" }
+tokio = { version = "=1.47.1", features = ["rt-multi-thread"] }
+uuid = { version = "=1.18.1", features = ["v4"] }

@@ -9,6 +9,9 @@ It is no longer game-specific: use it for terminal workflows, tmux prefixes, Cur
 - `ThumbleMac` — macOS 14+ SwiftUI helper, WebSocket pairing/control server plus UDP realtime listener preferring port `8765` with automatic fallback if unavailable, Bonjour Smart Connect advertising with peer-to-peer enabled, CGEvent keyboard shortcut injection.
 - `ThumbleiOS` — iOS 17+ SwiftUI programmable keypad with multitouch controls and Smart Connect reconnects.
 - `ThumbleCLI` — macOS command-line configuration and control tool for generating, editing, importing/exporting, selecting, and testing keypad profiles for the Mac helper.
+- `Host/crates/thumble-host` — standalone Rust macOS receiver MVP with the same current iOS pairing and reliable WebSocket input protocol, native Bonjour discovery, persistent migration, and a local lifecycle CLI.
+- `Host/crates/thumble-mcp` — local stdio MCP adapter exposing curated host status, pairing, profiles, installed controls, revision-safe controller drafts, MCP Apps previews/editing, and emergency release tools to Claude, OpenAI Codex, and compatible clients.
+- `ThumbleBridge` / `thumble-bridge` — packaged, bounded Swift model transformer for allowlisted rich profile/theme/orientation operations; it receives no state paths, credentials, argv, or persistence authority. See [`docs/rust-host.md`](docs/rust-host.md).
 
 For upgrade compatibility, the existing app bundle identifiers, `_pocketpad._tcp` Bonjour service, pairing payload type, defaults keys, and keypad export schema remain unchanged internally. The CLI build makes `thumble` canonical while continuing to ship `thumbconsole` and `pocketpad` compatibility executables for existing scripts.
 
@@ -19,6 +22,7 @@ xcodegen generate
 xcodebuild -project Thumble.xcodeproj -scheme ThumbleMac -destination 'platform=macOS' build
 xcodebuild -project Thumble.xcodeproj -scheme ThumbleiOS -destination 'generic/platform=iOS Simulator' build
 xcodebuild -project Thumble.xcodeproj -scheme ThumbleCLI -destination 'platform=macOS' build
+./scripts/verify-rust-host.sh
 ```
 
 Before merging changes to shared models, codecs, profile synchronization, skins, or app startup, run the repository-wide stack-safety gate on Apple silicon (arm64):
@@ -39,6 +43,9 @@ scripts/release/macos-cloudflare.sh --version 1.0.0 --build-number 1
 
 # iOS beta: archive/export an IPA, upload it, and distribute to a TestFlight group.
 scripts/release/ios-testflight.sh --app "$ASC_APP_ID" --group "Internal Testers"
+
+# Standalone Rust host: universal background app, ad-hoc or Developer ID/notarized.
+scripts/release/macos-host.sh --version 0.1.0 --build-number 1
 ```
 
 Cloudflare Pages serves `/api/releases/latest-mac` and `/api/download-mac` from the `RELEASES` R2 binding. Create the bucket with `wrangler r2 bucket create pocketpad-releases`, then deploy the `Website` project after the binding exists. The macOS release script expects Wrangler auth plus either `asc` API-key notarization auth or notarization credentials via `NOTARYTOOL_KEYCHAIN_PROFILE` / `APPLE_ID`, `APP_SPECIFIC_PASSWORD`, and `ASC_TEAM_ID`.
@@ -59,7 +66,9 @@ For airplane/offline use, turn on Airplane Mode if desired, then manually re-ena
 
 ## Use with AI coding agents
 
-Thumble includes a ready-to-use [`SKILL.md`](SKILL.md) that teaches terminal-capable agents how to inspect the current setup, generate or edit profiles, validate layouts, operate the Mac helper safely, and verify their work. Give the agent the skill's absolute path plus the outcome you want; you do not need to write the CLI commands yourself.
+The standalone Rust distribution includes `thumble-mcp`, a local MCP `2025-11-25` stdio server for Claude, OpenAI Codex, and compatible clients. It talks only to the running host's user-only control socket and exposes twenty curated tools, including a bounded controller-template catalog, revision-aware private draft editing, constrained Swift generation/profile/theme/orientation transforms, deterministic seven-kind `customization.fix`, revision-safe typed non-file `control-bar.item.set`, safe non-file six-kind `element.add` and `element.set`, three-way rebase, safe SVG preview export, and atomic save, without authentication tokens, raw key codes, asset/image payloads, caller paths, arbitrary input text, or shell execution. `render_controller` returns a bounded geometry, sanitized native normal-state appearance, and message-free layout-quality snapshot plus an embedded MCP Apps `2026-01-26` SVG interface for compatible clients, with structured/text fallback elsewhere. Input is disabled unless the MCP process is explicitly launched with `--allow-input`; `release_all` is always available. Configuration examples and the complete tool contract are in [`docs/rust-host.md`](docs/rust-host.md#mcp-adapter).
+
+Thumble also includes a ready-to-use [`SKILL.md`](SKILL.md) that teaches terminal-capable agents how to inspect the current setup, generate or edit profiles, validate layouts, operate the Mac helper safely, and verify their work. Give the agent the skill's absolute path plus the outcome you want; you do not need to write the CLI commands yourself.
 
 ```text
 Read /absolute/path/to/Thumble/SKILL.md, then use the thumble CLI to
@@ -127,6 +136,7 @@ thumble customization set --appearance dark --device iphone-17-pro --background 
 thumble customization set --background-gradient '#101014,#4338CA' --gradient-angle 45
 thumble orientation get --profile "SNES Browser Controls"
 thumble orientation set landscape --profile "SNES Browser Controls"
+thumble device set iphone-17-pro --orientation landscape
 thumble element add joystick --label "Right Stick" --fill '#111827' --thumb-fill '#F8FAFC' --up custom1 --down custom2 --left custom3 --right custom4
 thumble element add joystick --label Nub --thumbstick --target right-stick --no-digital-directions --x 0.5 --y 0.58
 thumble element add text --text A --x 0.72 --y 0.66 --text-color '#FFFFFF'
@@ -142,7 +152,9 @@ thumble skin pack docs/skins/starter -o Aurora.pocketpad
 thumble skin apply Aurora.pocketpad --profile "SNES Browser Controls"
 ```
 
-When Thumble Mac is running, CLI profile/customization/binding changes are pushed to the app via distributed notifications and then synced to the paired iPhone. Runtime commands are also available:
+Controller-shaped templates now install with a complete starter keyboard map instead of inheriting unrelated shortcuts from the active setup: WASD movement, Space/J/Shift/E actions, Tab/Esc menus, arrow-key right-stick directions, and Q/R/Z/X for the remaining shoulder and trigger slots. These are intentionally generic game defaults; customize them for a game's own controls. Select one control and press **Command-B** to Quick Bind its key press without hunting for the shortcut field. **Reset All** in the Mac editor and `thumble binding reset-all` restore the defaults for that setup's source template.
+
+Standalone CLI built-in Hollow Knight generation, all built-in template installs (including `profile create --template`), profile, orientation, binding, output, safe scalar/solid-background customization updates and deterministic canonical layout repairs, sanitized reusable-style list/show and all non-file style mutations, sanitized variant-scoped element/layer/group listing and all layer/group edits, checked-in device-frame, control-bar collection, and rich non-file control-bar item commands use the exact-sibling schema-v6 Rust authority bridge for identical online/offline revision-safe transactions; successful live-host saves queue the complete state for the paired iPhone. Binding/output reads return only bounded revision-tagged semantic keys, modifiers, gamepad buttons, and element-input IDs. Control-bar reads return ordered canonical item IDs or sanitized rendering-effective appearance—never raw key codes or profile documents. Older profiles without keyed maps use an independently reconstructed fixed fallback until their first transaction materializes those maps. Rust derives template/profile/custom-element IDs, exact catalog revisions, and replay outcomes without accepting profile JSON. Spec-based generation, custom-size frames, rich customization background fills, image fills, asset icons, remaining customization reads/resets and issue-code-specific repair aliases, theme/element writes, style import/export, and artifact families still use the legacy path only when no Rust authority artifacts exist, and otherwise fail closed. Runtime commands are also available:
 
 ```bash
 thumble app open
@@ -167,7 +179,7 @@ See [Input Latency and Reliability Optimization](docs/development-logs/2026-07-1
 
 Thumble’s **Skins** library separates portable appearance from keypad layout and executable Mac/controller bindings. A validated `.pocketpad` ZIP can include base styling, semantic control-role rules, light/dark and portrait/landscape variants, external assets, preview images, creator metadata, and a license. Applying one preserves native SwiftUI controls, accessibility, dynamic labels, geometry, bindings, and user overrides. Installed packages and assets sync between the Mac and paired iPhone and remain available offline.
 
-Browse reviewed packages in the static [website skin directory](Website/skins.html), or import from the Mac Skins page, iPhone Files/Share Sheet, or CLI. Handcrafted authors can scaffold editable JSON/SVG against canonical artboards, compile deterministic packages, render all native states, and run strict quality gates with `thumble skin artboard|scaffold|compile|preview|quality`. The project `pocketpad-skin-author` skill adds separate art-direction, design, visual-critique, QA, and human-approval stages. See the [skin format, source schema, Indigo Pocket reference, security rules, and command workflow](docs/skins/README.md). The directory catalog, immutable packages, previews, submission guide, and reproducible build/verification scripts live under `Website/skins/` and `scripts/build-skin-directory.sh`.
+Browse reviewed packages in the static [website skin directory](Website/skins.html), or import from the Mac Skins page, iPhone Files/Share Sheet, or CLI. Handcrafted authors can scaffold editable JSON/SVG against canonical artboards, compile deterministic packages, render all native states, and run strict quality gates with `thumble skin artboard|scaffold|compile|preview|quality`. The project `thumble-skin-author` skill adds separate art-direction, design, visual-critique, QA, and human-approval stages. See the [skin format, source schema, Indigo Pocket reference, security rules, and command workflow](docs/skins/README.md). The directory catalog, immutable packages, previews, submission guide, and reproducible build/verification scripts live under `Website/skins/` and `scripts/build-skin-directory.sh`.
 
 ```bash
 thumble skin validate docs/skins/starter
@@ -226,7 +238,7 @@ thumble device list
 thumble device show
 thumble device set iphone-17-pro --orientation landscape
 thumble device set iphone-17-pro --orientation portrait --variant portrait
-thumble device set custom --size 844x390
+# Custom dimensions remain available in the app; CLI selection is limited to the checked-in catalog.
 thumble customization set --light-background '#FFFFFF' --dark-background '#050505'
 thumble customization set --background-tile dots --tile-foreground '#FFFFFF' --tile-background '#111111'
 thumble element nudge jump right --step 10 --canvas iphone-17-pro-landscape

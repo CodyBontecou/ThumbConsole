@@ -27,9 +27,9 @@ IOS_RUNTIME_OBJECT_NAMES = (
     "ControllerProtocol.o",
     "ControllerClient.o",
     "IOSLocalKeypadUX.o",
-    "PocketPadSkin.o",
-    "PocketPadSkinPackage.o",
-    "PocketPadSkinResolver.o",
+    "ThumbleSkin.o",
+    "ThumbleSkinPackage.o",
+    "ThumbleSkinResolver.o",
 )
 
 
@@ -276,7 +276,7 @@ def is_ios_runtime_symbol(name: str) -> bool:
         return ".normalized.getter" in name or ".(normalize" in name
     if ".GamepadAssetLibrary." in name:
         return ".normalized.getter" in name or ".(normalize" in name
-    if ".PocketPadSkinControlAppearance." in name:
+    if ".ThumbleSkinControlAppearance." in name:
         return any(
             fragment in name
             for fragment in (
@@ -288,7 +288,7 @@ def is_ios_runtime_symbol(name: str) -> bool:
                 ".(MergeWorkspace",
             )
         )
-    if ".PocketPadSkinAppearance." in name:
+    if ".ThumbleSkinAppearance." in name:
         return any(
             fragment in name
             for fragment in (
@@ -301,9 +301,9 @@ def is_ios_runtime_symbol(name: str) -> bool:
                 ".(MergeWorkspace",
             )
         )
-    if ".PocketPadSkin." in name:
+    if ".ThumbleSkin." in name:
         return ".normalized.getter" in name or ".appearance(orientation:" in name
-    if ".PocketPadSkinPackageValidator." in name:
+    if ".ThumbleSkinPackageValidator." in name:
         return any(
             fragment in name
             for fragment in (
@@ -313,7 +313,7 @@ def is_ios_runtime_symbol(name: str) -> bool:
                 "validateStyleReferences",
             )
         )
-    if ".PocketPadSkinPackageCodec." in name:
+    if ".ThumbleSkinPackageCodec." in name:
         return any(
             fragment in name
             for fragment in (
@@ -329,7 +329,7 @@ def is_ios_runtime_symbol(name: str) -> bool:
     ):
         return True
     if (
-        ".PocketPadSkinResolver." in name
+        ".ThumbleSkinResolver." in name
         or ".GamepadCustomization.applying(skinPackage:" in name
         or ".GamepadCustomization.resolvingAssetReferences" in name
     ):
@@ -436,18 +436,18 @@ def required_sentinels(scope: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
         ("profile skin application", ("GamepadConfigurationProfile.applySkin",)),
         ("profile skin detachment", ("GamepadConfigurationProfile.detachSkin(resolving:",)),
         ("profile skin detachment phase", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace",)),
-        ("skin resolver", ("PocketPadSkinResolver.applying(package:",)),
-        ("skin appearance selection", ("PocketPadSkin.appearance(orientation:",)),
-        ("skin appearance normalization", ("PocketPadSkinAppearance.normalized.getter",)),
-        ("skin control normalization", ("PocketPadSkinControlAppearance.normalized.getter",)),
-        ("skin control selection", ("PocketPadSkinAppearance.controlAppearance(",)),
-        ("skin control selection phase", ("PocketPadSkinAppearance.(ControlAppearanceResolutionWorkspace",)),
+        ("skin resolver", ("ThumbleSkinResolver.applying(package:",)),
+        ("skin appearance selection", ("ThumbleSkin.appearance(orientation:",)),
+        ("skin appearance normalization", ("ThumbleSkinAppearance.normalized.getter",)),
+        ("skin control normalization", ("ThumbleSkinControlAppearance.normalized.getter",)),
+        ("skin control selection", ("ThumbleSkinAppearance.controlAppearance(",)),
+        ("skin control selection phase", ("ThumbleSkinAppearance.(ControlAppearanceResolutionWorkspace",)),
         ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
-        ("style library merge", ("PocketPadSkinResolver.(StyleLibraryMergeWorkspace",)),
-        ("skin package validation", ("PocketPadSkinPackageValidator.validate(",)),
-        ("skin referenced assets", ("PocketPadSkinPackageValidator.(referencedAssetIDs",)),
-        ("skin package encoding", ("PocketPadSkinPackageCodec.encode(",)),
-        ("skin package decoding", ("PocketPadSkinPackageCodec.decode(",)),
+        ("style library merge", ("ThumbleSkinResolver.(StyleLibraryMergeWorkspace",)),
+        ("skin package validation", ("ThumbleSkinPackageValidator.validate(",)),
+        ("skin referenced assets", ("ThumbleSkinPackageValidator.(referencedAssetIDs",)),
+        ("skin package encoding", ("ThumbleSkinPackageCodec.encode(",)),
+        ("skin package decoding", ("ThumbleSkinPackageCodec.decode(",)),
         ("pending edit reconciliation", ("PendingKeypadLayoutReconciler.reconcile(",)),
         ("pending edit reconciliation phase", ("PendingKeypadLayoutReconciler.(ReconciliationWorkspace",)),
     )
@@ -646,9 +646,9 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
                 ("detachment phase", ("GamepadConfigurationProfile.(SkinDetachmentWorkspace", ".resolve")),
                 ("resolved customization", ("GamepadConfigurationProfile.resolvedCustomization(",)),
                 ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
-                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
-                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
-                ("skin resolver phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace",)),
+                ("skin resolver entry", ("ThumbleSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("skin resolver phase", ("ThumbleSkinResolver.(SkinApplicationWorkspace",)),
             ),
         ),
         CallPathBudget(
@@ -673,9 +673,9 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
                 ("orientation branch", ("GamepadConfigurationProfile.(SkinApplicationWorkspace", ".apply")),
                 ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
                 ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
-                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
-                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
-                ("input normalization", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".normalizeInputs")),
+                ("skin resolver entry", ("ThumbleSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("input normalization", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".normalizeInputs")),
                 ("customization normalization coordinator", ("GamepadCustomization.normalizeInPlace",)),
                 ("customization normalization phase", ("GamepadCustomization.(normalize",)),
                 ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),
@@ -687,15 +687,15 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
             groups=(
                 ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
                 ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
-                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
-                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
-                ("appearance preparation", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".prepareAppearance")),
-                ("skin appearance selection", ("PocketPadSkin.appearance(orientation:",)),
-                ("appearance merge", ("PocketPadSkinAppearance.merged(over:",)),
-                ("appearance merge coordinator", ("PocketPadSkinAppearance.(MergeWorkspace", ".resolve()")),
-                ("appearance merge phase", ("PocketPadSkinAppearance.(MergeWorkspace",)),
-                ("control appearance merge", ("PocketPadSkinControlAppearance.merged(over:",)),
-                ("control merge phase", ("PocketPadSkinControlAppearance.(MergeWorkspace",)),
+                ("skin resolver entry", ("ThumbleSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("appearance preparation", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".prepareAppearance")),
+                ("skin appearance selection", ("ThumbleSkin.appearance(orientation:",)),
+                ("appearance merge", ("ThumbleSkinAppearance.merged(over:",)),
+                ("appearance merge coordinator", ("ThumbleSkinAppearance.(MergeWorkspace", ".resolve()")),
+                ("appearance merge phase", ("ThumbleSkinAppearance.(MergeWorkspace",)),
+                ("control appearance merge", ("ThumbleSkinControlAppearance.merged(over:",)),
+                ("control merge phase", ("ThumbleSkinControlAppearance.(MergeWorkspace",)),
             ),
         ),
         CallPathBudget(
@@ -704,13 +704,13 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
             groups=(
                 ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
                 ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
-                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
-                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
-                ("appearance preparation", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".prepareAppearance")),
-                ("skin appearance selection", ("PocketPadSkin.appearance(orientation:",)),
-                ("appearance normalized getter", ("PocketPadSkinAppearance.normalized.getter",)),
-                ("appearance normalization phase", ("PocketPadSkinAppearance.(normalize",)),
-                ("control normalization", ("PocketPadSkinControlAppearance.normalized.getter",)),
+                ("skin resolver entry", ("ThumbleSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("appearance preparation", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".prepareAppearance")),
+                ("skin appearance selection", ("ThumbleSkin.appearance(orientation:",)),
+                ("appearance normalized getter", ("ThumbleSkinAppearance.normalized.getter",)),
+                ("appearance normalization phase", ("ThumbleSkinAppearance.(normalize",)),
+                ("control normalization", ("ThumbleSkinControlAppearance.normalized.getter",)),
                 ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
             ),
         ),
@@ -720,12 +720,12 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
             groups=(
                 ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
                 ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
-                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
-                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
-                ("library merge phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".mergeLibrariesAndArtwork")),
-                ("style merge entry", ("PocketPadSkinResolver.(mergedStyleLibrary",)),
-                ("style merge coordinator", ("PocketPadSkinResolver.(StyleLibraryMergeWorkspace", ".resolve()")),
-                ("style merge phase", ("PocketPadSkinResolver.(StyleLibraryMergeWorkspace",)),
+                ("skin resolver entry", ("ThumbleSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("library merge phase", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".mergeLibrariesAndArtwork")),
+                ("style merge entry", ("ThumbleSkinResolver.(mergedStyleLibrary",)),
+                ("style merge coordinator", ("ThumbleSkinResolver.(StyleLibraryMergeWorkspace", ".resolve()")),
+                ("style merge phase", ("ThumbleSkinResolver.(StyleLibraryMergeWorkspace",)),
                 ("style library normalization", ("GamepadStyleLibrary.normalized.getter",)),
                 ("style token normalization", ("GamepadStyleToken.normalized.getter",)),
                 ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
@@ -737,15 +737,15 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
             groups=(
                 ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
                 ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
-                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
-                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
-                ("control loop phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".apply")),
-                ("control selection entry", ("PocketPadSkinAppearance.controlAppearance(",)),
-                ("control selection coordinator", ("PocketPadSkinAppearance.(ControlAppearanceResolutionWorkspace", ".resolve()")),
-                ("control selection phase", ("PocketPadSkinAppearance.(ControlAppearanceResolutionWorkspace",)),
-                ("appearance normalization phase", ("PocketPadSkinAppearance.(normalize",)),
-                ("control appearance merge", ("PocketPadSkinControlAppearance.merged(over:",)),
-                ("control merge phase", ("PocketPadSkinControlAppearance.(MergeWorkspace",)),
+                ("skin resolver entry", ("ThumbleSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("control loop phase", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".apply")),
+                ("control selection entry", ("ThumbleSkinAppearance.controlAppearance(",)),
+                ("control selection coordinator", ("ThumbleSkinAppearance.(ControlAppearanceResolutionWorkspace", ".resolve()")),
+                ("control selection phase", ("ThumbleSkinAppearance.(ControlAppearanceResolutionWorkspace",)),
+                ("appearance normalization phase", ("ThumbleSkinAppearance.(normalize",)),
+                ("control appearance merge", ("ThumbleSkinControlAppearance.merged(over:",)),
+                ("control merge phase", ("ThumbleSkinControlAppearance.(MergeWorkspace",)),
             ),
         ),
         CallPathBudget(
@@ -754,13 +754,13 @@ def call_path_budgets(scope: str) -> tuple[CallPathBudget, ...]:
             groups=(
                 ("profile slot resolution", ("GamepadConfigurationProfile.(SkinSlotApplicationWorkspace", ".resolve")),
                 ("customization resolver wrapper", ("GamepadCustomization.applying(skinPackage:",)),
-                ("skin resolver entry", ("PocketPadSkinResolver.applying(package:",)),
-                ("skin resolver coordinator", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
-                ("control loop phase", ("PocketPadSkinResolver.(SkinApplicationWorkspace", ".apply")),
-                ("control application entry", ("PocketPadSkinResolver.(applying in ",)),
-                ("control application coordinator", ("PocketPadSkinResolver.(ControlApplicationWorkspace", ".resolve()")),
-                ("control application phase", ("PocketPadSkinResolver.(ControlApplicationWorkspace",)),
-                ("skin control normalization", ("PocketPadSkinControlAppearance.normalized.getter",)),
+                ("skin resolver entry", ("ThumbleSkinResolver.applying(package:",)),
+                ("skin resolver coordinator", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".resolve()")),
+                ("control loop phase", ("ThumbleSkinResolver.(SkinApplicationWorkspace", ".apply")),
+                ("control application entry", ("ThumbleSkinResolver.(applying in ",)),
+                ("control application coordinator", ("ThumbleSkinResolver.(ControlApplicationWorkspace", ".resolve()")),
+                ("control application phase", ("ThumbleSkinResolver.(ControlApplicationWorkspace",)),
+                ("skin control normalization", ("ThumbleSkinControlAppearance.normalized.getter",)),
                 ("visual-style normalization", ("GamepadControlVisualStyle.normalized.getter",)),
                 ("button normalization", ("GamepadButtonCustomization.normalized.getter",)),
                 ("button normalization phase", ("GamepadButtonCustomization.(normalize",)),

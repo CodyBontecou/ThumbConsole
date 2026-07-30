@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pocketpad.app/schemas/pocketpad-skin.schema.json",
-  "title": "PocketPad appearance skin",
+  "title": "Thumble appearance skin",
   "type": "object",
   "required": ["base", "variants"],
   "properties": {
@@ -54,7 +54,7 @@
       "additionalProperties": false
     },
     "fillStyle": {
-      "description": "Native PocketPad fill style (`solid`, `gradient`, `tile`, or `image`). Image fills may use `resizingMode`: `scale`, `tile`, `nine_slice_stretch`, or `nine_slice_tile`; nine-slice modes use normalized `nineSliceInsets`.",
+      "description": "Native Thumble fill style (`solid`, `gradient`, `tile`, or `image`). Image fills may use `resizingMode`: `scale`, `tile`, `nine_slice_stretch`, or `nine_slice_tile`; nine-slice modes use normalized `nineSliceInsets`.",
       "type": "object",
       "properties": {
         "kind": { "enum": ["solid", "gradient", "tile", "image"] },

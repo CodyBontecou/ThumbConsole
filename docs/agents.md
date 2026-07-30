@@ -195,7 +195,7 @@ Read /absolute/path/to/Thumble/SKILL.md. Inspect and strictly validate
 mode. Do not publish or submit the skin anywhere.
 ```
 
-Handcrafted skin creation has a stricter art-direction, editable-source, native-render, critique, QA, and human-approval workflow. Agents should also read [`docs/skins/README.md`](skins/README.md) and use the project `pocketpad-skin-author` skill before authoring or revising a community skin.
+Handcrafted skin creation has a stricter art-direction, editable-source, native-render, critique, QA, and human-approval workflow. Agents should also read [`docs/skins/README.md`](skins/README.md) and use the project `thumble-skin-author` skill before authoring or revising a community skin.
 
 ## Safe automation boundaries
 

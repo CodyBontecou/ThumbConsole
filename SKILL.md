@@ -236,7 +236,7 @@ Assign reusable semantic roles and independent touch expansion while creating a 
 "$THUMBLE_CLI" element set pause --skin-role menu --hit-insets 10,18,14,18
 ```
 
-For handcrafted skin creation or critique, load the project `pocketpad-skin-author` skill and use its separate art-director, designer, visual-critic, and QA stages. Human approval of the exact final contact sheet and package hash is required before directory publication. See `docs/skins/README.md` for authoring source, canonical artboards, package schemas, layers, nine-slice assets, quality gates, and security rules.
+For handcrafted skin creation or critique, load the project `thumble-skin-author` skill and use its separate art-director, designer, visual-critic, and QA stages. Human approval of the exact final contact sheet and package hash is required before directory publication. See `docs/skins/README.md` for authoring source, canonical artboards, package schemas, layers, nine-slice assets, quality gates, and security rules.
 
 ## Shortcut bindings
 

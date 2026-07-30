@@ -2,7 +2,7 @@
 
 **Evidence reviewed:** `reviews/contact-sheet-4.png` (2176 × 1714), inspected at full raster resolution and as an exact 25% Lanczos reduction (544 × 428).
 **Comparison evidence:** `reviews/contact-sheet-1.png` through `reviews/contact-sheet-3.png` and `reviews/critique-1.md` through `reviews/critique-3.md`.
-**Criteria:** `reviews/art-direction.md` and the PocketPad visual quality bar.
+**Criteria:** `reviews/art-direction.md` and the Thumble visual quality bar.
 **Verdict:** **revise**
 
 Pass 4 restores the required A/B face lift and keeps Active distinct at 25%. Portrait A now has a continuous two-pixel, ≥3.1:1 straight-side perimeter in both appearances. Portrait B does not: its leading side still contains one strong core pixel followed by a second pixel below 3.1:1. The wider treatment also creates a three-pixel full-contrast trailing edge on landscape A/B, regressing the prescribed 1.5–2 px index weight. The sole pass-3 major therefore remains unresolved, and a visual pass is not available.

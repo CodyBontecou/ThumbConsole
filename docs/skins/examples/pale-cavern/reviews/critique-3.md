@@ -6,7 +6,7 @@
 - **Panel count:** 16 — portrait and landscape, light and dark, normal, pressed, active, and disabled
 - **Verified package SHA-256:** `10b498ca7c549847d4c32d3aea8248f7a102ab9dc307c051a86e1c536cdbdd5b`
 - **Inspection scales:** exact full-resolution PNG; nearest-neighbor enlargements of the exact sheet pixels; isolated state rows; exact portrait action/system crops; and a 25% overview at 544 × 429 px
-- **Criteria:** `reviews/art-direction.md`, both prior critique reports, the pass-3 design record, and the PocketPad visual quality bar
+- **Criteria:** `reviews/art-direction.md`, both prior critique reports, the pass-3 design record, and the Thumble visual quality bar
 - **Finding inventory:** 0 blockers, 0 majors, 0 minors
 - **Verdict:** `visual-pass`
 

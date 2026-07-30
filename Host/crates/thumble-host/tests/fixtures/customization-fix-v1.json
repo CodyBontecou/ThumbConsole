@@ -1,0 +1,6030 @@
+{
+  "cases": [
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000101",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000102",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000103",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000104",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000105",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000106",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000107",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000108",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000109",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000110",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "up",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "down",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "left",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "right",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "jump",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "dash",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "focus",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "map",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "pause",
+          {
+            "heightScale": 1,
+            "isHidden": true,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "source": "stored"
+      },
+      "includeLocked": false,
+      "name": "show-default-controls",
+      "target": {
+        "kind": "repair",
+        "repair": "show-default-controls"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0.06292906178489703,
+            "centerY": 0.13681592039800994,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.06292906178489703,
+              "centerY": 0.13681592039800994,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0,
+            "centerY": 0,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0,
+              "centerY": 0,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "frameID": "iphone-16-pro-landscape",
+        "source": "frame"
+      },
+      "includeLocked": false,
+      "name": "move-inside-safe-area",
+      "target": {
+        "kind": "repair",
+        "repair": "move-inside-safe-area"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0.03666666666666667,
+            "centerY": 0.07333333333333333,
+            "heightScale": 0.6111111111111112,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.6111111111111112,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.03666666666666667,
+              "centerY": 0.07333333333333333,
+              "heightScale": 0.6111111111111112,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.6111111111111112,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0.01,
+            "centerY": 0.01,
+            "heightScale": 0.2,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.2,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.01,
+              "centerY": 0.01,
+              "heightScale": 0.2,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.2,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "height": 300,
+        "source": "size",
+        "width": 600
+      },
+      "includeLocked": false,
+      "name": "minimum-touch-target",
+      "target": {
+        "kind": "repair",
+        "repair": "minimum-touch-target"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0.5,
+            "centerY": 0.5,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.5,
+            "centerY": 0.2860696517412935,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "map",
+          {
+            "centerX": 0.43,
+            "centerY": 0.6839800995024875,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "pause",
+          {
+            "centerX": 0.5844851258581236,
+            "centerY": 0.6839800995024875,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.5,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.2860696517412935,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "centerX": 0.43,
+              "centerY": 0.6839800995024875,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "centerX": 0.5844851258581236,
+              "centerY": 0.6839800995024875,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0.5,
+            "centerY": 0.5,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.5,
+            "centerY": 0.5,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.5,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.5,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "source": "stored"
+      },
+      "includeLocked": false,
+      "name": "resolve-overlap",
+      "target": {
+        "kind": "repair",
+        "repair": "resolve-overlap"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "up",
+          {
+            "centerX": 0.452516487330788,
+            "centerY": 0.2375549624374253,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "down",
+          {
+            "centerX": 0.652516487330788,
+            "centerY": 0.2375549624374253,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "left",
+          {
+            "centerX": 0.452516487330788,
+            "centerY": 0.3802644521591264,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "right",
+          {
+            "centerX": 0.652516487330788,
+            "centerY": 0.3802644521591264,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "jump",
+          {
+            "centerX": 0.452516487330788,
+            "centerY": 0.5229739418808278,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.652516487330788,
+            "centerY": 0.5229739418808278,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "dash",
+          {
+            "centerX": 0.452516487330788,
+            "centerY": 0.665683431602529,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "focus",
+          {
+            "centerX": 0.652516487330788,
+            "centerY": 0.665683431602529,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "map",
+          {
+            "centerX": 0.45921416174939267,
+            "centerY": 0.8177042698285906,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "pause",
+          {
+            "centerX": 0.5095685525859077,
+            "centerY": 0.7514708602176066,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "centerX": 0.452516487330788,
+              "centerY": 0.2375549624374253,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "centerX": 0.652516487330788,
+              "centerY": 0.2375549624374253,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "centerX": 0.452516487330788,
+              "centerY": 0.3802644521591264,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "centerX": 0.652516487330788,
+              "centerY": 0.3802644521591264,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.452516487330788,
+              "centerY": 0.5229739418808278,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.652516487330788,
+              "centerY": 0.5229739418808278,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "centerX": 0.452516487330788,
+              "centerY": 0.665683431602529,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "centerX": 0.652516487330788,
+              "centerY": 0.665683431602529,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "centerX": 0.45921416174939267,
+              "centerY": 0.8177042698285906,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "centerX": 0.5095685525859077,
+              "centerY": 0.7514708602176066,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "up",
+          {
+            "centerX": 0.4,
+            "centerY": 0.3,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "down",
+          {
+            "centerX": 0.43000000000000005,
+            "centerY": 0.3,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "left",
+          {
+            "centerX": 0.4,
+            "centerY": 0.33999999999999997,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "right",
+          {
+            "centerX": 0.43000000000000005,
+            "centerY": 0.33999999999999997,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "jump",
+          {
+            "centerX": 0.4,
+            "centerY": 0.38,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.43000000000000005,
+            "centerY": 0.38,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "dash",
+          {
+            "centerX": 0.4,
+            "centerY": 0.42,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "focus",
+          {
+            "centerX": 0.43000000000000005,
+            "centerY": 0.42,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "map",
+          {
+            "centerX": 0.4,
+            "centerY": 0.45999999999999996,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "pause",
+          {
+            "centerX": 0.43000000000000005,
+            "centerY": 0.45999999999999996,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "centerX": 0.4,
+              "centerY": 0.3,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "centerX": 0.43000000000000005,
+              "centerY": 0.3,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "centerX": 0.4,
+              "centerY": 0.33999999999999997,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "centerX": 0.43000000000000005,
+              "centerY": 0.33999999999999997,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.4,
+              "centerY": 0.38,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.43000000000000005,
+              "centerY": 0.38,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "centerX": 0.4,
+              "centerY": 0.42,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "centerX": 0.43000000000000005,
+              "centerY": 0.42,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "centerX": 0.4,
+              "centerY": 0.45999999999999996,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "centerX": 0.43000000000000005,
+              "centerY": 0.45999999999999996,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "frameID": "iphone-17-pro-portrait",
+        "source": "frame"
+      },
+      "includeLocked": false,
+      "name": "auto-arrange",
+      "target": {
+        "kind": "repair",
+        "repair": "auto-arrange"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "up",
+          {
+            "centerX": 0.1610666666666667,
+            "centerY": 0.20666666666666675,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "left",
+          {
+            "centerX": 0.06,
+            "centerY": 0.5133333333333334,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "right",
+          {
+            "centerX": 0.3144,
+            "centerY": 0.5,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "jump",
+          {
+            "centerX": 0.4766666666666667,
+            "centerY": 0.5,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.63,
+            "centerY": 0.5,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "focus",
+          {
+            "centerX": 0.7405866666666666,
+            "centerY": 0.19333333333333333,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "map",
+          {
+            "centerX": 0.43,
+            "centerY": 0.7730666666666667,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "pause",
+          {
+            "centerX": 0.6517333333333333,
+            "centerY": 0.7730666666666667,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "centerX": 0.1610666666666667,
+              "centerY": 0.20666666666666675,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "centerX": 0.06,
+              "centerY": 0.5133333333333334,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "centerX": 0.3144,
+              "centerY": 0.5,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.4766666666666667,
+              "centerY": 0.5,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.63,
+              "centerY": 0.5,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "centerX": 0.7405866666666666,
+              "centerY": 0.19333333333333333,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "centerX": 0.43,
+              "centerY": 0.7730666666666667,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "centerX": 0.6517333333333333,
+              "centerY": 0.7730666666666667,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0.5,
+            "centerY": 0.5,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.63,
+            "centerY": 0.5,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.5,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.63,
+              "centerY": 0.5,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "height": 300,
+        "source": "size",
+        "width": 600
+      },
+      "includeLocked": false,
+      "name": "separate-expanded-hit-targets",
+      "target": {
+        "kind": "repair",
+        "repair": "separate-expanded-hit-targets"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "up",
+          {
+            "centerX": 0.23049751243781097,
+            "centerY": 0.642837528604119,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "down",
+          {
+            "centerX": 0.27,
+            "centerY": 0.877162471395881,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "left",
+          {
+            "centerX": 0.1,
+            "centerY": 0.76,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "right",
+          {
+            "centerX": 0.4802487562189055,
+            "centerY": 0.6451258581235698,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "jump",
+          {
+            "centerX": 0.73,
+            "centerY": 0.877162471395881,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.47527363184079596,
+            "centerY": 0.76,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "dash",
+          {
+            "centerX": 0.9,
+            "centerY": 0.76,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "focus",
+          {
+            "centerX": 0.73,
+            "centerY": 0.642837528604119,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "centerX": 0.23049751243781097,
+              "centerY": 0.642837528604119,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "centerX": 0.27,
+              "centerY": 0.877162471395881,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "centerX": 0.1,
+              "centerY": 0.76,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "centerX": 0.4802487562189055,
+              "centerY": 0.6451258581235698,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.73,
+              "centerY": 0.877162471395881,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.47527363184079596,
+              "centerY": 0.76,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "centerX": 0.9,
+              "centerY": 0.76,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "centerX": 0.73,
+              "centerY": 0.642837528604119,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "up",
+          {
+            "centerX": 0.5,
+            "centerY": 0.15,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "down",
+          {
+            "centerX": 0.5,
+            "centerY": 0.15,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "left",
+          {
+            "centerX": 0.5,
+            "centerY": 0.15,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "right",
+          {
+            "centerX": 0.5,
+            "centerY": 0.15,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "jump",
+          {
+            "centerX": 0.5,
+            "centerY": 0.15,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.5,
+            "centerY": 0.15,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "dash",
+          {
+            "centerX": 0.5,
+            "centerY": 0.15,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "focus",
+          {
+            "centerX": 0.5,
+            "centerY": 0.15,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.15,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.15,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.15,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.15,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.15,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.15,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.15,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.15,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "frameID": "iphone-17-pro-portrait",
+        "source": "frame"
+      },
+      "includeLocked": false,
+      "name": "ergonomic-auto-arrange",
+      "target": {
+        "kind": "repair",
+        "repair": "ergonomic-auto-arrange"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "up",
+          {
+            "centerX": 0.2962289755351682,
+            "centerY": 0.2752380952380953,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "down",
+          {
+            "centerX": 0.14289564220183487,
+            "centerY": 0.2752380952380953,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "left",
+          {
+            "centerX": 0.37157587920489293,
+            "centerY": 0.7641798941798942,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "right",
+          {
+            "centerX": 0.21824254587155964,
+            "centerY": 0.5819047619047619,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "jump",
+          {
+            "centerX": 0.8991685779816514,
+            "centerY": 0.7999779541446208,
+            "heightScale": 0.6111111111111112,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.6111111111111112,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0.7925019113149847,
+            "centerY": 0.8663666666666665,
+            "heightScale": 0.6111111111111112,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.6111111111111112,
+            "zIndex": 0
+          },
+          "dash",
+          {
+            "centerX": 0.8242844801223244,
+            "centerY": 0.5399779541446208,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "focus",
+          {
+            "centerX": 0.6690309633027522,
+            "centerY": 0.40994708994708995,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "map",
+          {
+            "centerX": 0.5953844801223241,
+            "centerY": 0.1368804232804233,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "pause",
+          {
+            "centerX": 0.6229019113149847,
+            "centerY": 0.7305798941798941,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "centerX": 0.2962289755351682,
+              "centerY": 0.2752380952380953,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "centerX": 0.14289564220183487,
+              "centerY": 0.2752380952380953,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "centerX": 0.37157587920489293,
+              "centerY": 0.7641798941798942,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "centerX": 0.21824254587155964,
+              "centerY": 0.5819047619047619,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.8991685779816514,
+              "centerY": 0.7999779541446208,
+              "heightScale": 0.6111111111111112,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.6111111111111112,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0.7925019113149847,
+              "centerY": 0.8663666666666665,
+              "heightScale": 0.6111111111111112,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.6111111111111112,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "centerX": 0.8242844801223244,
+              "centerY": 0.5399779541446208,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "centerX": 0.6690309633027522,
+              "centerY": 0.40994708994708995,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "centerX": 0.5953844801223241,
+              "centerY": 0.1368804232804233,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "centerX": 0.6229019113149847,
+              "centerY": 0.7305798941798941,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0,
+            "centerY": 0,
+            "heightScale": 0.25,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.25,
+            "zIndex": 0
+          },
+          "attack",
+          {
+            "centerX": 0,
+            "centerY": 0,
+            "heightScale": 0.25,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.25,
+            "zIndex": 0
+          },
+          "up",
+          {
+            "centerX": 0.5,
+            "centerY": 0.12,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "down",
+          {
+            "centerX": 0.5,
+            "centerY": 0.12,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "left",
+          {
+            "centerX": 0.5,
+            "centerY": 0.12,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "right",
+          {
+            "centerX": 0.5,
+            "centerY": 0.12,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "dash",
+          {
+            "centerX": 0.5,
+            "centerY": 0.12,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          },
+          "focus",
+          {
+            "centerX": 0.5,
+            "centerY": 0.12,
+            "heightScale": 1,
+            "isHidden": false,
+            "isLocationLocked": false,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 1,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.12,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.12,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.12,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.12,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0,
+              "centerY": 0,
+              "heightScale": 0.25,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.25,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "centerX": 0,
+              "centerY": 0,
+              "heightScale": 0.25,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.25,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.12,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.12,
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "height": 300,
+        "source": "size",
+        "width": 600
+      },
+      "includeLocked": false,
+      "name": "all-three-pass",
+      "target": {
+        "kind": "all"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0,
+            "centerY": 0,
+            "heightScale": 0.2,
+            "isHidden": false,
+            "isLocationLocked": true,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.2,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0,
+              "centerY": 0,
+              "heightScale": 0.2,
+              "isHidden": false,
+              "isLocationLocked": true,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.2,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0,
+            "centerY": 0,
+            "heightScale": 0.2,
+            "isHidden": false,
+            "isLocationLocked": true,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.2,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0,
+              "centerY": 0,
+              "heightScale": 0.2,
+              "isHidden": false,
+              "isLocationLocked": true,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.2,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "height": 300,
+        "source": "size",
+        "width": 600
+      },
+      "includeLocked": false,
+      "name": "locked-respected",
+      "target": {
+        "kind": "repair",
+        "repair": "minimum-touch-target"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0.03666666666666667,
+            "centerY": 0.07333333333333333,
+            "heightScale": 0.6111111111111112,
+            "isHidden": false,
+            "isLocationLocked": true,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.6111111111111112,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0.03666666666666667,
+              "centerY": 0.07333333333333333,
+              "heightScale": 0.6111111111111112,
+              "isHidden": false,
+              "isLocationLocked": true,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.6111111111111112,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [
+          "jump",
+          {
+            "centerX": 0,
+            "centerY": 0,
+            "heightScale": 0.2,
+            "isHidden": false,
+            "isLocationLocked": true,
+            "rotationDegrees": 0,
+            "shadowStrength": 1,
+            "shape": "rounded_rectangle",
+            "widthScale": 0.2,
+            "zIndex": 0
+          }
+        ],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "centerX": 0,
+              "centerY": 0,
+              "heightScale": 0.2,
+              "isHidden": false,
+              "isLocationLocked": true,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.2,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "height": 300,
+        "source": "size",
+        "width": 600
+      },
+      "includeLocked": true,
+      "name": "locked-included",
+      "target": {
+        "kind": "repair",
+        "repair": "minimum-touch-target"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "source": "stored"
+      },
+      "includeLocked": false,
+      "name": "deterministic-no-op",
+      "target": {
+        "kind": "repair",
+        "repair": "show-default-controls"
+      }
+    },
+    {
+      "after": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [
+          {
+            "controlKind": "button",
+            "id": "00000000-0000-0000-0000-00000000cafe",
+            "label": "Custom",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.5,
+              "heightScale": 0.6111111111111112,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.6111111111111112,
+              "zIndex": 0
+            },
+            "mappedButton": "custom1"
+          }
+        ],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          },
+          {
+            "id": "00000000-0000-0000-0000-00000000cafe",
+            "kind": "button",
+            "label": "Custom",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.5,
+              "heightScale": 0.6111111111111112,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.6111111111111112,
+              "zIndex": 0
+            },
+            "legacySlot": "custom1",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "before": {
+        "accentStyle": "monochrome",
+        "buttonCustomizations": [],
+        "colorSchemePreference": "system",
+        "controlScale": "standard",
+        "customButtons": [
+          {
+            "controlKind": "button",
+            "id": "00000000-0000-0000-0000-00000000cafe",
+            "label": "Custom",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.5,
+              "heightScale": 0.2,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.2,
+              "zIndex": 0
+            },
+            "mappedButton": "custom1"
+          }
+        ],
+        "deviceCanvas": {
+          "frameID": "iphone-17-pro-landscape"
+        },
+        "elements": [
+          {
+            "builtInButton": "up",
+            "id": "00000000-0000-0000-0000-000000000257",
+            "kind": "button",
+            "label": "\u2191",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "up",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "down",
+            "id": "00000000-0000-0000-0000-000000000258",
+            "kind": "button",
+            "label": "\u2193",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "down",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "left",
+            "id": "00000000-0000-0000-0000-000000000259",
+            "kind": "button",
+            "label": "\u2190",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "left",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "right",
+            "id": "00000000-0000-0000-0000-000000000260",
+            "kind": "button",
+            "label": "\u2192",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "right",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "jump",
+            "id": "00000000-0000-0000-0000-000000000261",
+            "kind": "button",
+            "label": "A",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "jump",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "attack",
+            "id": "00000000-0000-0000-0000-000000000262",
+            "kind": "button",
+            "label": "B",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "attack",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "dash",
+            "id": "00000000-0000-0000-0000-000000000263",
+            "kind": "button",
+            "label": "C",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "dash",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "focus",
+            "id": "00000000-0000-0000-0000-000000000264",
+            "kind": "button",
+            "label": "D",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "focus",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "map",
+            "id": "00000000-0000-0000-0000-000000000265",
+            "kind": "button",
+            "label": "\u21e7\u2318P",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "map",
+            "partOutputs": []
+          },
+          {
+            "builtInButton": "pause",
+            "id": "00000000-0000-0000-0000-000000000266",
+            "kind": "button",
+            "label": "Esc",
+            "layout": {
+              "heightScale": 1,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 1,
+              "zIndex": 0
+            },
+            "legacySlot": "pause",
+            "partOutputs": []
+          },
+          {
+            "id": "00000000-0000-0000-0000-00000000cafe",
+            "kind": "button",
+            "label": "Custom",
+            "layout": {
+              "centerX": 0.5,
+              "centerY": 0.5,
+              "heightScale": 0.2,
+              "isHidden": false,
+              "isLocationLocked": false,
+              "rotationDegrees": 0,
+              "shadowStrength": 1,
+              "shape": "rounded_rectangle",
+              "widthScale": 0.2,
+              "zIndex": 0
+            },
+            "legacySlot": "custom1",
+            "partOutputs": []
+          }
+        ],
+        "labelOverrides": [],
+        "layoutMode": "standard",
+        "showsButtonLabels": true,
+        "updatedAt": 0
+      },
+      "canvas": {
+        "height": 300,
+        "source": "size",
+        "width": 600
+      },
+      "includeLocked": false,
+      "name": "custom-mirror-minimum-touch-target",
+      "target": {
+        "kind": "repair",
+        "repair": "minimum-touch-target"
+      }
+    }
+  ],
+  "schema": "com.codybontecou.thumble.customization-fix-goldens",
+  "version": 1
+}

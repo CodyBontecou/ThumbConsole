@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pocketpad.app/schemas/pocketpad-skin-source.schema.json",
-  "title": "PocketPad editable handcrafted skin source",
+  "title": "Thumble editable handcrafted skin source",
   "type": "object",
   "required": [
     "schema", "schemaVersion", "identifier", "version", "name", "author", "summary", "license",

@@ -1,6 +1,6 @@
 # Solar Sumi
 
-Handcrafted PocketPad skin source workspace for `arcade-stick-v1` revision 1.
+Handcrafted Thumble skin source workspace for `arcade-stick-v1` revision 1.
 
 Solar Sumi combines an asymmetric Offset Fiber Deck, one absorbed Carbon Current, and sparse gold Solar Register marks. Landscape carries the eye left-to-right from the joystick island into the action field; portrait is separately composed to rise from the lower joystick pool through a single fork into two action ranks. Light and dark artwork are authored independently. Artwork remains passive: Thumble owns control frames, labels, hit testing, bindings, state rendering, and accessibility.
 

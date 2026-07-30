@@ -1,7 +1,7 @@
 # Tideglass Field — Independent Visual Critique, Pass 1
 
 **Evidence reviewed:** `reviews/contact-sheet-1.png` (2176 × 1714), inspected at exact contact-sheet resolution and at an exact 25% reduction (544 × 428).
-**Criteria:** `reviews/art-direction.md` and the PocketPad visual quality bar.
+**Criteria:** `reviews/art-direction.md` and the Thumble visual quality bar.
 **Verdict:** **reject**
 
 The sheet contains all 16 required panels, and portrait is separately composed rather than rotated or stretched. The work nevertheless has one blocker and four major findings. Most importantly, the landscape artwork collapses at 25% into a conventional game-controller front plate rather than the specified three-shelf hydrographic transect. Dark control tiers, normal legend contrast, primary-action active feedback, and disabled-state semantics also miss explicit acceptance criteria.

@@ -1,0 +1,101 @@
+{
+  "customization": {
+    "elements": [
+      {
+        "builtInButton": "up",
+        "id": "00000000-0000-0000-0000-000000000101",
+        "kind": "button",
+        "label": "Up",
+        "layout": {},
+        "legacySlot": "up",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "down",
+        "id": "00000000-0000-0000-0000-000000000102",
+        "kind": "button",
+        "label": "Down",
+        "layout": {},
+        "legacySlot": "down",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "left",
+        "id": "00000000-0000-0000-0000-000000000103",
+        "kind": "button",
+        "label": "Left",
+        "layout": {},
+        "legacySlot": "left",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "right",
+        "id": "00000000-0000-0000-0000-000000000104",
+        "kind": "button",
+        "label": "Right",
+        "layout": {},
+        "legacySlot": "right",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "jump",
+        "id": "00000000-0000-0000-0000-000000000105",
+        "kind": "button",
+        "label": "Action 1",
+        "layout": {},
+        "legacySlot": "jump",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "attack",
+        "id": "00000000-0000-0000-0000-000000000106",
+        "kind": "button",
+        "label": "Action 2",
+        "layout": {},
+        "legacySlot": "attack",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "dash",
+        "id": "00000000-0000-0000-0000-000000000107",
+        "kind": "button",
+        "label": "Action 3",
+        "layout": {},
+        "legacySlot": "dash",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "focus",
+        "id": "00000000-0000-0000-0000-000000000108",
+        "kind": "button",
+        "label": "Action 4",
+        "layout": {},
+        "legacySlot": "focus",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "map",
+        "id": "00000000-0000-0000-0000-000000000109",
+        "kind": "button",
+        "label": "Menu",
+        "layout": {},
+        "legacySlot": "map",
+        "partOutputs": []
+      },
+      {
+        "builtInButton": "pause",
+        "id": "00000000-0000-0000-0000-000000000110",
+        "kind": "button",
+        "label": "Pause",
+        "layout": {},
+        "legacySlot": "pause",
+        "partOutputs": []
+      }
+    ]
+  },
+  "id": "00000000-0000-0000-0000-000000000201",
+  "name": "Default",
+  "orientationPreference": "automatic",
+  "outputMode": "keyboard",
+  "updatedAt": 0
+}

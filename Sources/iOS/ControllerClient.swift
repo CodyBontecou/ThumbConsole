@@ -842,7 +842,7 @@ private enum ControllerConnectionTarget {
 
 private struct PendingSkinSelectionMutation: Codable, Equatable {
     var profileID: UUID
-    var skinReference: PocketPadSkinReference?
+    var skinReference: ThumbleSkinReference?
     var updatedAt: Int64
 }
 
@@ -871,7 +871,7 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var gamepadCustomization: GamepadCustomization
     @Published private(set) var gamepadProfiles: [GamepadConfigurationProfile]
-    @Published private(set) var installedSkins: [PocketPadInstalledSkin]
+    @Published private(set) var installedSkins: [ThumbleInstalledSkin]
     @Published private(set) var bindingPresentations: [GamepadProfileBindingPresentations]
     @Published private(set) var pendingKeypadLayoutEdits: [PendingKeypadLayoutEdit]
     @Published private(set) var selectedGamepadProfileID: UUID
@@ -882,10 +882,10 @@ final class ControllerClient: ObservableObject {
     @Published private(set) var isPracticeModeEnabled: Bool
 
     private let networkQueue = DispatchQueue(label: "Thumble.iOS.Network", qos: .userInteractive)
-    private let skinStore: PocketPadSkinStore
-    private var skinPackagesByReference: [PocketPadSkinReference: PocketPadSkinPackage]
+    private let skinStore: ThumbleSkinStore
+    private var skinPackagesByReference: [ThumbleSkinReference: ThumbleSkinPackage]
     private var pendingSkinSelectionMutations: [PendingSkinSelectionMutation]
-    private var pendingSkinRemovals: [PocketPadSkinReference]
+    private var pendingSkinRemovals: [ThumbleSkinReference]
     private let inputTransport: ControllerInputTransport
     private var connection: NWConnection?
     private var controlURL: URL?
@@ -915,11 +915,11 @@ final class ControllerClient: ObservableObject {
     private static let pendingSkinSelectionDefaultsKey = "PocketPad.iOS.pendingSkinSelections.v1"
     private static let pendingSkinRemovalDefaultsKey = "PocketPad.iOS.pendingSkinRemovals.v1"
 
-    private static func makeSkinStore() -> PocketPadSkinStore {
-        if let store = try? PocketPadSkinStore() { return store }
+    private static func makeSkinStore() -> ThumbleSkinStore {
+        if let store = try? ThumbleSkinStore() { return store }
         let fallback = FileManager.default.temporaryDirectory
             .appendingPathComponent("PocketPad-iOS-Skins", isDirectory: true)
-        return try! PocketPadSkinStore(rootURL: fallback)
+        return try! ThumbleSkinStore(rootURL: fallback)
     }
 
     var isConnected: Bool {
@@ -1023,7 +1023,7 @@ final class ControllerClient: ObservableObject {
         }
     }
 
-    func skinPackage(for reference: PocketPadSkinReference?) -> PocketPadSkinPackage? {
+    func skinPackage(for reference: ThumbleSkinReference?) -> ThumbleSkinPackage? {
         guard let reference else { return nil }
         return skinPackagesByReference[reference]
     }
@@ -1031,8 +1031,8 @@ final class ControllerClient: ObservableObject {
     @discardableResult
     func installSkinPackage(
         data: Data,
-        policy: PocketPadSkinInstallPolicy = .newerOnly
-    ) throws -> PocketPadSkinInstallResult {
+        policy: ThumbleSkinInstallPolicy = .newerOnly
+    ) throws -> ThumbleSkinInstallResult {
         let result = try skinStore.install(data: data, policy: policy)
         reloadInstalledSkins()
         if isConnected, serverCapabilities.contains(.skinPackages) {
@@ -1041,17 +1041,17 @@ final class ControllerClient: ObservableObject {
         return result
     }
 
-    func skinPackageData(for reference: PocketPadSkinReference) throws -> Data {
+    func skinPackageData(for reference: ThumbleSkinReference) throws -> Data {
         try skinStore.packageData(for: reference)
     }
 
     func applySkinToSelectedProfile(
-        _ reference: PocketPadSkinReference,
-        colorScheme: PocketPadSkinColorScheme
+        _ reference: ThumbleSkinReference,
+        colorScheme: ThumbleSkinColorScheme
     ) throws {
         guard let index = gamepadProfiles.firstIndex(where: { $0.id == selectedGamepadProfileID }),
               let package = skinPackage(for: reference)
-        else { throw PocketPadSkinStoreError.skinNotInstalled(reference) }
+        else { throw ThumbleSkinStoreError.skinNotInstalled(reference) }
 
         gamepadProfiles[index].applySkin(package, colorScheme: colorScheme)
         commitLocalSkinProfileChange(at: index)
@@ -1063,7 +1063,7 @@ final class ControllerClient: ObservableObject {
     }
 
     /// Forks the current visual result into the profile, then removes its package dependency.
-    func detachSkinFromSelectedProfile(colorScheme: PocketPadSkinColorScheme) {
+    func detachSkinFromSelectedProfile(colorScheme: ThumbleSkinColorScheme) {
         guard let index = gamepadProfiles.firstIndex(where: { $0.id == selectedGamepadProfileID }),
               let reference = gamepadProfiles[index].skinReference
         else { return }
@@ -1079,10 +1079,10 @@ final class ControllerClient: ObservableObject {
         submitSkinSelectionMutation(profileID: profile.id, reference: nil, packageData: nil)
     }
 
-    func removeSkin(_ reference: PocketPadSkinReference) throws {
+    func removeSkin(_ reference: ThumbleSkinReference) throws {
         if let profile = gamepadProfiles.first(where: { $0.skinReference == reference }) {
             throw NSError(
-                domain: "PocketPadSkinStore",
+                domain: "ThumbleSkinStore",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "This skin is still used by \(profile.name)."]
             )
@@ -1108,7 +1108,7 @@ final class ControllerClient: ObservableObject {
 
     private func submitSkinSelectionMutation(
         profileID: UUID,
-        reference: PocketPadSkinReference?,
+        reference: ThumbleSkinReference?,
         packageData: Data?
     ) {
         let mutation = PendingSkinSelectionMutation(
@@ -2459,9 +2459,9 @@ final class ControllerClient: ObservableObject {
         UserDefaults.standard.set(data, forKey: Self.pendingSkinSelectionDefaultsKey)
     }
 
-    private static func loadPendingSkinRemovals() -> [PocketPadSkinReference] {
+    private static func loadPendingSkinRemovals() -> [ThumbleSkinReference] {
         guard let data = UserDefaults.standard.data(forKey: pendingSkinRemovalDefaultsKey) else { return [] }
-        return (try? JSONDecoder().decode([PocketPadSkinReference].self, from: data)) ?? []
+        return (try? JSONDecoder().decode([ThumbleSkinReference].self, from: data)) ?? []
     }
 
     private func persistPendingSkinRemovals() {

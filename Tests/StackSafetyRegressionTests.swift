@@ -21,13 +21,16 @@ final class StackSafetyRegressionTests: XCTestCase {
         assertInlineSize(GamepadConfigurationProfile.self, atMost: 512)
         assertInlineSize(PendingKeypadLayoutEdit.self, atMost: 4 * 1024)
         assertInlineSize(ControllerMessage.self, atMost: 4 * 1024)
-        assertInlineSize(PocketPadSkin.self, atMost: 1024)
-        assertInlineSize(PocketPadSkinPackage.self, atMost: 1024)
-        assertInlineSize(PocketPadSkinAppearance.self, atMost: 1024)
-        assertInlineSize(PocketPadSkinControlAppearance.self, atMost: 2 * 1024)
+        assertInlineSize(ThumbleSkin.self, atMost: 1024)
+        assertInlineSize(ThumbleSkinPackage.self, atMost: 1024)
+        assertInlineSize(ThumbleSkinAppearance.self, atMost: 1024)
+        assertInlineSize(ThumbleSkinControlAppearance.self, atMost: 2 * 1024)
         assertInlineSize(GamepadControlStateStyle.self, atMost: 2 * 1024)
         assertInlineSize(GamepadControlVisualStyle.self, atMost: 256)
         assertInlineSize(GamepadStyleToken.self, atMost: 256)
+        assertInlineSize(ThumbleBridgeOperation.self, atMost: 512)
+        assertInlineSize(ThumbleBridgeStyleAppearance.self, atMost: 64)
+        assertInlineSize(ThumbleConfigurationBridgeRequest.self, atMost: 512)
     }
 
     private func assertInlineSize<Value>(
@@ -269,13 +272,13 @@ final class StackSafetyRegressionTests: XCTestCase {
 
     private final class ProfileSkinApplicationJob: @unchecked Sendable {
         private var profile: GamepadConfigurationProfile
-        private let initialPackage: PocketPadSkinPackage
-        private let updatedPackage: PocketPadSkinPackage
+        private let initialPackage: ThumbleSkinPackage
+        private let updatedPackage: ThumbleSkinPackage
 
         init(
             profile: GamepadConfigurationProfile,
-            initialPackage: PocketPadSkinPackage,
-            updatedPackage: PocketPadSkinPackage
+            initialPackage: ThumbleSkinPackage,
+            updatedPackage: ThumbleSkinPackage
         ) {
             self.profile = profile
             self.initialPackage = initialPackage
@@ -486,13 +489,13 @@ final class StackSafetyRegressionTests: XCTestCase {
 
     func testBundledSkinInstallationRunsOn512KiBStack() throws {
         let rootURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PocketPad-Bundled-Skin-Stack-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("Thumble-Bundled-Skin-Stack-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: rootURL) }
 
         try runOnThread(stackSize: 512 * 1024) {
-            let store = try PocketPadSkinStore(rootURL: rootURL)
+            let store = try ThumbleSkinStore(rootURL: rootURL)
             try store.installBundledSkinsIfNeeded()
-            guard try store.installedSkins().count == PocketPadBundledSkins.packages.count else {
+            guard try store.installedSkins().count == ThumbleBundledSkins.packages.count else {
                 throw StackTestError.bundledSkinInstallationFailed
             }
         }
@@ -577,32 +580,32 @@ final class StackSafetyRegressionTests: XCTestCase {
     private func makeSkinPackage(
         shape: GamepadButtonShapeStyle,
         version: String
-    ) -> PocketPadSkinPackage {
-        PocketPadSkinPackage(
-            manifest: PocketPadSkinManifest(
+    ) -> ThumbleSkinPackage {
+        ThumbleSkinPackage(
+            manifest: ThumbleSkinManifest(
                 identifier: "com.example.stack-safety",
                 version: version,
                 name: "Stack Safety",
-                author: PocketPadSkinAuthor(name: "Tests"),
+                author: ThumbleSkinAuthor(name: "Tests"),
                 license: "MIT"
             ),
-            skin: PocketPadSkin(
-                base: PocketPadSkinAppearance(
-                    defaultControl: PocketPadSkinControlAppearance(shape: shape)
+            skin: ThumbleSkin(
+                base: ThumbleSkinAppearance(
+                    defaultControl: ThumbleSkinControlAppearance(shape: shape)
                 ),
                 variants: [
-                    PocketPadSkinVariant(
+                    ThumbleSkinVariant(
                         id: "portrait",
                         orientation: .portrait,
-                        appearance: PocketPadSkinAppearance(
-                            defaultControl: PocketPadSkinControlAppearance(shape: shape)
+                        appearance: ThumbleSkinAppearance(
+                            defaultControl: ThumbleSkinControlAppearance(shape: shape)
                         )
                     ),
-                    PocketPadSkinVariant(
+                    ThumbleSkinVariant(
                         id: "landscape",
                         orientation: .landscape,
-                        appearance: PocketPadSkinAppearance(
-                            defaultControl: PocketPadSkinControlAppearance(shape: shape)
+                        appearance: ThumbleSkinAppearance(
+                            defaultControl: ThumbleSkinControlAppearance(shape: shape)
                         )
                     )
                 ]

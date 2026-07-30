@@ -5,7 +5,7 @@
 - **Evidence dimensions:** 2176 × 1714 px
 - **Inspection scales:** exact full-resolution PNG, exact source-pixel panel/control crops, enlarged nearest-neighbor edge/legend crops, and an exact 25% overview at 544 × 429 px
 - **Art direction:** `reviews/art-direction.md`
-- **Quality bar:** PocketPad visual quality bar
+- **Quality bar:** Thumble visual quality bar
 - **Verdict:** `visual-pass`
 
 Contact sheet 4 contains all 16 required native-renderer combinations. The three critique-3 major findings are resolved: active faces retain their assigned role colors and use one short non-enclosing index per control; `Command` now meets the rendered size/fit test; and the landscape lower edge shows complete native silhouettes with no visible clipping, tangent, or output crossing the canonical geometric allowance. The dark pressed system tag also retains a traceable complete contour. No prior composition, material, interaction, or originality correction has regressed.

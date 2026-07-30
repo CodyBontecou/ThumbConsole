@@ -1,0 +1,550 @@
+{
+  "schema": "com.codybontecou.thumble.device-frames",
+  "version": 1,
+  "frames": [
+    {
+      "id": "iphone-17-pro-landscape",
+      "device": "iPhone 17 Pro",
+      "orientation": "landscape",
+      "width": 874.0,
+      "height": 402.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-17-pro-portrait",
+      "device": "iPhone 17 Pro",
+      "orientation": "portrait",
+      "width": 402.0,
+      "height": 874.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-17-pro-max-landscape",
+      "device": "iPhone 17 Pro Max",
+      "orientation": "landscape",
+      "width": 956.0,
+      "height": 440.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-17-pro-max-portrait",
+      "device": "iPhone 17 Pro Max",
+      "orientation": "portrait",
+      "width": 440.0,
+      "height": 956.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-17e-landscape",
+      "device": "iPhone 17e",
+      "orientation": "landscape",
+      "width": 844.0,
+      "height": 390.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-17e-portrait",
+      "device": "iPhone 17e",
+      "orientation": "portrait",
+      "width": 390.0,
+      "height": 844.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-air-landscape",
+      "device": "iPhone Air",
+      "orientation": "landscape",
+      "width": 912.0,
+      "height": 420.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-air-portrait",
+      "device": "iPhone Air",
+      "orientation": "portrait",
+      "width": 420.0,
+      "height": 912.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-17-landscape",
+      "device": "iPhone 17",
+      "orientation": "landscape",
+      "width": 874.0,
+      "height": 402.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-17-portrait",
+      "device": "iPhone 17",
+      "orientation": "portrait",
+      "width": 402.0,
+      "height": 874.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-16-pro-landscape",
+      "device": "iPhone 16 Pro",
+      "orientation": "landscape",
+      "width": 874.0,
+      "height": 402.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-16-pro-portrait",
+      "device": "iPhone 16 Pro",
+      "orientation": "portrait",
+      "width": 402.0,
+      "height": 874.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-16-pro-max-landscape",
+      "device": "iPhone 16 Pro Max",
+      "orientation": "landscape",
+      "width": 956.0,
+      "height": 440.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-16-pro-max-portrait",
+      "device": "iPhone 16 Pro Max",
+      "orientation": "portrait",
+      "width": 440.0,
+      "height": 956.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-16e-landscape",
+      "device": "iPhone 16e",
+      "orientation": "landscape",
+      "width": 844.0,
+      "height": 390.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-16e-portrait",
+      "device": "iPhone 16e",
+      "orientation": "portrait",
+      "width": 390.0,
+      "height": 844.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-16-landscape",
+      "device": "iPhone 16",
+      "orientation": "landscape",
+      "width": 852.0,
+      "height": 393.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-16-portrait",
+      "device": "iPhone 16",
+      "orientation": "portrait",
+      "width": 393.0,
+      "height": 852.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-16-plus-landscape",
+      "device": "iPhone 16 Plus",
+      "orientation": "landscape",
+      "width": 932.0,
+      "height": 430.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-16-plus-portrait",
+      "device": "iPhone 16 Plus",
+      "orientation": "portrait",
+      "width": 430.0,
+      "height": 932.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-15-pro-landscape",
+      "device": "iPhone 15 Pro",
+      "orientation": "landscape",
+      "width": 852.0,
+      "height": 393.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-15-pro-portrait",
+      "device": "iPhone 15 Pro",
+      "orientation": "portrait",
+      "width": 393.0,
+      "height": 852.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-15-pro-max-landscape",
+      "device": "iPhone 15 Pro Max",
+      "orientation": "landscape",
+      "width": 932.0,
+      "height": 430.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-15-pro-max-portrait",
+      "device": "iPhone 15 Pro Max",
+      "orientation": "portrait",
+      "width": 430.0,
+      "height": 932.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-15-landscape",
+      "device": "iPhone 15",
+      "orientation": "landscape",
+      "width": 852.0,
+      "height": 393.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-15-portrait",
+      "device": "iPhone 15",
+      "orientation": "portrait",
+      "width": 393.0,
+      "height": 852.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-15-plus-landscape",
+      "device": "iPhone 15 Plus",
+      "orientation": "landscape",
+      "width": 932.0,
+      "height": 430.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-15-plus-portrait",
+      "device": "iPhone 15 Plus",
+      "orientation": "portrait",
+      "width": 430.0,
+      "height": 932.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-14-pro-landscape",
+      "device": "iPhone 14 Pro",
+      "orientation": "landscape",
+      "width": 852.0,
+      "height": 393.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-14-pro-portrait",
+      "device": "iPhone 14 Pro",
+      "orientation": "portrait",
+      "width": 393.0,
+      "height": 852.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-14-pro-max-landscape",
+      "device": "iPhone 14 Pro Max",
+      "orientation": "landscape",
+      "width": 932.0,
+      "height": 430.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-14-pro-max-portrait",
+      "device": "iPhone 14 Pro Max",
+      "orientation": "portrait",
+      "width": 430.0,
+      "height": 932.0,
+      "frameStyle": "dynamicIsland"
+    },
+    {
+      "id": "iphone-14-landscape",
+      "device": "iPhone 14",
+      "orientation": "landscape",
+      "width": 844.0,
+      "height": 390.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-14-portrait",
+      "device": "iPhone 14",
+      "orientation": "portrait",
+      "width": 390.0,
+      "height": 844.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-14-plus-landscape",
+      "device": "iPhone 14 Plus",
+      "orientation": "landscape",
+      "width": 926.0,
+      "height": 428.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-14-plus-portrait",
+      "device": "iPhone 14 Plus",
+      "orientation": "portrait",
+      "width": 428.0,
+      "height": 926.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-se-3-landscape",
+      "device": "iPhone SE (3rd generation)",
+      "orientation": "landscape",
+      "width": 667.0,
+      "height": 375.0,
+      "frameStyle": "homeButton"
+    },
+    {
+      "id": "iphone-se-3-portrait",
+      "device": "iPhone SE (3rd generation)",
+      "orientation": "portrait",
+      "width": 375.0,
+      "height": 667.0,
+      "frameStyle": "homeButton"
+    },
+    {
+      "id": "iphone-13-pro-landscape",
+      "device": "iPhone 13 Pro",
+      "orientation": "landscape",
+      "width": 844.0,
+      "height": 390.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-13-pro-portrait",
+      "device": "iPhone 13 Pro",
+      "orientation": "portrait",
+      "width": 390.0,
+      "height": 844.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-13-pro-max-landscape",
+      "device": "iPhone 13 Pro Max",
+      "orientation": "landscape",
+      "width": 926.0,
+      "height": 428.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-13-pro-max-portrait",
+      "device": "iPhone 13 Pro Max",
+      "orientation": "portrait",
+      "width": 428.0,
+      "height": 926.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-13-landscape",
+      "device": "iPhone 13",
+      "orientation": "landscape",
+      "width": 844.0,
+      "height": 390.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-13-portrait",
+      "device": "iPhone 13",
+      "orientation": "portrait",
+      "width": 390.0,
+      "height": 844.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-13-mini-landscape",
+      "device": "iPhone 13 mini",
+      "orientation": "landscape",
+      "width": 812.0,
+      "height": 375.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-13-mini-portrait",
+      "device": "iPhone 13 mini",
+      "orientation": "portrait",
+      "width": 375.0,
+      "height": 812.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-12-pro-landscape",
+      "device": "iPhone 12 Pro",
+      "orientation": "landscape",
+      "width": 844.0,
+      "height": 390.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-12-pro-portrait",
+      "device": "iPhone 12 Pro",
+      "orientation": "portrait",
+      "width": 390.0,
+      "height": 844.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-12-pro-max-landscape",
+      "device": "iPhone 12 Pro Max",
+      "orientation": "landscape",
+      "width": 926.0,
+      "height": 428.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-12-pro-max-portrait",
+      "device": "iPhone 12 Pro Max",
+      "orientation": "portrait",
+      "width": 428.0,
+      "height": 926.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-12-landscape",
+      "device": "iPhone 12",
+      "orientation": "landscape",
+      "width": 844.0,
+      "height": 390.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-12-portrait",
+      "device": "iPhone 12",
+      "orientation": "portrait",
+      "width": 390.0,
+      "height": 844.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-12-mini-landscape",
+      "device": "iPhone 12 mini",
+      "orientation": "landscape",
+      "width": 812.0,
+      "height": 375.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-12-mini-portrait",
+      "device": "iPhone 12 mini",
+      "orientation": "portrait",
+      "width": 375.0,
+      "height": 812.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-se-2-landscape",
+      "device": "iPhone SE (2nd generation)",
+      "orientation": "landscape",
+      "width": 667.0,
+      "height": 375.0,
+      "frameStyle": "homeButton"
+    },
+    {
+      "id": "iphone-se-2-portrait",
+      "device": "iPhone SE (2nd generation)",
+      "orientation": "portrait",
+      "width": 375.0,
+      "height": 667.0,
+      "frameStyle": "homeButton"
+    },
+    {
+      "id": "iphone-11-pro-landscape",
+      "device": "iPhone 11 Pro",
+      "orientation": "landscape",
+      "width": 812.0,
+      "height": 375.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-11-pro-portrait",
+      "device": "iPhone 11 Pro",
+      "orientation": "portrait",
+      "width": 375.0,
+      "height": 812.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-11-pro-max-landscape",
+      "device": "iPhone 11 Pro Max",
+      "orientation": "landscape",
+      "width": 896.0,
+      "height": 414.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-11-pro-max-portrait",
+      "device": "iPhone 11 Pro Max",
+      "orientation": "portrait",
+      "width": 414.0,
+      "height": 896.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-11-landscape",
+      "device": "iPhone 11",
+      "orientation": "landscape",
+      "width": 896.0,
+      "height": 414.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-11-portrait",
+      "device": "iPhone 11",
+      "orientation": "portrait",
+      "width": 414.0,
+      "height": 896.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-xr-landscape",
+      "device": "iPhone XR",
+      "orientation": "landscape",
+      "width": 896.0,
+      "height": 414.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-xr-portrait",
+      "device": "iPhone XR",
+      "orientation": "portrait",
+      "width": 414.0,
+      "height": 896.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-xs-landscape",
+      "device": "iPhone XS",
+      "orientation": "landscape",
+      "width": 812.0,
+      "height": 375.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-xs-portrait",
+      "device": "iPhone XS",
+      "orientation": "portrait",
+      "width": 375.0,
+      "height": 812.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-xs-max-landscape",
+      "device": "iPhone XS Max",
+      "orientation": "landscape",
+      "width": 896.0,
+      "height": 414.0,
+      "frameStyle": "notch"
+    },
+    {
+      "id": "iphone-xs-max-portrait",
+      "device": "iPhone XS Max",
+      "orientation": "portrait",
+      "width": 414.0,
+      "height": 896.0,
+      "frameStyle": "notch"
+    }
+  ]
+}

@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Thumble Controller Preview</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #f4f2ec;
+      --card: rgba(255,255,255,.86);
+      --stage: #e8e4dc;
+      --ink: #171816;
+      --muted: #6f716c;
+      --line: rgba(23,24,22,.13);
+      --shell: #161715;
+      --screen: #252724;
+      --button: #f0ede5;
+      --button-stroke: #aeadA7;
+      --button-text: #262724;
+      --accent: #ff5a36;
+      --accent-soft: #ffb29f;
+      --joystick: #93d4c0;
+      --trigger: #ffd670;
+      --trackpad: #b9c7f7;
+      --decoration: #a8aaa4;
+      --shadow: 0 24px 70px rgba(34,31,25,.14);
+    }
+    :root[data-theme="dark"] {
+      --page: #151613;
+      --card: rgba(31,32,28,.9);
+      --stage: #20211e;
+      --ink: #f4f2ea;
+      --muted: #a7aaa2;
+      --line: rgba(255,255,255,.12);
+      --shell: #090a09;
+      --screen: #1c1e1b;
+      --button: #383a35;
+      --button-stroke: #5b5e57;
+      --button-text: #f6f4ed;
+      --accent: #ff7354;
+      --accent-soft: #8d3d2c;
+      --joystick: #2f7a66;
+      --trigger: #8a6926;
+      --trackpad: #475886;
+      --decoration: #5e615a;
+      --shadow: 0 28px 80px rgba(0,0,0,.35);
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; min-height: 100%; background: transparent; color: var(--ink); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { padding: 12px; }
+    .card { width: min(100%, 980px); margin: 0 auto; overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: var(--card); box-shadow: var(--shadow); backdrop-filter: blur(24px); }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px 17px; border-bottom: 1px solid var(--line); }
+    .eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+    h1 { margin: 0; font-size: clamp(19px, 3vw, 27px); line-height: 1.12; letter-spacing: -.035em; }
+    .meta { margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .count { flex: none; display: grid; place-items: center; min-width: 68px; min-height: 58px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--stage) 58%, transparent); }
+    .count strong { display: block; font-size: 22px; line-height: 1; letter-spacing: -.04em; }
+    .count span { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .stage { position: relative; min-height: 250px; padding: clamp(22px, 5vw, 48px); background: var(--stage); background-image: radial-gradient(circle at 20% 12%, color-mix(in srgb, var(--accent-soft) 22%, transparent), transparent 30%), linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: auto, 24px 24px, 24px 24px; }
+    .device { position: relative; width: min(100%, 820px); margin: 0 auto; padding: clamp(6px, 1.2vw, 11px); border-radius: clamp(24px, 4vw, 44px); background: var(--shell); box-shadow: 0 18px 45px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.13); }
+    .device::before { content: ""; position: absolute; top: 50%; left: 4px; width: 3px; height: 18%; border-radius: 3px; background: rgba(255,255,255,.13); transform: translateY(-50%); }
+    .screen { position: relative; overflow: hidden; border-radius: clamp(18px, 3.2vw, 35px); background: var(--screen); }
+    svg { display: block; width: 100%; height: auto; min-height: 150px; }
+    .waiting { display: grid; place-items: center; min-height: 250px; padding: 40px; color: var(--muted); text-align: center; }
+    .waiting strong { display: block; margin-bottom: 7px; color: var(--ink); font-size: 16px; }
+    .footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 13px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .swatch { width: 7px; height: 7px; border-radius: 2px; }
+    .read-only { font-weight: 650; }
+    @media (max-width: 520px) {
+      body { padding: 6px; }
+      .card { border-radius: 16px; }
+      .header { padding: 16px; }
+      .stage { padding: 20px 12px; }
+      .footer { padding: 12px 15px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card" aria-live="polite">
+    <header class="header">
+      <div>
+        <div class="eyebrow"><span class="live-dot"></span>Controller canvas</div>
+        <h1 id="profile-name">Waiting for controller</h1>
+        <div class="meta" id="profile-meta">Connecting to Codex…</div>
+      </div>
+      <div class="count" aria-label="Visible control count"><strong id="control-count">—</strong><span>Elements</span></div>
+    </header>
+    <section class="stage" id="stage">
+      <div class="waiting" id="waiting"><div><strong>Preparing preview</strong>Waiting for the controller snapshot.</div></div>
+      <div class="device" id="device" hidden>
+        <div class="screen"><svg id="controller" role="img" aria-labelledby="controller-title controller-description"></svg></div>
+      </div>
+    </section>
+    <footer class="footer">
+      <div class="legend" id="legend"></div>
+      <div class="read-only" id="preview-note">Read-only live preview · native appearance</div>
+    </footer>
+  </main>
+  <script>
+    (() => {
+      "use strict";
+      const NS = "http://www.w3.org/2000/svg";
+      const state = { nextId: 1, initialized: false, hostContext: {} };
+      const profileName = document.getElementById("profile-name");
+      const profileMeta = document.getElementById("profile-meta");
+      const controlCount = document.getElementById("control-count");
+      const waiting = document.getElementById("waiting");
+      const device = document.getElementById("device");
+      const svg = document.getElementById("controller");
+      const legend = document.getElementById("legend");
+      const previewNote = document.getElementById("preview-note");
+
+      function post(message) { window.parent.postMessage(message, "*"); }
+      function notify(method, params) {
+        const message = { jsonrpc: "2.0", method };
+        if (params !== undefined) message.params = params;
+        post(message);
+      }
+      function applyHostContext(context) {
+        if (!context || typeof context !== "object") return;
+        state.hostContext = Object.assign({}, state.hostContext, context);
+        const theme = state.hostContext.theme;
+        if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
+        const locale = state.hostContext.locale;
+        if (typeof locale === "string" && locale.length < 40) document.documentElement.lang = locale;
+      }
+      function initialize() {
+        const id = state.nextId++;
+        state.initializeId = id;
+        post({
+          jsonrpc: "2.0",
+          id,
+          method: "ui/initialize",
+          params: {
+            protocolVersion: "2026-01-26",
+            appInfo: { name: "Thumble Controller Preview", version: "1.0.0" },
+            appCapabilities: {}
+          }
+        });
+      }
+      function validNumber(value, minimum, maximum) {
+        return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum;
+      }
+      function validSnapshot(value) {
+        if (!value || typeof value !== "object" || !value.profile || !value.canvas || !Array.isArray(value.elements)) return false;
+        if (typeof value.profile.name !== "string" || typeof value.orientation !== "string") return false;
+        if (!validNumber(value.canvas.width, 1, 1800) || !validNumber(value.canvas.height, 1, 1800)) return false;
+        return value.elements.length <= 128;
+      }
+      function svgNode(name, attributes) {
+        const node = document.createElementNS(NS, name);
+        Object.entries(attributes || {}).forEach(([key, value]) => node.setAttribute(key, String(value)));
+        return node;
+      }
+      function finite(value, fallback) {
+        return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+      }
+      function validColor(value) {
+        return value && typeof value === "object"
+          && [value.red, value.green, value.blue, value.alpha].every((channel) => validNumber(channel, 0, 1));
+      }
+      function colorCSS(value, fallback) {
+        if (!validColor(value)) return fallback;
+        return `rgba(${Math.round(value.red * 255)},${Math.round(value.green * 255)},${Math.round(value.blue * 255)},${value.alpha})`;
+      }
+      function opaqueColorCSS(value, fallback) {
+        if (!validColor(value)) return fallback;
+        return `rgb(${Math.round(value.red * 255)},${Math.round(value.green * 255)},${Math.round(value.blue * 255)})`;
+      }
+      function effectiveScheme(snapshot) {
+        const preference = snapshot.colorSchemePreference;
+        if (preference === "dark" || preference === "light") return preference;
+        if (state.hostContext.theme === "dark" || state.hostContext.theme === "light") return state.hostContext.theme;
+        return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+      }
+      function selectedFill(value, scheme) {
+        if (!value || typeof value !== "object") return null;
+        return (scheme === "dark" ? value.darkFill : value.lightFill) || value.fill || null;
+      }
+      function fillParts(fill) {
+        if (!fill || typeof fill !== "object") return null;
+        if (fill.kind === "solid" && validColor(fill.color)) return { kind: "solid", color: fill.color };
+        if (fill.kind === "gradient") {
+          const source = fill.gradient && typeof fill.gradient === "object" ? fill.gradient : fill;
+          if (!["linear", "radial"].includes(source.type) || !Array.isArray(source.stops) || source.stops.length < 2 || source.stops.length > 8) return null;
+          const stops = source.stops.filter((stop) => stop && validNumber(stop.offset, 0, 1) && validColor(stop.color));
+          if (stops.length !== source.stops.length) return null;
+          return { kind: "gradient", type: source.type, angleDegrees: finite(source.angleDegrees, 0), stops };
+        }
+        if (fill.kind === "tile") {
+          const source = fill.tile && typeof fill.tile === "object" ? fill.tile : fill;
+          if (!["dots", "grid", "checker", "diagonal"].includes(source.pattern) || !validColor(source.foregroundColor) || !validColor(source.backgroundColor)) return null;
+          return { kind: "tile", pattern: source.pattern, foregroundColor: source.foregroundColor, backgroundColor: source.backgroundColor, scale: finite(source.scale, 1), opacity: finite(source.opacity, 1) };
+        }
+        return null;
+      }
+      function representativeColor(fill, fallback) {
+        const parts = fillParts(fill);
+        if (!parts) return fallback;
+        if (parts.kind === "solid") return parts.color;
+        if (parts.kind === "tile") return {
+          red: parts.backgroundColor.red * .72 + parts.foregroundColor.red * .28,
+          green: parts.backgroundColor.green * .72 + parts.foregroundColor.green * .28,
+          blue: parts.backgroundColor.blue * .72 + parts.foregroundColor.blue * .28,
+          alpha: Math.max(0, Math.min(1, parts.opacity))
+        };
+        const divisor = parts.stops.length;
+        return parts.stops.reduce((color, stop) => {
+          color.red += stop.color.red / divisor;
+          color.green += stop.color.green / divisor;
+          color.blue += stop.color.blue / divisor;
+          color.alpha += stop.color.alpha / divisor;
+          return color;
+        }, { red: 0, green: 0, blue: 0, alpha: 0 });
+      }
+      function contrastingColor(color) {
+        const luminance = .299 * color.red + .587 * color.green + .114 * color.blue;
+        return luminance > .56 ? { red: 0, green: 0, blue: 0, alpha: 1 } : { red: 1, green: 1, blue: 1, alpha: 1 };
+      }
+      function strokeColor(color) {
+        return { red: color.red * .76, green: color.green * .76, blue: color.blue * .76, alpha: Math.min(1, Math.max(.32, color.alpha + .14)) };
+      }
+      function hexColor(value, alpha = 1) {
+        const normalized = /^#[0-9a-f]{6}$/i.test(value) ? value.slice(1) : "1a1a1a";
+        return { red: parseInt(normalized.slice(0, 2), 16) / 255, green: parseInt(normalized.slice(2, 4), 16) / 255, blue: parseInt(normalized.slice(4, 6), 16) / 255, alpha };
+      }
+      function accentColor(accent, scheme) {
+        const dark = { monochrome: "#1a1a1a", blue: "#06193a", green: "#002608", purple: "#290c33", pink: "#310d1e", amber: "#1a1a1a" };
+        const light = { monochrome: "#f2f2f2", blue: "#f0f7ff", green: "#ecfdec", purple: "#faf0ff", pink: "#ffe8f6", amber: "#f2f2f2" };
+        const palette = scheme === "dark" ? dark : light;
+        return hexColor(palette[accent] || palette.monochrome);
+      }
+      function accentForeground(accent, scheme) {
+        const dark = { monochrome: "#ededed", blue: "#47a8ff", green: "#00ca50", purple: "#c472fb", pink: "#ff4d8d", amber: "#ededed" };
+        const light = { monochrome: "#171717", blue: "#005ff2", green: "#107d32", purple: "#7d00cc", pink: "#c41562", amber: "#171717" };
+        const palette = scheme === "dark" ? dark : light;
+        return hexColor(palette[accent] || palette.monochrome);
+      }
+      function accentStroke(accent, scheme) {
+        if (accent === "monochrome" || accent === "amber") return scheme === "dark" ? hexColor("#ffffff", 0.14) : hexColor("#000000", 0.08);
+        const dark = { blue: "#003674", green: "#004615", purple: "#541a76", pink: "#5d0c34" };
+        const light = { blue: "#cae7ff", green: "#b9f5bc", purple: "#f2d9ff", pink: "#ffd3e1" };
+        return hexColor((scheme === "dark" ? dark : light)[accent] || (scheme === "dark" ? "#ffffff" : "#000000"));
+      }
+      function appendFillDefinition(defs, fill, id, fallback) {
+        const parts = fillParts(fill);
+        if (!parts) return colorCSS(fallback, "transparent");
+        if (parts.kind === "solid") return colorCSS(parts.color, colorCSS(fallback, "transparent"));
+        if (parts.kind === "gradient") {
+          let gradient;
+          if (parts.type === "radial") {
+            gradient = svgNode("radialGradient", { id, cx: "50%", cy: "50%", r: "70%" });
+          } else {
+            const radians = parts.angleDegrees * Math.PI / 180;
+            const dx = Math.cos(radians) * .5;
+            const dy = Math.sin(radians) * .5;
+            gradient = svgNode("linearGradient", { id, x1: `${50 - dx * 100}%`, y1: `${50 - dy * 100}%`, x2: `${50 + dx * 100}%`, y2: `${50 + dy * 100}%` });
+          }
+          parts.stops.forEach((stop) => gradient.append(svgNode("stop", { offset: `${stop.offset * 100}%`, "stop-color": colorCSS(stop.color, "transparent") })));
+          defs.append(gradient);
+          return `url(#${id})`;
+        }
+        const spacing = Math.max(4, Math.min(32, 12 * Math.max(.25, Math.min(4, parts.scale))));
+        const pattern = svgNode("pattern", { id, width: spacing, height: spacing, patternUnits: "userSpaceOnUse" });
+        pattern.append(svgNode("rect", { width: spacing, height: spacing, fill: colorCSS(parts.backgroundColor, "transparent") }));
+        const foreground = colorCSS(parts.foregroundColor, "transparent");
+        if (parts.pattern === "dots") {
+          pattern.append(svgNode("circle", { cx: spacing / 2, cy: spacing / 2, r: Math.max(1, spacing * .12), fill: foreground, opacity: parts.opacity }));
+        } else if (parts.pattern === "checker") {
+          pattern.append(svgNode("path", { d: `M0 0H${spacing / 2}V${spacing / 2}H0ZM${spacing / 2} ${spacing / 2}H${spacing}V${spacing}H${spacing / 2}Z`, fill: foreground, opacity: parts.opacity }));
+        } else {
+          const path = parts.pattern === "grid" ? `M0 0H${spacing}M0 0V${spacing}` : `M-${spacing / 2} ${spacing / 2}L${spacing / 2} -${spacing / 2}M0 ${spacing}L${spacing} 0M${spacing / 2} ${spacing * 1.5}L${spacing * 1.5} ${spacing / 2}`;
+          pattern.append(svgNode("path", { d: path, fill: "none", stroke: foreground, "stroke-width": 1, opacity: parts.opacity }));
+        }
+        defs.append(pattern);
+        return `url(#${id})`;
+      }
+      function applyStyleState(presentation, value) {
+        if (!value || typeof value !== "object") return;
+        if (fillParts(value.fill)) presentation.fill = value.fill;
+        if (validColor(value.fillColor)) presentation.fill = { kind: "solid", color: value.fillColor };
+        if (validColor(value.foregroundColor)) presentation.foreground = value.foregroundColor;
+        if (validColor(value.strokeColor)) presentation.stroke = value.strokeColor;
+        if (validNumber(value.strokeWidth, 0, 12)) presentation.strokeWidth = value.strokeWidth;
+        if (validColor(value.shadowColor) || validNumber(value.shadowRadius, 0, 64) || validNumber(value.shadowX, -64, 64) || validNumber(value.shadowY, -64, 64)) {
+          const baseline = presentation.shadows[0] || { color: { red: 0, green: 0, blue: 0, alpha: .04 }, radius: 1, x: 0, y: 2 };
+          presentation.shadows = [{
+            color: validColor(value.shadowColor) ? value.shadowColor : baseline.color,
+            radius: validNumber(value.shadowRadius, 0, 64) ? value.shadowRadius : baseline.radius,
+            x: validNumber(value.shadowX, -64, 64) ? value.shadowX : baseline.x,
+            y: validNumber(value.shadowY, -64, 64) ? value.shadowY : baseline.y
+          }];
+        }
+        if (Array.isArray(value.shadows)) presentation.shadows = value.shadows.filter((shadow) => shadow && validColor(shadow.color) && validNumber(shadow.radius, 0, 96) && validNumber(shadow.x, -96, 96) && validNumber(shadow.y, -96, 96));
+        if (validColor(value.glowColor)) presentation.glowColor = value.glowColor;
+        if (validNumber(value.glowRadius, 0, 64)) presentation.glowRadius = value.glowRadius;
+        if (validNumber(value.opacity, 0, 1)) presentation.opacity = value.opacity;
+        if (validNumber(value.scale, .5, 1.5)) presentation.scale = value.scale;
+        if (validNumber(value.blurRadius, 0, 24)) presentation.blurRadius = value.blurRadius;
+      }
+      function resolvePresentation(element, snapshot, scheme) {
+        const accent = element.accentStyle || snapshot.accentStyle || "monochrome";
+        const baselineColor = accentColor(accent, scheme);
+        const explicitFill = selectedFill(element, scheme);
+        const fill = explicitFill || { kind: "solid", color: baselineColor };
+        const representative = representativeColor(fill, baselineColor);
+        const presentation = {
+          fill, foreground: explicitFill ? contrastingColor(representative) : accentForeground(accent, scheme), stroke: explicitFill ? strokeColor(representative) : accentStroke(accent, scheme), strokeWidth: 1,
+          shadows: [{ color: { red: 0, green: 0, blue: 0, alpha: .04 * Math.max(.25, finite(element.shadowStrength, 1)) }, radius: Math.max(.25, finite(element.shadowStrength, 1)), x: 0, y: 2 * finite(element.shadowStrength, 1) }],
+          glowColor: null, glowRadius: 0, opacity: element.kind === "decoration" ? .55 : 1, scale: 1, blurRadius: 0, icon: null
+        };
+        const token = Array.isArray(snapshot.styles) && typeof element.styleID === "string"
+          ? snapshot.styles.find((style) => style && style.id === element.styleID && Array.isArray(style.appliesTo) && style.appliesTo.includes(element.kind))
+          : null;
+        if (token && token.appearance) {
+          applyStyleState(presentation, token.appearance.normal);
+          if (token.appearance.icon) presentation.icon = token.appearance.icon;
+        }
+        if (element.inlineAppearance) {
+          applyStyleState(presentation, element.inlineAppearance.normal);
+          if (element.inlineAppearance.icon) presentation.icon = element.inlineAppearance.icon;
+        }
+        if (element.icon) presentation.icon = element.icon;
+        return presentation;
+      }
+      function appendFilter(defs, presentation, id) {
+        const shadows = presentation.shadows || [];
+        if (!presentation.glowColor && !presentation.blurRadius && shadows.length === 0) return null;
+        const filter = svgNode("filter", { id, x: "-60%", y: "-60%", width: "220%", height: "220%", "color-interpolation-filters": "sRGB" });
+        if (presentation.glowColor && presentation.glowRadius > 0) {
+          filter.append(svgNode("feDropShadow", { dx: 0, dy: 0, stdDeviation: presentation.glowRadius, "flood-color": opaqueColorCSS(presentation.glowColor, "transparent"), "flood-opacity": presentation.glowColor.alpha * .68 }));
+        }
+        shadows.slice(0, 8).forEach((shadow) => filter.append(svgNode("feDropShadow", { dx: shadow.x, dy: shadow.y, stdDeviation: Math.max(.01, shadow.radius), "flood-color": opaqueColorCSS(shadow.color, "transparent"), "flood-opacity": shadow.color.alpha })));
+        if (presentation.blurRadius > 0) filter.append(svgNode("feGaussianBlur", { stdDeviation: presentation.blurRadius }));
+        defs.append(filter);
+        return `url(#${id})`;
+      }
+      function roundedPath(frame, radii) {
+        const limit = Math.min(frame.width, frame.height) / 2;
+        const tl = Math.max(0, Math.min(limit, finite(radii.topLeading, 0)));
+        const tr = Math.max(0, Math.min(limit, finite(radii.topTrailing, 0)));
+        const br = Math.max(0, Math.min(limit, finite(radii.bottomTrailing, 0)));
+        const bl = Math.max(0, Math.min(limit, finite(radii.bottomLeading, 0)));
+        const x = frame.x, y = frame.y, right = x + frame.width, bottom = y + frame.height;
+        return `M${x + tl} ${y}H${right - tr}Q${right} ${y} ${right} ${y + tr}V${bottom - br}Q${right} ${bottom} ${right - br} ${bottom}H${x + bl}Q${x} ${bottom} ${x} ${bottom - bl}V${y + tl}Q${x} ${y} ${x + tl} ${y}Z`;
+      }
+      function shapeNode(element, presentation, fillPaint) {
+        const frame = element.frame;
+        const cx = frame.x + frame.width / 2;
+        const cy = frame.y + frame.height / 2;
+        const common = { class: `control control-${element.kind}`, fill: element.kind === "text" ? "transparent" : fillPaint, stroke: element.kind === "text" ? "transparent" : colorCSS(presentation.stroke, "transparent"), "stroke-width": presentation.strokeWidth, "vector-effect": "non-scaling-stroke" };
+        if (element.shape === "circle" || element.shape === "ellipse") return svgNode("ellipse", Object.assign(common, { cx, cy, rx: frame.width / 2, ry: frame.height / 2 }));
+        if (element.shape === "polygon" || element.shape === "star") {
+          const count = element.shape === "star" ? 10 : 3;
+          const points = [];
+          for (let index = 0; index < count; index += 1) {
+            const radius = element.shape === "star" && index % 2 === 1 ? .45 : 1;
+            const angle = Math.PI * 2 / count * index - Math.PI / 2;
+            points.push(`${cx + Math.cos(angle) * frame.width / 2 * radius},${cy + Math.sin(angle) * frame.height / 2 * radius}`);
+          }
+          return svgNode("polygon", Object.assign(common, { points: points.join(" ") }));
+        }
+        let radius = element.shape === "capsule" ? Math.min(frame.width, frame.height) / 2 : element.shape === "rectangle" ? 0 : Math.min(frame.width, frame.height) * .15;
+        if (validNumber(element.cornerRadius, 0, 1024)) radius = element.cornerRadius;
+        const radii = element.cornerRadii && typeof element.cornerRadii === "object" ? element.cornerRadii : { topLeading: radius, topTrailing: radius, bottomTrailing: radius, bottomLeading: radius };
+        return svgNode("path", Object.assign(common, { d: roundedPath(frame, radii) }));
+      }
+      function labelFontSize(element) {
+        const frame = element.frame;
+        if (element.kind === "text") return Math.max(10, frame.height * .72);
+        const characters = Array.from(element.label).length;
+        if (characters <= 2) return Math.max(10, Math.min(32, frame.height * .55, frame.width / Math.max(1, characters) * .72));
+        return Math.max(10, Math.min(16, frame.height * .34, frame.width / Math.max(characters, 4) * 1.55));
+      }
+      function iconGlyph(icon) {
+        if (!icon || typeof icon !== "object" || typeof icon.value !== "string") return null;
+        if (icon.source === "text") return icon.value;
+        const symbols = { "star.fill": "★", "gearshape.fill": "⚙", "house.fill": "⌂", "play.fill": "▶", "pause.fill": "Ⅱ", "cursorarrow": "↖", "arrow.up": "↑", "arrow.down": "↓", "arrow.left": "←", "arrow.right": "→" };
+        return symbols[icon.value] || null;
+      }
+      function appendText(group, text, attributes) {
+        const node = svgNode("text", attributes);
+        node.textContent = text;
+        group.append(node);
+      }
+      function controlIsValid(element, width, height) {
+        if (!element || typeof element !== "object" || typeof element.id !== "string" || typeof element.label !== "string") return false;
+        if (!["button", "joystick", "trigger", "trackpad", "text", "decoration"].includes(element.kind)) return false;
+        const frame = element.frame;
+        if (!frame || !validNumber(frame.x, 0, width) || !validNumber(frame.y, 0, height)) return false;
+        if (!validNumber(frame.width, 1, width) || !validNumber(frame.height, 1, height)) return false;
+        return frame.x + frame.width <= width + .01 && frame.y + frame.height <= height + .01;
+      }
+      function render(snapshot) {
+        if (!validSnapshot(snapshot)) return showError("The host returned an invalid controller snapshot.");
+        state.snapshot = snapshot;
+        const width = snapshot.canvas.width;
+        const height = snapshot.canvas.height;
+        const scheme = effectiveScheme(snapshot);
+        const elements = snapshot.elements.filter((element) => controlIsValid(element, width, height));
+        profileName.textContent = snapshot.profile.name || "Unnamed profile";
+        profileMeta.textContent = `${capitalize(snapshot.orientation)} · ${Math.round(width)}×${Math.round(height)} pt · ${snapshot.profile.orientationPreference || "automatic"}`;
+        controlCount.textContent = String(elements.length);
+        previewNote.textContent = snapshot.canvas.unsupportedContentOmitted ? "Read-only live preview · artwork omitted" : "Read-only live preview · native appearance";
+        svg.replaceChildren();
+        svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+        const title = svgNode("title", { id: "controller-title" });
+        title.textContent = `${snapshot.profile.name} controller`;
+        const description = svgNode("desc", { id: "controller-description" });
+        description.textContent = `${elements.length} visible elements in ${snapshot.orientation} orientation.`;
+        const style = svgNode("style");
+        style.textContent = ".control-label{font-family:ui-rounded,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-weight:700;text-anchor:middle;dominant-baseline:middle;pointer-events:none}.control-icon{font-family:ui-rounded,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-weight:650;text-anchor:middle;dominant-baseline:middle;pointer-events:none}.track-line{fill:none;vector-effect:non-scaling-stroke}";
+        const defs = svgNode("defs");
+        svg.append(title, description, style, defs);
+        const canvasFallback = scheme === "dark" ? { red: 0, green: 0, blue: 0, alpha: 1 } : { red: 1, green: 1, blue: 1, alpha: 1 };
+        const canvasFill = appendFillDefinition(defs, selectedFill(snapshot.canvas, scheme), "canvas-fill", canvasFallback);
+        svg.append(svgNode("rect", { class: "canvas", x: 0, y: 0, width, height, fill: canvasFill }));
+
+        elements.forEach((element, index) => {
+          const frame = element.frame;
+          const cx = frame.x + frame.width / 2;
+          const cy = frame.y + frame.height / 2;
+          const presentation = resolvePresentation(element, snapshot, scheme);
+          const fillPaint = appendFillDefinition(defs, presentation.fill, `control-fill-${index}`, accentColor(element.accentStyle || snapshot.accentStyle || "monochrome", scheme));
+          const filter = appendFilter(defs, presentation, `control-filter-${index}`);
+          const scale = presentation.scale;
+          const transform = `rotate(${finite(element.rotationDegrees, 0)} ${cx} ${cy}) translate(${cx} ${cy}) scale(${scale}) translate(${-cx} ${-cy})`;
+          const groupAttributes = { transform, tabindex: "0", role: "img", "aria-label": `${element.label}, ${element.kind}`, opacity: presentation.opacity };
+          if (filter) groupAttributes.filter = filter;
+          const group = svgNode("g", groupAttributes);
+          group.append(shapeNode(element, presentation, fillPaint));
+
+          const foreground = colorCSS(presentation.foreground, scheme === "dark" ? "white" : "black");
+          if (element.kind === "joystick") {
+            const isThumbstick = element.joystickVisualStyle === "thumbstick";
+            const ratio = isThumbstick ? .72 : .34;
+            const thumb = (scheme === "dark" ? element.darkThumbFill : element.lightThumbFill) || element.thumbFill || Object.assign({}, presentation.foreground, { alpha: scheme === "dark" ? .30 : .18 });
+            group.append(svgNode("ellipse", { class: "joystick-knob", cx, cy, rx: Math.min(frame.width, frame.height) * ratio / 2, ry: Math.min(frame.width, frame.height) * ratio / 2, fill: colorCSS(thumb, foreground), stroke: colorCSS(strokeColor(thumb), foreground), "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
+            if (!isThumbstick && snapshot.showsButtonLabels !== false && element.showsIntegratedLabel !== false) appendText(group, element.label, { class: "control-label", x: cx, y: cy + frame.height * .34, "font-size": Math.min(14, frame.height * .16), fill: foreground });
+          } else if (element.kind === "trackpad") {
+            group.append(svgNode("rect", { x: frame.x + frame.width * .08, y: frame.y + frame.height * .08, width: frame.width * .84, height: frame.height * .84, rx: Math.max(5, Math.min(frame.width, frame.height) * .08), fill: "none", stroke: foreground, "stroke-opacity": .24, "stroke-width": 1 }));
+            group.append(svgNode("path", { class: "track-line", d: `M ${frame.x + frame.width * .33} ${frame.y + frame.height * .86} H ${frame.x + frame.width * .67}`, stroke: foreground, "stroke-width": 5, "stroke-opacity": .28 }));
+          }
+
+          const icon = presentation.icon;
+          const glyph = iconGlyph(icon);
+          const iconPlacement = icon && typeof icon.placement === "string" ? icon.placement : "center";
+          if (glyph) {
+            const offsets = { leading: [-.20, 0], trailing: [.20, 0], top: [0, -.18], bottom: [0, .18], center: [0, 0], background: [0, 0] };
+            const offset = offsets[iconPlacement] || offsets.center;
+            const tint = validColor(icon.tintColor) ? colorCSS(icon.tintColor, foreground) : foreground;
+            appendText(group, glyph, { class: "control-icon", x: cx + frame.width * offset[0], y: cy + frame.height * offset[1], "font-size": Math.max(12, Math.min(frame.width, frame.height) * .34 * finite(icon.scale, 1)), fill: tint, opacity: iconPlacement === "background" ? .25 : 1 });
+          }
+          const canShowLabel = snapshot.showsButtonLabels !== false && element.showsIntegratedLabel !== false;
+          const shouldShowLabel = element.kind === "text" || (element.kind !== "joystick" && element.kind !== "decoration" && canShowLabel && (!glyph || iconPlacement !== "center" || Array.from(element.label).length <= 2));
+          if (shouldShowLabel) {
+            const labelOffsets = { leading: [.11, 0], trailing: [-.11, 0], top: [0, .15], bottom: [0, -.15] };
+            const offset = glyph ? (labelOffsets[iconPlacement] || [0, 0]) : [0, 0];
+            appendText(group, element.label, { class: "control-label", x: cx + frame.width * offset[0], y: cy + frame.height * offset[1], "font-size": labelFontSize(element), fill: foreground });
+          } else if (element.kind === "decoration" && element.label !== "Decoration" && glyph === null) {
+            appendText(group, element.label, { class: "control-label", x: cx, y: cy, "font-size": labelFontSize(element), fill: foreground });
+          }
+          svg.append(group);
+        });
+        renderLegend(elements);
+        waiting.hidden = true;
+        device.hidden = false;
+        requestAnimationFrame(reportSize);
+      }
+      function renderLegend(elements) {
+        const colors = { button: "var(--button)", joystick: "var(--joystick)", trigger: "var(--trigger)", trackpad: "var(--trackpad)", text: "var(--accent-soft)", decoration: "var(--decoration)" };
+        legend.replaceChildren();
+        const counts = new Map();
+        elements.forEach((element) => counts.set(element.kind, (counts.get(element.kind) || 0) + 1));
+        counts.forEach((count, kind) => {
+          const item = document.createElement("span");
+          const swatch = document.createElement("i");
+          swatch.className = "swatch";
+          swatch.style.background = colors[kind];
+          item.append(swatch, document.createTextNode(`${capitalize(kind)} ${count}`));
+          legend.append(item);
+        });
+      }
+      function showError(message) {
+        waiting.hidden = false;
+        device.hidden = true;
+        waiting.replaceChildren();
+        const box = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = "Preview unavailable";
+        box.append(title, document.createTextNode(message));
+        waiting.append(box);
+        profileName.textContent = "Controller preview";
+        profileMeta.textContent = "No renderable snapshot";
+        controlCount.textContent = "0";
+        requestAnimationFrame(reportSize);
+      }
+      function capitalize(value) { return typeof value === "string" && value ? value[0].toUpperCase() + value.slice(1) : "Unknown"; }
+      function reportSize() {
+        const rect = document.documentElement.getBoundingClientRect();
+        notify("ui/notifications/size-changed", { width: Math.ceil(rect.width), height: Math.ceil(document.documentElement.scrollHeight) });
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.source !== window.parent) return;
+        const message = event.data;
+        if (!message || message.jsonrpc !== "2.0") return;
+        const isInitializeResponse = !state.initialized
+          && state.initializeId !== undefined
+          && message.id === state.initializeId
+          && typeof message.method !== "string"
+          && (message.error || (message.result && Object.prototype.hasOwnProperty.call(message.result, "protocolVersion")));
+        if (isInitializeResponse) {
+          state.initializeId = undefined;
+          if (message.error) return showError("Codex rejected the MCP App handshake.");
+          if (message.result.protocolVersion !== "2026-01-26") {
+            return showError("Codex returned an unsupported MCP Apps protocol version.");
+          }
+          applyHostContext(message.result.hostContext);
+          state.initialized = true;
+          notify("ui/notifications/initialized");
+          return;
+        }
+        if (message.method === "ui/notifications/tool-result") {
+          render(message.params && message.params.structuredContent);
+        } else if (message.method === "ui/notifications/host-context-changed") {
+          applyHostContext(message.params);
+          if (state.snapshot) render(state.snapshot);
+        } else if (message.method === "ping" && message.id !== undefined) {
+          post({ jsonrpc: "2.0", id: message.id, result: {} });
+        } else if (message.method === "ui/resource-teardown" && message.id !== undefined) {
+          post({ jsonrpc: "2.0", id: message.id, result: {} });
+        }
+      }, { passive: true });
+      window.addEventListener("resize", reportSize, { passive: true });
+      initialize();
+    })();
+  </script>
+</body>
+</html>

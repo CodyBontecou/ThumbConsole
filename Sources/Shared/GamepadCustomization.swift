@@ -2466,6 +2466,21 @@ extension View {
     }
 }
 
+/// Shared standalone/bridge patch carrier. Callers start from the effective item
+/// appearance, mutate only their allowlisted fields, then apply through the model's
+/// canonical control-bar normalization.
+public struct GamepadControlBarAppearancePatch: Sendable {
+    public var appearance: GamepadButtonCustomization
+
+    public init(existing appearance: GamepadButtonCustomization) {
+        self.appearance = appearance
+    }
+}
+
+public enum GamepadControlBarAppearancePatchError: Error, Equatable {
+    case itemNotPresent
+}
+
 public struct GamepadControlBarItemCustomization: Codable, Equatable, Identifiable, Sendable {
     public var item: GamepadControlBarItem
     public var appearance: GamepadButtonCustomization
@@ -2569,7 +2584,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     public var backgroundLightFillStyle: GamepadFillStyle?
     public var backgroundDarkFillStyle: GamepadFillStyle?
     /// Passive skin artwork; never participates in input, outputs, or accessibility.
-    public var artworkLayers: [PocketPadSkinArtworkLayer]
+    public var artworkLayers: [ThumbleSkinArtworkLayer]
     public var accentStyle: GamepadAccentStyle
     public var showsButtonLabels: Bool
     public var labelOverrides: [GameButton: String]
@@ -2594,7 +2609,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         backgroundFillStyle: GamepadFillStyle? = nil,
         backgroundLightFillStyle: GamepadFillStyle? = nil,
         backgroundDarkFillStyle: GamepadFillStyle? = nil,
-        artworkLayers: [PocketPadSkinArtworkLayer] = [],
+        artworkLayers: [ThumbleSkinArtworkLayer] = [],
         accentStyle: GamepadAccentStyle = .monochrome,
         showsButtonLabels: Bool = true,
         labelOverrides: [GameButton: String] = [:],
@@ -2665,7 +2680,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         customization.backgroundFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundFillStyle)
         customization.backgroundLightFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundLightFillStyle)
         customization.backgroundDarkFillStyle = try container.decodeIfPresent(GamepadFillStyle.self, forKey: .backgroundDarkFillStyle)
-        customization.artworkLayers = try container.decodeIfPresent([PocketPadSkinArtworkLayer].self, forKey: .artworkLayers) ?? []
+        customization.artworkLayers = try container.decodeIfPresent([ThumbleSkinArtworkLayer].self, forKey: .artworkLayers) ?? []
     }
 
     private static func decodeControlFields(
@@ -3185,6 +3200,16 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
         }
     }
 
+    public mutating func applyControlBarAppearancePatch(
+        _ patch: GamepadControlBarAppearancePatch,
+        for item: GamepadControlBarItem
+    ) throws {
+        guard Self.normalizedControlBarItems(controlBarItems).contains(item) else {
+            throw GamepadControlBarAppearancePatchError.itemNotPresent
+        }
+        setControlBarItemCustomization(patch.appearance, for: item)
+    }
+
     public mutating func addControlBarItem(_ item: GamepadControlBarItem, at index: Int? = nil) {
         var items = Self.normalizedControlBarItems(controlBarItems)
         guard !items.contains(item) else { return }
@@ -3363,7 +3388,7 @@ public struct GamepadCustomization: Codable, Equatable, Sendable {
     }
 
     private mutating func normalizeArtworkInPlace() {
-        var artworkByID: [String: PocketPadSkinArtworkLayer] = [:]
+        var artworkByID: [String: ThumbleSkinArtworkLayer] = [:]
         for layer in artworkLayers {
             if let normalizedLayer = layer.normalized {
                 artworkByID[normalizedLayer.id] = normalizedLayer
@@ -4749,7 +4774,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     private var storedLandscapeSkinBaselineCustomization: GamepadProfileCustomizationBox?
     private var storedPortraitSkinBaselineCustomization: GamepadProfileCustomizationBox?
     /// Installed appearance package. Geometry and executable bindings remain in this profile.
-    public var skinReference: PocketPadSkinReference?
+    public var skinReference: ThumbleSkinReference?
     public var orientationPreference: GamepadProfileOrientationPreference
     public var outputMode: GamepadProfileOutputMode
     public var launchTarget: GamepadProfileLaunchTarget?
@@ -4795,7 +4820,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         customization: GamepadCustomization,
         landscapeCustomization: GamepadCustomization? = nil,
         portraitCustomization: GamepadCustomization? = nil,
-        skinReference: PocketPadSkinReference? = nil,
+        skinReference: ThumbleSkinReference? = nil,
         skinBaselineCustomization: GamepadCustomization? = nil,
         landscapeSkinBaselineCustomization: GamepadCustomization? = nil,
         portraitSkinBaselineCustomization: GamepadCustomization? = nil,
@@ -4834,7 +4859,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         id: UUID = UUID(),
         name: String,
         primaryCustomization: GamepadCustomization,
-        skinReference: PocketPadSkinReference? = nil,
+        skinReference: ThumbleSkinReference? = nil,
         orientationPreference: GamepadProfileOrientationPreference = .automatic,
         outputMode: GamepadProfileOutputMode = .keyboard,
         launchTarget: GamepadProfileLaunchTarget? = nil,
@@ -4878,7 +4903,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         var customization = GamepadCustomization.defaultValue
         var landscapeCustomization: GamepadCustomization?
         var portraitCustomization: GamepadCustomization?
-        var skinReference: PocketPadSkinReference?
+        var skinReference: ThumbleSkinReference?
         var skinBaselineCustomization: GamepadCustomization?
         var landscapeSkinBaselineCustomization: GamepadCustomization?
         var portraitSkinBaselineCustomization: GamepadCustomization?
@@ -5012,7 +5037,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         from container: KeyedDecodingContainer<CodingKeys>,
         into workspace: DecodingWorkspace
     ) throws {
-        workspace.skinReference = try container.decodeIfPresent(PocketPadSkinReference.self, forKey: .skinReference)
+        workspace.skinReference = try container.decodeIfPresent(ThumbleSkinReference.self, forKey: .skinReference)
         workspace.orientationPreference = try container.decodeIfPresent(GamepadProfileOrientationPreference.self, forKey: .orientationPreference) ?? .automatic
         // Profiles saved before output modes had their Mac output bindings stored next
         // to the profile, not inside it. Treat legacy profiles as custom so any
@@ -5251,8 +5276,8 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 
     func resolvedCustomization(
         for orientation: GamepadEditorDeviceOrientation,
-        colorScheme: PocketPadSkinColorScheme,
-        skinPackage: PocketPadSkinPackage?
+        colorScheme: ThumbleSkinColorScheme,
+        skinPackage: ThumbleSkinPackage?
     ) -> GamepadCustomization {
         let local = customization(for: orientation)
         guard let skinReference,
@@ -5270,8 +5295,8 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     }
 
     mutating func applySkin(
-        _ package: PocketPadSkinPackage,
-        colorScheme: PocketPadSkinColorScheme = .light
+        _ package: ThumbleSkinPackage,
+        colorScheme: ThumbleSkinColorScheme = .light
     ) {
         let workspace = SkinApplicationWorkspace(
             profile: self,
@@ -5284,15 +5309,15 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 
     private final class SkinApplicationWorkspace {
         private(set) var profile: GamepadConfigurationProfile
-        private let package: PocketPadSkinPackage
-        private let colorScheme: PocketPadSkinColorScheme
+        private let package: ThumbleSkinPackage
+        private let colorScheme: ThumbleSkinColorScheme
         private let previousFallbackBaseline: GamepadCustomization?
         private var preparedSlot: SkinSlotApplicationWorkspace?
 
         init(
             profile: GamepadConfigurationProfile,
-            package: PocketPadSkinPackage,
-            colorScheme: PocketPadSkinColorScheme
+            package: ThumbleSkinPackage,
+            colorScheme: ThumbleSkinColorScheme
         ) {
             self.profile = profile
             self.package = package
@@ -5304,7 +5329,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
             applyFallback()
             applyLandscapeIfPresent()
             applyPortraitIfPresent()
-            profile.skinReference = PocketPadSkinReference(
+            profile.skinReference = ThumbleSkinReference(
                 identifier: package.manifest.identifier,
                 version: package.manifest.version
             )
@@ -5321,7 +5346,7 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
         private func prepareFallbackSlot() {
             let source = profile.storedCustomization.value
             let fallbackOrientation = source.deviceCanvas.editorDeviceFrame.orientation
-            let skinOrientation: PocketPadSkinOrientation = fallbackOrientation == .portrait ? .portrait : .landscape
+            let skinOrientation: ThumbleSkinOrientation = fallbackOrientation == .portrait ? .portrait : .landscape
             preparedSlot = SkinSlotApplicationWorkspace(
                 source: source,
                 previousBaseline: previousFallbackBaseline,
@@ -5401,18 +5426,18 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
     private final class SkinSlotApplicationWorkspace {
         private let source: GamepadCustomization
         private let previousBaseline: GamepadCustomization?
-        private let package: PocketPadSkinPackage
-        private let orientation: PocketPadSkinOrientation
-        private let colorScheme: PocketPadSkinColorScheme
+        private let package: ThumbleSkinPackage
+        private let orientation: ThumbleSkinOrientation
+        private let colorScheme: ThumbleSkinColorScheme
         private(set) var baseline: GamepadCustomization
         private(set) var result: GamepadCustomization
 
         init(
             source: GamepadCustomization,
             previousBaseline: GamepadCustomization?,
-            package: PocketPadSkinPackage,
-            orientation: PocketPadSkinOrientation,
-            colorScheme: PocketPadSkinColorScheme
+            package: ThumbleSkinPackage,
+            orientation: ThumbleSkinOrientation,
+            colorScheme: ThumbleSkinColorScheme
         ) {
             self.source = source
             self.previousBaseline = previousBaseline
@@ -5456,8 +5481,8 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 
     /// Materializes the selected variant and package assets before removing the package dependency.
     mutating func detachSkin(
-        resolving package: PocketPadSkinPackage,
-        colorScheme: PocketPadSkinColorScheme
+        resolving package: ThumbleSkinPackage,
+        colorScheme: ThumbleSkinColorScheme
     ) {
         let workspace = SkinDetachmentWorkspace(
             profile: self,
@@ -5470,16 +5495,16 @@ public struct GamepadConfigurationProfile: Identifiable, Codable, Equatable, Sen
 
     private final class SkinDetachmentWorkspace {
         private(set) var profile: GamepadConfigurationProfile
-        private let package: PocketPadSkinPackage
-        private let colorScheme: PocketPadSkinColorScheme
+        private let package: ThumbleSkinPackage
+        private let colorScheme: ThumbleSkinColorScheme
         private var fallbackBox: GamepadProfileCustomizationBox?
         private var landscapeBox: GamepadProfileCustomizationBox?
         private var portraitBox: GamepadProfileCustomizationBox?
 
         init(
             profile: GamepadConfigurationProfile,
-            package: PocketPadSkinPackage,
-            colorScheme: PocketPadSkinColorScheme
+            package: ThumbleSkinPackage,
+            colorScheme: ThumbleSkinColorScheme
         ) {
             self.profile = profile
             self.package = package
@@ -7060,7 +7085,7 @@ enum GamepadConfigurationProfilePersistence {
 
         if let data = UserDefaults.standard.data(forKey: defaultsKey),
            let stored = try? JSONDecoder().decode(StoredState.self, from: data) {
-            var profiles = normalizedUniqueProfiles(stored.profiles)
+            let profiles = normalizedUniqueProfiles(stored.profiles)
             if let migratedState = migratedLegacySeededDefaultStateIfNeeded(
                 profiles: profiles,
                 activeProfileID: stored.activeProfileID,
@@ -7070,24 +7095,36 @@ enum GamepadConfigurationProfilePersistence {
             }
 
             if !profiles.isEmpty {
-                let preferredActiveID = stored.activeProfileID ?? profiles[0].id
-                let activeProfileID: UUID
+                // Once a valid active profile is stored, the profile store is the
+                // source of truth. The standalone customization is only a legacy
+                // mirror and may lag behind an atomic profile save.
+                if let activeProfileID = validProfileID(stored.activeProfileID, in: profiles) {
+                    let defaultProfileID = validProfileID(stored.defaultProfileID, in: profiles) ?? activeProfileID
+                    return LoadedState(profiles: profiles, activeProfileID: activeProfileID, defaultProfileID: defaultProfileID)
+                }
 
-                if let activeIndex = profiles.firstIndex(where: { $0.id == preferredActiveID }) {
-                    profiles[activeIndex].customization = activeCustomization
-                    profiles[activeIndex].updatedAt = Date.currentMilliseconds
-                    activeProfileID = preferredActiveID
+                // Preserve recovery for pre-profile stores (no active ID) and
+                // damaged stores whose selected profile no longer exists.
+                var recoveredProfiles = profiles
+                let activeProfileID: UUID
+                if stored.activeProfileID == nil {
+                    recoveredProfiles[0].customization = activeCustomization
+                    recoveredProfiles[0].updatedAt = Date.currentMilliseconds
+                    activeProfileID = recoveredProfiles[0].id
                 } else {
-                    let currentProfile = GamepadConfigurationProfile(
+                    let recoveredProfile = GamepadConfigurationProfile(
                         name: "Current Setup",
                         primaryCustomization: activeCustomization
                     )
-                    profiles.insert(currentProfile, at: 0)
-                    activeProfileID = currentProfile.id
+                    recoveredProfiles.insert(recoveredProfile, at: 0)
+                    activeProfileID = recoveredProfile.id
                 }
-
-                let defaultProfileID = validProfileID(stored.defaultProfileID, in: profiles) ?? activeProfileID
-                return LoadedState(profiles: profiles, activeProfileID: activeProfileID, defaultProfileID: defaultProfileID)
+                let defaultProfileID = validProfileID(stored.defaultProfileID, in: recoveredProfiles) ?? activeProfileID
+                return LoadedState(
+                    profiles: recoveredProfiles,
+                    activeProfileID: activeProfileID,
+                    defaultProfileID: defaultProfileID
+                )
             }
         }
 
@@ -8376,6 +8413,12 @@ private struct GamepadControlBarOutputPreview: View {
 }
 
 #if os(macOS)
+extension Notification.Name {
+    static let thumbleCommitPendingEditorChanges = Notification.Name("com.codybontecou.Thumble.commitPendingEditorChanges")
+    static let thumbleCommitPendingShortcutRecordings = Notification.Name("com.codybontecou.Thumble.commitPendingShortcutRecordings")
+    static let thumbleBeginShortcutRecording = Notification.Name("com.codybontecou.Thumble.beginShortcutRecording")
+}
+
 private final class GamepadEditorUndoTarget {}
 
 private struct GamepadEditorUndoSnapshot: Equatable {
@@ -9879,6 +9922,12 @@ struct GamepadCustomizationEditor: View {
             finishActiveContinuousEdit()
             commitPendingEditorChanges()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .thumbleCommitPendingEditorChanges)) { _ in
+            releaseAllTestInputs()
+            finishActiveContinuousEdit()
+            commitPendingEditorChanges()
+            commitSelectedProfileNameDraft()
+        }
         .onChange(of: isProfileNameFieldFocused) { _, isFocused in
             if !isFocused {
                 commitSelectedProfileNameDraft()
@@ -9893,6 +9942,7 @@ struct GamepadCustomizationEditor: View {
                 onUngroup: performUngroupShortcut,
                 onDuplicate: duplicateSelectedControls,
                 onSelectAll: selectAllVisibleControls,
+                onQuickBind: beginQuickBindSelectedControl,
                 onShowShortcuts: { isShortcutReferencePresented = true; return true },
                 onEscape: handleEditorEscape,
                 onZoom: handleZoomShortcut,
@@ -10058,6 +10108,12 @@ struct GamepadCustomizationEditor: View {
 
             if isControlSelectionActive && interactionMode == .edit {
                 commandBarIconButton(
+                    systemImage: "keyboard.badge.ellipsis",
+                    label: "Quick Bind",
+                    isDisabled: !canQuickBindSelectedControl,
+                    action: { _ = beginQuickBindSelectedControl() }
+                )
+                commandBarIconButton(
                     systemImage: "plus.square.on.square",
                     label: "Duplicate",
                     isDisabled: !canDuplicateSelectedControls,
@@ -10194,6 +10250,13 @@ struct GamepadCustomizationEditor: View {
 
                 if isControlSelectionActive && interactionMode == .edit {
                     Divider()
+                    Button {
+                        _ = beginQuickBindSelectedControl()
+                    } label: {
+                        Label("Quick Bind Selected Control", systemImage: "keyboard.badge.ellipsis")
+                    }
+                    .keyboardShortcut("b", modifiers: .command)
+                    .disabled(!canQuickBindSelectedControl)
                     Button(action: zoomToSelection) {
                         Label("Zoom to Selection", systemImage: "scope")
                     }
@@ -12558,6 +12621,7 @@ struct GamepadCustomizationEditor: View {
                         ("Esc", "Return to the Select tool")
                     ])
                     shortcutGroup("Editing", shortcuts: [
+                        ("⌘B", "Bind a key press to the selected control"),
                         ("⌘D", "Duplicate selection"),
                         ("Delete", "Delete or hide selection"),
                         ("⌘Z", "Undo"),
@@ -14478,6 +14542,17 @@ struct GamepadCustomizationEditor: View {
 
     @ViewBuilder
     private var selectedElementQuickActions: some View {
+        if canQuickBindSelectedControl {
+            Button {
+                _ = beginQuickBindSelectedControl()
+            } label: {
+                Label("Quick Bind", systemImage: "keyboard.badge.ellipsis")
+                    .labelStyle(.iconOnly)
+            }
+            .geistButtonStyle(.primary, size: .small)
+            .help("Record a key press for this control (⌘B)")
+        }
+
         if let input = primaryTestInput(for: selectedControlID) {
             Button {
                 pulseTestInput(input)
@@ -17301,6 +17376,40 @@ struct GamepadCustomizationEditor: View {
             return nil
         }
         return customization.elementID(for: selectedControlID).map { KeypadElementInputID(elementID: $0, part: .primary) }
+    }
+
+    private var canQuickBindSelectedControl: Bool {
+        selectedElementOutputContent != nil
+            && interactionMode == .edit
+            && isControlSelectionActive
+            && selectedControlIDs.count == 1
+            && selectedControlIsButton
+            && selectedPrimaryElementInputID != nil
+    }
+
+    @discardableResult
+    private func beginQuickBindSelectedControl() -> Bool {
+        guard canQuickBindSelectedControl,
+              let input = selectedPrimaryElementInputID
+        else {
+            let message = "Select one button before using Quick Bind."
+            editorOperationError = message
+            announceEditor(message)
+            return true
+        }
+
+        isInspectorSidebarVisible = true
+        isCanvasFocusMode = false
+        expandedInspectorSections.insert(.selectedElementIdentity)
+        announceEditor("Quick Bind for \(selectedControlTitle). Press the key or shortcut to assign.")
+
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .thumbleBeginShortcutRecording,
+                object: input.storageKey
+            )
+        }
+        return true
     }
 
     private var selectedProfile: GamepadConfigurationProfile? {
@@ -22063,6 +22172,19 @@ enum GamepadEditorKeyboardShortcutRouting {
         return flags.contains(.option)
             && nudgeDirection(keyCode: keyCode, modifierFlags: flags) != nil
     }
+
+    static func isQuickBindShortcut(
+        charactersIgnoringModifiers: String?,
+        modifierFlags: NSEvent.ModifierFlags,
+        isRepeat: Bool
+    ) -> Bool {
+        guard !isRepeat else { return false }
+        let flags = modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.command),
+              flags.intersection([.shift, .option, .control]).isEmpty
+        else { return false }
+        return charactersIgnoringModifiers?.lowercased() == "b"
+    }
 }
 
 private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
@@ -22073,6 +22195,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
     var onUngroup: () -> Bool
     var onDuplicate: () -> Bool
     var onSelectAll: () -> Bool
+    var onQuickBind: () -> Bool
     var onShowShortcuts: () -> Bool
     var onEscape: () -> Bool
     var onZoom: (Int) -> Bool
@@ -22088,6 +22211,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
             onUngroup: onUngroup,
             onDuplicate: onDuplicate,
             onSelectAll: onSelectAll,
+            onQuickBind: onQuickBind,
             onShowShortcuts: onShowShortcuts,
             onEscape: onEscape,
             onZoom: onZoom,
@@ -22112,6 +22236,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
         context.coordinator.onUngroup = onUngroup
         context.coordinator.onDuplicate = onDuplicate
         context.coordinator.onSelectAll = onSelectAll
+        context.coordinator.onQuickBind = onQuickBind
         context.coordinator.onShowShortcuts = onShowShortcuts
         context.coordinator.onEscape = onEscape
         context.coordinator.onZoom = onZoom
@@ -22132,6 +22257,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
         var onUngroup: () -> Bool
         var onDuplicate: () -> Bool
         var onSelectAll: () -> Bool
+        var onQuickBind: () -> Bool
         var onShowShortcuts: () -> Bool
         var onEscape: () -> Bool
         var onZoom: (Int) -> Bool
@@ -22148,6 +22274,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
             onUngroup: @escaping () -> Bool,
             onDuplicate: @escaping () -> Bool,
             onSelectAll: @escaping () -> Bool,
+            onQuickBind: @escaping () -> Bool,
             onShowShortcuts: @escaping () -> Bool,
             onEscape: @escaping () -> Bool,
             onZoom: @escaping (Int) -> Bool,
@@ -22161,6 +22288,7 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
             self.onUngroup = onUngroup
             self.onDuplicate = onDuplicate
             self.onSelectAll = onSelectAll
+            self.onQuickBind = onQuickBind
             self.onShowShortcuts = onShowShortcuts
             self.onEscape = onEscape
             self.onZoom = onZoom
@@ -22193,6 +22321,14 @@ private struct GamepadEditorKeyboardShortcutBridge: NSViewRepresentable {
                   eventWindow === window,
                   window.isKeyWindow
             else { return event }
+
+            if GamepadEditorKeyboardShortcutRouting.isQuickBindShortcut(
+                charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+                modifierFlags: event.modifierFlags,
+                isRepeat: event.isARepeat
+            ) {
+                return onQuickBind() ? nil : event
+            }
 
             if Self.isTextEditing(in: window) {
                 // Inspector fields can remain first responder after selecting the canvas.

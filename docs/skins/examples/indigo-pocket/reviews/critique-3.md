@@ -3,7 +3,7 @@
 - **Reviewed artifact:** `reviews/contact-sheet-3.png`
 - **Source resolution inspected:** 2176 × 1714 PNG, including all 16 native-renderer panels at full resolution and at 25% scale
 - **Direct comparison:** `reviews/contact-sheet-2.png` at the same 2176 × 1714 resolution
-- **References:** `reviews/art-direction.md`, `reviews/artboard-revision-2.md`, `reviews/critique-1.md`, `reviews/critique-2.md`, and the PocketPad visual quality bar
+- **References:** `reviews/art-direction.md`, `reviews/artboard-revision-2.md`, `reviews/critique-1.md`, `reviews/critique-2.md`, and the Thumble visual quality bar
 - **Review date:** 2026-07-17
 - **Verdict:** **visual-pass**
 

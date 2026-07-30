@@ -6,7 +6,7 @@
 - **Panel count:** 16 — portrait and landscape, light and dark, normal, pressed, active, and disabled
 - **Verified package SHA-256:** `54b5343f622541a994934eb35e36ad91cf2cec9521b0ca8cd1cf039003d311f4`
 - **Inspection scales:** exact PNG at full resolution; nearest-neighbor enlargements of the flattened panel pixels; and a 25% overview at 544 × 429 px
-- **Criteria:** `reviews/art-direction.md`, every correction in `reviews/critique-1.md`, and the PocketPad visual quality bar
+- **Criteria:** `reviews/art-direction.md`, every correction in `reviews/critique-1.md`, and the Thumble visual quality bar
 - **Verdict:** `revise`
 
 The revision resolves the broad portrait spine, custom-ledge construction, generic flat-deck reading, landscape right-edge pinch, radial Pressed shading, dark Active action-boundary collision, and over-compressed Disabled materials. The apparent shoulder-length and control-shape inconsistencies in the 25% overview are downsampling effects: inspection of the exact panel pixels finds the same native frames and legend baselines in all states, with no missing, clipped, or malformed native control.

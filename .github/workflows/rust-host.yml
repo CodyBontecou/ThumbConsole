@@ -1,0 +1,192 @@
+name: Thumble Rust host
+
+on:
+  push:
+    paths:
+      - "Host/**"
+      - "Resources/Host/**"
+      - "Sources/CLI/ThumbleCLI.swift"
+      - "Sources/Shared/ControllerProtocol.swift"
+      - "Sources/Shared/ThumbleConfigurationBridge.swift"
+      - "Sources/Bridge/**"
+      - "Sources/iOS/ControllerClient.swift"
+      - "Sources/Mac/MacControllerServer.swift"
+      - "Tests/RustHostInteropTests.swift"
+      - "Tests/ThumbleConfigurationBridgeTests.swift"
+      - "project.yml"
+      - "Thumble.xcodeproj/project.pbxproj"
+      - "docs/mcp/**"
+      - "scripts/verify-mcp-cli-parity.py"
+      - "scripts/verify-rust-host.sh"
+      - "scripts/release/macos-host.sh"
+      - ".github/workflows/rust-host.yml"
+  pull_request:
+    paths:
+      - "Host/**"
+      - "Resources/Host/**"
+      - "Sources/CLI/ThumbleCLI.swift"
+      - "Sources/Shared/ControllerProtocol.swift"
+      - "Sources/Shared/ThumbleConfigurationBridge.swift"
+      - "Sources/Bridge/**"
+      - "Sources/iOS/ControllerClient.swift"
+      - "Sources/Mac/MacControllerServer.swift"
+      - "Tests/RustHostInteropTests.swift"
+      - "Tests/ThumbleConfigurationBridgeTests.swift"
+      - "project.yml"
+      - "Thumble.xcodeproj/project.pbxproj"
+      - "docs/mcp/**"
+      - "scripts/verify-mcp-cli-parity.py"
+      - "scripts/verify-rust-host.sh"
+      - "scripts/release/macos-host.sh"
+      - ".github/workflows/rust-host.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  portable-core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Host
+      - run: python3 ../scripts/verify-mcp-cli-parity.py
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --workspace --all-features
+
+  macos-host:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Host
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+      - run: ./scripts/verify-rust-host.sh
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
+      - name: Swift/Rust interoperability fixtures
+        run: >-
+          xcodebuild test
+          -project Thumble.xcodeproj
+          -scheme ThumbleCLI
+          -destination 'platform=macOS'
+          -only-testing:ThumbleCLITests/RustHostInteropTests
+          -only-testing:ThumbleCLITests/ThumbleConfigurationBridgeTests
+          CODE_SIGNING_ALLOWED=NO
+      - name: Universal host, MCP, and Swift bridge package smoke
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
+        run: |
+          OUTPUT="$RUNNER_TEMP/thumble-host-package"
+          ./scripts/release/macos-host.sh --version 0.1.0 --build-number 1 --output "$OUTPUT"
+          APP="$OUTPUT/Thumble Host.app"
+          test -x "$APP/Contents/MacOS/thumble-host"
+          test -x "$APP/Contents/MacOS/thumble-mcp"
+          test -x "$APP/Contents/MacOS/thumble-bridge"
+          lipo "$APP/Contents/MacOS/thumble-host" -verify_arch arm64 x86_64
+          lipo "$APP/Contents/MacOS/thumble-mcp" -verify_arch arm64 x86_64
+          lipo "$APP/Contents/MacOS/thumble-bridge" -verify_arch arm64 x86_64
+          codesign --verify --deep --strict "$APP"
+          unzip -tq "$OUTPUT/ThumbleHost-0.1.0-macOS-universal.zip"
+          python3 - "$APP/Contents/MacOS/thumble-bridge" Host/fixtures/state/minimal-profile.json <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          profile = json.load(open(sys.argv[2], encoding="utf-8"))
+          document = {
+              "profiles": [profile],
+              "activeProfileID": profile["id"],
+              "defaultProfileID": profile["id"],
+              "keyBindings": {},
+              "outputBindings": {},
+              "profileKeyBindings": {},
+              "profileOutputBindings": {},
+          }
+          request = {
+              "schemaVersion": 1,
+              "nowMillis": 1234,
+              "document": document,
+              "operation": {
+                  "type": "theme.apply",
+                  "profileID": profile["id"],
+                  "variant": "primary",
+                  "preset": "cavern-glow",
+              },
+          }
+          completed = subprocess.run(
+              [sys.argv[1]],
+              input=json.dumps(request, separators=(",", ":")) + "\n",
+              text=True,
+              capture_output=True,
+              timeout=10,
+              check=True,
+          )
+          response = json.loads(completed.stdout)
+          assert response["schemaVersion"] == 1
+          assert response["changed"] is True
+          assert response["document"]["profiles"][0]["updatedAt"] == 1234
+          assert completed.stderr == ""
+          PY
+          python3 - "$APP/Contents/MacOS/thumble-mcp" <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          process = subprocess.Popen(
+              [sys.argv[1]],
+              stdin=subprocess.PIPE,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+              bufsize=1,
+          )
+
+          def request(identifier, method, params):
+              message = {"jsonrpc": "2.0", "id": identifier, "method": method, "params": params}
+              process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
+              process.stdin.flush()
+              response = json.loads(process.stdout.readline())
+              assert response["id"] == identifier and "error" not in response, response
+              return response["result"]
+
+          initialized = request(1, "initialize", {
+              "protocolVersion": "2025-11-25",
+              "capabilities": {},
+              "clientInfo": {"name": "package-mcp-app-smoke", "version": "1"},
+          })
+          assert initialized["capabilities"]["resources"] == {}
+          process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
+          process.stdin.flush()
+          tools = request(2, "tools/list", {})["tools"]
+          assert len(tools) == 19
+          render = next(tool for tool in tools if tool["name"] == "render_controller")
+          uri = render["_meta"]["ui"]["resourceUri"]
+          assert uri == "ui://thumble/controller-builder-v1.html"
+          resource = request(3, "resources/read", {"uri": uri})["contents"][0]
+          assert resource["mimeType"] == "text/html;profile=mcp-app"
+          assert "ui/initialize" in resource["text"]
+          assert "ui/notifications/tool-result" in resource["text"]
+          editor = next(tool for tool in tools if tool["name"] == "preview_configuration_draft")
+          editor_uri = editor["_meta"]["ui"]["resourceUri"]
+          assert editor_uri == "ui://thumble/controller-editor-v1.html"
+          editor_resource = request(4, "resources/read", {"uri": editor_uri})["contents"][0]
+          assert editor_resource["mimeType"] == "text/html;profile=mcp-app"
+          assert "tools/call" in editor_resource["text"]
+          assert "save_configuration_draft" in editor_resource["text"]
+          process.stdin.close()
+          assert process.wait(timeout=5) == 0
+          PY

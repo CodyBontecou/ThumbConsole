@@ -4,7 +4,7 @@
 - **Evidence dimensions:** 2176 × 1714 px
 - **Inspection scales:** exact PNG at full resolution, including source-pixel panel crops; 25% overview at 544 × 429 px
 - **Art direction:** `reviews/art-direction.md`
-- **Quality bar:** PocketPad visual quality bar
+- **Quality bar:** Thumble visual quality bar
 - **Verdict:** `revise`
 
 The sheet contains all 16 required native-renderer combinations. The lower-left cluster wins the first glance at 25%, portrait is recomposed rather than rotated, and no trade-dress blocker is visible. It does not pass because the bottom of every landscape composition is visibly unresolved, the tab/fold/relay idea still reads largely as a generic keypad plus a line, dark fold tiers collapse, and several native states fail the specified material and interaction behavior.

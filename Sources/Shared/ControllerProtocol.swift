@@ -126,7 +126,7 @@ public enum ThumbleMacIPC {
     public static let editorFirstKeypadOnboardingReplayRequestedDefaultsKey = "PocketPad.GamepadEditor.firstKeypadOnboardingReplayRequested.v1"
     public static let captureLogPath = "/tmp/thumble-capture.jsonl"
     public static let legacyThumbConsoleCaptureLogPath = "/tmp/thumbconsole-capture.jsonl"
-    public static let legacyPocketPadCaptureLogPath = "/tmp/pocketpad-capture.jsonl"
+    public static let legacyThumbleCaptureLogPath = "/tmp/pocketpad-capture.jsonl"
 }
 
 public enum ThumbleMacCLICommand: String, Codable, Sendable {
@@ -609,7 +609,7 @@ public struct ControllerMessage: Codable, Sendable {
     public var gamepadCustomization: GamepadCustomization?
     public var gamepadProfiles: [GamepadConfigurationProfile]?
     public var skinPackages: [Data]?
-    public var skinReference: PocketPadSkinReference?
+    public var skinReference: ThumbleSkinReference?
     public var bindingPresentations: [GamepadProfileBindingPresentations]?
     public var gamepadProfileID: UUID?
     public var defaultGamepadProfileID: UUID?
@@ -650,7 +650,7 @@ public struct ControllerMessage: Codable, Sendable {
         gamepadCustomization: GamepadCustomization? = nil,
         gamepadProfiles: [GamepadConfigurationProfile]? = nil,
         skinPackages: [Data]? = nil,
-        skinReference: PocketPadSkinReference? = nil,
+        skinReference: ThumbleSkinReference? = nil,
         bindingPresentations: [GamepadProfileBindingPresentations]? = nil,
         gamepadProfileID: UUID? = nil,
         defaultGamepadProfileID: UUID? = nil,

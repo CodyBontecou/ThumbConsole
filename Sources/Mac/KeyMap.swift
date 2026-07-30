@@ -226,18 +226,25 @@ enum MacVirtualKey {
     static let upArrow: CGKeyCode = 126
 
     static let a: CGKeyCode = 0
-    static let b: CGKeyCode = 11
-    static let c: CGKeyCode = 8
+    static let s: CGKeyCode = 1
+    static let d: CGKeyCode = 2
     static let h: CGKeyCode = 4
+    static let z: CGKeyCode = 6
+    static let x: CGKeyCode = 7
+    static let c: CGKeyCode = 8
+    static let b: CGKeyCode = 11
+    static let q: CGKeyCode = 12
+    static let w: CGKeyCode = 13
+    static let e: CGKeyCode = 14
+    static let r: CGKeyCode = 15
+    static let p: CGKeyCode = 35
+    static let l: CGKeyCode = 37
     static let j: CGKeyCode = 38
     static let k: CGKeyCode = 40
-    static let l: CGKeyCode = 37
-    static let p: CGKeyCode = 35
-    static let x: CGKeyCode = 7
-    static let z: CGKeyCode = 6
 
     static let returnKey: CGKeyCode = 36
     static let tab: CGKeyCode = 48
+    static let space: CGKeyCode = 49
     static let escape: CGKeyCode = 53
     static let command: CGKeyCode = 55
     static let shift: CGKeyCode = 56

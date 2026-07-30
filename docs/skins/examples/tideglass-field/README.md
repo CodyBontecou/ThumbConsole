@@ -1,6 +1,6 @@
 # Tideglass Field
 
-Handcrafted PocketPad skin workspace for `game-boy-v1` revision 1.
+Handcrafted Thumble skin workspace for `game-boy-v1` revision 1.
 
 The four orientation/appearance SVGs build an original hydrographic plate from connected frosted tideglass shelves, hard-edged abyss wells, contour etching, coral datum notches, and three or fewer brass soundings. Landscape is a lateral transect; portrait is a separately drawn vertical sounding. Artwork remains passive while native controls own geometry, labels, bindings, accessibility, and normal/pressed/active/disabled rendering.
 

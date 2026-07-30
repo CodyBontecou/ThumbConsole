@@ -30,7 +30,7 @@ Current Debug/arm64 inline budgets are intentionally close enough to detect acci
 | `GamepadButtonCustomization` | 1,050 | 2,048 |
 | `GamepadConfigurationProfile` | 216 | 512 |
 | `ControllerMessage` | 2,465 | 4,096 |
-| `PocketPadSkin` / `PocketPadSkinAppearance` | 464 / 456 | 1,024 each |
+| `ThumbleSkin` / `ThumbleSkinAppearance` | 464 / 456 | 1,024 each |
 | `GamepadControlVisualStyle` | 8 | 256 |
 | `GamepadStyleToken` | 48 | 256 |
 
@@ -48,7 +48,7 @@ The regression test prints the measured values, so CI logs reveal architecture o
 
 ## Review warning signs
 
-Review these patterns carefully when they involve `GamepadCustomization`, `GamepadConfigurationProfile`, `ControllerMessage`, `PocketPadSkin`, or similarly rich values:
+Review these patterns carefully when they involve `GamepadCustomization`, `GamepadConfigurationProfile`, `ControllerMessage`, `ThumbleSkin`, or similarly rich values:
 
 ```swift
 var prepared = largeValue

@@ -2,7 +2,7 @@
 
 **Evidence reviewed:** `reviews/contact-sheet-5.png` (2176 × 1714), inspected at exact raster resolution and as an exact 25% Lanczos reduction (544 × 428).
 **Comparison evidence:** `reviews/contact-sheet-1.png` through `reviews/contact-sheet-4.png` and `reviews/critique-1.md` through `reviews/critique-4.md`.
-**Criteria:** `reviews/art-direction.md` and the PocketPad visual quality bar.
+**Criteria:** `reviews/art-direction.md` and the Thumble visual quality bar.
 **Verdict:** **visual-pass**
 
 Pass 5 resolves critique 4's sole major. Every portrait A/B straight side now contains at least two adjacent core pixels measuring ≥3.1:1 in both appearances, while every stable landscape A/B straight-side run remains exactly two full-contrast pixels wide. The A/B face lift remains 6–8%, Active remains immediately distinct from Normal at exact 25%, and no glow is visible. There are no blockers, majors, minors, or regressions elsewhere.

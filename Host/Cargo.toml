@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "crates/thumble-protocol",
+    "crates/thumble-core",
+    "crates/thumble-host",
+    "crates/thumble-cli-bridge",
+    "crates/thumble-mcp",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.88"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

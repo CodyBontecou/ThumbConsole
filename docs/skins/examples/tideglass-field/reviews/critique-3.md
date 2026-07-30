@@ -2,7 +2,7 @@
 
 **Evidence reviewed:** `reviews/contact-sheet-3.png` (2176 × 1714), inspected at full raster resolution and as an exact 25% Lanczos reduction (544 × 428).
 **Comparison evidence:** `reviews/contact-sheet-1.png`, `reviews/contact-sheet-2.png`, `reviews/critique-1.md`, and `reviews/critique-2.md`.
-**Criteria:** `reviews/art-direction.md` and the PocketPad visual quality bar.
+**Criteria:** `reviews/art-direction.md` and the Thumble visual quality bar.
 **Verdict:** **revise**
 
 Pass 3 resolves the dark Disabled boundary failure and removes the portrait delta shoulder whiskers. The three-mass landscape, portrait hierarchy, legends, contours, and state geometry show no visible regression. The A/B Active treatment is materially improved and now separates from Normal at 25%, but its portrait raster still does not provide the required continuous 1.5–2 px, ≥3:1 perimeter. One prior major therefore remains unresolved; a visual pass is not available.

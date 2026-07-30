@@ -3591,13 +3591,19 @@ private struct MacGamepadKeyBindingsInspector: View {
     }
 }
 
+private extension Notification.Name {
+    static let thumbleShortcutRecorderWillBegin = Notification.Name("com.codybontecou.Thumble.shortcutRecorderWillBegin")
+}
+
 private struct MacElementKeyBindingRecorderField: View {
     @EnvironmentObject private var server: MacControllerServer
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.controlActiveState) private var controlActiveState
     @Environment(\.undoManager) private var undoManager
     @State private var undoTarget = MacGamepadEditorUndoTarget()
 
     let input: KeypadElementInputID
+    @State private var recorderID = UUID().uuidString
     @State private var isRecording = false
     @State private var eventMonitor: Any?
     @State private var recordedStrokes: [MacKeyStroke] = []
@@ -3630,10 +3636,25 @@ private struct MacElementKeyBindingRecorderField: View {
             .contentShape(RoundedRectangle(cornerRadius: Geist.Radius.sm, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help(isRecording ? "Recording element shortcut" : "Click to record element shortcut")
+        .help(isRecording ? "Recording element shortcut" : "Click to record, or select this control and press Command-B")
         .accessibilityLabel("Element shortcut")
         .accessibilityValue(fieldText)
         .onDisappear {
+            if isRecording {
+                commitRecording()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .thumbleShortcutRecorderWillBegin)) { notification in
+            guard isRecording, notification.object as? String != recorderID else { return }
+            commitRecording()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .thumbleBeginShortcutRecording)) { notification in
+            guard controlActiveState == .key,
+                  notification.object as? String == input.storageKey
+            else { return }
+            startRecording()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .thumbleCommitPendingShortcutRecordings)) { _ in
             if isRecording {
                 commitRecording()
             }
@@ -3679,6 +3700,7 @@ private struct MacElementKeyBindingRecorderField: View {
     }
 
     private func startRecording() {
+        NotificationCenter.default.post(name: .thumbleShortcutRecorderWillBegin, object: recorderID)
         stopRecording()
         isRecording = true
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
@@ -3730,13 +3752,9 @@ private struct MacElementKeyBindingRecorderField: View {
     }
 
     private func commitRecording() {
-        let strokesToSave: [MacKeyStroke]
-        if recordedStrokes.isEmpty, let pendingModifierStroke {
-            strokesToSave = [pendingModifierStroke]
-        } else {
-            strokesToSave = recordedStrokes
-        }
-
+        let strokesToSave = recordedStrokes.isEmpty
+            ? pendingModifierStroke.map { [$0] } ?? []
+            : recordedStrokes
         guard !strokesToSave.isEmpty else {
             stopRecording()
             return
@@ -3775,6 +3793,7 @@ private struct MacKeyBindingRecorderField: View {
     @State private var undoTarget = MacGamepadEditorUndoTarget()
 
     let button: GameButton
+    @State private var recorderID = UUID().uuidString
     @State private var isRecording = false
     @State private var eventMonitor: Any?
     @State private var recordedStrokes: [MacKeyStroke] = []
@@ -3811,6 +3830,15 @@ private struct MacKeyBindingRecorderField: View {
         .accessibilityLabel("Shortcut for \(button.displayName)")
         .accessibilityValue(fieldText)
         .onDisappear {
+            if isRecording {
+                commitRecording()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .thumbleShortcutRecorderWillBegin)) { notification in
+            guard isRecording, notification.object as? String != recorderID else { return }
+            commitRecording()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .thumbleCommitPendingShortcutRecordings)) { _ in
             if isRecording {
                 commitRecording()
             }
@@ -3856,6 +3884,7 @@ private struct MacKeyBindingRecorderField: View {
     }
 
     private func startRecording() {
+        NotificationCenter.default.post(name: .thumbleShortcutRecorderWillBegin, object: recorderID)
         stopRecording()
         isRecording = true
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
@@ -3907,13 +3936,9 @@ private struct MacKeyBindingRecorderField: View {
     }
 
     private func commitRecording() {
-        let strokesToSave: [MacKeyStroke]
-        if recordedStrokes.isEmpty, let pendingModifierStroke {
-            strokesToSave = [pendingModifierStroke]
-        } else {
-            strokesToSave = recordedStrokes
-        }
-
+        let strokesToSave = recordedStrokes.isEmpty
+            ? pendingModifierStroke.map { [$0] } ?? []
+            : recordedStrokes
         guard !strokesToSave.isEmpty else {
             stopRecording()
             return

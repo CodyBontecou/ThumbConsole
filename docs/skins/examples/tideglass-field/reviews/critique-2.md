@@ -2,7 +2,7 @@
 
 **Evidence reviewed:** `reviews/contact-sheet-2.png` (2176 × 1714), inspected at exact contact-sheet resolution and as a 544 × 428 Lanczos reduction (25%).
 **Comparison evidence:** `reviews/contact-sheet-1.png` and `reviews/critique-1.md`.
-**Criteria:** `reviews/art-direction.md` and the PocketPad visual quality bar.
+**Criteria:** `reviews/art-direction.md` and the Thumble visual quality bar.
 **Verdict:** **revise**
 
 The landscape blocker is resolved: the movement shelf, central sampling bridge, and action shelf remain three separate masses at 25%, so the composition no longer collapses into one commercial controller front plate. Legends and disabled-state semantics are also substantially corrected. Two prior major findings remain incomplete, however: dark Disabled controls lose their boundaries, and the new A/B active perimeter is too thin and too low-contrast in the exact raster. A smaller portrait shoulder artifact also remains.

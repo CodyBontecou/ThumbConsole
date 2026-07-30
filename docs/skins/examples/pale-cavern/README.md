@@ -1,6 +1,6 @@
 # Pale Cavern
 
-Editable handcrafted PocketPad skin workspace targeting canonical artboard `showcase-controller-v1`, template `snes`, revision 2.
+Editable handcrafted Thumble skin workspace targeting canonical artboard `showcase-controller-v1`, template `snes`, revision 2.
 
 Pale Cavern is an original quiet mineral ecology: offset moonstone laminae, recessed semantic control wells, one restrained cold-spring cyan seam, and a sparse silt constellation. Landscape is a low overlapping two-lamina composition. Portrait is separately composed as upper and lower chambers joined by a narrow mineral bridge. Light and dark use separately authored limestone and subterranean material logic.
 

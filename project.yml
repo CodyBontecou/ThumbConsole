@@ -54,6 +54,7 @@ targets:
       - path: Sources/Shared
       - path: Sources/Mac/KeyMap.swift
       - path: Sources/Mac/MacControlOutputBinding.swift
+      - path: Sources/Mac/MacConfigurationBindings.swift
       - path: Sources/CLI
     dependencies:
       - package: ZIPFoundation
@@ -61,6 +62,26 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.PocketPad
         PRODUCT_NAME: thumble
+        "CODE_SIGN_IDENTITY[sdk=macosx*]": Apple Development
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 67KC823C9A
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+  ThumbleBridge:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/Shared
+      - path: Sources/Mac/KeyMap.swift
+      - path: Sources/Mac/MacControlOutputBinding.swift
+      - path: Sources/Mac/MacConfigurationBindings.swift
+      - path: Sources/Bridge
+    dependencies:
+      - package: ZIPFoundation
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.codybontecou.ThumbleBridge
+        PRODUCT_NAME: thumble-bridge
         "CODE_SIGN_IDENTITY[sdk=macosx*]": Apple Development
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 67KC823C9A
@@ -73,6 +94,7 @@ targets:
       - path: Sources/Shared
       - path: Sources/Mac/KeyMap.swift
       - path: Sources/Mac/MacControlOutputBinding.swift
+      - path: Sources/Mac/MacConfigurationBindings.swift
       - path: Sources/CLI
     dependencies:
       - package: ZIPFoundation
@@ -84,7 +106,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 67KC823C9A
         MACOSX_DEPLOYMENT_TARGET: "14.0"
-  ThumblePocketPadCLI:
+  ThumbleLegacyCLI:
     type: tool
     platform: macOS
     deploymentTarget: "14.0"
@@ -92,6 +114,7 @@ targets:
       - path: Sources/Shared
       - path: Sources/Mac/KeyMap.swift
       - path: Sources/Mac/MacControlOutputBinding.swift
+      - path: Sources/Mac/MacConfigurationBindings.swift
       - path: Sources/CLI
     dependencies:
       - package: ZIPFoundation
@@ -111,6 +134,9 @@ targets:
       - path: Sources/Shared
       - path: Sources/Mac/KeyMap.swift
       - path: Sources/Mac/MacControlOutputBinding.swift
+      - path: Sources/Mac/MacConfigurationBindings.swift
+      - path: Sources/Mac/MacRustAuthorityInterlock.swift
+      - path: Sources/CLI/ThumbleCLIBackend.swift
       - path: Sources/iOS/IOSLocalKeypadUX.swift
       - path: Tests
     dependencies:
@@ -183,7 +209,7 @@ schemes:
       targets:
         ThumbleCLI: all
         ThumbleLegacyThumbConsoleCLI: all
-        ThumblePocketPadCLI: all
+        ThumbleLegacyCLI: all
         ThumbleCLITests: [test]
     test:
       targets:
